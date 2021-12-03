@@ -1,0 +1,74 @@
+# .zshrc
+export LC_CTYPE=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+
+################################################################################
+# PATH
+################################################################################
+HOME="/home/joey"
+# export JOEY=/storeData/project/user/xuzhenyu
+export PATH=${HOME}/.local/bin:${PATH}
+# LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=${HOME}/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+
+
+################################################################################
+# HISTORY
+################################################################################
+# the detailed meaning of the below three variable can be found in `man zshparam`.
+export HISTFILE="${HOME}/.zsh_history"
+export HISTSIZE=1000000   # the number of items for the internal history list
+export SAVEHIST=1000000   # maximum number of items for the history file
+# The meaning of these options can be found in man page of `zshoptions`.
+setopt HIST_IGNORE_ALL_DUPS  # do not put duplicated command into history list
+setopt HIST_SAVE_NO_DUPS  # do not save duplicated command
+setopt HIST_REDUCE_BLANKS  # remove unnecessary blanks
+setopt INC_APPEND_HISTORY_TIME  # append command to history file immediately after execution
+
+
+################################################################################
+# CONDA
+################################################################################
+# Attaches tmux to a session (example: ta portal)
+alias ta='tmux attach -t'
+# Creates a new session
+alias tn='tmux new-session -s'
+# Lists all ongoing sessions
+alias tl='tmux list-sessions'
+
+
+################################################################################
+# CONDA
+################################################################################
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/home/joey/mambaforge/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/home/joey/mambaforge/etc/profile.d/conda.sh" ]; then
+        . "/home/joey/mambaforge/etc/profile.d/conda.sh"
+    else
+        export PATH="/home/joey/mambaforge/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+# mamba
+if [ -f "/storeData/project/user/xuzhenyu/mambaforge/etc/profile.d/mamba.sh" ]; then
+    . "/storeData/project/user/xuzhenyu/mambaforge/etc/profile.d/mamba.sh"
+fi
+# <<< conda initialize <<<
+
+
+################################################################################
+# UTILs
+################################################################################
+# starship
+eval "$(starship init zsh)"
+# fzf
+[ -f "${HOME}/.fzf.zsh" ] && source "${HOME}/.fzf.zsh"
+
+
+# WSL only, fix blank screen
+export TERM=xterm-color
