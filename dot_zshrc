@@ -70,5 +70,11 @@ eval "$(starship init zsh)"
 [ -f "${HOME}/.fzf.zsh" ] && source "${HOME}/.fzf.zsh"
 
 
+################################################################################
+# prezto
+################################################################################
+source "${ZDOTDIR:-$HOME}/.zprezto/init.zsh"
+
+
 # WSL only, fix blank screen
 export TERM=xterm-color

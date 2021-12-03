@@ -1,0 +1,12 @@
+[".zprezto"]
+    type = "archive"
+    url = "https://github.com.cnpmjs.org/sorin-ionescu/prezto/archive/master.tar.gz"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"
+[".zprezto/modules/syntax-highlighting/external"]
+    type = "archive"
+    url = "https://github.com.cnpmjs.org/zsh-users/zsh-syntax-highlighting/archive/master.tar.gz"
+    exact = true
+    stripComponents = 1
+    refreshPeriod = "168h"
