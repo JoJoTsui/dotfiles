@@ -1,0 +1,128 @@
+# .zshrc
+
+
+################################################################################
+# WSL proxy
+################################################################################
+# CUSTOM CONFIG
+export HOST_IP=$(grep -oP '(?<=nameserver\ ).*' /etc/resolv.conf)
+# export HOST_IP="127.0.0.1"
+export PORXY_ADDR="http://${HOST_IP}:7890"
+
+# GLOBAL PROXY FOR ZSH
+# if ~/.zsh_proxy not exist , then create it.
+if [ ! -f ~/.zsh_proxy ]; then
+    touch ~/.zsh_proxy
+fi
+# execute ~/.zsh_proxy
+. ~/.zsh_proxy
+
+# git proxy
+function __enable_proxy_git() {
+    git config --global http.proxy "${PORXY_ADDR}"
+    git config --global https.proxy "${PORXY_ADDR}"
+}
+
+function __disable_proxy_git() {
+	git config --global --unset http.proxy
+	git config --global --unset https.proxy
+}
+
+function proxy() {
+    echo -e "export {all_proxy,http_proxy,https_proxy,ALL_PROXY,HTTP_PROXY,HTTPS_PROXY}=\"${PORXY_ADDR}\";" | tee ~/.zsh_proxy > /dev/null
+    # apply
+    . ~/.zsh_proxy
+    __enable_proxy_git
+    # declare
+    echo "current proxy status: using ${PORXY_ADDR}, proxying"
+}
+
+function unproxy() {
+    # unset all_proxy http_proxy https_proxy ALL_PROXY HTTP_PROXY HTTPS_PROXY
+    echo -e "unset all_proxy http_proxy https_proxy ALL_PROXY HTTP_PROXY HTTPS_PROXY" | tee ~/.zsh_proxy > /dev/null
+    # apply
+    . ~/.zsh_proxy
+    __disable_proxy_git
+    # declare
+    echo "current proxy status:  direct connect, not proxying"
+}
+
+
+export LC_CTYPE=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+
+
+# the detailed meaning of the below three variable can be found in `man zshparam`.
+export HISTFILE=/mnt/d/Alveus/linux/xuzhenyu/.bash_history
+export HISTSIZE=1000000   # the number of items for the internal history list
+export SAVEHIST=1000000   # maximum number of items for the history file
+
+# The meaning of these options can be found in man page of `zshoptions`.
+setopt HIST_IGNORE_ALL_DUPS  # do not put duplicated command into history list
+setopt HIST_SAVE_NO_DUPS  # do not save duplicated command
+setopt HIST_IGNORE_DUPS
+setopt HIST_REDUCE_BLANKS  # remove unnecessary blanks
+setopt SHARE_HISTORY
+# setopt INC_APPEND_HISTORY_TIME  # append command to history file immediately after execution
+# setopt INC_APPEND_HISTORY
+
+
+# Uncomment the following line if you don't like systemctl's auto-paging feature:
+# export SYSTEMD_PAGER=
+
+
+# User specific aliases and functions
+
+
+
+# PATH
+export JOEY=/mnt/d/Alveus/linux/xuzhenyu
+export PATH=${JOEY}/.local/bin:${PATH}
+# LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=${JOEY}/.local/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
+
+
+# tmux
+# Attaches tmux to a session (example: ta portal)
+alias ta='tmux attach -t'
+# Creates a new session
+alias tn='tmux new-session -s'
+# Lists all ongoing sessions
+alias tl='tmux list-sessions'
+
+
+# bat
+export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+
+
+# fzf
+[ -f ${JOEY}/.fzf.zsh ] && source ${JOEY}/.fzf.zsh
+
+
+# starship
+eval "$(starship init zsh)"
+
+
+# zoxide
+eval "$(zoxide init zsh)"
+
+
+# >>> conda initialize >>>
+# !! Contents within this block are managed by 'conda init' !!
+__conda_setup="$('/home/joey/mambaforge/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__conda_setup"
+else
+    if [ -f "/home/joey/mambaforge/etc/profile.d/conda.sh" ]; then
+        . "/home/joey/mambaforge/etc/profile.d/conda.sh"
+    else
+        export PATH="/home/joey/mambaforge/bin:$PATH"
+    fi
+fi
+unset __conda_setup
+
+if [ -f "/home/joey/mambaforge/etc/profile.d/mamba.sh" ]; then
+    . "/home/joey/mambaforge/etc/profile.d/mamba.sh"
+fi
+# <<< conda initialize <<<
+
