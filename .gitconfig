@@ -1,0 +1,40 @@
+[user]
+    name = Joey Xu
+    email = xuzy1992.joey@gmail.com
+[filter "lfs"]
+	clean = git-lfs clean -- %f
+	smudge = git-lfs smudge -- %f
+	process = git-lfs filter-process
+	required = true
+
+[core]
+    pager = delta
+	compression = 0
+
+[interactive]
+    diffFilter = delta --color-only
+
+[delta]
+    navigate = true    # use n and N to move between diff sections
+
+    # delta detects terminal colors automatically; set one of these to disable auto-detection
+    dark = true
+    # light = true
+
+[merge]
+    conflictstyle = zdiff3
+
+[diff]
+    colorMoved = default
+[credential "https://github.com"]
+	helper = 
+	helper = !/t9k/mnt/joey/gizmo/gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = 
+	helper = !/t9k/mnt/joey/gizmo/gh auth git-credential
+# [http]
+#	proxy = 10.233.17.241:3128
+# [https]
+#	proxy = 10.233.17.241:3128
+[http]
+	postBuffer = 524288000
