@@ -38,67 +38,74 @@ def "nu-complete conda-envs" [] {
 
 # 2. Add Type Signature and Completions to activate
 export def --env activate [
-    name: string@"nu-complete conda-envs"  # Connects the completion function
+    name: string@"nu-complete conda-envs"
 ] {
     let available_envs = (get-conda-envs)
 
     if not ($name in $available_envs) {
         print $"Environment '($name)' not found."
-        print "Available:"
-        print $available_envs
+        return
+    }
+
+    # Safety: Check if already active
+    if ($env.CONDA_DEFAULT_ENV? | is-not-empty) {
+        print $"Environment '($env.CONDA_DEFAULT_ENV)' is already active. Deactivate first."
         return
     }
 
     let target_path = ($available_envs | get $name)
-
-    # ERROR CHECK: Don't activate if already inside an env (optional safety)
-    if not ($env.CONDA_CURR | is-empty) {
-        print $"Already in environment: ($env.CONDA_CURR). Deactivate first."
-        return
-    }
-
-    # SNAPSHOT: Save the PATH exactly as it is NOW, before modification
+    
+    # SNAPSHOT: Save PATH
     $env.CONDA_OLD_PATH = $env.PATH
 
-    # Detect OS for specific bin implementation
+    # Detect OS
     let is_windows = ((sys host).name == "Windows")
-    
     let bin_path = if $is_windows {
         [$target_path, ($target_path | path join "Scripts")]
     } else {
         [$target_path, ($target_path | path join "bin")]
     }
 
-    # PREPEND paths
+    # SET ENV VARS
     load-env {
         PATH: ($env.PATH | prepend $bin_path)
-        # Windows often needs specific 'Path' casing for external tools
-        Path: ($env.PATH | prepend $bin_path) 
+        Path: ($env.PATH | prepend $bin_path) # Windows compat
         CONDA_CURR: $name
         CONDA_PREFIX: $target_path
-        CONDA_DEFAULT_ENV: $name
+        CONDA_DEFAULT_ENV: $name # Crucial for Starship
+        CONDA_SHLVL: "1"
+        CONDA_PROMPT_MODIFIER: $"($name)"
     }
 }
 
+
 export def --env deactivate [] {
-    if ($env.CONDA_CURR | is-empty) {
+    # Check if ANY Conda variable is set (more robust)
+    let is_active = ($env.CONDA_DEFAULT_ENV? | is-not-empty) or ($env.CONDA_CURR? | is-not-empty)
+
+    if not $is_active {
         print "No Conda/Mamba environment is active."
         return
     }
 
-    # RESTORE: Set PATH back to the snapshot we took during activation
+    # 1. Restore PATH
     if "CONDA_OLD_PATH" in $env {
-        load-env {
-            PATH: $env.CONDA_OLD_PATH
-            Path: $env.CONDA_OLD_PATH # specific for Windows compat
-            CONDA_CURR: null
-            CONDA_PREFIX: null
-        }
+        $env.PATH = $env.CONDA_OLD_PATH
+        $env.Path = $env.CONDA_OLD_PATH
         hide-env CONDA_OLD_PATH
     } else {
-        print "Error: Could not restore previous PATH."
+        print "Warning: Could not restore original PATH (Snapshot missing)."
     }
+
+    # 2. Nuke Environment Variables (The Starship Fix)
+    # We use ignore-errors (?) because some might not exist
+    hide-env CONDA_CURR
+    hide-env CONDA_PREFIX
+    hide-env CONDA_DEFAULT_ENV
+    hide-env CONDA_SHLVL
+    hide-env CONDA_PROMPT_MODIFIER
 }
+
 
 export def list-env [] {
     # 1. Determine active env (Fallback to 'base')
