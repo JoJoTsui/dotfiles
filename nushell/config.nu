@@ -22,6 +22,6 @@ source ~/joey/SHELL/CLIs/nushell/nu_scripts/custom-completions/git/git-completio
 source ~/joey/SHELL/CLIs/nushell/nu_scripts/custom-completions/rg/rg-completions.nu
 # source ~/joey/SHELL/CLIs/nushell/nu_scripts/custom-completions/tar/tar-completions.nu
 # source ~/joey/SHELL/CLIs/nushell/nu_scripts/custom-completions/zellij/zellij-completions.nu
-
+source /t9k/mnt/joey/SHELL/CLIs/nushell/direnv.nu
 
 source ~/joey/SHELL/CLIs/nushell/proxy.nu
