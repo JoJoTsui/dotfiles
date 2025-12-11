@@ -1,0 +1,6 @@
+layout_micromamba() {
+  local env_name="$1"
+  eval "$(micromamba shell hook -s bash)"
+  micromamba activate "$env_name"
+  unset PS1
+}
