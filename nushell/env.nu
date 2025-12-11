@@ -117,6 +117,7 @@ $env.PATH = ($env.PATH | uniq)
 # source ($nu.default-config-dir | path join 'custom.nu')
 
 
+$env.EDITOR = ($env.EDITOR? | default ("hx"))
 
 # BAT & LESS
 $env.LESSCHARSET = "utf-8"
