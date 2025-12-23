@@ -5,9 +5,19 @@
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-4.5-air",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-4.6",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-4.6"
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-4.7",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-4.7"
   },
+  "enabledPlugins": {
+    "context7@claude-plugins-official": true,
+    "github@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "serena@claude-plugins-official": true,
+    "commit-commands@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "feature-dev@claude-plugins-official": true
+  },
+  "alwaysThinkingEnabled": true,
   "ignorePatterns": [
     "node_modules/**",
     ".git/**",
@@ -15,6 +25,5 @@
     "dist/**",
     "**/*.log",
     "**/*.lock"
-  ],
-  "alwaysThinkingEnabled": true
+  ]
 }
