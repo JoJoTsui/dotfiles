@@ -1,6 +1,12 @@
 layout_micromamba() {
   local env_name="$1"
+  
+  # 1. Standard Activation
   eval "$(micromamba shell hook -s bash)"
   micromamba activate "$env_name"
+  
+  # 2. THE FIX: Aggressively unset the variables that cause the glitch
+  # 'unset' removes them from the bash session before direnv calculates the diff.
+  unset CONDA_PROMPT_MODIFIER
   unset PS1
 }
