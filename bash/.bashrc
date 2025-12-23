@@ -6,6 +6,9 @@
 # user rwx settings
 umask 0022
 
+# fnm node
+eval "$(fnm env --use-on-cd --shell bash)"
+
 # If not running interactively, don't do anything
 case $- in
     *i*) ;;
@@ -30,3 +33,7 @@ unset __mamba_setup
 eval "$(starship init bash)"
 # zoxide
 eval "$(zoxide init bash)"
+# direnv
+eval "$(direnv hook bash)"
+# Set up fzf key bindings and fuzzy completion
+eval "$(fzf --bash)"
