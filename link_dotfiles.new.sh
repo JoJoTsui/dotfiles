@@ -65,7 +65,7 @@ main() {
     log_info "Linking configuration files..."
     
     # Configuration files
-    for file in .env_core .bashrc .gitconfig .netrc .Rprofile .profile; do
+    for file in .env_core .bashrc .gitconfig .netrc .Rprofile .profile .condarc; do
         link_file "$file"
     done
     
@@ -116,7 +116,6 @@ main() {
     
     # System configs
     [ -f /etc/bash.bashrc ] && sudo mv /etc/bash.bashrc /etc/bash.bashrc.bak; sudo ln -ns ~/joey/SHELL/bash.bashrc /etc
-
 
     echo
     log_success "Dotfiles linking completed successfully!"
