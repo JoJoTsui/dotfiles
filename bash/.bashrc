@@ -16,6 +16,7 @@ case $- in
 esac
 
 
+
 # >>> mamba initialize >>>
 # !! Contents within this block are managed by 'micromamba shell init' !!
 export MAMBA_EXE='/t9k/mnt/joey/gizmo/micromamba';
@@ -28,6 +29,8 @@ else
 fi
 unset __mamba_setup
 # <<< mamba initialize <<<
+
+
 
 # starship
 eval "$(starship init bash)"
