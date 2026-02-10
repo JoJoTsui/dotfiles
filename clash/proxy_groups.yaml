@@ -1,0 +1,11 @@
+prepend:
+  - type: 'select'
+    name: 'PROXY'
+    interval: 300
+    timeout: 5000
+    max-failed-times: 5
+    lazy: true
+    include-all: true
+append: []
+delete: []
+
