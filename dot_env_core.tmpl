@@ -1,7 +1,9 @@
-# Shared shell environment for bash + nushell
+# Shared shell environment for bash + zsh (POSIX sh — dash must parse it).
+# Nushell mirrors these values in config/nushell/env.nu (guarded defaults).
+# Rendered by chezmoi: noproxy's URL comes from proxyUrl in .chezmoi.toml.tmpl.
 # Keep this idempotent: safe to source multiple times
 
-: "${JOEY:=/t9k/mnt/joey}"
+: "${JOEY:=$HOME/joey}"
 : "${GIZMO:=${JOEY}/gizmo}"
 : "${BIO_GIZMO:=${JOEY}/bio_gizmo}"
 : "${NUSHELL_PATH:=${GIZMO}/nushell}"
@@ -37,11 +39,24 @@ export RUSTUP_UPDATE_ROOT RUSTUP_DIST_SERVER
 
 # BAT & LESS
 : "${LESSCHARSET:=utf-8}"
-: "${LS_COLORS:=$(vivid generate dracula)}"
+if command -v vivid >/dev/null 2>&1; then
+    : "${LS_COLORS:=$(vivid generate dracula)}"
+fi
 
 export LESSCHARSET LS_COLORS
 
-
+# proxy toggles — same names as nushell's noproxy/unproxy (proxy.nu); the URL
+# is rendered from proxyUrl in .chezmoi.toml.tmpl, so all shells stay in sync.
+noproxy() {
+    http_proxy="{{ .proxyUrl }}"
+    https_proxy="{{ .proxyUrl }}"
+    HTTP_PROXY="{{ .proxyUrl }}"
+    HTTPS_PROXY="{{ .proxyUrl }}"
+    export http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+}
+unproxy() {
+    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+}
 
 # devops
 UV_PYTHON_PREFERENCE=managed

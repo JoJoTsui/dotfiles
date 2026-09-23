@@ -116,16 +116,20 @@ $env.PATH = ($env.PATH | uniq)
 # To load from a custom file you can use:
 # source ($nu.default-config-dir | path join 'custom.nu')
 
+# Mirrors of ~/.env_core's shared settings (guarded so inherited values win).
+# Change a shared value in BOTH files — see AGENTS.md "Invariants".
 # rustup
-# $env.RUSTUP_UPDATE_ROOT = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"
-# $env.RUSTUP_DIST_SERVER = "https://mirrors.tuna.tsinghua.edu.cn/rustup"
+$env.RUSTUP_UPDATE_ROOT = ($env.RUSTUP_UPDATE_ROOT? | default "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup")
+$env.RUSTUP_DIST_SERVER = ($env.RUSTUP_DIST_SERVER? | default "https://mirrors.tuna.tsinghua.edu.cn/rustup")
 
-
-# $env.EDITOR = ($env.EDITOR? | default ("hx"))
+$env.EDITOR = ($env.EDITOR? | default "hx")
+$env.CHOKIDAR_USEPOLLING = ($env.CHOKIDAR_USEPOLLING? | default "1")
 
 # BAT & LESS
-# $env.LESSCHARSET = "utf-8"
-# $env.LS_COLORS = (vivid generate dracula)
+$env.LESSCHARSET = ($env.LESSCHARSET? | default "utf-8")
+if (not ("LS_COLORS" in $env)) and (not (which vivid | is-empty)) {
+    $env.LS_COLORS = (vivid generate dracula)
+}
 
 
 # SHELL — zoxide hooks are generated into vendor/autoload and auto-loaded
