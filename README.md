@@ -1,101 +1,113 @@
 # dotfiles
 
-Personal dev-environment configuration for Linux dev containers on the
-TensorStack/T9K ML platform. The environment lives on a **persistent network
-mount** (`/t9k/mnt`) that survives ephemeral containers, so the configs are kept
-in one place and symlinked into `$HOME` on each new container.
+Chezmoi-managed dotfiles for Linux dev environments: shell, prompt, git, Python
+toolchain, global CLI tools (via pixi), and the coding-agent configs
+(Claude Code, Codex, kimi-code, pi, opencode).
 
-> **Status (2026-09):** this repo is a *snapshot* of the live config tree at
-> `/t9k/mnt/joey/SHELL` and has drifted behind it (pixi, rustup mirrors,
-> GLM-5.2 Claude config, expanded `.condarc`, and more exist only on the live
-> tree). Treat the live tree as the source of truth and this repo as the
-> curated, version-controlled mirror. See `AGENTS.md` for the sync workflow.
+The repo is the **source state**; `chezmoi` applies it to a host in **copy
+mode** (plain files, no symlinks — config watchers in VS Code and Claude Code
+reliably read them). It is meant for **new or test hosts**; the legacy T9K
+container's live tree predates chezmoi and is never `chezmoi apply`-ed — see
+`AGENTS.md`.
 
-## What it configures
-
-| Area | Tooling |
-| --- | --- |
-| Shells | bash (login + system `/etc/bash.bashrc`), Nushell (interactive default) |
-| Prompt | Starship (Catppuccin powerline, `starship/starship.toml`) |
-| Env | `.env_core` shared by bash and nushell (paths, `EDITOR=hx`, mirrors) |
-| Python/conda | micromamba + `.condarc`, direnv `layout_micromamba`, `micromamba.nu` for nushell |
-| Node | fnm (`fnm env --use-on-cd`) |
-| Git | `.gitconfig` with delta pager, zdiff3 conflicts, gh credential helper |
-| Editors | Helix (`EDITOR=hx`), VS Code remote/local settings snippets |
-| AI | Claude Code on GLM models, MCP servers, T9K container workarounds |
-| Proxy | Clash Verge ruleset merge template, `nuproxy`/`unproxy` for nushell |
-
-## Layout
-
-```
-.env_core               # shared env vars + PATH (sourced by bash; kept idempotent)
-.profile                # login shell: sources .bashrc, then exec nu for humans
-.gitconfig  .gitignore
-bash/                   # .bashrc (user), bash.bashrc (system-wide banner/aliases)
-nushell/                # env.nu, config.nu, micromamba.nu, direnv.nu, proxy.nu
-starship/starship.toml
-direnv/direnvrc         # layout_micromamba
-conda/.condarc
-claude/                 # Claude Code on GLM: settings, MCP servers, T9K setup guide
-vscode/                 # settings snippets: t9k (remote container) / win (local)
-clash/Merge.yaml        # Clash Verge profile-merge template (superseded on host)
-link_dotfiles.new.sh    # symlink installer: live tree -> $HOME
-```
-
-Note `claude/glm-keys.json` is intentionally **untracked** (see Secrets).
-
-## How the pieces fit
-
-1. `$HOME` (`/t9k/mnt`) gets symlinks into the persistent tree
-   `/t9k/mnt/joey/SHELL` ("JSHELL"), created by `link_dotfiles.new.sh`.
-2. A login shell runs `.profile`, which sources `.bashrc` (which sources
-   `.env_core`) and — only for a real interactive TTY outside a Claude Code
-   session — `exec nu` into Nushell.
-3. Nushell picks up `~/.config/nushell/{env,config}.nu`, which wire up Starship,
-   zoxide, direnv, micromamba, and completions from
-   `JSHELL/CLIs/nushell/` (vendored `nu_scripts` checkout — outside this repo).
-4. The guard clause matters: Claude Code spawns background shells, and an
-   unconditional `exec nu` crashes them (`STDIN is not a TTY`).
-
-## Deployment
+## Quick start (new host)
 
 ```bash
-bash link_dotfiles.new.sh    # links JSHELL configs into $HOME, backing up to *.bak
+git clone https://github.com/JoJoTsui/dotfiles.git ~/dotfiles && cd ~/dotfiles
+export GLM_API_TOKEN=...   # optional: Claude Code GLM token (default REPLACE_ME)
+export KIMI_API_KEY=...    # optional: kimi-code key  (default REPLACE_ME)
+bash bootstrap.sh
 ```
 
-The script operates on the **live tree** (`$HOME/joey/SHELL`), not on this
-repo's layout, and also swaps `/etc/bash.bashrc` for the banner/aliases version
-(needs sudo). Known rough edges: `--dry-run` is parsed but not honored, and the
-`/etc/bash.bashrc` `&&`/`;` sequencing runs the `ln` unconditionally.
+`bootstrap.sh` is idempotent: installs pixi and chezmoi into `~/.local/bin`,
+runs `chezmoi init --apply <clone>`, `pixi global sync` (installs every CLI
+tool from the manifest), clones nushell's `nu_scripts` completions (with a
+mirror fallback), and optionally installs the system-wide bash banner.
 
-## Claude Code on T9K containers
+## Host classes
 
-`claude/CLAUDE_SETUP_T9K.md` documents the three container-specific
-workarounds, kept because they are easy to lose on a fresh container:
+`.chezmoi.toml.tmpl` picks a class at init — `t9k` (T9K/K8s container),
+`linux`, or `win` — overridable with `DOTFILES_CLASS`. Only `t9k` gets
+`~/.vscode-server` settings (`.chezmoiignore` gates it).
 
-1. **Watcher crash on the network FS** → symlink `~/.claude` (global) and
-   `.claude` (per project) caches into `/tmp`.
-2. **`exec nu` crashing background bash** → the interactive-TTY guard in
-   `.profile` / `.bashrc`.
-3. **`ENOSPC` file-watcher limit** → `CHOKIDAR_USEPOLLING=1` (exported in
-   `.env_core`, also set in VS Code terminal env).
+Template data (all from environment variables at init time, so credentials
+never enter git):
 
-## Secrets
+| data | env var | default |
+| --- | --- | --- |
+| `class` | `DOTFILES_CLASS` | detected |
+| `proxyUrl` | `HTTP_PROXY_URL` | `http://10.233.17.241:3128` |
+| `glmBaseUrl` | `GLM_BASE_URL` | `https://open.bigmodel.cn/api/anthropic` |
+| `glmToken` | `GLM_API_TOKEN` | `REPLACE_ME` |
+| `kimiApiKey` | `KIMI_API_KEY` | `REPLACE_ME` |
 
-API tokens live next to configs on the live tree (Claude settings, `glm-keys.json`).
-The policy:
+## Layout (chezmoi source state)
 
-- `*keys.json` is git-ignored; `claude/glm-keys.json` must stay untracked.
-- When syncing live files back into this repo, **redact** every token
-  (`ANTHROPIC_AUTH_TOKEN`, `CONTEXT7_TOKEN`, gateway `sk-…`, `glmfix_…`) to a
-  placeholder.
-- If a token ever lands in git history, rotate it — history rewriting is not a
-  substitute for rotation.
+```
+.chezmoi.toml.tmpl          # host-class detection, copy mode, secrets from env
+.chezmoiignore              # bookkeeping + non-$HOME payloads never applied
+bootstrap.sh                # one-shot new-host setup (see above)
+dot_env_core                # shared env + PATH, POSIX & idempotent (bash → nu)
+dot_profile  dot_bashrc     # login: exec-nu guard; interactive init (fnm, pixi, mamba, starship, zoxide, direnv, fzf)
+dot_gitconfig               # delta pager (side-by-side), zdiff3, rerere, gh helper
+dot_condarc                 # TUNA mirrors, nvidia/pytorch/conda-forge/bioconda channels
+dot_config/
+  starship.toml             # Catppuccin powerline prompt
+  direnv/direnvrc           # layout_micromamba
+  git/ignore                # global gitignore incl. secret-pattern guardrails
+  nushell/                  # env.nu, config.nu, micromamba.nu, direnv.nu, proxy.nu.tmpl
+  opencode/opencode.jsonc   # canonical opencode config (headroom + MCPs)
+dot_pixi/
+  manifests/pixi-global.toml  # every global CLI tool (conda-forge envs)
+  config.toml                 # netfs-redirect = never (network mount)
+dot_claude/settings.json.tmpl    # Claude Code on GLM-5.3 / glm-5.3-flash
+dot_codex/config.toml            # Codex CLI, env_key-based providers
+dot_kimi-code/{config.toml.tmpl,tui.toml}
+dot_pi/agent/{settings.json,models-store.json}
+dot_vscode-server/…         # remote Machine settings (class t9k only)
+system/bash.bashrc          # optional /etc banner+aliases (bootstrap installs)
+docs/                       # CLAUDE_SETUP_T9K.md, vscode-win-settings.jsonc
+clash/                      # Clash Verge profile merge (app config, not $HOME)
+```
 
-## Syncing this repo
+Files ending `.tmpl` are rendered; everything else is applied verbatim.
+Auth/credential files (`auth.json`, `credentials`, `*keys.json`) are
+git-ignored and always stay host-local.
 
-The live tree is the source of truth. To bring the repo up to date: diff each
-mirrored file against its live counterpart, copy the live version in, redact
-secrets, and commit with the repo's `[tag]: message` convention
-(`[bash]`, `[nu]`, `[claude]`, `[shell]`, `[conda]`, `[devops]`, `[chore]`).
-The per-file mapping (repo path ↔ live path) and full rules are in `AGENTS.md`.
+## Toolchain: pixi global
+
+All CLI tools (nu, starship, delta, direnv, fnm, fzf, gh, git, ruff, uv, helix,
+zoxide, codex, micromamba, …) are declared in
+`dot_pixi/manifests/pixi-global.toml` as per-tool conda-forge envs. On a host:
+`pixi global sync` installs/updates them all; `pixi global update` bumps;
+`pixi global add <pkg>` edits the manifest — commit the change.
+
+## Coding agents
+
+| Agent | Managed file(s) | Local-only / secrets | Notes |
+| --- | --- | --- | --- |
+| **Claude Code** | `~/.claude/settings.json` (GLM-5.3) | plugins, hooks, statusline, `settings.local.json`, `~/.claude.json` | token/base URL from env; MCP servers: `claude mcp add --scope user <name>` (or project `.mcp.json` with `${VAR}` expansion); T9K container workarounds → `docs/CLAUDE_SETUP_T9K.md` |
+| **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
+| **kimi-code** | `~/.kimi-code/config.toml.tmpl`, `tui.toml` | `credentials/`, `oauth/`, sessions | key injected from `KIMI_API_KEY` at init; `kimi login` per host |
+| **pi** | `~/.pi/agent/settings.json`, `models-store.json` (MiniMax M2.7/M3 catalog) | `auth.json` (MiniMax key), `sessions/`, `trust.json` | minimal terminal harness; `pi auth login` per host |
+| **opencode** | `~/.config/opencode/opencode.jsonc` | `~/.opencode` install, plugins | headroom provider + codegraph/headroom MCPs, serena disabled; watcher off for network FS |
+
+Common pattern: **config in git, credentials on the host** — auth flows run per
+host (`claude` login / env token, `codex login`, `kimi login`, `pi auth login`).
+
+## Validating on a simulated host
+
+```bash
+H=/tmp/dotfiles-sim; rm -rf "$H"; mkdir -p "$H"
+HOME="$H" chezmoi init --apply "$PWD"     # class auto-detected
+HOME="$H" DOTFILES_CLASS=linux chezmoi init --apply "$PWD"   # other branch
+find "$H" -maxdepth 3                     # inspect the applied state
+chezmoi diff                              # drift vs current source (on a real host)
+```
+
+## Maintenance
+
+Fold any host-side config change back into the source file, validate on the
+simulated host, then commit with the `[tag]: message` convention (tags:
+`chore shell bash nu claude agents codex devops direnv conda clash`) — full
+workflow, invariants and secret rules in [AGENTS.md](AGENTS.md).
