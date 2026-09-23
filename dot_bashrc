@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Core environment shared with nushell (set before interactive check)
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+
+# user rwx settings
+umask 0022
+
+
+# pixi
+eval "$(pixi completion --shell bash)"
+
+
+
+# fnm node
+eval "$(fnm env --use-on-cd --shell bash)"
+
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+
+
+# >>> mamba initialize >>>
+# !! Contents within this block are managed by 'micromamba shell init' !!
+export MAMBA_EXE="${MAMBA_EXE:-$(command -v micromamba || echo "${JOEY}/gizmo/micromamba")}"
+export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${JOEY}/micromamba}"
+__mamba_setup="$("$MAMBA_EXE" shell hook --shell bash --root-prefix "$MAMBA_ROOT_PREFIX" 2> /dev/null)"
+if [ $? -eq 0 ]; then
+    eval "$__mamba_setup"
+else
+    alias micromamba="$MAMBA_EXE"  # Fallback on help from micromamba activate
+fi
+unset __mamba_setup
+# <<< mamba initialize <<<
+
+
+
+# starship
+eval "$(starship init bash)"
+# zoxide
+eval "$(zoxide init bash)"
+# direnv
+eval "$(direnv hook bash)"
+# Set up fzf key bindings and fuzzy completion
+eval "$(fzf --bash)"
+
+
+
+# --- KIRO AGENT OVERRIDE ---
+# If the terminal is running inside Kiro (or VS Code), override Starship
+# to provide a standard prompt that the AI agent can parse flawlessly.
+if [[ "$TERM_PROGRAM" == "vscode" ]] || [[ "$KIRO_IDE" == "1" ]]; then
+    # Disable Starship's prompt command hook
+    unset PROMPT_COMMAND
+    
+    # Set a clean, standard prompt: username@host:~/dir$ 
+    export PS1='\[\e[32m\]\u@\h\[\e[m\]:\[\e[34m\]\w\[\e[m\]$ '
+    
+    # Re-trigger VS Code/Kiro Shell Integration to inject the OSC 133 markers
+    if [[ -n "$VSCODE_SHELL_INTEGRATION_PATH" ]]; then
+        source "$VSCODE_SHELL_INTEGRATION_PATH"
+    fi
+fi
+
+# rustup
+export RUSTUP_UPDATE_ROOT=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup
+export RUSTUP_DIST_SERVER=https://mirrors.tuna.tsinghua.edu.cn/rustup
+

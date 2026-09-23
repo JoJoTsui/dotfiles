@@ -1,0 +1,32 @@
+# Rendered once by `chezmoi init`. Non-interactive on purpose: the host class
+# is detected and credentials come from the environment, never from git.
+
+{{- $class := env "DOTFILES_CLASS" -}}
+{{- if not $class -}}
+{{-   if eq .chezmoi.os "windows" -}}
+{{-     $class = "win" -}}
+{{-   else if hasPrefix "managed-notebook" .chezmoi.hostname -}}
+{{-     $class = "t9k" -}}
+{{-   else -}}
+{{-     $class = "linux" -}}
+{{-   end -}}
+{{- end -}}
+{{- $proxy := env "HTTP_PROXY_URL" -}}
+{{- if not $proxy -}}{{- $proxy = "http://10.233.17.241:3128" -}}{{- end -}}
+{{- $glmBase := env "GLM_BASE_URL" -}}
+{{- if not $glmBase -}}{{- $glmBase = "https://open.bigmodel.cn/api/anthropic" -}}{{- end -}}
+{{- $glmToken := env "GLM_API_TOKEN" -}}
+{{- if not $glmToken -}}{{- $glmToken = "REPLACE_ME" -}}{{- end -}}
+{{- $kimiKey := env "KIMI_API_KEY" -}}
+{{- if not $kimiKey -}}{{- $kimiKey = "REPLACE_ME" -}}{{- end -}}
+
+# Copy mode: VS Code and Claude Code watch config files; plain copies avoid the
+# symlink-watcher failure modes documented in docs/CLAUDE_SETUP_T9K.md.
+mode = "copy"
+
+[data]
+    class = "{{ $class }}"
+    proxyUrl = "{{ $proxy }}"
+    glmBaseUrl = "{{ $glmBase }}"
+    glmToken = "{{ $glmToken }}"
+    kimiApiKey = "{{ $kimiKey }}"

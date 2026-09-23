@@ -10,15 +10,39 @@
 : "${EDITOR:=hx}"
 : "${CHOKIDAR_USEPOLLING:=1}"
 
+# rustup
+: "${RUSTUP_UPDATE_ROOT:=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup}"
+: "${RUSTUP_DIST_SERVER:=https://mirrors.tuna.tsinghua.edu.cn/rustup}"
+
+
+
+
 _prepend_path() {
     [ -d "$1" ] || return 0
     case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH";; esac
 }
-_prepend_path "$HOME/.local/bin"
+
 _prepend_path "$CARGO_HOME/bin"
 _prepend_path "$GIZMO"
 _prepend_path "$BIO_GIZMO"
 _prepend_path "$NUSHELL_PATH"
+_prepend_path "$HOME/.pixi/bin"
+_prepend_path "$HOME/.local/bin"
+_prepend_path "$HOME/.kimi-code/bin"
+_prepend_path "$HOME/.bun/bin"
 unset -f _prepend_path
 
 export JOEY GIZMO BIO_GIZMO NUSHELL_PATH JSHELL CARGO_HOME PATH EDITOR CHOKIDAR_USEPOLLING
+export RUSTUP_UPDATE_ROOT RUSTUP_DIST_SERVER
+
+# BAT & LESS
+: "${LESSCHARSET:=utf-8}"
+: "${LS_COLORS:=$(vivid generate dracula)}"
+
+export LESSCHARSET LS_COLORS
+
+
+
+# devops
+UV_PYTHON_PREFERENCE=managed
+export UV_PYTHON_PREFERENCE

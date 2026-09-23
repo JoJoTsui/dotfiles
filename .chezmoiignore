@@ -1,0 +1,16 @@
+# Repo bookkeeping and non-$HOME payloads — never applied to the home directory.
+README.md
+AGENTS.md
+bootstrap.sh
+docs
+system
+clash
+.git
+.gitignore
+**/*keys.json
+**/auth.json
+**/credentials*
+
+{{- if ne .class "t9k" }}
+.vscode-server
+{{- end }}

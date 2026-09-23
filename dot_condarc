@@ -1,0 +1,15 @@
+changeps1: false
+channel_alias: https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud
+channels:
+  - https://conda.anaconda.org/nvidia/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda/
+  - https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/
+channel_priority: flexible
+
+# network settings
+remote_connect_timeout_secs: 300
+remote_read_timeout_secs: 300
+remote_max_retries: 10
+remote_backoff_factor: 2

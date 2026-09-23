@@ -1,0 +1,16 @@
+# Proxy helpers. The proxy URL is filled in at `chezmoi init` time from
+# $HTTP_PROXY_URL (see .chezmoi.toml.tmpl).
+
+export def --env nuproxy [] {
+    $env.http_proxy = "{{ .proxyUrl }}"
+    $env.https_proxy = "{{ .proxyUrl }}"
+    $env.HTTP_PROXY = "{{ .proxyUrl }}"
+    $env.HTTPS_PROXY = "{{ .proxyUrl }}"
+}
+
+export def --env unproxy [] {
+    $env.http_proxy = ""
+    $env.https_proxy = ""
+    $env.HTTP_PROXY = ""
+    $env.HTTPS_PROXY = ""
+}

@@ -103,8 +103,8 @@ $env.JSHELL = ($env.JSHELL? | default ($env.JOEY | path join "SHELL"))
 $env.NU_SCRIPT = ($env.NU_SCRIPT? | default ($env.JSHELL | path join "CLIs" "nushell" "nu_scripts"))
 $env.MICROMAMBA_NU = ($env.MICROMAMBA_NU? | default ($env.JSHELL | path join "CLIs" "nushell" "micromamba.nu"))
 $env.CARGO_HOME = ($env.CARGO_HOME? | default ($env.HOME | path join ".cargo"))
-# $env.PATH = ($env.PATH | split row (char esep))
-# path add /some/path
+# Guarded defaults keep standalone `nu` (spawned outside bash) working; values
+# already exported by .env_core are kept. path add is idempotent + uniq below.
 path add ($env.CARGO_HOME | path join "bin")
 path add $env.GIZMO
 path add $env.BIO_GIZMO
@@ -116,13 +116,18 @@ $env.PATH = ($env.PATH | uniq)
 # To load from a custom file you can use:
 # source ($nu.default-config-dir | path join 'custom.nu')
 
+# rustup
+# $env.RUSTUP_UPDATE_ROOT = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"
+# $env.RUSTUP_DIST_SERVER = "https://mirrors.tuna.tsinghua.edu.cn/rustup"
 
-$env.EDITOR = ($env.EDITOR? | default ("hx"))
+
+# $env.EDITOR = ($env.EDITOR? | default ("hx"))
 
 # BAT & LESS
-$env.LESSCHARSET = "utf-8"
-$env.LS_COLORS = (vivid generate dracula)
+# $env.LESSCHARSET = "utf-8"
+# $env.LS_COLORS = (vivid generate dracula)
 
 
-# SHELL
-zoxide init nushell | save -f ($env.JSHELL | path join ".zoxide.nu")
+# SHELL — zoxide hooks are generated into vendor/autoload and auto-loaded
+mkdir ($nu.data-dir | path join "vendor/autoload")
+zoxide init nushell | save -f ($nu.data-dir | path join "vendor/autoload/zoxide.nu")

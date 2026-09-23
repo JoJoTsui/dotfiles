@@ -1,3 +1,5 @@
+# Global gitignore (core.excludesFile default location)
+
 # Compiled Python files
 *.pyc
 
@@ -13,7 +15,7 @@ Thumbs.db
 .Spotlight-V100
 .Trashes
 
-# Secrets — model API keys and coding-agent credentials stay untracked
+# Secrets — never commit credentials of any coding agent or model API
 *keys.json
 auth.json
 credentials

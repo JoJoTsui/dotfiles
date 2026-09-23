@@ -8,33 +8,43 @@
 	required = true
 
 [core]
-    pager = delta
-	compression = 0
+    pager = delta --pager='less -+X -Ri'
+    compression = -1
+	autocrlf = input
 
 [interactive]
     diffFilter = delta --color-only
 
 [delta]
     navigate = true    # use n and N to move between diff sections
-
-    # delta detects terminal colors automatically; set one of these to disable auto-detection
-    dark = true
-    # light = true
+	side-by-side = true
+	wrap-max-lines = unlimited  # Prevents hard truncation
+	line-fill-method = ansi
+	hyperlinks = true
 
 [merge]
     conflictstyle = zdiff3
 
 [diff]
     colorMoved = default
+
+[rerere]
+    enabled = true
+
+[submodule]
+    recurse = true
+
 [credential "https://github.com"]
 	helper = 
-	helper = !/t9k/mnt/joey/gizmo/gh auth git-credential
+	helper = !gh auth git-credential
 [credential "https://gist.github.com"]
 	helper = 
-	helper = !/t9k/mnt/joey/gizmo/gh auth git-credential
+	helper = !gh auth git-credential
 # [http]
 #	proxy = 10.233.17.241:3128
 # [https]
 #	proxy = 10.233.17.241:3128
 [http]
 	postBuffer = 524288000
+[safe]
+	directory = *
