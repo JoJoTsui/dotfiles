@@ -314,3 +314,13 @@ exposed = { lazygit = "lazygit" }
 channels = ["conda-forge"]
 dependencies = { herdr = "*" }
 exposed = { herdr = "herdr" }
+
+[envs.python]
+channels = ["conda-forge"]
+dependencies = { python = "*", pip = "*" }
+exposed = { python = "python", python3 = "python3", pip = "pip", pip3 = "pip3" }
+
+[envs.ty]
+channels = ["conda-forge"]
+dependencies = { ty = "*" }
+exposed = { ty = "ty" }

@@ -38,6 +38,17 @@ else
     echo "    skipped: bun or $BG not present yet"
 fi
 
+echo "==> rustup (matches RUSTUP_* in .env_core; TUNA mirrors, minimal profile)"
+if command -v rustup >/dev/null 2>&1; then
+    echo "    rustup already installed"
+else
+    export RUSTUP_UPDATE_ROOT="${RUSTUP_UPDATE_ROOT:-https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup}"
+    export RUSTUP_DIST_SERVER="${RUSTUP_DIST_SERVER:-https://mirrors.tuna.tsinghua.edu.cn/rustup}"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
+        sh -s -- -y --profile minimal --no-modify-path ||
+        echo "    warn: rustup install failed (continuing)"
+fi
+
 echo "==> nushell upstream completions (vendored)"
 NU_SCRIPTS="$HOME/.config/nushell/nu_scripts"
 [ -d "$NU_SCRIPTS/.git" ] ||
