@@ -1,0 +1,9 @@
+onboarding = false
+[theme]
+name = "catppuccin"
+auto_switch = false
+light_name = "catppuccin-latte"
+dark_name = "catppuccin"
+
+[terminal]
+default_shell = "nu"
