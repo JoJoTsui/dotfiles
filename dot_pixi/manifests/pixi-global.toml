@@ -95,6 +95,11 @@ channels = ["conda-forge"]
 dependencies = { eza = "*" }
 exposed = { eza = "eza" }
 
+[envs.lsd]
+channels = ["conda-forge"]
+dependencies = { lsd-rust = "*" }
+exposed = { lsd = "lsd" }
+
 [envs.starship]
 channels = ["conda-forge"]
 dependencies = { starship = "*" }
@@ -124,6 +129,11 @@ exposed = { zoxide = "zoxide" }
 channels = ["conda-forge"]
 dependencies = { shellcheck = "*" }
 exposed = { shellcheck = "shellcheck" }
+
+[envs.shfmt]
+channels = ["conda-forge"]
+dependencies = { go-shfmt = "*" }
+exposed = { shfmt = "shfmt" }
 
 [envs.ripgrep-all]
 channels = ["conda-forge"]
