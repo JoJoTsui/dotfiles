@@ -26,7 +26,3 @@ eval "$(zoxide init zsh)"
 eval "$(direnv hook zsh)"
 # Set up fzf key bindings and fuzzy completion
 eval "$(fzf --zsh)"
-
-# NOTE: the KIRO/VS Code prompt override intentionally lives in ~/.bashrc
-# only — agent terminals spawn bash (VS Code terminal env SHELL=/bin/bash),
-# not zsh.

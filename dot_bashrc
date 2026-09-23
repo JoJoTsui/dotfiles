@@ -46,22 +46,3 @@ eval "$(zoxide init bash)"
 eval "$(direnv hook bash)"
 # Set up fzf key bindings and fuzzy completion
 eval "$(fzf --bash)"
-
-
-
-# --- KIRO AGENT OVERRIDE ---
-# If the terminal is running inside Kiro (or VS Code), override Starship
-# to provide a standard prompt that the AI agent can parse flawlessly.
-if [[ "$TERM_PROGRAM" == "vscode" ]] || [[ "$KIRO_IDE" == "1" ]]; then
-    # Disable Starship's prompt command hook
-    unset PROMPT_COMMAND
-    
-    # Set a clean, standard prompt: username@host:~/dir$ 
-    export PS1='\[\e[32m\]\u@\h\[\e[m\]:\[\e[34m\]\w\[\e[m\]$ '
-    
-    # Re-trigger VS Code/Kiro Shell Integration to inject the OSC 133 markers
-    if [[ -n "$VSCODE_SHELL_INTEGRATION_PATH" ]]; then
-        source "$VSCODE_SHELL_INTEGRATION_PATH"
-    fi
-fi
-
