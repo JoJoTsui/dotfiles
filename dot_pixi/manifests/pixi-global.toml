@@ -350,11 +350,6 @@ channels = ["conda-forge"]
 dependencies = { git-filter-repo = "*" }
 exposed = { git-filter-repo = "git-filter-repo" }
 
-[envs.groff]
-channels = ["conda-forge"]
-dependencies = { groff = "*" }
-exposed = { groff = "groff", nroff = "nroff", pdfmom = "pdfmom", troff = "troff" }
-
 [envs.gsutil]
 channels = ["conda-forge"]
 dependencies = { gsutil = "*" }
@@ -389,11 +384,6 @@ exposed = { meson = "meson" }
 channels = ["conda-forge"]
 dependencies = { navi = "*" }
 exposed = { navi = "navi" }
-
-[envs.poppler]
-channels = ["conda-forge"]
-dependencies = { poppler = "*" }
-exposed = { pdfattach = "pdfattach", pdfdetach = "pdfdetach", pdffonts = "pdffonts", pdfimages = "pdfimages", pdfinfo = "pdfinfo", pdfseparate = "pdfseparate", pdfsig = "pdfsig", pdftocairo = "pdftocairo", pdftohtml = "pdftohtml", pdftoppm = "pdftoppm", pdftops = "pdftops", pdftotext = "pdftotext", pdfunite = "pdfunite" }
 
 [envs.resvg]
 channels = ["conda-forge"]
