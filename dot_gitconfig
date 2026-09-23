@@ -41,9 +41,9 @@
 	helper = 
 	helper = !gh auth git-credential
 # [http]
-#	proxy = 10.233.17.241:3128
+#	proxy = 127.0.0.1:7890
 # [https]
-#	proxy = 10.233.17.241:3128
+#	proxy = 127.0.0.1:7890
 [http]
 	postBuffer = 524288000
 [safe]

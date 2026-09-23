@@ -12,7 +12,7 @@
 {{-   end -}}
 {{- end -}}
 {{- $proxy := env "HTTP_PROXY_URL" -}}
-{{- if not $proxy -}}{{- $proxy = "http://10.233.17.241:3128" -}}{{- end -}}
+{{- if not $proxy -}}{{- $proxy = "http://127.0.0.1:7890" -}}{{- end -}}
 {{- $glmBase := env "GLM_BASE_URL" -}}
 {{- if not $glmBase -}}{{- $glmBase = "https://open.bigmodel.cn/api/anthropic" -}}{{- end -}}
 {{- $glmToken := env "GLM_API_TOKEN" -}}
