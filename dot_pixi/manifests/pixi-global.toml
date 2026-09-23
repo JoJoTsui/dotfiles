@@ -504,3 +504,38 @@ exposed = { tgv = "tgv" }
 channels = ["conda-forge", "bioconda"]
 dependencies = { vg = "*" }
 exposed = { vg = "vg" }
+
+[envs.git-cliff]
+channels = ["conda-forge"]
+dependencies = { git-cliff = "*" }
+exposed = { git-cliff = "git-cliff" }
+
+[envs.tokei]
+channels = ["conda-forge"]
+dependencies = { tokei = "*" }
+exposed = { tokei = "tokei" }
+
+[envs.fastfetch]
+channels = ["conda-forge"]
+dependencies = { fastfetch = "*" }
+exposed = { fastfetch = "fastfetch" }
+
+[envs.doggo]
+channels = ["conda-forge"]
+dependencies = { doggo = "*" }
+exposed = { doggo = "doggo" }
+
+[envs.ouch]
+channels = ["conda-forge"]
+dependencies = { ouch = "*" }
+exposed = { ouch = "ouch" }
+
+[envs.xh]
+channels = ["conda-forge"]
+dependencies = { xh = "*" }
+exposed = { xh = "xh" }
+
+[envs.jaq]
+channels = ["conda-forge"]
+dependencies = { jaq = "*" }
+exposed = { jaq = "jaq" }
