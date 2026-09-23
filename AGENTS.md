@@ -48,13 +48,19 @@ incident (rotate it; history rewrite is not a substitute).
 ## Validating a change (simulated host)
 
 1. Edit the source file(s); commit-worthy changes are staged but uncommitted.
-2. `H=/tmp/dotfiles-sim; rm -rf "$H"; mkdir -p "$H"; HOME="$H" chezmoi init --apply "$PWD"`
-   (use `DOTFILES_CLASS=linux` too, to exercise the ignore branch).
+2. `H=/tmp/dotfiles-sim; rm -rf "$H"; mkdir -p "$H";`
+   `HOME="$H" chezmoi init --source "$PWD" --no-tty` (renders the config
+   template), then `HOME="$H" chezmoi --source "$PWD" --no-tty apply`.
+   The `--source` form applies the **working tree**; `init --apply "$PWD"`
+   (what `bootstrap.sh` runs) clones *committed HEAD* and is invisible to
+   staged work. Repeat with `DOTFILES_CLASS=linux` in a fresh `$H` to
+   exercise the ignore branch.
 3. Check the rendered target (`grep` the templated value, confirm file is a
    regular file not a symlink), then delete `$H`.
 4. For nushell edits, also run
    `nu --config $H/.config/nushell/config.nu --env-config $H/.config/nushell/env.nu -c 'print "ok"'`
-   with `JOEY/JSHELL/...` unset (`env -u`) — config must bootstrap standalone.
+   with `JOEY/JSHELL/...` unset (`env -u`) — config must bootstrap standalone
+   (needs `$H/.config/nushell/nu_scripts` present, see rough edges).
 
 Done when: the simulated apply succeeds for both classes, the nushell check
 passes (if touched), `git status` shows no secret files, and the commit body
@@ -64,6 +70,14 @@ explains every changed pair.
 
 - **`.env_core` is POSIX sh and idempotent** (`: "${VAR:=...}"` guards);
   bash sources it before the interactive check so non-interactive shells get PATH.
+- **Shared settings are defined once**: `dot_env_core.tmpl` (POSIX; sourced by
+  `.bashrc` and `.zshenv`) owns PATH, `EDITOR`, rustup mirrors and the
+  `noproxy`/`unproxy` toggles; `dot_config/nushell/env.nu` mirrors those
+  values with guarded `$env.X? | default`. Change a shared value in BOTH
+  files — except the proxy URL, which is rendered from `proxyUrl` into
+  `dot_env_core.tmpl` and `proxy.nu.tmpl`. The `.bashrc` and `.zshrc`
+  interactive blocks stay structurally in sync (zsh adds `compinit`, which its
+  completion system requires).
 - **The exec-nu guard** in `dot_profile`/`dot_bashrc` stays POSIX-safe and
   fires only for a real interactive TTY outside a Claude Code session
   (rationale: `docs/CLAUDE_SETUP_T9K.md`).
