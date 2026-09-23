@@ -1,0 +1,11 @@
+# ~/.zshenv — read by EVERY zsh (interactive or not).
+# Mirrors the pre-interactive part of ~/.bashrc so shared settings and the
+# node toolchain exist for agent-spawned `zsh -c` too.
+
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+
+# user rwx settings
+umask 0022
+
+# fnm node (before any interactive check, same as .bashrc)
+eval "$(fnm env --use-on-cd --shell zsh)"
