@@ -78,6 +78,12 @@ explains every changed pair.
   `dot_env_core.tmpl` and `proxy.nu.tmpl`. The `.bashrc` and `.zshrc`
   interactive blocks stay structurally in sync (zsh adds `compinit`, which its
   completion system requires).
+- **Env vars and managed binaries must match**: when a config or env var
+  implies a command, the pixi manifest or a bootstrap step must install it in
+  the same commit (`EDITOR=hx` → helix exposed as `hx`; `RUSTUP_*` → the
+  rustup bootstrap step; `pip.conf` → the `python`/`pip` env; the vscode `ty`
+  setting → the `ty` env; zellij's `default_shell` → managed
+  `~/.local/bin/nu-login`).
 - **The exec-nu guard** in `dot_profile`/`dot_bashrc` stays POSIX-safe and
   fires only for a real interactive TTY outside a Claude Code session
   (rationale: `docs/CLAUDE_SETUP_T9K.md`).
