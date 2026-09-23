@@ -24,10 +24,10 @@ _prepend_path() {
     case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH";; esac
 }
 
+# GIZMO/BIO_GIZMO/NUSHELL_PATH stay defined as variables (legacy hosts and
+# scripts) but are NOT prepended anymore: every tool comes from the pixi
+# manifest (AGENTS.md "Invariants").
 _prepend_path "$CARGO_HOME/bin"
-_prepend_path "$GIZMO"
-_prepend_path "$BIO_GIZMO"
-_prepend_path "$NUSHELL_PATH"
 _prepend_path "$HOME/.pixi/bin"
 _prepend_path "$HOME/.local/bin"
 _prepend_path "$HOME/.kimi-code/bin"

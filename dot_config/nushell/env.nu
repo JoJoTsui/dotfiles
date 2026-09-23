@@ -105,10 +105,9 @@ $env.MICROMAMBA_NU = ($env.MICROMAMBA_NU? | default ($env.JSHELL | path join "CL
 $env.CARGO_HOME = ($env.CARGO_HOME? | default ($env.HOME | path join ".cargo"))
 # Guarded defaults keep standalone `nu` (spawned outside bash) working; values
 # already exported by .env_core are kept. path add is idempotent + uniq below.
+# GIZMO/BIO_GIZMO/NUSHELL_PATH are intentionally not added to PATH: their
+# tools are managed by the pixi manifest now (AGENTS.md "Invariants").
 path add ($env.CARGO_HOME | path join "bin")
-path add $env.GIZMO
-path add $env.BIO_GIZMO
-path add $env.NUSHELL_PATH
 $env.PATH = ($env.PATH | uniq)
 
 

@@ -84,6 +84,16 @@ explains every changed pair.
   rustup bootstrap step; `pip.conf` → the `python`/`pip` env; the vscode `ty`
   setting → the `ty` env; zellij's `default_shell` → managed
   `~/.local/bin/nu-login`).
+- **Legacy tool dirs stay off PATH**: `.env_core`/`env.nu` keep `$GIZMO`/
+  `$BIO_GIZMO`/`$NUSHELL_PATH` as variables for legacy hosts and scripts, but
+  never prepend them — every CLI (bio tools included) comes from the pixi
+  manifest; add tools to `dot_pixi/manifests/pixi-global.toml`, not to
+  `~/joey/gizmo`.
+- **Scripts need the `executable_` source prefix**: chezmoi derives a target's
+  exec bit from that attribute, *not* from the source file's mode (a 0755
+  source without it renders 0644 — verified on chezmoi 2.59.1 and 2.72.2), so
+  every managed script is named `dot_local/bin/executable_*` and lands
+  `~/.local/bin/<name>` with mode 0755.
 - **The exec-nu guard** in `dot_profile`/`dot_bashrc` stays POSIX-safe and
   fires only for a real interactive TTY outside a Claude Code session
   (rationale: `docs/CLAUDE_SETUP_T9K.md`).

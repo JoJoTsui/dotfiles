@@ -56,7 +56,10 @@ dot_bashrc                  # bash init: fnm, pixi, mamba, starship, zoxide,
                             # direnv, fzf
 dot_zshenv                  # every zsh: env_core + umask + fnm (bash parity)
 dot_zshrc                   # interactive zsh: same inits as .bashrc (+ compinit)
-dot_local/bin/nu-login      # login wrapper: bash -l -> exec nu (zellij shell)
+dot_local/bin/executable_nu-login   # login wrapper: bash -l -> exec nu (zellij
+                                    # shell); executable_ => +x in target state
+dot_local/bin/executable_bat-modules    # bat syntax/module installer (bash)
+dot_local/bin/executable_fetchChromSizes  # UCSC chrom.sizes fetcher (POSIX sh)
 dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
                             # rerere, lfs filters, gh credential helper
 dot_condarc                 # TUNA mirrors, nvidia/pytorch/conda-forge/bioconda channels
