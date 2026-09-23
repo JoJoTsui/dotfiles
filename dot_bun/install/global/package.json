@@ -3,13 +3,9 @@
     "@anthropic-ai/claude-code": "^2.1.278",
     "@colbymchenry/codegraph": "^1.6.0",
     "@earendil-works/pi-coding-agent": "^0.87.0",
-    "@fission-ai/openspec": "^1.6.0",
     "@larksuite/cli": "^1.0.92",
     "@moonshot-ai/kimi-code": "^2.0.2",
     "@opencode/cli": "^2.0.12",
-    "agnix": "^0.40.0",
-    "claude-mem": "^13.10.2",
-    "omniroute": "^3.8.49",
     "opencode-ai": "^1.18.31"
   },
   "trustedDependencies": [
