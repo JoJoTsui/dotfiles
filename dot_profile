@@ -16,9 +16,9 @@ fi
 
 # Only start Nushell if we are in an interactive terminal
 # AND we are not running inside a Claude Code session
-# POSIX-safe equivalent of [[ -t 0 && $- == *i* && -z "$ANTHROPIC_API_KEY" ]]:
+# POSIX-safe equivalent of [[ -t 0 && $- == *i* && -z "$ANTHROPIC_API_KEY$ANTHROPIC_AUTH_TOKEN" ]]:
 # dash may source this file, so no bashisms here.
-if [ -t 0 ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+if [ -t 0 ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
     case $- in
         *i*) export SHELL="nu"; exec nu ;;
     esac

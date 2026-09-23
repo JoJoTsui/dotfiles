@@ -1,0 +1,31 @@
+# ~/.bash_profile: login bash reads this INSTEAD of ~/.profile — keep the
+# environment and the nushell-takeover guard in sync with dot_profile
+# (AGENTS.md "Invariants"; guard rationale: docs/CLAUDE_SETUP_T9K.md).
+
+# Shared core env (also sourced by .bashrc — idempotent)
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+
+# user rwx settings
+umask 0022
+
+# If not running interactively, don't do anything
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+# Hand login shells to nushell when a human is typing at a real TTY and we
+# are not inside a Claude Code session (ANTHROPIC_API_KEY or AUTH_TOKEN) —
+# same rule as dot_profile, -l keeps login-shell semantics.
+if [ -t 0 ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
+    if command -v nu >/dev/null 2>&1; then
+        export SHELL="nu"
+        exec nu -l
+    fi
+fi
+
+# No takeover (Claude session or nushell missing): fall back to bashrc so
+# prompt, completions and hooks still load — like dot_profile does.
+if [ -f "$HOME/.bashrc" ]; then
+    . "$HOME/.bashrc"
+fi
