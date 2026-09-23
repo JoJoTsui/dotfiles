@@ -1,0 +1,30 @@
+{
+    // Remote (VS Code Server / T9K container) machine settings.
+    "python.condaPath": "{{ .chezmoi.homeDir }}/joey/gizmo/micromamba",
+    "python.venvPath": "{{ .chezmoi.homeDir }}/joey/micromamba/envs",
+    "remote.SSH.defaultForwardedPorts": [],
+    "remote.SSH.httpProxy": "",
+    "http.proxy": "{{ .proxyUrl }}",
+
+    // Claude Code in the integrated terminal: bash + polling (see docs/CLAUDE_SETUP_T9K.md)
+    "terminal.integrated.defaultProfile.linux": "bash",
+    "terminal.integrated.env.linux": {
+        "SHELL": "/bin/bash",
+        "CHOKIDAR_USEPOLLING": "1"
+    },
+
+    // Python tooling: uv + ruff + ty
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.fixAll.ruff": "explicit",
+            "source.organizeImports": "explicit"
+        }
+    },
+    "ruff.nativeServer": "on",
+    "python.languageServer": "None",
+    "ty.enabled": true,
+    "ty.typeCheckingMode": "standard"
+}
