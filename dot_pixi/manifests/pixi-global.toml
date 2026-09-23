@@ -200,11 +200,6 @@ channels = ["conda-forge"]
 dependencies = { fnm = "*" }
 exposed = { fnm = "fnm" }
 
-[envs.bottom]
-channels = ["conda-forge"]
-dependencies = { bottom = "*" }
-exposed = { btm = "btm" }
-
 [envs.atuin]
 channels = ["conda-forge"]
 dependencies = { atuin = "*" }
@@ -239,11 +234,6 @@ exposed = { rtk = "rtk" }
 channels = ["conda-forge"]
 dependencies = { mise = "*" }
 exposed = { mise = "mise" }
-
-[envs.btop]
-channels = ["conda-forge"]
-dependencies = { btop = "*" }
-exposed = { btop = "btop" }
 
 [envs.bubblewrap]
 channels = ["conda-forge"]

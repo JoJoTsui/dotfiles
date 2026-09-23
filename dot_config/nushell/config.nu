@@ -21,7 +21,6 @@ use ~/.config/nushell/micromamba.nu
 # use ~/.config/nushell/conda.nu
 # use 'source' in nu_scripts (cloned to ~/.config/nushell/nu_scripts by bootstrap.sh)
 source ~/.config/nushell/nu_scripts/custom-completions/bat/bat-completions.nu
-source ~/.config/nushell/nu_scripts/custom-completions/btm/btm-completions.nu
 source ~/.config/nushell/nu_scripts/custom-completions/curl/curl-completions.nu
 source ~/.config/nushell/nu_scripts/custom-completions/git/git-completions.nu
 source ~/.config/nushell/nu_scripts/custom-completions/rg/rg-completions.nu
