@@ -1,0 +1,16 @@
+{
+  "lastChangelogVersion": "0.85.1",
+  "theme": "dark",
+  "defaultProvider": "minimax-cn",
+  "defaultModel": "MiniMax-M3",
+  "enableInstallTelemetry": false,
+  "tuiMode": "fullscreen",
+  "terminal": {
+    "showTerminalProgress": true
+  },
+  "modelThinkingLevels": {
+    "minimax-cn/MiniMax-M3": "high",
+    "minimax-cn/MiniMax-M2.7-highspeed": "high",
+    "minimax-cn/MiniMax-M2.7": "high"
+  }
+}

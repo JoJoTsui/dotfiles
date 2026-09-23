@@ -1,0 +1,47 @@
+# Codex CLI configuration. Tokens never live here: every provider reads its
+# key from an environment variable via env_key.
+
+# ── Model ─────────────────────────────────────────────────────────────
+model = "gpt-6-luna"
+model_provider = "openai"
+model_reasoning_effort = "medium"
+
+# ── Auth & Privacy ────────────────────────────────────────────────────
+forced_login_method = "chatgpt"
+approvals_reviewer = "auto_review"
+
+# ── Providers ─────────────────────────────────────────────────────────
+[model_providers.deepseek]
+name = "deepseek"
+base_url = "https://api.deepseek.com/"
+wire_api = "responses"
+env_key = "DEEPSEEK_API_KEY"
+
+[model_providers.custom]
+name = "custom"
+wire_api = "responses"
+requires_openai_auth = true
+base_url = "https://opencode.ai/zen/go/v1"
+
+[model_providers.omniroute]
+name = "OmniRoute"
+base_url = "http://localhost:20128/api/v1"
+wire_api = "responses"
+env_key = "OMNIROUTE_API_KEY"
+
+# ── Features ──────────────────────────────────────────────────────────
+[features]
+hooks = true
+
+[features.context_management]
+experimental_mode = true
+
+# ── MCP Servers ───────────────────────────────────────────────────────
+[mcp_servers.codegraph]
+command = "codegraph"
+args = ["serve", "--mcp"]
+
+# ── TUI ───────────────────────────────────────────────────────────────
+[tui]
+status_line = ["model-with-reasoning", "current-dir", "git-branch", "branch-changes", "run-state", "context-used", "context-window-size", "weekly-limit"]
+status_line_use_colors = true
