@@ -29,7 +29,8 @@ pixi global sync
 echo "==> nushell upstream completions (vendored)"
 NU_SCRIPTS="$HOME/.config/nushell/nu_scripts"
 [ -d "$NU_SCRIPTS/.git" ] ||
-    git clone --depth 1 https://github.com/nushell/nu_scripts "$NU_SCRIPTS"
+    git clone --depth 1 https://github.com/nushell/nu_scripts "$NU_SCRIPTS" ||
+    git clone --depth 1 https://gh-proxy.com/github.com/nushell/nu_scripts.git "$NU_SCRIPTS"
 
 echo "==> system-wide bash banner (optional, needs sudo)"
 if [ -w /etc/bash.bashrc ]; then
