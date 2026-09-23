@@ -1,0 +1,28 @@
+{
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "{{ .glmToken }}",
+    "ANTHROPIC_BASE_URL": "{{ .glmBaseUrl }}",
+    "ANTHROPIC_MODEL": "glm-5.3",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.3",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME": "glm-5.3",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5.3",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": "glm-5.3",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "glm-5.3",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "glm-5.3-flash",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME": "glm-5.3-flash",
+    "ANTHROPIC_SMALL_FAST_MODEL": "glm-5.3-flash",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "glm-5.3-flash",
+    "API_TIMEOUT_MS": "3000000",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  },
+  "model": "opus",
+  "alwaysThinkingEnabled": true,
+  "ignorePatterns": [
+    "node_modules/**",
+    ".git/**",
+    "build/**",
+    "dist/**",
+    "**/*.log",
+    "**/*.lock"
+  ]
+}
