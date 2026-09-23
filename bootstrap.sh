@@ -26,6 +26,18 @@ chezmoi init --apply "$SRC"
 echo "==> global CLI tools from dot_pixi/manifests/pixi-global.toml"
 pixi global sync
 
+echo "==> bun global packages (coding-agent CLIs)"
+BG="$HOME/.bun/install/global/package.json"
+if command -v bun >/dev/null 2>&1 && [ -f "$BG" ]; then
+    # word-splitting of $BG_PKGS is intended (one "name@range" per package)
+    BG_PKGS="$(sed -n 's/^ *"\([^"]*\)": "\([^"]*\)".*$/\1@\2/p' "$BG" | tr '\n' ' ')"
+    if [ -n "$BG_PKGS" ]; then
+        bun add -g --trust $BG_PKGS || echo "    warn: bun global install failed (continuing)"
+    fi
+else
+    echo "    skipped: bun or $BG not present yet"
+fi
+
 echo "==> nushell upstream completions (vendored)"
 NU_SCRIPTS="$HOME/.config/nushell/nu_scripts"
 [ -d "$NU_SCRIPTS/.git" ] ||
