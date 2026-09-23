@@ -26,6 +26,46 @@ chezmoi init --apply "$SRC"
 echo "==> global CLI tools from dot_pixi/manifests/pixi-global.toml"
 pixi global sync
 
+echo "==> GitHub release binaries (no conda package: gping, browsh)"
+# Idempotent: skips when already on PATH. Versions are pinned on purpose;
+# browsh needs a `firefox` on PATH (envs.firefox provides it).
+fetch_release() { # <command-name> <url>
+    local name="$1" url="$2" tmp f
+    if command -v "$name" >/dev/null 2>&1; then
+        echo "    $name already installed"
+        return 0
+    fi
+    tmp="$(mktemp -d)"
+    if curl -fsSL "$url" -o "$tmp/blob"; then
+        case "$url" in
+        *.tar.gz | *.tgz) tar xzf "$tmp/blob" -C "$tmp" ;;
+        esac
+        f="$(find "$tmp" -type f -name "$name" | head -n1)"
+        [ -n "$f" ] || f="$tmp/blob" # raw (non-archive) release asset
+        cp "$f" "$BIN/$name" && chmod 755 "$BIN/$name"
+        echo "    installed $name -> $BIN/$name"
+    else
+        echo "    warn: $name download failed (continuing)"
+    fi
+    rm -rf "$tmp"
+}
+if [ "$(uname -s)" = "Linux" ]; then
+    case "$(uname -m)" in
+    x86_64) gping_arch=x86_64 browsh_arch=amd64 ;;
+    aarch64 | arm64) gping_arch=arm64 browsh_arch=arm64 ;;
+    *)
+        gping_arch=""
+        echo "    skipped: unsupported arch $(uname -m)"
+        ;;
+    esac
+    if [ -n "$gping_arch" ]; then
+        fetch_release gping "https://github.com/orf/gping/releases/download/gping-v1.21.0/gping-Linux-musl-$gping_arch.tar.gz"
+        fetch_release browsh "https://github.com/browsh-org/browsh/releases/download/v1.8.2/browsh_1.8.2_linux_$browsh_arch"
+    fi
+else
+    echo "    skipped: only Linux release binaries are wired up"
+fi
+
 echo "==> bun global packages (coding-agent CLIs)"
 BG="$HOME/.bun/install/global/package.json"
 if command -v bun >/dev/null 2>&1 && [ -f "$BG" ]; then
