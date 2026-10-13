@@ -140,6 +140,41 @@ class WSLDeploymentTests(unittest.TestCase):
                         for path in (auth, history, registry):
                             self.assertEqual(path.read_text(), "synthetic-device-state\n")
 
+    def test_native_nu_probe_loads_ordinary_env_config_and_vendor_startup(self):
+        tool_home = os.environ.get("DOTFILES_TEST_TOOL_HOME")
+        if not self.chezmoi or not tool_home:
+            self.skipTest("ordinary Nu startup requires chezmoi and pinned isolated tools")
+        for role in ("workstation", "remote-compute"):
+            with self.subTest(role=role):
+                self.home = self.root / role
+                environment = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color"}
+                result = self.deploy("--home", str(self.home), "--profile", f"wsl-{role}", "--apply-only",
+                                     environment=dict(environment, DOTFILES_CHEZMOI_BIN=self.chezmoi))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                tools = self.home / ".pixi/bin"
+                tools.mkdir(parents=True, exist_ok=True)
+                for binary in (Path(tool_home) / ".pixi/bin").iterdir():
+                    if binary.is_file():
+                        (tools / binary.name).symlink_to(binary)
+                for command in ("dotfiles-shell-prepare", "dotfiles-history-prepare"):
+                    prepared = subprocess.run([str(self.home / ".local/bin" / command)], env=environment,
+                                              cwd=self.home, capture_output=True, text=True, timeout=30)
+                    self.assertEqual(prepared.returncode, 0, prepared.stderr)
+                report = self.root / f"nu-startup-{role}.json"
+                probe = subprocess.run(["python3", str(SOURCE / "tests/native/wsl.py"), "--probe-nu",
+                                        "--home", str(self.home), "--role", role, "--report", str(report)],
+                                       env=environment, cwd=self.home, capture_output=True, text=True, timeout=30)
+                self.assertEqual(probe.returncode, 0, probe.stderr)
+                observed = json.loads(report.read_text())
+                self.assertFalse(observed["nativePass"], "a Linux configuration probe cannot claim WSL2 native acceptance")
+                startup = observed["checks"][0]["details"]
+                self.assertEqual(startup["editor"], "hx")
+                self.assertEqual(startup["polling"], "1" if role == "remote-compute" else "0")
+                self.assertEqual(startup["prompt"], "nu")
+                self.assertEqual(startup["logs"], 1)
+                self.assertEqual(startup["zoxide"], 1)
+                self.assertGreater(startup["historyHooks"], 0)
+
 
 class WSLNativeBoundaryTests(unittest.TestCase):
     def setUp(self):
