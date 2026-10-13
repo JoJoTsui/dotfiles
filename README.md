@@ -75,15 +75,16 @@ never enter git):
 bootstrap.sh                # one-shot new-host setup (see above)
 deployment/                 # pure profile resolution and installer adapters
 tests/test_deployment.py    # public boundary checks in disposable homes
-dot_env_core.tmpl           # shared POSIX env for bash+zsh: PATH, EDITOR,
+.chezmoidata.toml           # canonical shared shell defaults and PATH priority
+dot_env_core.tmpl           # generated POSIX env for bash+zsh: PATH, EDITOR,
                             # rustup TUNA mirrors, noproxy/unproxy (rendered URL)
 dot_profile                 # login shells: exec-nu guard (TTY + no Claude session)
 dot_bashrc                  # bash init: pixi, mamba, starship, zoxide,
                             # direnv, fzf
 dot_zshenv                  # every zsh: env_core + umask (bash parity)
 dot_zshrc                   # interactive zsh: same inits as .bashrc (+ compinit)
-dot_local/bin/executable_nu-login   # login wrapper: bash -l -> exec nu (zellij
-                                    # shell); executable_ => +x in target state
+dot_local/bin/executable_nu-login   # guarded interactive Nu; Bash for scripts
+dot_local/bin/executable_dotfiles-shell-prepare # validated Nu startup artifacts
 dot_local/bin/executable_bat-modules    # bat syntax/module installer (bash)
 dot_local/bin/executable_fetchChromSizes  # UCSC chrom.sizes fetcher (POSIX sh)
 dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
@@ -100,7 +101,7 @@ dot_config/
   uv/uv.toml                # python-preference=managed + TUNA default index
   dotfiles/pixi-global.toml.tmpl # desired tools merged into the local registry
   zellij/config.kdl.tmpl    # multiplexer: custom keybinds, default_shell nu-login
-  nushell/                  # env.nu, config.nu, micromamba.nu, direnv.nu, proxy.nu.tmpl
+  nushell/                  # env.nu.tmpl, config.nu, adjacent managed resources
   opencode/opencode.jsonc   # canonical opencode config (headroom + MCPs)
 dot_pixi/
   config.toml                 # netfs-redirect = never (network mount)
@@ -126,20 +127,23 @@ guard in `~/.profile` (exception for Claude Code sessions:
 the pixi manifest, because coding agents spawn them (`SHELL=/bin/bash`,
 `#!/bin/sh` scripts, `zsh -c`).
 
-Shared settings are defined once and mirrored:
+Shared settings are generated from one model:
 
-- `~/.env_core` (POSIX, idempotent) is sourced by `.bashrc` and `~/.zshenv`;
-  it owns PATH, `EDITOR`, rustup TUNA mirrors, LS_COLORS and the
-  `noproxy`/`unproxy` toggles.
-- `dot_config/nushell/env.nu` mirrors those values with guarded
-  `$env.X? | default …`, so standalone `nu` (spawned without bash) behaves
-  the same.
+- `.chezmoidata.toml` owns shared values and managed PATH priority. Its POSIX
+  adapter `~/.env_core` is sourced by `.bashrc` and `~/.zshenv`; its guarded
+  Nu adapter gives standalone Nu the same defaults. Device overrides survive.
 - Interactive inits (pixi completion, micromamba, starship, zoxide,
   direnv, fzf) are kept structurally identical across `.bashrc` and
   `.zshrc`; zsh adds `compinit`, which its completion system requires.
 - Multiplexers start nu the same way: zellij panes launch the managed
-  `~/.local/bin/nu-login` (`bash -l` → `exec nu`), herdr sets
+  `~/.local/bin/nu-login` (TTY/client guard → Nu), herdr sets
   `default_shell = "nu"`.
+
+zoxide and `logs` are available in all supported shells. `logs` runs Tailspin
+with the managed less pager; `logs --print file.log` prints without paging.
+Startup needs no external completion checkout. Bootstrap generates and validates
+Nu prompt/completion artifacts after installation. See
+[shared shell settings](docs/SHARED_SHELL_SETTINGS.md) for guards and test evidence.
 
 ## Toolchain: pixi global
 

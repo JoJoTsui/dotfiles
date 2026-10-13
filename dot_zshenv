@@ -4,7 +4,4 @@
 
 [ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
 
-# user rwx settings
-umask 0022
-
 # Node is exposed by the pinned Pixi nodejs environment.

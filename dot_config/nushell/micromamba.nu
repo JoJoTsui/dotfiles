@@ -1,8 +1,5 @@
 export-env {
-    # Only set static variables here (FAST)
-    # We assume standard paths, or you can hardcode them to save 'which' calls
-    $env.MAMBA_EXE = ($env.JOEY | path join "gizmo" "micromamba")
-    $env.MAMBA_ROOT_PREFIX = ($env.JOEY | path join "micromamba")
+    # Shared managed paths and deliberate device overrides come from env.nu.
     
     # Initialize state variables if they don't exist
     if not ("CONDA_CURR" in $env) { $env.CONDA_CURR = null }
@@ -10,10 +7,10 @@ export-env {
 
 # Helper: Get environments only when needed
 def get-conda-envs [] {
-    let raw_info = (if not (which micromamba | is-empty) {
-        micromamba env list --json
+    let raw_info = (if ($env.MAMBA_EXE? | is-not-empty) {
+        ^$env.MAMBA_EXE env list --json
     } else {
-        conda info --envs --json
+        error make {msg: "MAMBA_EXE is unset; load the managed env.nu first"}
     }) 
     
     let info = ($raw_info | from json)

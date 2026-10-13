@@ -1,2 +1,7 @@
-#!/usr/bin/env bash
-exec bash -lc 'exec nu'
+#!/bin/sh
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+if [ "$#" -eq 0 ] && command -v _dotfiles_can_start_nu >/dev/null 2>&1 && _dotfiles_can_start_nu; then
+    exec nu --login
+fi
+# Script arguments and non-TTY/agent entry points retain Bash semantics.
+exec bash "$@"

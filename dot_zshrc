@@ -1,28 +1,13 @@
-# ~/.zshrc — interactive zsh only. Shared env comes from ~/.zshenv.
-# Keep this block in sync with the interactive block of ~/.bashrc.
-
-# zsh needs compinit before completions register (bash wires these differently)
-autoload -Uz compinit && compinit
-# pixi
-eval "$(pixi completion --shell zsh)"
-
-# >>> mamba initialize >>> (generated shape, --shell zsh)
-export MAMBA_EXE="${MAMBA_EXE:-$(command -v micromamba || echo "${JOEY}/gizmo/micromamba")}"
-export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${JOEY}/micromamba}"
-__mamba_setup="$("$MAMBA_EXE" shell hook --shell zsh --root-prefix "$MAMBA_ROOT_PREFIX" 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__mamba_setup"
-else
-    alias micromamba="$MAMBA_EXE"
+# Shared values arrive through .zshenv; only initialization syntax differs.
+mkdir -p "${XDG_CACHE_HOME}/zsh"
+autoload -Uz compinit && compinit -d "${XDG_CACHE_HOME}/zsh/zcompdump"
+if command -v pixi >/dev/null 2>&1; then eval "$(pixi completion --shell zsh)"; fi
+if [ -x "$MAMBA_EXE" ]; then
+    _dotfiles_mamba_setup=$("$MAMBA_EXE" shell hook --shell zsh --root-prefix "$MAMBA_ROOT_PREFIX" 2>/dev/null)
+    if [ "$?" -eq 0 ]; then eval "$_dotfiles_mamba_setup"; fi
+    unset _dotfiles_mamba_setup
 fi
-unset __mamba_setup
-# <<< mamba initialize <<<
-
-# starship
-eval "$(starship init zsh)"
-# zoxide
-eval "$(zoxide init zsh)"
-# direnv
-eval "$(direnv hook zsh)"
-# Set up fzf key bindings and fuzzy completion
-eval "$(fzf --zsh)"
+if command -v starship >/dev/null 2>&1; then eval "$(starship init zsh)"; fi
+if command -v zoxide >/dev/null 2>&1; then eval "$(zoxide init zsh)"; fi
+if command -v direnv >/dev/null 2>&1; then eval "$(direnv hook zsh)"; fi
+if command -v fzf >/dev/null 2>&1; then eval "$(fzf --zsh)"; fi
