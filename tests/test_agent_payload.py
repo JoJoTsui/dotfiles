@@ -11,6 +11,7 @@ import threading
 import time
 import urllib.request
 import base64
+from urllib.parse import unquote, urlparse
 from fixtures.processes import stop_client
 from fixtures.shell_env import managed_shell_environment
 
@@ -59,6 +60,26 @@ class AgentPayloadTests(unittest.TestCase):
                 "PI_CODING_AGENT_DIR": str(self.home / ".pi/agent"),
                 "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1"}
         return managed_shell_environment(self.home, environment)
+
+    def local_skill_path(self, value):
+        parsed = urlparse(str(value))
+        if parsed.scheme not in ("", "file"):
+            return None
+        raw = unquote(parsed.path) if parsed.scheme == "file" else str(value)
+        path = Path(raw)
+        if not path.is_absolute():
+            path = self.home / path
+        return path.resolve()
+
+    def skill_path_is_in_home(self, value):
+        path = self.local_skill_path(value)
+        if path is None:
+            return False
+        try:
+            path.relative_to(self.home.resolve())
+            return True
+        except ValueError:
+            return False
 
     def test_default_payload_is_usable_even_when_agent_installation_is_disabled(self):
         result = self.deploy("--agents", "none")
@@ -171,7 +192,8 @@ class AgentPayloadTests(unittest.TestCase):
         request.add_header("Authorization", "Basic " + base64.b64encode(b"opencode:synthetic-payload-test").decode())
         with (self.root / "opencode.log").open("w") as log:
             process = subprocess.Popen([opencode, "serve", "--hostname", "127.0.0.1", "--port", str(port)],
-                                       cwd=self.home, env=environment, stdout=log, stderr=log)
+                                       cwd=self.home, env=environment, stdout=log, stderr=log,
+                                       start_new_session=os.name != "nt")
             try:
                 deadline = time.monotonic() + 12
                 data = []
@@ -187,8 +209,10 @@ class AgentPayloadTests(unittest.TestCase):
                 self.assertIn("tdd", skills)
                 self.assertIn("implement-spec", skills)
                 self.assertFalse(skills["implement-spec"]["autoinvoke"])
-                self.assertEqual(len([skill for skill in data if str(skill["path"]).startswith(str(self.home))]), 105)
-                self.assertTrue(str(skills["tdd"]["path"]).startswith(str(self.home)))
+                managed = [skill for skill in data if self.skill_path_is_in_home(skill["path"])]
+                expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
+                self.assertEqual({skill["id"] for skill in managed}, expected)
+                self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
             finally:
                 stop_client(process)
 
@@ -217,11 +241,19 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(self.deploy().returncode, 0)
         script = """
 const {DefaultResourceLoader,formatSkillsForPrompt} = await import(process.argv[1]);
+import {realpathSync} from "node:fs";
+import path from "node:path";
 const loader = new DefaultResourceLoader({cwd:process.cwd(),agentDir:process.env.PI_CODING_AGENT_DIR,
   noExtensions:true,noThemes:true,noPromptTemplates:true});
 await loader.reload();
 const skills=loader.getSkills().skills;
-console.log(JSON.stringify({count:skills.length,explicit:skills.filter(s=>s.disableModelInvocation).length,
+const roots=[path.join(process.env.PI_CODING_AGENT_DIR,"skills"),path.join(process.env.HOME,".agents/skills")]
+  .map(root=>realpathSync(root));
+const managed=skills.filter(skill=>{
+  try { const file=realpathSync(skill.filePath); return roots.some(root=>file.startsWith(root+path.sep)); }
+  catch { return false; }
+});
+console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.disableModelInvocation).length,
   prompt:formatSkillsForPrompt(skills),instructions:loader.getAgentsFiles().agentsFiles}));
 """
         diagnostic = subprocess.run([node, "--input-type=module", "-e", script, Path(module).as_uri()],
@@ -229,7 +261,8 @@ console.log(JSON.stringify({count:skills.length,explicit:skills.filter(s=>s.disa
                                     text=True, timeout=30)
         self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
         data = json.loads(diagnostic.stdout)
-        self.assertEqual((data["count"], data["explicit"]), (105, 24))
+        expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
+        self.assertEqual((data["count"], data["explicit"]), (len(expected), 24))
         self.assertIn("<name>tdd</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])
         self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
@@ -273,7 +306,8 @@ console.log(JSON.stringify({count:skills.length,explicit:skills.filter(s=>s.disa
                     command = [binary, "acp"]
                 with (self.root / f"{client}.log").open("w") as log:
                     process = subprocess.Popen(command, cwd=self.home, env=environment, stdin=subprocess.PIPE,
-                                               stdout=subprocess.PIPE, stderr=log, text=True)
+                                               stdout=subprocess.PIPE, stderr=log, text=True,
+                                               start_new_session=os.name != "nt")
                     inbox = queue.Queue()
                     def collect():
                         for line in process.stdout:
