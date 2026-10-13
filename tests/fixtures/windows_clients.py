@@ -25,6 +25,9 @@ def verify_clients(case, source, environment):
                      DOTFILES_TEST_RUNNER_HOME=str(Path(case.env.get('HOME', str(case.root))).resolve()))
     saved = {key: os.environ.get(key) for key in overrides}
     os.environ.update(overrides)
+    # The test methods discover their executables through os.environ, while
+    # their native Node subprocesses receive this separate Windows mapping.
+    environment.update(overrides)
     original_deploy = case.deploy
     case.deploy = lambda *args: original_deploy('-ApplyOnly', *args)
     case.diagnostic_env = lambda: environment.copy()
