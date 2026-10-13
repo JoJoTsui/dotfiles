@@ -9,13 +9,15 @@ does not provision external accounts or execute skill payloads.
 
 **Blocked by:** 04 — Install selectable coding agents through Bun.
 
-**Status:** Draft awaiting review; publish as ready-for-agent after approval.
+**Status:** Implemented and locally verified on Linux x86-64. Foreign native
+execution remains part of the downstream platform/matrix gates. Evidence:
+[agent payload verification](../../../verification/agent-payload.md).
 
-- [ ] Import the agreed portable library and common instruction sources, preserving the 105-skill baseline unless an explicit documented portability issue requires an adaptation.
-- [ ] All five clients discover their global instructions and supported shared or client-specific skill adapters through documented mechanisms.
-- [ ] Common operating rules, portable RTK guidance, and conditional CodeGraph-first guidance have one source; host-specific paths are removed.
-- [ ] Outputs are real files, with skill directory relationships, resources, intended permissions, and explicit-invocation metadata preserved.
-- [ ] Applying the skill payload does not execute skill scripts, import credentials, activate account services, or index repositories.
-- [ ] Specialist prerequisites and external account capabilities remain setup-on-use; client-specific tool differences are explained rather than promised away.
-- [ ] Built-in client skills, unrelated user content, and host-local credentials/trust/runtime state remain outside the owned portable payload.
-- [ ] Fresh-home client discovery/configuration checks and repeat deployment verify usable instructions and skills without model requests or real account access.
+- [x] Import the agreed portable library and common instruction sources, preserving the 105-skill baseline unless an explicit documented portability issue requires an adaptation.
+- [x] All five clients discover their global instructions and supported shared or client-specific skill adapters through documented mechanisms.
+- [x] Common operating rules, portable RTK guidance, and conditional CodeGraph-first guidance have one source; host-specific paths are removed.
+- [x] Outputs are real files, with skill directory relationships, resources, intended permissions, and explicit-invocation metadata preserved.
+- [x] Applying the skill payload does not execute skill scripts, import credentials, activate account services, or index repositories.
+- [x] Specialist prerequisites and external account capabilities remain setup-on-use; client-specific tool differences are explained rather than promised away.
+- [x] Built-in client skills, unrelated user content, and host-local credentials/trust/runtime state remain outside the owned portable payload.
+- [x] Fresh-home client discovery/configuration checks and repeat deployment verify usable instructions and skills without model requests or real account access.

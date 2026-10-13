@@ -10,6 +10,7 @@ system
 clash
 .git
 .gitignore
+.gitattributes
 # Optional developer/bio payloads accompany their selected bundle (ticket 08).
 .config/herdr
 .config/zellij

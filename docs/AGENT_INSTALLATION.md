@@ -10,7 +10,8 @@ Unknown/empty/mixed all-or-none selections fail before writing files.
 CodeGraph is always selected, including with `--agents none`. Installation
 never indexes a repository. Selection does not gate configuration, shared
 instructions, or portable skills, and does not uninstall omitted clients.
-Instruction/skill adapters are supplied by ticket 05.
+Instruction/skill adapters deploy by default through the public bootstrap; see
+[agent payloads](AGENT_PAYLOAD.md) for discovery and ownership.
 
 ```bash
 bash bootstrap.sh --agents codex,kimi --plan

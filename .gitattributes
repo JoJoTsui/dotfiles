@@ -1,0 +1,3 @@
+# Preserve the approved skill snapshot, including intentional Markdown spacing
+# and Unix helper line endings, across client and platform checkouts.
+deployment/agent-payload/skills/** -text -whitespace

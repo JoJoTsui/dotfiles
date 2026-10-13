@@ -196,6 +196,13 @@ Common pattern: **config in git, credentials on the host** — auth flows run
 per host (`claude` login / env token, `codex login`, `kimi login`,
 `pi auth login`).
 
+Shared instructions and the portable 105-skill library deploy by default,
+including with `--agents none` and `--apply-only`. One owned source produces
+regular shared files and Claude's discovery adapter. Managed instruction blocks
+preserve device-specific text; unrelated skills and built-ins remain intact.
+See [agent payloads](docs/AGENT_PAYLOAD.md) for discovery, ownership, prerequisite
+setup on use, and offline checks.
+
 ## Validating on a simulated host
 
 ```bash

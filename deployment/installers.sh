@@ -6,6 +6,7 @@ source "$DEPLOY_SOURCE/deployment/common.sh"
 source "$DEPLOY_SOURCE/deployment/managers.sh"
 source "$DEPLOY_SOURCE/deployment/agents.sh"
 source "$DEPLOY_SOURCE/deployment/shell.sh"
+source "$DEPLOY_SOURCE/deployment/payload.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)
 
 install_managers() {
