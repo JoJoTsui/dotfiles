@@ -94,7 +94,7 @@ function Set-EnvironmentRoots {
     $env:PATH = ((Join-Path $roots.bun 'bin'), (Join-Path $TargetHome '.local/bin'), (Join-Path $roots.pixi 'bin'), (Join-Path $roots.cargo 'bin'), (Join-Path $roots.data 'dotfiles/git-bash/bin')) -join [IO.Path]::PathSeparator
     $env:PATH += [IO.Path]::PathSeparator + $script:InitialPath
 }
-function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet) {
+function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet, [switch]$ShowFailureOutput) {
     $savedPreference = $ErrorActionPreference
     try {
         $ErrorActionPreference = 'Continue'
@@ -102,7 +102,13 @@ function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet) 
         $output = (& $Executable @Arguments 2>&1 | Out-String)
         $exitCode = $LASTEXITCODE
     } finally { $ErrorActionPreference = $savedPreference }
-    if ($exitCode) { $script:FailureCode = $exitCode; Stop-Deployment 'required command failed' }
+    if ($exitCode) {
+        $script:FailureCode = $exitCode
+        if ($ShowFailureOutput -and $output.Trim()) {
+            Stop-Deployment ("required command failed: " + $output.Trim())
+        }
+        Stop-Deployment 'required command failed'
+    }
     if (-not $Quiet) { [Console]::Out.Write($output) }
     return $output
 }
@@ -425,7 +431,7 @@ function Install-Agents {
             $script:Step = "install-agents.$name.diagnostic"
             # Explicit Node invocation tests the same entry used by native MCP;
             # the native runner also checks the public .cmd launchers.
-            $diagnostic = Invoke-Tool $node @($javascript, '--version') -Quiet
+            $diagnostic = Invoke-Tool $node @($javascript, '--version') -Quiet -ShowFailureOutput
             if (-not $diagnostic.Contains($row.columns[2])) { Stop-Deployment "$name diagnostic did not report its pinned version" }
             [Console]::Out.Write($diagnostic)
         }

@@ -70,6 +70,23 @@ $asset | ConvertTo-Json -Compress
         self.assertTrue(asset["url"].startswith("https://"))
         self.assertRegex(asset["sha256"], r"^[a-f0-9]{64}$")
 
+    def test_requested_tool_failure_output_is_reported(self):
+        command = self.root / "diagnostic.cmd"
+        command.write_text("@echo off\r\necho synthetic version failure 1>&2\r\nexit /b 7\r\n")
+        script = self.root / "invoke-tool.ps1"
+        script.write_text(r'''function Stop-Deployment([string]$Message) { throw $Message }
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE),
+                           DOTFILES_TEST_TARGET_HOME=str(self.home),
+                           DOTFILES_TEST_COMMAND=str(command))
+        result = subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                                cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("synthetic version failure", result.stdout + result.stderr)
+
     def test_native_plan_selects_role_and_default_owners_without_writes(self):
         result = self.deploy("-Plan", "-Profile", "windows-remote-compute", "-Arch", "x86_64")
         self.assertEqual(result.returncode, 0, result.stderr)
