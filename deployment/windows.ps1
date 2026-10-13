@@ -226,9 +226,9 @@ function Apply-Source {
     Copy-NativeConfiguration
 }
 function Get-AssetString($Record, [string]$Field) {
-    $property = $Record.PSObject.Properties[$Field]
-    if (-not $property) { Stop-Deployment "missing Windows asset field: $Field" }
-    $value = $property.Value
+    if ($null -eq $Record) { Stop-Deployment "missing Windows asset record for field: $Field" }
+    $value = $Record.$Field
+    if ($null -eq $value) { Stop-Deployment "missing Windows asset field: $Field" }
     while ($value -is [Array]) {
         if ($value.Count -ne 1) { Stop-Deployment "Windows asset field is not a scalar: $Field" }
         $value = $value[0]
@@ -237,7 +237,16 @@ function Get-AssetString($Record, [string]$Field) {
     return $value
 }
 function Get-Asset([string]$Name) {
-    $asset = @($exceptions | Where-Object { $_.name -eq $Name })
+    $records = New-Object System.Collections.ArrayList
+    $pending = New-Object System.Collections.Stack
+    $pending.Push($exceptions)
+    while ($pending.Count -gt 0) {
+        $candidate = $pending.Pop()
+        if ($candidate -is [Array]) {
+            foreach ($item in $candidate) { $pending.Push($item) }
+        } else { [void]$records.Add($candidate) }
+    }
+    $asset = @($records.ToArray() | Where-Object { $_.name -eq $Name })
     if ($asset.Count -ne 1) { Stop-Deployment "missing pinned Windows asset: $Name" }
     $record = $asset[0]
     return [pscustomobject]@{

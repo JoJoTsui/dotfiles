@@ -25,7 +25,7 @@ bundle_tool_matches() {
     [ "$1" = all ] || { case ",$1," in *",$DEPLOY_PLATFORM,"*) return 0 ;; *) return 1 ;; esac; }
 }
 
-while IFS='|' read -r bundle_name bundle_targets bundle_prerequisites; do
+while IFS=$'|\r' read -r bundle_name bundle_targets bundle_prerequisites; do
     case "$bundle_name" in ''|\#*) continue ;; esac
     bundle_selected "$bundle_name" || continue
     case ",$bundle_targets," in
@@ -34,7 +34,7 @@ while IFS='|' read -r bundle_name bundle_targets bundle_prerequisites; do
     esac
 done < "$DEPLOY_SOURCE/deployment/bundles.tsv"
 
-while IFS='|' read -r bundle_name bundle_environment bundle_specs bundle_exposed bundle_channels tool_platforms; do
+while IFS=$'|\r' read -r bundle_name bundle_environment bundle_specs bundle_exposed bundle_channels tool_platforms; do
     case "$bundle_name" in ''|\#*) continue ;; esac
     bundle_selected "$bundle_name" || continue
     bundle_tool_matches "$tool_platforms" || continue
@@ -49,7 +49,7 @@ unset bundle_selection bundle_name bundle_environment bundle_specs bundle_expose
 
 verify_bundle_exposure() {
     local name environment specifications mappings channels mapping saved_ifs platforms
-    while IFS='|' read -r name environment specifications mappings channels platforms; do
+    while IFS=$'|\r' read -r name environment specifications mappings channels platforms; do
         case "$name" in ''|\#*) continue ;; esac
         bundle_selected "$name" || continue
         bundle_tool_matches "$platforms" || continue
@@ -64,7 +64,7 @@ verify_bundle_exposure() {
 print_bundle_packages() {
     local name environment specifications mappings channels item separator='' inner_separator saved_ifs platforms
     printf '['
-    while IFS='|' read -r name environment specifications mappings channels platforms; do
+    while IFS=$'|\r' read -r name environment specifications mappings channels platforms; do
         case "$name" in ''|\#*) continue ;; esac
         bundle_selected "$name" || continue
         bundle_tool_matches "$platforms" || continue
@@ -93,7 +93,7 @@ print_bundle_packages() {
 print_bundle_prerequisites() {
     local name targets prerequisites separator=''
     printf '{'
-    while IFS='|' read -r name targets prerequisites; do
+    while IFS=$'|\r' read -r name targets prerequisites; do
         case "$name" in ''|\#*) continue ;; esac
         bundle_selected "$name" || continue
         printf '%s' "$separator"; json_string "$name"

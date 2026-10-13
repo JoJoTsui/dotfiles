@@ -2,7 +2,7 @@
 # the already-required Chezmoi performs format-aware parsing and serialization.
 validate_client_settings() {
     local format source target policy value
-    while IFS='|' read -r format source target policy; do
+    while IFS=$'|\r' read -r format source target policy; do
         case "$format" in ''|\#*) continue ;; json|jsonc|toml) ;; *) fail "unknown client settings format: $format" ;; esac
         for value in "$source" "$target" "$policy"; do
             case "$value" in ''|/*|..|../*|*/../*|*/..) fail "client settings catalog path must be relative: $value" ;; esac
@@ -22,7 +22,7 @@ deploy_client_settings() {
     stage=$(mktemp -d "$TMPDIR/client-settings.XXXXXX")
     # Render the entire batch before changing a client's files. Invalid existing
     # JSONC/TOML propagates a named failure while all client settings stay intact.
-    while IFS='|' read -r format source target policy; do
+    while IFS=$'|\r' read -r format source target policy; do
         case "$format" in ''|\#*) continue ;; esac
         export DOTFILES_SETTINGS_FORMAT="$format" DOTFILES_SETTINGS_POLICY="$policy"
         export DOTFILES_SETTINGS_SOURCE="$DEPLOY_SOURCE/deployment/client-settings/$source"
@@ -49,7 +49,7 @@ deploy_client_settings() {
             fail "cannot prepare client config baseline ($format): $target"
         fi
     done < "$DEPLOY_SOURCE/deployment/client-settings/targets.tsv"
-    while IFS='|' read -r format source target policy; do
+    while IFS=$'|\r' read -r format source target policy; do
         case "$format" in ''|\#*) continue ;; esac
         mkdir -p "$(dirname "$HOME/$target")" "$XDG_STATE_HOME/dotfiles/client-settings"
         chmod 600 "$stage/$policy.config" "$stage/$policy.baseline"

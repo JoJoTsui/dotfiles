@@ -208,8 +208,10 @@ def check_portable_suites(home, role, report):
         # Required native checks may not be converted to successful skips.
         if result.returncode != 0 or "skipped=" in result.stderr:
             print(result.stderr, file=sys.stderr)
-        require(result.returncode == 0 and "skipped=" not in result.stderr,
-                f"native observable suite failed or skipped: {pattern}")
+            diagnostics = [line.strip() for line in result.stderr.splitlines()
+                           if line.strip().startswith(("FAIL:", "ERROR:", "Ran ", "FAILED"))]
+            detail = f" ({'; '.join(diagnostics[:8])})" if diagnostics else ""
+            require(False, f"native observable suite failed or skipped: {pattern}{detail}")
         summary = next((line for line in result.stderr.splitlines() if line.startswith("Ran ")), "")
         require(bool(summary), f"native suite did not run: {pattern}")
         summaries.append({"suite": pattern, "result": summary, "skips": 0})

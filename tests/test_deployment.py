@@ -137,6 +137,32 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(sentinel.read_text(), "other device state\n")
         self.assertEqual(list(self.original_home.iterdir()), [sentinel])
 
+    def test_wsl_apply_handles_crlf_deployment_catalogs(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual apply requires chezmoi; set DOTFILES_TEST_CHEZMOI to an isolated binary")
+        source = self.root / "crlf-source"
+        shutil.copytree(SOURCE, source, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        for catalog in (source / "deployment").rglob("*.tsv"):
+            original = catalog.read_bytes().replace(b"\r\n", b"\n")
+            catalog.write_bytes(original.replace(b"\n", b"\r\n"))
+        self.home = self.root / "crlf-device"
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi)
+        arguments = ("--source", str(source), "--platform", "wsl", "--role", "workstation")
+        plan_result = self.deploy("--plan", *arguments, env=environment)
+        self.assertEqual(plan_result.returncode, 0, plan_result.stderr)
+        plan = json.loads(plan_result.stdout)
+        self.assertEqual(plan["profile"], "wsl-workstation")
+        self.assertTrue(all("\r" not in value for package in plan["packages"]
+                            for value in package["dependencies"].values()))
+        result = self.deploy("--apply-only", *arguments, env=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / ".agents/skills/tdd/SKILL.md").is_file())
+        self.assertTrue((self.home / ".claude/skills/implement-spec/SKILL.md").is_file())
+        self.assertTrue((self.home / ".claude.json").is_file())
+        profile = json.loads((self.home / ".config/dotfiles/profile.json").read_text())
+        self.assertEqual((profile["platform"], profile["role"]), ("wsl", "workstation"))
+
     def test_plan_reports_isolated_state_roots_and_configured_actions(self):
         self.home = self.root / 'device "quoted" \\ path'
         environment = dict(self.env, GLM_API_TOKEN="synthetic-plan-secret", KIMI_API_KEY="synthetic-plan-secret")

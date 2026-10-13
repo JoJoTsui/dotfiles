@@ -34,7 +34,7 @@ install_common() {
     install_rustup
     DEPLOY_STEP=install-common.verify-exposure
     local environment specifications mappings targets mapping saved_ifs
-    while IFS='|' read -r environment specifications mappings targets; do
+    while IFS=$'|\r' read -r environment specifications mappings targets; do
         case "$environment" in ''|\#*) continue ;; esac
         common_target_matches "$targets" || continue
         saved_ifs=$IFS; IFS=,

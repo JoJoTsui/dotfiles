@@ -12,7 +12,7 @@ common_target_matches() {
     [ "$1" = all ] || { [ "$1" = unix ] && [ "$DEPLOY_PLATFORM" != windows ]; }
 }
 
-while IFS='|' read -r common_env common_specs common_exposed common_targets; do
+while IFS=$'|\r' read -r common_env common_specs common_exposed common_targets; do
     case "$common_env" in ''|\#*) continue ;; esac
     if common_target_matches "$common_targets"; then
         saved_ifs=$IFS; IFS=,
@@ -27,7 +27,7 @@ unset common_env common_specs common_exposed common_targets common_mapping commo
 
 common_python_spec() {
     local environment specifications mappings targets specification saved_ifs
-    while IFS='|' read -r environment specifications mappings targets; do
+    while IFS=$'|\r' read -r environment specifications mappings targets; do
         case "$environment" in ''|\#*) continue ;; esac
         saved_ifs=$IFS; IFS=,
         for specification in $specifications; do
@@ -45,7 +45,7 @@ common_python_spec() {
 print_common_packages() {
     local environment specifications mappings targets separator='' item inner_separator saved_ifs
     printf '['
-    while IFS='|' read -r environment specifications mappings targets; do
+    while IFS=$'|\r' read -r environment specifications mappings targets; do
         case "$environment" in ''|\#*) continue ;; esac
         common_target_matches "$targets" || continue
         printf '%s{"environment":' "$separator"; json_string "$environment"

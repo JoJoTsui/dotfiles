@@ -37,6 +37,24 @@ class WindowsBoundaryTests(unittest.TestCase):
                                str(SOURCE / "bootstrap.ps1"), "-TargetHome", str(self.home), *arguments],
                               cwd=SOURCE, env=env or self.env, capture_output=True, text=True, timeout=90)
 
+    def test_windows_asset_loader_returns_scalar_metadata(self):
+        script = self.root / "asset-loader.ps1"
+        script.write_text(r'''function Stop-Deployment([string]$Message) { throw $Message }
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+$exceptions = @([IO.File]::ReadAllText((Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows-assets.json')) | ConvertFrom-Json)
+$asset = Get-Asset 'chezmoi'
+$asset | ConvertTo-Json -Compress
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE))
+        result = subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(script)],
+                                cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        asset = json.loads(result.stdout)
+        for field in ("name", "version", "url", "sha256", "kind", "entry", "target"):
+            self.assertIsInstance(asset[field], str)
+        self.assertTrue(asset["url"].startswith("https://"))
+        self.assertRegex(asset["sha256"], r"^[a-f0-9]{64}$")
+
     def test_native_plan_selects_role_and_default_owners_without_writes(self):
         result = self.deploy("-Plan", "-Profile", "windows-remote-compute", "-Arch", "x86_64")
         self.assertEqual(result.returncode, 0, result.stderr)

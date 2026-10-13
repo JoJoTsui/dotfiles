@@ -29,7 +29,7 @@ payload_validate_tree() {
 validate_agent_payload() {
     local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target value
     [ ! -L "$payload/targets.tsv" ] || fail 'agent payload catalog is a symlink'
-    while IFS='|' read -r kind source target; do
+    while IFS=$'|\r' read -r kind source target; do
         case "$kind" in ''|\#*) continue ;; tree|file|block) ;; *) fail "unknown agent payload kind: $kind" ;; esac
         for value in "$source" "$target"; do
             case "$value" in ''|/*|..|../*|*/../*|*/..) fail "agent payload catalog path must be relative: $value" ;; esac
@@ -77,7 +77,7 @@ payload_instruction() {
 deploy_agent_payload() {
     local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target
     validate_agent_payload
-    while IFS='|' read -r kind source target; do
+    while IFS=$'|\r' read -r kind source target; do
         case "$kind" in
             ''|\#*) continue ;;
             tree)

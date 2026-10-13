@@ -31,13 +31,13 @@ resolve_agent_selection() {
             done ;;
     esac
     # Stable catalog ordering deduplicates aliases and repeated names.
-    while IFS='|' read -r name package version commands minimum trusted; do
+    while IFS=$'|\r' read -r name package version commands minimum trusted; do
         case "$name" in ''|\#*|codegraph) continue ;; esac
         for item in ${normalized[@]+"${normalized[@]}"}; do
             if [ "$item" = "$name" ]; then DEPLOY_AGENTS+=("$name"); break; fi
         done
     done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
-    while IFS='|' read -r name package version commands minimum trusted; do
+    while IFS=$'|\r' read -r name package version commands minimum trusted; do
         case "$name" in ''|\#*) continue ;; esac
         agent_selected "$name" || continue
         IFS=, read -r -a requested_agents <<< "$commands"
@@ -49,7 +49,7 @@ resolve_agent_selection
 print_agent_packages() {
     local name package version commands minimum trusted separator=''
     printf '['
-    while IFS='|' read -r name package version commands minimum trusted; do
+    while IFS=$'|\r' read -r name package version commands minimum trusted; do
         case "$name" in ''|\#*) continue ;; esac
         agent_selected "$name" || continue
         printf '%s{"name":' "$separator"; json_string "$name"
@@ -65,7 +65,7 @@ print_agent_packages() {
 agent_runtime_pin() {
     local environment specifications commands targets item
     local runtime_specs=()
-    while IFS='|' read -r environment specifications commands targets; do
+    while IFS=$'|\r' read -r environment specifications commands targets; do
         case "$environment" in ''|\#*) continue ;; esac
         IFS=, read -r -a runtime_specs <<< "$specifications"
         for item in "${runtime_specs[@]}"; do
@@ -105,7 +105,7 @@ install_agents() {
     [ "$("$node" --version)" = "v$node_pin" ] || fail "Node must match the common runtime pin $node_pin"
     # JS package shebangs and lifecycle scripts run with the compatible Node.
     export PATH="$(dirname "$node"):$(dirname "$bun"):$PATH"
-    while IFS='|' read -r name package version commands minimum trusted; do
+    while IFS=$'|\r' read -r name package version commands minimum trusted; do
         case "$name" in ''|\#*) continue ;; esac
         agent_selected "$name" || continue
         agent_version_at_least "$node_pin" "$minimum" || fail "Node $node_pin does not satisfy $name >=$minimum"

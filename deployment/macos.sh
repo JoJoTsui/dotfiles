@@ -3,7 +3,7 @@
 validate_macos_config() {
     [ "$DEPLOY_PLATFORM" = macos ] || return 0
     local source target optional value parent
-    while IFS='|' read -r source target optional; do
+    while IFS=$'|\r' read -r source target optional; do
         case "$source" in ''|\#*) continue ;; esac
         for value in "$source" "$target"; do
             case "$value" in ''|/*|..|../*|*/../*|*/..) fail 'macOS discovery catalog path must be relative' ;; esac
@@ -22,7 +22,7 @@ deploy_macos_config() {
     [ "$DEPLOY_PLATFORM" = macos ] || return 0
     validate_macos_config
     local source target optional
-    while IFS='|' read -r source target optional; do
+    while IFS=$'|\r' read -r source target optional; do
         case "$source" in ''|\#*) continue ;; esac
         if [ "$optional" = optional ] && [ ! -e "$HOME/$source" ] && [ ! -L "$HOME/$source" ]; then continue; fi
         payload_validate_tree "$HOME/$source" "$HOME/$target"
