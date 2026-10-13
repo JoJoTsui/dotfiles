@@ -1,0 +1,6 @@
+{
+  "name": "dotfiles-managed-kimi",
+  "private": true,
+  "dependencies": { "@moonshot-ai/kimi-code": "2.1.1" },
+  "trustedDependencies": ["@moonshot-ai/kimi-code"]
+}
