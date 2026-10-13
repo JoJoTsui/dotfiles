@@ -326,11 +326,12 @@ class AgentPayloadTests(unittest.TestCase):
             self.skipTest("requires the pinned Pi SDK module and managed Node")
         self.assertEqual(self.deploy().returncode, 0)
         script = """
-const {DefaultResourceLoader,formatSkillsForPrompt} = await import(process.argv[1]);
+const {DefaultResourceLoader,SettingsManager,formatSkillsForPrompt} = await import(process.argv[1]);
 import {existsSync,realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import path from "node:path";
-const loader = new DefaultResourceLoader({cwd:process.cwd(),agentDir:process.env.PI_CODING_AGENT_DIR,
+const settingsManager = SettingsManager.create(process.cwd(),process.env.PI_CODING_AGENT_DIR);
+const loader = new DefaultResourceLoader({cwd:process.cwd(),agentDir:process.env.PI_CODING_AGENT_DIR,settingsManager,
   noExtensions:true,noThemes:true,noPromptTemplates:true});
 await loader.reload();
 const skills=loader.getSkills().skills;

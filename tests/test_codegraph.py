@@ -72,7 +72,7 @@ class CodeGraphTests(unittest.TestCase):
             self.assertNotIn("env", server)
         opencode = json.loads("\n".join(line for line in (self.home / ".config/opencode/opencode.jsonc").read_text().splitlines()
                                       if not line.lstrip().startswith("//")))
-        self.assertEqual(opencode["skills"], ["~/.agents/skills"])
+        self.assertEqual(opencode["skills"], [str(self.home / ".agents/skills")])
         server = opencode["mcp"]["servers"]["codegraph"]
         self.assertEqual(server["command"], ["codegraph", "serve", "--mcp"])
         self.assertFalse(server["disabled"])
@@ -128,7 +128,7 @@ class CodeGraphTests(unittest.TestCase):
         self.assertEqual(opencode["theme"], "device-theme")
         self.assertEqual(opencode["providers"]["device"]["settings"]["apiKey"], "synthetic-device-token")
         self.assertEqual(opencode["mcp"]["servers"]["device"]["command"], ["device-mcp"])
-        self.assertEqual(opencode["skills"], ["./device-skills", "~/.agents/skills"])
+        self.assertEqual(opencode["skills"], ["./device-skills", str(self.home / ".agents/skills")])
         self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["theme"], "device-theme")
         self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["skills"],
                          ["./device-skills", "../../.agents/skills"])
