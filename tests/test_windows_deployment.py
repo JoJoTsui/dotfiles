@@ -32,7 +32,12 @@ class WindowsBoundaryTests(unittest.TestCase):
         runtime = self.root / 'powershell-runtime'
         self.env.update(HOME=str(runtime), USERPROFILE=str(self.original),
                         APPDATA=str(runtime / "roaming"), LOCALAPPDATA=str(runtime / "local"))
-        warmup = subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0"],
+        # The PowerShell executable initializes its noninteractive startup
+        # cache on the first -File invocation. Exercise that host behavior with
+        # a no-op script before snapshotting the protected profile.
+        startup_probe = self.root / "powershell-startup.ps1"
+        startup_probe.write_text("exit 0\n")
+        warmup = subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(startup_probe)],
                                 cwd=SOURCE, env=self.env, capture_output=True, text=True, timeout=30)
         self.assertEqual(warmup.returncode, 0, warmup.stderr)
         self.original_profile_state = self.original_profile_entries()
@@ -245,6 +250,8 @@ $asset | ConvertTo-Json -Compress
                      'actual Windows installation runs on the native runner')
 class WindowsNativeInstallTests(unittest.TestCase):
     setUp = WindowsBoundaryTests.setUp
+    original_profile_entries = WindowsBoundaryTests.original_profile_entries
+    assert_original_profile_unchanged = WindowsBoundaryTests.assert_original_profile_unchanged
     def deploy(self, *arguments, env=None):
         return subprocess.run([POWERSHELL, '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
                                '-File', str(SOURCE / 'bootstrap.ps1'), '-TargetHome', str(self.home), *arguments],
