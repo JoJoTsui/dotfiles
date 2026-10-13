@@ -93,6 +93,7 @@ dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
 dot_condarc                 # TUNA mirrors, nvidia/pytorch/conda-forge/bioconda channels
 deployment/common-tools.tsv  # exact common requirements and command exposures
 deployment/agents/           # exact per-client package manifests + bun.lock
+deployment/client-settings/  # default configs and preservation/CodeGraph catalog
 deployment/inventory/        # preserved optional/specialist inventory
 dot_config/
   starship.toml             # Catppuccin powerline prompt
@@ -104,13 +105,8 @@ dot_config/
   dotfiles/pixi-global.toml.tmpl # desired tools merged into the local registry
   zellij/config.kdl.tmpl    # multiplexer: custom keybinds, default_shell nu-login
   nushell/                  # env.nu.tmpl, config.nu, adjacent managed resources
-  opencode/opencode.jsonc.tmpl # OpenCode2 config (headroom + MCPs)
 dot_pixi/
   config.toml                 # netfs-redirect = never (network mount)
-dot_claude/settings.json.tmpl    # Claude Code on GLM-5.3 / glm-5.3-flash
-dot_codex/config.toml            # Codex CLI, env_key-based providers
-dot_kimi-code/{config.toml.tmpl,tui.toml}
-dot_pi/agent/{settings.json,models-store.json}
 dot_vscode-server/…         # remote compute Machine settings
 system/bash.bashrc          # manual system banner payload; never auto-applied
 docs/                       # CLAUDE_SETUP_T9K.md, vscode-win-settings.jsonc
@@ -190,9 +186,9 @@ bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 
 | Agent | Managed file(s) | Local-only / secrets | Notes |
 | --- | --- | --- | --- |
-| **Claude Code** | `~/.claude/settings.json` (GLM-5.3) | plugins, hooks, statusline, `settings.local.json`, `~/.claude.json` | token/base URL from env; MCP servers: `claude mcp add --scope user <name>` (or project `.mcp.json` with `${VAR}` expansion); T9K container workarounds → `docs/CLAUDE_SETUP_T9K.md` |
+| **Claude Code** | merged `~/.claude/settings.json`, owned MCP in `~/.claude.json` | OAuth fields, plugins, hooks, statusline, `settings.local.json` | token/base URL defaults from env; CodeGraph stdio enabled; T9K workarounds → `docs/CLAUDE_SETUP_T9K.md` |
 | **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
-| **kimi-code** | `~/.kimi-code/config.toml.tmpl`, `tui.toml` | `credentials/`, `oauth/`, sessions | key injected from `KIMI_API_KEY` at init; `kimi login` per host |
+| **kimi-code** | merged `~/.kimi-code/config.toml`, `tui.toml`, owned `mcp.json` entry | `credentials/`, `oauth/`, sessions | key default from `KIMI_API_KEY`; `kimi login` per host; CodeGraph stdio enabled |
 | **pi** | `~/.pi/agent/settings.json`, `models-store.json` (MiniMax M2.7/M3 catalog) | `auth.json` (MiniMax key), `sessions/`, `trust.json` | minimal terminal harness; `pi auth login` per host |
 | **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; built-in Headroom provider, optional Headroom MCP disabled; remote profile ignores update events |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
@@ -205,6 +201,9 @@ under `~/.bun/bin` and `~/.local/bin` using managed Node. The existing global
 Bun registry remains intact. Legacy clients and optional integrations remain
 documented under `deployment/inventory`. See [agent installation](docs/AGENT_INSTALLATION.md)
 for versions, lifecycle trust, update policy, and isolated diagnostic checks.
+Runtime configs merge through the public bootstrap, retaining existing settings
+and authentication. [Client settings](docs/AGENT_SETTINGS.md) describes ownership,
+CodeGraph discovery, and the checks for indexed and unindexed projects.
 
 Common pattern: **config in git, credentials on the host** — auth flows run
 per host (`claude` login / env token, `codex login`, `kimi login`,

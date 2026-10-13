@@ -86,7 +86,8 @@ The exact [config schema](https://raw.githubusercontent.com/anomalyco/opencode/v
 and [MCP schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.0.27/packages/schema/src/config/mcp.ts)
 are authoritative; the unversioned public schema still described V1 at
 implementation time. `codemode: false` preserves direct CodeGraph tools;
-ticket 06 activates the integration. Headroom uses the client's built-in
+the default integration is enabled through the [settings merge](AGENT_SETTINGS.md).
+Headroom uses the client's built-in
 `@opencode/ai/providers/openai-compatible` adapter, avoiding a dynamic SDK
 download. Its MCP remains disabled until that optional service is provisioned.
 The historical Serena download command is preserved in the ignored inventory,

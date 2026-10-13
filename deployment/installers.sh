@@ -8,6 +8,7 @@ source "$DEPLOY_SOURCE/deployment/managers.sh"
 source "$DEPLOY_SOURCE/deployment/agents.sh"
 source "$DEPLOY_SOURCE/deployment/shell.sh"
 source "$DEPLOY_SOURCE/deployment/payload.sh"
+source "$DEPLOY_SOURCE/deployment/client-settings.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)
 
 install_managers() {

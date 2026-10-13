@@ -9,12 +9,19 @@ index user repositories.
 
 **Blocked by:** 05 — Deploy portable instructions and skills to every agent.
 
-**Status:** Draft awaiting review; publish as ready-for-agent after approval.
+**Status:** Implemented and verified on isolated Linux x86-64. Native foreign
+execution remains pending tickets 09–11/13.
 
-- [ ] Claude Code, Codex, Kimi Code, and opencode receive validated native MCP configuration appropriate to their pinned versions.
-- [ ] pi receives usable CodeGraph CLI instructions or a skill without assuming a core MCP client.
-- [ ] Configuration uses portable managed commands, and opencode's schema is verified against its pinned release rather than inferred from another version's documentation.
-- [ ] Registration preserves unrelated host-local client settings and authentication; credentials are absent from the managed integration payload.
-- [ ] The common rule reaches for CodeGraph when an index exists and uses supported fallback behavior for an unindexed project.
-- [ ] Deployment and registration do not create indexes; an explicitly designated temporary fixture may be indexed only for a dedicated integration check.
-- [ ] Fresh-home integration checks establish client configuration/command usability and controlled indexed/unindexed behavior without touching real user repositories.
+- [x] Claude Code, Codex, Kimi Code, and opencode receive validated native MCP configuration appropriate to their pinned versions.
+- [x] pi receives usable CodeGraph CLI instructions or a skill without assuming a core MCP client.
+- [x] Configuration uses portable managed commands, and opencode's schema is verified against its pinned release rather than inferred from another version's documentation.
+- [x] Registration preserves unrelated host-local client settings and authentication; credentials are absent from the managed integration payload.
+- [x] The common rule reaches for CodeGraph when an index exists and uses supported fallback behavior for an unindexed project.
+- [x] Deployment and registration do not create indexes; an explicitly designated temporary fixture may be indexed only for a dedicated integration check.
+- [x] Fresh-home integration checks establish client configuration/command usability and controlled indexed/unindexed behavior without touching real user repositories.
+
+Evidence: [client ownership and adapters](../../../AGENT_SETTINGS.md),
+[actual MCP/CLI checks](../../../verification/codegraph.md), and
+`tests/test_codegraph.py`. All six checks passed in 34.145s, including real client
+discovery/connections, explicit temporary fixture indexing, and secret-safe
+preservation failures. Apply-only uses Chezmoi and requires no agent runtime.

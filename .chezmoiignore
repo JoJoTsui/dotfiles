@@ -11,6 +11,17 @@ clash
 .git
 .gitignore
 .gitattributes
+# Runtime client files merge through the public boundary; source application
+# must not overwrite unrelated settings or authentication before that merge.
+.claude.json
+.claude/settings.json
+.codex/config.toml
+.kimi-code/config.toml
+.kimi-code/tui.toml
+.kimi-code/mcp.json
+.config/opencode/opencode.jsonc
+.pi/agent/settings.json
+.pi/agent/models-store.json
 # Optional developer/bio payloads accompany their selected bundle.
 {{- if not (has "developer" .bundles) }}
 .config/herdr

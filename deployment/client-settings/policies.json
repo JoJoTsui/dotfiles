@@ -1,0 +1,11 @@
+{
+  "claude-mcp": [["mcpServers", "codegraph"]],
+  "claude-settings": [["env", "DISABLE_AUTOUPDATER"]],
+  "codex": [["mcp_servers", "codegraph"], ["check_for_update_on_startup"]],
+  "kimi": [],
+  "kimi-tui": [["upgrade", "auto_install"]],
+  "kimi-mcp": [["mcpServers", "codegraph"]],
+  "opencode": [["mcp", "servers", "codegraph"], ["update"]],
+  "pi-settings": [],
+  "pi-models-store": []
+}

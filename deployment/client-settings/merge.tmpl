@@ -1,0 +1,60 @@
+{{- /* Chezmoi provides the JSONC/TOML parsers on every bootstrap target. */ -}}
+{{- define "client-defaults" -}}
+{{- $host := index . 0 -}}
+{{- $defaults := index . 1 -}}
+{{- $previous := index . 2 -}}
+{{- range $key, $value := $defaults -}}
+{{- if not (hasKey $host $key) -}}
+{{- $_ := set $host $key $value -}}
+{{- else if and (kindIs "map" $value) (kindIs "map" (get $host $key)) -}}
+{{- $old := dict -}}
+{{- if and (hasKey $previous $key) (kindIs "map" (get $previous $key)) -}}{{- $old = get $previous $key -}}{{- end -}}
+{{- template "client-defaults" (list (get $host $key) $value $old) -}}
+{{- else if and (hasKey $previous $key) (deepEqual (get $host $key) (get $previous $key)) -}}
+{{- $_ := set $host $key $value -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- define "client-redact-baseline" -}}
+{{- range $key, $value := . -}}
+{{- if regexMatch "(?i)(api_?key|auth_?token|authorization|password|secret|token)$" $key -}}
+{{- $_ := unset $ $key -}}
+{{- else if kindIs "map" $value -}}
+{{- template "client-redact-baseline" $value -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $format := env "DOTFILES_SETTINGS_FORMAT" -}}
+{{- $target := env "DOTFILES_SETTINGS_TARGET" -}}
+{{- $baseline := env "DOTFILES_SETTINGS_BASELINE" -}}
+{{- $source := env "DOTFILES_SETTINGS_SOURCE" -}}
+{{- $desiredText := includeTemplate $source . -}}
+{{- $desired := dict -}}
+{{- $host := dict -}}
+{{- $previous := dict -}}
+{{- if eq $format "toml" -}}
+{{- $desired = fromToml $desiredText -}}
+{{- if lstat $target -}}{{- $host = include $target | fromToml -}}{{- end -}}
+{{- else -}}
+{{- $desired = fromJsonc $desiredText -}}
+{{- if lstat $target -}}{{- $host = include $target | fromJsonc -}}{{- end -}}
+{{- end -}}
+{{- if not (kindIs "map" $host) -}}{{- fail "client config must be an object/table" -}}{{- end -}}
+{{- if lstat $baseline -}}{{- $previous = include $baseline | fromJson -}}{{- end -}}
+{{- if eq (env "DOTFILES_SETTINGS_OUTPUT") "baseline" -}}
+{{- template "client-redact-baseline" $desired -}}
+{{ $desired | toPrettyJson }}
+{{- else -}}
+{{- template "client-defaults" (list $host $desired $previous) -}}
+{{- $policies := include "deployment/client-settings/policies.json" | fromJson -}}
+{{- range $path := get $policies (env "DOTFILES_SETTINGS_POLICY") -}}
+{{- $value := $desired -}}
+{{- range $part := $path -}}{{- $value = get $value $part -}}{{- end -}}
+{{- $_ := setValueAtPath $path $value $host -}}
+{{- end -}}
+{{- if eq $format "toml" -}}
+{{ $host | toToml }}
+{{- else -}}
+{{ $host | toPrettyJson }}
+{{- end -}}
+{{- end -}}
