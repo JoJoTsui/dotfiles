@@ -28,6 +28,11 @@ def verify_clients(case, source, environment):
     # The test methods discover their executables through os.environ, while
     # their native Node subprocesses receive this separate Windows mapping.
     environment.update(overrides)
+    skill_helpers = ('local_skill_path', 'skill_path_is_in_home', 'skill_path_kind', 'skill_path_scope')
+    missing = object()
+    saved_helpers = {name: getattr(case, name, missing) for name in skill_helpers}
+    for name in skill_helpers:
+        setattr(case, name, getattr(AgentPayloadTests, name).__get__(case, type(case)))
     original_deploy = case.deploy
     case.deploy = lambda *args: original_deploy('-ApplyOnly', *args)
     case.diagnostic_env = lambda: environment.copy()
@@ -109,6 +114,11 @@ console.log(JSON.stringify(result));
         case.assertFalse((source / '.codegraph').exists())
     finally:
         case.deploy = original_deploy
+        for name, value in saved_helpers.items():
+            if value is missing:
+                delattr(case, name)
+            else:
+                setattr(case, name, value)
         for key, value in saved.items():
             if value is None:
                 os.environ.pop(key, None)
