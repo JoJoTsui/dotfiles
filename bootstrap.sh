@@ -158,16 +158,7 @@ fi
 # when their explicit switches are present. Resolve the passwd home separately
 # from HOME so an isolated test environment cannot impersonate the real account.
 if "$DEPLOY_SYSTEM_CONFIG" || "$DEPLOY_LOGIN_SHELL"; then
-    actual_platform="$(PATH=/usr/bin:/bin detect_platform)"
-    [ "$DEPLOY_PLATFORM" = "$actual_platform" ] || fail 'system and login-shell options require the detected native platform'
-    case "$DEPLOY_PLATFORM" in
-        linux|wsl)
-            account_record="$(/usr/bin/getent passwd "$(/usr/bin/id -u)")" || fail 'cannot resolve the current account home'
-            account_home="$(printf '%s\n' "$account_record" | /usr/bin/awk -F: '{print $6}')" ;;
-        macos)
-            account_home="$(/usr/bin/dscl . -read "/Users/$(/usr/bin/id -un)" NFSHomeDirectory | /usr/bin/awk '{print $2}')" || fail 'cannot resolve the current account home' ;;
-    esac
-    [ -n "$account_home" ] && [ "$DEPLOY_HOME" = "$account_home" ] || fail 'system and login-shell options cannot target a simulated or different home'
+    assert_real_account_home
 fi
 
 # Refuse pre-existing state directory symlinks before mkdir or installers can

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # Explicit system/account actions. Sourcing this module only declares helpers;
-# bootstrap invokes them after validating the native platform and real account home.
+# bootstrap invokes them only after explicit opt-in and real-account validation.
 
 system_admin() {
     local uid sudo_bin
@@ -25,6 +25,35 @@ system_bash_rc() {
         macos) printf '/etc/bashrc' ;;
         *) fail "system Bash configuration is unsupported on $DEPLOY_PLATFORM" ;;
     esac
+}
+
+native_account_value() {
+    local value="$1" field attribute
+    case "$DEPLOY_PLATFORM" in
+        linux|wsl)
+            case "$value" in
+                home) field=6 ;;
+                shell) field=7 ;;
+                *) return 2 ;;
+            esac
+            /usr/bin/getent passwd "$(/usr/bin/id -u)" | /usr/bin/awk -F: -v field="$field" '{print $field}' ;;
+        macos)
+            case "$value" in
+                home) attribute=NFSHomeDirectory ;;
+                shell) attribute=UserShell ;;
+                *) return 2 ;;
+            esac
+            /usr/bin/dscl . -read "/Users/$(/usr/bin/id -un)" "$attribute" | /usr/bin/awk '{print $2}' ;;
+        *) fail "account lookup is unsupported on $DEPLOY_PLATFORM" ;;
+    esac
+}
+
+assert_real_account_home() {
+    local actual_platform account_home
+    actual_platform="$(PATH=/usr/bin:/bin detect_platform)" || fail 'cannot detect the native platform'
+    [ "$DEPLOY_PLATFORM" = "$actual_platform" ] || fail 'system and login-shell options require the detected native platform'
+    account_home="$(native_account_value home)" || fail 'cannot resolve the current account home'
+    [ -n "$account_home" ] && [ "$DEPLOY_HOME" = "$account_home" ] || fail 'system and login-shell options cannot target a simulated or different home'
 }
 
 replace_managed_bash_block() {
@@ -86,12 +115,7 @@ register_login_shell() {
 }
 
 current_login_shell() {
-    case "$DEPLOY_PLATFORM" in
-        linux|wsl)
-            /usr/bin/getent passwd "$(/usr/bin/id -u)" | /usr/bin/awk -F: '{print $7}' ;;
-        macos)
-            /usr/bin/dscl . -read "/Users/$(/usr/bin/id -un)" UserShell | /usr/bin/awk '{print $2}' ;;
-    esac
+    native_account_value shell
 }
 
 set_login_shell() {
