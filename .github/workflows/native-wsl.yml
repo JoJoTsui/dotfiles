@@ -1,0 +1,69 @@
+name: Native WSL2 deployment
+
+on:
+  push:
+    branches: [main, 'integration/**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      wsl_arm64:
+        description: Run on an available self-hosted Windows ARM64 runner with WSL2
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  wsl2-x64:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [workstation, remote-compute]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Provision disposable WSL2 and verify the deployment
+        shell: pwsh
+        run: >-
+          ./tests/native/wsl.ps1 -Provision -RunnerTemp $env:RUNNER_TEMP
+          -Source $env:GITHUB_WORKSPACE -Role '${{ matrix.role }}' -Architecture x86_64
+      - name: Upload verification reports only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-wsl2-x64-${{ matrix.role }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dotfiles-wsl-*/reports/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  # Linux ARM resolution/rendering is covered separately. This explicit opt-in
+  # requires a real Windows ARM64 WSL2 host; an absent runner remains pending.
+  wsl2-arm64:
+    if: github.event_name == 'workflow_dispatch' && inputs.wsl_arm64
+    runs-on: [self-hosted, Windows, ARM64, wsl2]
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        role: [workstation, remote-compute]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Provision disposable ARM64 WSL2 and verify the deployment
+        shell: pwsh
+        run: >-
+          ./tests/native/wsl.ps1 -Provision -RunnerTemp $env:RUNNER_TEMP
+          -Source $env:GITHUB_WORKSPACE -Role '${{ matrix.role }}' -Architecture aarch64
+      - name: Upload verification reports only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-wsl2-arm64-${{ matrix.role }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dotfiles-wsl-*/reports/*.json
+          if-no-files-found: error
+          retention-days: 7

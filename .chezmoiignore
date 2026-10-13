@@ -9,6 +9,7 @@ docs
 system
 clash
 .git
+.github
 .gitignore
 .gitattributes
 # Runtime client files merge through the public boundary; source application
