@@ -60,6 +60,10 @@ class CodeGraphTests(unittest.TestCase):
                 "DISABLE_TELEMETRY": "1", "DISABLE_AUTOUPDATER": "1"}
         return managed_shell_environment(self.home, environment)
 
+    def home_codegraph_indexes(self):
+        metadata = self.home / ".codegraph"
+        return tuple(metadata.rglob("codegraph.db")) if metadata.is_dir() else ()
+
     def test_fresh_home_configures_managed_codegraph_even_when_agents_are_disabled(self):
         result = self.deploy("--agents", "none")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -217,7 +221,7 @@ class CodeGraphTests(unittest.TestCase):
                 self.assertIn("isn't indexed", json.dumps(missing).lower())
                 self.assertIn("built-in tools", json.dumps(missing))
                 self.assertFalse((project / ".codegraph").exists())
-                self.assertFalse((self.home / ".codegraph").exists())
+                self.assertFalse(self.home_codegraph_indexes(), "an MCP probe must not index the device home")
                 indexed = subprocess.run([binary, "init", "--yes", str(project)], cwd=project,
                                          env=environment, capture_output=True, text=True, timeout=90)
                 self.assertEqual(indexed.returncode, 0, indexed.stdout + indexed.stderr)
@@ -231,7 +235,7 @@ class CodeGraphTests(unittest.TestCase):
                 self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
                 self.assertIn("return value + 1", cli.stdout)
                 self.assertFalse((SOURCE / ".codegraph").exists())
-                self.assertFalse((self.home / ".codegraph").exists())
+                self.assertFalse(self.home_codegraph_indexes(), "an explicit project index must stay in that project")
             finally:
                 stop_client(process)
                 process.stdin.close()
@@ -303,7 +307,7 @@ class CodeGraphTests(unittest.TestCase):
                     finally:
                         stop_client(process)
         self.assertFalse((project / ".codegraph").exists())
-        self.assertFalse((self.home / ".codegraph").exists())
+        self.assertFalse(self.home_codegraph_indexes(), "client discovery must not index the device home")
         self.assertFalse((SOURCE / ".codegraph").exists())
         self.assertFalse((self.home / ".codex/auth.json").exists())
 
