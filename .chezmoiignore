@@ -17,6 +17,8 @@ clash
 **/*keys.json
 **/auth.json
 **/credentials*
+.atuin
+.local/share/atuin
 
 {{- if ne .role "remote-compute" }}
 .vscode-server

@@ -20,3 +20,9 @@ credentials
 credentials.*
 *.pem
 *.token
+
+# Atuin runtime/auth/history are device state, never source payloads.
+dot_atuin/
+dot_local/share/atuin/
+.atuin/
+.local/share/atuin/
