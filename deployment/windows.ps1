@@ -335,7 +335,10 @@ function Install-Common {
     Copy-RegularTree (Join-Path $roots.bun 'bin/bun.exe') (Join-Path $roots.pixi 'bin/bun.exe')
     Copy-RegularTree (Join-Path $roots.data 'dotfiles/helix/hx.exe') (Join-Path $roots.pixi 'bin/hx.exe')
     $env:HELIX_RUNTIME = Join-Path $roots.data 'dotfiles/helix/runtime'
-    Write-Utf8 (Join-Path $roots.bun 'bin/bunx.cmd') "@echo off`r`n`"%~dp0bun.exe`" x %*`r`nexit /b %errorlevel%`r`n"
+    foreach ($directory in @((Join-Path $roots.bun 'bin'), (Join-Path $roots.pixi 'bin'))) {
+        Write-Utf8 (Join-Path $directory 'bunx.cmd') "@echo off`r`n`"%~dp0bun.exe`" x %*`r`nexit /b %errorlevel%`r`n"
+        Write-Utf8 (Join-Path $directory 'bunx') ('#!/bin/sh' + "`n" + 'exec "$(dirname -- "$0")/bun.exe" x "$@"' + "`n")
+    }
     $script:Step = 'install-common.verify-exposure'
     foreach ($package in @($packages) + @($bundlePackages)) {
         foreach ($command in $package.exposed.Keys) {
@@ -374,6 +377,14 @@ function Install-Agents {
                 $launcher = Join-Path $TargetHome "$relative/$command.cmd"
                 $relativeEntry = ('.bun/managed/' + $name + '/node_modules/' + $row[1] + '/' + $entry).Replace('/', '\')
                 Write-Utf8 $launcher ("@echo off`r`n`"%~dp0..\..\.pixi\bin\node.exe`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n")
+                # Match npm's Windows discovery contract: native clients use
+                # .cmd, while Git Bash resolves the bare POSIX companion.
+                $singleQuote = [string][char]39; $doubleQuote = [string][char]34
+                $quotedEntry = $singleQuote + $relativeEntry.Replace('\', '/').Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
+                $posix = '#!/bin/sh' + "`n" + 'dotfiles_device=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) || exit 1' + "`n"
+                $posix += '. "$dotfiles_device/.env_core"' + "`n"
+                $posix += 'exec "$dotfiles_device/.pixi/bin/node.exe" "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                Write-Utf8 (Join-Path $TargetHome "$relative/$command") $posix
             }
             $script:Step = "install-agents.$name.diagnostic"
             # Explicit Node invocation tests the same entry used by native MCP;

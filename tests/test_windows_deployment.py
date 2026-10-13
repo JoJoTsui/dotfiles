@@ -264,6 +264,16 @@ class WindowsNativeInstallTests(unittest.TestCase):
         values = json.loads(probe.stdout)
         self.assertEqual(Path(values[0]), self.home / '.config/nushell')
         self.assertEqual(values[1:], ['hx', 'managed'])
+        # Actual shell discovery must exercise the launchers used in each
+        # managed shell, including Git Bash's bare companion scripts.
+        pins = [pin for name, (pin, _) in commands.items() if name in ('kimi', 'pi', 'opencode', 'claude', 'codex', 'codegraph')]
+        nu_versions = subprocess.run([str(self.home / '.pixi/bin/nu.exe'), '-e',
+                                      'print ([(^kimi --version) (^pi --version) (^opencode --version) '
+                                      '(^claude --version) (^codex --version) (^codegraph --version)] | to json --raw); exit'],
+                                     env=ordinary, capture_output=True, text=True, timeout=120)
+        self.assertEqual(nu_versions.returncode, 0, nu_versions.stderr)
+        for pin in pins:
+            self.assertIn(pin, nu_versions.stdout)
         pip = subprocess.run([str(self.home / '.pixi/bin/python.exe'), '-m', 'pip', 'config', 'debug'],
                              env=ordinary, capture_output=True, text=True, timeout=30)
         self.assertEqual(pip.returncode, 0, pip.stderr)
@@ -284,6 +294,13 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertEqual(bash.returncode, 0, bash.stderr)
         self.assertIn('.pixi', bash.stdout)
         self.assertEqual(Path(bash.stdout.splitlines()[-1]), self.home / '.local/share/atuin/history.db')
+        bash_versions = subprocess.run([environment['KIMI_SHELL_PATH'], '--noprofile', '-c',
+                                        'set -e; . "$HOME/.env_core"; command -v bunx; kimi --version; pi --version; opencode --version; '
+                                        'claude --version; codex --version; codegraph --version'],
+                                       env=environment, capture_output=True, text=True, timeout=120)
+        self.assertEqual(bash_versions.returncode, 0, bash_versions.stderr)
+        for pin in pins:
+            self.assertIn(pin, bash_versions.stdout)
         from fixtures.windows_clients import verify_clients
         verify_clients(self, SOURCE, environment)
         console_report = self.root / 'native-console-report.json'

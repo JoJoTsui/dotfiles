@@ -44,6 +44,10 @@ use managed Node; CodeGraph MCP registrations spawn `node.exe` plus the pinned
 `npm-shim.js` directly because a `.cmd` launcher is not universally executable
 by a client's stdio subprocess implementation. Bootstrap creates no index.
 
+Git Bash receives bare POSIX companion launchers alongside native `.cmd`
+launchers for the agents, CodeGraph and bunx. Each companion invokes the pinned
+managed runtime; shell discovery is included in the native acceptance gate.
+
 The same raw payload catalog copies real skills/instructions without executing
 their helpers. The same Chezmoi client-merge template stages all configs before
 replacing any; device values and separate auth/trust/session files survive.
