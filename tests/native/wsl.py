@@ -294,6 +294,8 @@ def main():
     except (RuntimeError, OSError, ValueError, subprocess.TimeoutExpired) as error:
         report["failure"] = str(error)
         print(f"native-wsl: {error}", file=sys.stderr)
+        phase = report.get("phase", "unknown phase")
+        print(f"::error title=Native WSL2 acceptance failed::{phase}", file=sys.stderr, flush=True)
         return 1
     finally:
         arguments.report.parent.mkdir(parents=True, exist_ok=True)

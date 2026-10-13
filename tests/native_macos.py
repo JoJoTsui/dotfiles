@@ -208,8 +208,21 @@ def check_portable_suites(home, role, report):
         # Required native checks may not be converted to successful skips.
         if result.returncode != 0 or "skipped=" in result.stderr:
             print(result.stderr, file=sys.stderr)
-            diagnostics = [line.strip() for line in result.stderr.splitlines()
-                           if line.strip().startswith(("FAIL:", "ERROR:", "Ran ", "FAILED"))]
+            failed_tests = []
+            for line in result.stderr.splitlines():
+                fields = line.strip().split()
+                if len(fields) >= 2 and fields[0] in ("FAIL:", "ERROR:"):
+                    name = fields[1]
+                    if name.startswith("test_") and name.replace("_", "").isalnum():
+                        failed_tests.append(name)
+            failed_tests = sorted(set(failed_tests))
+            report["failed_suite"] = pattern
+            report["failed_tests"] = failed_tests
+            diagnostics = (["failed tests: " + ", ".join(failed_tests)] if failed_tests else [])
+            if result.returncode != 0:
+                diagnostics.append("unittest exited nonzero")
+            if "skipped=" in result.stderr:
+                diagnostics.append("unittest reported skipped tests")
             detail = f" ({'; '.join(diagnostics[:8])})" if diagnostics else ""
             require(False, f"native observable suite failed or skipped: {pattern}{detail}")
         summary = next((line for line in result.stderr.splitlines() if line.startswith("Ran ")), "")
@@ -277,6 +290,9 @@ def main():
         report["failed_check"] = phase
         # Errors contain test/check labels only, never config or account data.
         report["reason"] = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+        suite = report.get("failed_suite", "")
+        message = f"{phase}: {suite}" if suite else phase
+        print(f"::error title=Native macOS acceptance failed::{message}", file=sys.stderr, flush=True)
     finally:
         report["elapsed_seconds"] = round(time.monotonic() - started, 3)
         args.report.parent.mkdir(parents=True, exist_ok=True)

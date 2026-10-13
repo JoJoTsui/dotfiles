@@ -35,7 +35,27 @@ try {
         & python -m unittest discover -s tests -p test_windows_deployment.py -v 2>&1 | Tee-Object -FilePath (Join-Path $ReportDirectory 'windows-tests.log')
         $result = $LASTEXITCODE
     } finally { $ErrorActionPreference = 'Stop'; Pop-Location }
-    if ($result) { throw 'native Windows deployment tests failed' }
+        if ($result) {
+            $testLog = Join-Path $ReportDirectory 'windows-tests.log'
+            $diagnostics = @()
+            if (Test-Path -LiteralPath $testLog) {
+                $diagnostics = @(Get-Content -LiteralPath $testLog | ForEach-Object {
+                    if ($_ -match '^(FAIL|ERROR): (test_[A-Za-z0-9_]+)\b') {
+                        "$($Matches[1]): $($Matches[2])"
+                    } elseif ($_ -match '^Ran ([0-9]+) tests? in ') {
+                        "Ran $($Matches[1]) tests"
+                    } elseif ($_ -match '^FAILED') {
+                        'FAILED'
+                    }
+                } | Select-Object -First 8)
+            }
+            if ($diagnostics.Count -gt 0) {
+                $report.failure = $diagnostics
+                $message = $diagnostics -join '; '
+                Write-Output "::error title=Native Windows acceptance failed::$message"
+            }
+            throw 'native Windows deployment tests failed'
+        }
     $report.status = 'passed'
 } finally {
     $report.finished = [DateTime]::UtcNow.ToString('o')
