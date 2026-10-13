@@ -13,7 +13,7 @@ import urllib.request
 import base64
 import errno
 from collections import Counter
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlencode, urlparse
 from fixtures.processes import stop_client
 from fixtures.shell_env import managed_shell_environment
 
@@ -256,13 +256,17 @@ class AgentPayloadTests(unittest.TestCase):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
-        environment = dict(self.diagnostic_env(), OPENCODE_SERVER_PASSWORD="synthetic-payload-test")
+        environment = dict(self.diagnostic_env(),
+                           OPENCODE_CONFIG_DIR=str(self.home / ".config/opencode"),
+                           OPENCODE_CONFIG=str(self.home / ".config/opencode/opencode.jsonc"),
+                           OPENCODE_SERVER_PASSWORD="synthetic-payload-test")
         target_skill_root = str(self.home / ".agents/skills")
         config_lines = (self.home / ".config/opencode/opencode.jsonc").read_text().splitlines()
         config = json.loads("\n".join(line for line in config_lines if not line.lstrip().startswith("//")))
         config_has_target_skill_root = target_skill_root in config.get("skills", [])
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        request = urllib.request.Request(f"http://127.0.0.1:{port}/api/skill")
+        location = urlencode({"location[directory]": str(self.home)})
+        request = urllib.request.Request(f"http://127.0.0.1:{port}/api/skill?{location}")
         request.add_header("Authorization", "Basic " + base64.b64encode(b"opencode:synthetic-payload-test").decode())
         with (self.root / "opencode.log").open("w") as log:
             process = subprocess.Popen([opencode, "serve", "--hostname", "127.0.0.1", "--port", str(port)],

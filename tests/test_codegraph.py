@@ -78,7 +78,7 @@ class CodeGraphTests(unittest.TestCase):
         self.assertFalse(server["disabled"])
         self.assertFalse(server["codemode"])
         self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["skills"],
-                         ["../../.agents/skills"])
+                         ["~/.agents/skills"])
         codex = (self.home / ".codex/config.toml").read_text()
         self.assertIn('[mcp_servers.codegraph]', codex)
         self.assertFalse((self.home / ".codegraph").exists())
@@ -131,7 +131,7 @@ class CodeGraphTests(unittest.TestCase):
         self.assertEqual(opencode["skills"], ["./device-skills", str(self.home / ".agents/skills")])
         self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["theme"], "device-theme")
         self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["skills"],
-                         ["./device-skills", "../../.agents/skills"])
+                         ["./device-skills", "~/.agents/skills"])
         self.assertEqual(json.loads((self.home / ".pi/agent/models-store.json").read_text())["device"], {"models": [{"id": "custom-model"}]})
         for relative in (".codex/auth.json", ".pi/agent/auth.json"):
             self.assertEqual((self.home / relative).read_text(), original[relative])
