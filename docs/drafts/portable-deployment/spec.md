@@ -1,6 +1,9 @@
 # Portable dotfiles deployment
 
-**Status:** Draft for specification and ticket review; not published to a tracker.
+**Status:** Implemented through the repository-local ticket set. Native macOS,
+Windows, and WSL runner results remain external verification evidence; the
+accepted behavior and local/network/native boundaries are summarized in
+[Ticket 13's matrix evidence](../../verification/complete-matrix.md).
 
 ## Problem Statement
 

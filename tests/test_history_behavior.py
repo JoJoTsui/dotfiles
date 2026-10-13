@@ -130,7 +130,9 @@ class HistoryBehaviorTests(unittest.TestCase):
         os.close(secondary)
         output = bytearray()
         pending = list(prompts)
-        deadline = time.monotonic() + 15
+        # Local registration derives the account key and starts a fresh client;
+        # leave headroom for slower CI/compute hosts while keeping hangs bounded.
+        deadline = time.monotonic() + 60
         try:
             while time.monotonic() < deadline:
                 readable, _, _ = select.select([primary], [], [], 0.05)

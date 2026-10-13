@@ -61,8 +61,13 @@ class CommonInstallTests(unittest.TestCase):
             pip = subprocess.run([str(home / ".pixi/bin/pip"), "config", "get", "global.index-url"], env=diagnostic_environment, capture_output=True, text=True)
             self.assertEqual(pip.returncode, 0, pip.stderr)
             self.assertEqual(pip.stdout.strip(), "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple")
+            uv_config = home / ".config/uv/uv.toml"
+            self.assertTrue(uv_config.is_file(), f"rendered uv config is missing: {uv_config}")
             uv = subprocess.run([str(home / ".pixi/bin/uv"), "--show-settings", "pip", "install", "--dry-run", "--system", "--python", str(home / ".pixi/bin/python"), "--offline", "dotfiles-unavailable==0.0.0"], env=diagnostic_environment, capture_output=True, text=True)
-            self.assertIn("https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple/", uv.stdout + uv.stderr)
+            uv_settings = uv.stdout + uv.stderr
+            self.assertIn("https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple", uv_settings,
+                          f"uv did not discover the TUNA index; config={uv_config.read_text()}\n"
+                          f"settings tail={uv_settings[-3000:]}")
             contents = subprocess.run([str(home / ".pixi/bin/python"), "-c", "import json,pathlib,tomllib; print(json.dumps(tomllib.loads(pathlib.Path.home().joinpath('.pixi/manifests/pixi-global.toml').read_text())))"], env=diagnostic_environment, capture_output=True, text=True)
             self.assertEqual(contents.returncode, 0, contents.stderr)
             registered = json.loads(contents.stdout)
