@@ -134,6 +134,28 @@ class WindowsBoundaryTests(unittest.TestCase):
         self.assertIn('firefox', plan['tools'])
         self.assertFalse(self.home.exists())
 
+    def test_normal_nu_startup_loads_the_rendered_environment_without_config_flags(self):
+        tool_home = os.environ.get('DOTFILES_TEST_TOOL_HOME')
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not tool_home or not chezmoi:
+            self.skipTest('normal startup requires the actual pinned Nu and renderer')
+        executable = Path(tool_home) / '.pixi/envs/nushell/bin/nu'
+        if not executable.is_file():
+            self.skipTest('this local regression borrows the pinned Linux Nu executable')
+        applied = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        environment = dict(self.env, HOME=str(self.home), USERPROFILE=str(self.home),
+                           XDG_CONFIG_HOME=str(self.home / '.config'), XDG_DATA_HOME=str(self.home / '.local/share'),
+                           APPDATA=str(self.home / 'AppData/Roaming'), PATH='/usr/bin:/bin')
+        for name in ('EDITOR', 'UV_PYTHON_PREFERENCE'):
+            environment.pop(name, None)
+        from fixtures.windows_shell import ordinary_nu_settings
+        result = ordinary_nu_settings(executable, environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        values = json.loads(result.stdout)
+        self.assertEqual(Path(values[0]), self.home / '.config/nushell')
+        self.assertEqual(values[1:], ['hx', 'managed'])
+
     def test_invalid_selections_and_nested_symlinks_fail_before_mutation(self):
         for args in (('-Plan', '-Arch', 'arm64'), ('-Plan', '-Bundles', 'bio'),
                      ('-Plan', '-Profile', 'windows-workstation', '-Role', 'remote-compute'),
@@ -236,9 +258,8 @@ class WindowsNativeInstallTests(unittest.TestCase):
         # Nu's native fallback uses Known Folder APIs. Do not remove the XDG
         # startup boundary in a disposable-home test and scaffold the real CI
         # user's RoamingAppData. Ordinary managed launch has no --config flags.
-        probe = subprocess.run([str(self.home / '.pixi/bin/nu.exe'), '-c',
-                                '[$nu.default-config-dir $env.EDITOR $env.UV_PYTHON_PREFERENCE] | to json'],
-                               env=ordinary, capture_output=True, text=True, timeout=30)
+        from fixtures.windows_shell import ordinary_nu_settings
+        probe = ordinary_nu_settings(self.home / '.pixi/bin/nu.exe', ordinary)
         self.assertEqual(probe.returncode, 0, probe.stderr)
         values = json.loads(probe.stdout)
         self.assertEqual(Path(values[0]), self.home / '.config/nushell')

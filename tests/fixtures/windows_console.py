@@ -49,11 +49,22 @@ class InputRecord(ctypes.Structure):
 
 class Console:
     def __init__(self):
+        import msvcrt
         self.kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        self.kernel.GetStdHandle.argtypes = [wintypes.DWORD]
-        self.kernel.GetStdHandle.restype = wintypes.HANDLE
-        self.input = self.kernel.GetStdHandle(-10 & 0xFFFFFFFF)
-        self.output = self.kernel.GetStdHandle(-11 & 0xFFFFFFFF)
+        # Python Popen may forward its parent's redirected standard handles
+        # even with CREATE_NEW_CONSOLE. Open this owned console explicitly and
+        # publish its handles before launching public wrappers/clients.
+        self.streams = (open('CONIN$', 'r', encoding='utf-8'),
+                        open('CONOUT$', 'w', encoding='utf-8', buffering=1),
+                        open('CONOUT$', 'w', encoding='utf-8', buffering=1))
+        self.kernel.SetStdHandle.argtypes = [wintypes.DWORD, wintypes.HANDLE]
+        self.kernel.SetStdHandle.restype = wintypes.BOOL
+        handles = [wintypes.HANDLE(msvcrt.get_osfhandle(stream.fileno())) for stream in self.streams]
+        for identifier, handle in zip((-10, -11, -12), handles):
+            if not self.kernel.SetStdHandle(identifier & 0xFFFFFFFF, handle):
+                raise RuntimeError('cannot attach the owned native console handles')
+        sys.stdin, sys.stdout, sys.stderr = self.streams
+        self.input, self.output = handles[:2]
         self.kernel.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
         self.kernel.GetConsoleMode.restype = wintypes.BOOL
         self.kernel.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]

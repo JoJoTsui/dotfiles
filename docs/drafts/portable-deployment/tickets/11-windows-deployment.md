@@ -38,3 +38,6 @@ passed after limiting copies to source-owned config files. Explicit-file Nu
 import tests failed before the public aliases/parser and passed against actual
 Atuin 18.23. The native fixtures are committed for Windows execution; Linux
 syntax checks do not validate Windows executables, consoles or Known Folders.
+The ordinary Nu startup probe also failed with the pin's `-c` mode (missing
+EDITOR), then passed with `-e`, an explicit JSON print and exit. Its isolated
+XDG roots precede startup and it uses no individual config-file flags.
