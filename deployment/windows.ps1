@@ -415,23 +415,39 @@ function Install-Agents {
             Assert-Relative $entry
             $javascript = Join-Path $packageDirectory $entry
             if (-not [IO.File]::Exists($javascript)) { Stop-Deployment "$name did not expose $command" }
+            $usesNode = -not $entry.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)
             foreach ($relative in @('.bun/bin', '.local/bin')) {
                 $launcher = Join-Path $TargetHome "$relative/$command.cmd"
                 $relativeEntry = ('.bun/managed/' + $name + '/node_modules/' + $row.columns[1] + '/' + $entry).Replace('/', '\')
-                Write-Utf8 $launcher ("@echo off`r`n`"%~dp0..\..\.pixi\bin\node.exe`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n")
+                if ($usesNode) {
+                    $launcherText = "@echo off`r`n`"%~dp0..\..\.pixi\bin\node.exe`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
+                } else {
+                    # Some platform-specific packages expose a native .exe bin.
+                    # Do not pass a PE executable to Node as a JavaScript file.
+                    $launcherText = "@echo off`r`n`"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
+                }
+                Write-Utf8 $launcher $launcherText
                 # Match npm's Windows discovery contract: native clients use
                 # .cmd, while Git Bash resolves the bare POSIX companion.
                 $singleQuote = [string][char]39; $doubleQuote = [string][char]34
                 $quotedEntry = $singleQuote + $relativeEntry.Replace('\', '/').Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
                 $posix = '#!/bin/sh' + "`n" + 'dotfiles_device=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) || exit 1' + "`n"
                 $posix += '. "$dotfiles_device/.env_core"' + "`n"
-                $posix += 'exec "$dotfiles_device/.pixi/bin/node.exe" "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                if ($usesNode) {
+                    $posix += 'exec "$dotfiles_device/.pixi/bin/node.exe" "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                } else {
+                    $posix += 'exec "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                }
                 Write-Utf8 (Join-Path $TargetHome "$relative/$command") $posix
             }
             $script:Step = "install-agents.$name.diagnostic"
-            # Explicit Node invocation tests the same entry used by native MCP;
-            # the native runner also checks the public .cmd launchers.
-            $diagnostic = Invoke-Tool $node @($javascript, '--version') -Quiet -ShowFailureOutput
+            # Probe the package bin using its native format; the acceptance
+            # runner also checks the public .cmd launchers.
+            if ($usesNode) {
+                $diagnostic = Invoke-Tool $node @($javascript, '--version') -Quiet -ShowFailureOutput
+            } else {
+                $diagnostic = Invoke-Tool $javascript @('--version') -Quiet -ShowFailureOutput
+            }
             if (-not $diagnostic.Contains($row.columns[2])) { Stop-Deployment "$name diagnostic did not report its pinned version" }
             [Console]::Out.Write($diagnostic)
         }
