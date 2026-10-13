@@ -84,7 +84,12 @@ class AgentPayloadTests(unittest.TestCase):
         return managed
 
     def local_skill_path(self, value):
-        parsed = urlparse(str(value))
+        raw_value = str(value)
+        # On Windows urlparse treats a drive letter as a URI scheme, so accept
+        # native absolute paths before attempting URI decoding.
+        if Path(raw_value).is_absolute():
+            return Path(raw_value).resolve()
+        parsed = urlparse(raw_value)
         if parsed.scheme not in ("", "file"):
             return None
         if parsed.scheme == "file":
@@ -116,7 +121,10 @@ class AgentPayloadTests(unittest.TestCase):
             return False
 
     def skill_path_kind(self, value):
-        parsed = urlparse(str(value))
+        raw_value = str(value)
+        if Path(raw_value).is_absolute():
+            return "absolute"
+        parsed = urlparse(raw_value)
         if parsed.scheme not in ("", "file"):
             return "other-uri"
         if parsed.scheme == "file":
@@ -155,6 +163,9 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertTrue(self.skill_path_is_in_home("file://~/.agents/skills/tdd/SKILL.md"))
         self.assertTrue(self.skill_path_is_in_home("file:///~/.agents/skills/tdd/SKILL.md"))
         self.assertFalse(self.skill_path_is_in_home("~/../outside/SKILL.md"))
+        absolute = self.home / ".agents/skills/tdd/SKILL.md"
+        self.assertTrue(self.skill_path_is_in_home(str(absolute)))
+        self.assertEqual(self.skill_path_kind(str(absolute)), "absolute")
 
     def test_default_payload_is_usable_even_when_agent_installation_is_disabled(self):
         result = self.deploy("--agents", "none")
