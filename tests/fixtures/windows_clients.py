@@ -18,7 +18,11 @@ def verify_clients(case, source, environment):
     names = ('codegraph', 'codex', 'claude', 'kimi', 'opencode')
     overrides = {"DOTFILES_TEST_" + name.upper(): str(case.home / f'.bun/bin/{name}.cmd') for name in names}
     overrides.update(DOTFILES_TEST_NODE=str(case.home / '.pixi/bin/node.exe'),
-                     DOTFILES_TEST_PI_MODULE=str(case.home / '.bun/managed/pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js'))
+                     DOTFILES_TEST_PI_MODULE=str(case.home / '.bun/managed/pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js'),
+                     DOTFILES_TEST_HOME=str(case.home),
+                     DOTFILES_TEST_TEMP_ROOT=str(case.root),
+                     DOTFILES_TEST_SOURCE=str(source),
+                     DOTFILES_TEST_RUNNER_HOME=str(Path(case.env.get('HOME', str(case.root))).resolve()))
     saved = {key: os.environ.get(key) for key in overrides}
     os.environ.update(overrides)
     original_deploy = case.deploy
