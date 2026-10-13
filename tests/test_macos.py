@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pins import common_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -144,8 +145,8 @@ class MacOSProfileTests(unittest.TestCase):
                     result = self.deploy(*arguments)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     desired = (self.home / ".config/dotfiles/pixi-global.toml").read_text()
-                    self.assertIn('"bun" = "==1.3.11"', desired)
-                    self.assertIn('"atuin" = "==18.23.0"', desired)
+                    self.assertIn('"bun" = "==' + common_pin("bun") + '"', desired)
+                    self.assertIn('"atuin" = "==' + common_pin("atuin") + '"', desired)
                     self.assertNotIn('[envs."nvtop"]', desired)
                     native_env = self.home / "Library/Application Support/nushell/env.nu"
                     self.assertIn(f'$env.CHOKIDAR_USEPOLLING? | default "{1 if role == "remote-compute" else 0}"', native_env.read_text())

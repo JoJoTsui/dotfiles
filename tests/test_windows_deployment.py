@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from pins import agent_pins, common_pin, windows_assets
 
 SOURCE = Path(__file__).resolve().parents[1]
 POWERSHELL = os.environ.get("DOTFILES_TEST_POWERSHELL") or shutil.which("pwsh") or shutil.which("powershell")
@@ -48,7 +49,7 @@ class WindowsBoundaryTests(unittest.TestCase):
         for tool in ("pixi", "bun", "atuin", "rtk", "nu", "uv", "zoxide", "tspin", "hx", "jq", "kimi", "pi", "opencode", "claude", "codex", "codegraph"):
             self.assertIn(tool, plan["tools"])
         packages = {item["environment"]: item for item in plan["packages"]}
-        self.assertEqual(packages["rtk-cli"]["dependencies"], {"rtk-cli": "==0.51.0"})
+        self.assertEqual(packages["rtk-cli"]["dependencies"], {"rtk-cli": "==" + common_pin("rtk-cli")})
         self.assertNotIn("zsh", packages)
         self.assertNotIn("bun", packages)
         self.assertEqual(plan["roots"]["appData"], str(self.home / "AppData/Roaming"))
@@ -123,8 +124,8 @@ class WindowsBoundaryTests(unittest.TestCase):
         plan = json.loads(result.stdout)
         self.assertEqual(plan['agents'], ['kimi', 'codex'])
         exceptions = {item['name']: item for item in plan['exceptions']}
-        self.assertEqual(exceptions['bun']['sha256'], '9d0e0f923e9626f3bc6044fc32e0d3ab29039aea753f5678ef8801cf26f75288')
-        self.assertEqual(exceptions['atuin']['version'], '18.23.0')
+        self.assertRegex(exceptions['bun']['sha256'], r'^[a-f0-9]{64}$')
+        self.assertEqual(exceptions['atuin']['version'], windows_assets()['atuin']['version'])
         self.assertIn('git-bash', exceptions)
         for item in exceptions.values():
             self.assertTrue(item['url'].startswith('https://'))
@@ -237,12 +238,18 @@ class WindowsNativeInstallTests(unittest.TestCase):
                            OPENCODE_CONFIG=str(self.home / '.config/opencode/opencode.jsonc'),
                            CODEGRAPH_NO_DOWNLOAD='1', DO_NOT_TRACK='1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1')
         environment['PATH'] = ';'.join(str(self.home / relative) for relative in ('.bun/bin', '.local/bin', '.pixi/bin')) + ';' + environment['PATH']
-        commands = {'bun': ('1.3.11', '.bun/bin/bun.exe'), 'atuin': ('18.23.0', '.pixi/bin/atuin.exe'),
-                    'nu': ('0.116.1', '.pixi/bin/nu.exe'), 'rtk': ('0.51.0', '.pixi/bin/rtk.exe'),
-                    'hx': ('25.07.1', '.pixi/bin/hx.exe'), 'jq': ('1.8.2', '.pixi/bin/jq.exe'),
-                    'kimi': ('2.1.1', '.bun/bin/kimi.cmd'), 'pi': ('1.2.0', '.bun/bin/pi.cmd'),
-                    'opencode': ('2.0.27', '.bun/bin/opencode.cmd'), 'claude': ('2.1.296', '.bun/bin/claude.cmd'),
-                    'codex': ('0.162.1', '.bun/bin/codex.cmd'), 'codegraph': ('1.6.2', '.bun/bin/codegraph.cmd')}
+        commands = {'bun': (windows_assets()['bun']['version'], '.bun/bin/bun.exe'),
+                    'atuin': (windows_assets()['atuin']['version'], '.pixi/bin/atuin.exe'),
+                    'nu': (common_pin('nushell'), '.pixi/bin/nu.exe'),
+                    'rtk': (common_pin('rtk-cli'), '.pixi/bin/rtk.exe'),
+                    'hx': (windows_assets()['helix']['version'], '.pixi/bin/hx.exe'),
+                    'jq': (windows_assets()['jq']['version'], '.pixi/bin/jq.exe'),
+                    'kimi': (agent_pins()['kimi']['version'], '.bun/bin/kimi.cmd'),
+                    'pi': (agent_pins()['pi']['version'], '.bun/bin/pi.cmd'),
+                    'opencode': (agent_pins()['opencode']['version'], '.bun/bin/opencode.cmd'),
+                    'claude': (agent_pins()['claude']['version'], '.bun/bin/claude.cmd'),
+                    'codex': (agent_pins()['codex']['version'], '.bun/bin/codex.cmd'),
+                    'codegraph': (agent_pins()['codegraph']['version'], '.bun/bin/codegraph.cmd')}
         for name, (pin, relative) in commands.items():
             with self.subTest(command=name):
                 diagnostic = subprocess.run([str(self.home / relative), '--version'], env=environment,

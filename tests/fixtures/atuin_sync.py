@@ -1,7 +1,8 @@
-"""Local Atuin 18.23 protocol fixture; synthetic accounts and encrypted records only."""
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+"""Local pinned Atuin protocol fixture; synthetic accounts and encrypted records only."""
 import json
 import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 
@@ -9,6 +10,14 @@ class AtuinSyncFixture:
     def __init__(self):
         self.account = None
         self.records = {}
+        catalog = Path(__file__).resolve().parents[2] / "deployment/common-tools.tsv"
+        self.version = next(
+            specification.rsplit("==", 1)[1]
+            for line in catalog.read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#") and line.split("|")[0] == "atuin"
+            for specification in line.split("|")[1].split(",")
+            if specification.startswith("atuin==")
+        )
         fixture = self
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *arguments):
@@ -19,7 +28,7 @@ class AtuinSyncFixture:
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(payload)))
-                self.send_header("Atuin-Version", "18.23.0")
+                self.send_header("Atuin-Version", fixture.version)
                 self.end_headers()
                 self.wfile.write(payload)
 
