@@ -5,7 +5,7 @@
   "update": "disable",
   // Render the target home explicitly: native runtimes may resolve tilde from
   // the OS account even when bootstrap is validating a disposable home.
-  "skills": {{ list (joinPath (env "HOME") ".agents" "skills") | toPrettyJson }},
+  "skills": {{ list (joinPath .chezmoi.homeDir ".agents" "skills") | toPrettyJson }},
   "watcher": {
     // V2 supports ignore patterns, not the old ineffective enabled flag.
     "ignore": {{ if eq .role "remote-compute" }}["**"]{{ else }}["node_modules/**", "dist/**", ".git/**"]{{ end }}

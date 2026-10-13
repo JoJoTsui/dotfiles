@@ -256,10 +256,11 @@ class AgentPayloadTests(unittest.TestCase):
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
-        environment = dict(self.diagnostic_env(),
-                           OPENCODE_CONFIG_DIR=str(self.home / ".config/opencode"),
-                           OPENCODE_CONFIG=str(self.home / ".config/opencode/opencode.jsonc"),
-                           OPENCODE_SERVER_PASSWORD="synthetic-payload-test")
+        environment = dict(self.diagnostic_env(), OPENCODE_SERVER_PASSWORD="synthetic-payload-test")
+        target_skill_root = str(self.home / ".agents/skills")
+        config_lines = (self.home / ".config/opencode/opencode.jsonc").read_text().splitlines()
+        config = json.loads("\n".join(line for line in config_lines if not line.lstrip().startswith("//")))
+        config_has_target_skill_root = target_skill_root in config.get("skills", [])
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         request = urllib.request.Request(f"http://127.0.0.1:{port}/api/skill")
         request.add_header("Authorization", "Basic " + base64.b64encode(b"opencode:synthetic-payload-test").decode())
@@ -288,6 +289,7 @@ class AgentPayloadTests(unittest.TestCase):
                 path_scopes = Counter(self.skill_path_scope(skill["path"]) for skill in data)
                 self.assertEqual({skill["id"] for skill in managed}, expected,
                                  f"managed={len(managed)}; home_matches={environment.get('HOME') == str(self.home)}; "
+                                 f"config_has_target_skill_root={config_has_target_skill_root}; "
                                  f"path_kinds={dict(path_kinds)}; path_scopes={dict(path_scopes)}")
                 self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
             finally:
@@ -328,6 +330,7 @@ class AgentPayloadTests(unittest.TestCase):
         script = """
 const {DefaultResourceLoader,SettingsManager,formatSkillsForPrompt} = await import(process.argv[1]);
 import {existsSync,realpathSync} from "node:fs";
+import {homedir} from "node:os";
 import {fileURLToPath} from "node:url";
 import path from "node:path";
 const settingsManager = SettingsManager.create(process.cwd(),process.env.PI_CODING_AGENT_DIR);
@@ -376,6 +379,10 @@ const pathScopes=skills.reduce((counts,skill)=>{
 },{});
 console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.disableModelInvocation).length,
   pathKinds,pathScopes,rootCount:roots.length,homeMatches:process.env.HOME===process.env.DOTFILES_TEST_HOME,
+  osHomeMatchesTarget:homedir()===process.env.DOTFILES_TEST_HOME,
+  skillPaths:settingsManager.getSkillPaths(),
+  agentDirMatchesTarget:path.resolve(process.env.PI_CODING_AGENT_DIR)===path.join(process.env.DOTFILES_TEST_HOME,".pi/agent"),
+  targetSkillsExist:existsSync(process.env.DOTFILES_TEST_HOME+"/.agents/skills"),
   prompt:formatSkillsForPrompt(skills),instructions:loader.getAgentsFiles().agentsFiles}));
 """
         diagnostic = subprocess.run([node, "--input-type=module", "-e", script, Path(module).as_uri()],
@@ -386,6 +393,9 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
         expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
         self.assertEqual((data["count"], data["explicit"]), (len(expected), 24),
                          f"root_count={data['rootCount']}; home_matches={data['homeMatches']}; "
+                         f"os_home_matches_target={data['osHomeMatchesTarget']}; "
+                         f"skill_paths={data['skillPaths']}; agent_dir_matches_target={data['agentDirMatchesTarget']}; "
+                         f"target_skills_exist={data['targetSkillsExist']}; "
                          f"path_kinds={data['pathKinds']}; path_scopes={data['pathScopes']}")
         self.assertIn("<name>tdd</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])

@@ -105,6 +105,8 @@ class AgentTests(unittest.TestCase):
         configs = [item["info"] for item in sources if item["type"] == "document"]
         self.assertTrue(any(config.get("update") == "disable" for config in configs), diagnostic.stdout)
         self.assertTrue(any(config.get("providers", {}).get("headroom", {}).get("settings", {}).get("baseURL") == "http://127.0.0.1:8787/v1" for config in configs))
+        self.assertTrue(any(config.get("skills") == [str(self.home / ".agents/skills")] for config in configs),
+                        "OpenCode config does not register the target home skill library")
 
     def test_selected_kimi_validates_configs_and_leaves_upgrades_to_repo(self):
         kimi = os.environ.get("DOTFILES_TEST_KIMI")
