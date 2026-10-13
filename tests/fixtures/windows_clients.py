@@ -47,14 +47,21 @@ const {createBashTool,SettingsManager}=await import(process.argv[1]);
 const settings=SettingsManager.create(process.cwd(),process.env.PI_CODING_AGENT_DIR);
 const result=await createBashTool(process.cwd(),{shellPath:settings.getShellPath()}).execute('native-fixture',
  {command:'printf "pi-native-git-bash-token\\n"; printf "%s\\n" "$BASH"; command -v nu',timeout:15});
-console.log(JSON.stringify(result));
+console.log(JSON.stringify({shellPath:settings.getShellPath(),result}));
 """
         pi = subprocess.run([overrides['DOTFILES_TEST_NODE'], '--input-type=module', '-e', pi_script,
                              Path(overrides['DOTFILES_TEST_PI_MODULE']).as_uri()],
                             cwd=case.home, env=environment, capture_output=True, text=True, timeout=45)
         case.assertEqual(pi.returncode, 0, pi.stderr)
-        case.assertIn('pi-native-git-bash-token', pi.stdout)
-        case.assertIn('dotfiles/git-bash', pi.stdout.replace('\\\\', '/').replace('\\', '/'))
+        pi_result = json.loads(pi.stdout)
+        expected_bash = case.home / '.local/share/dotfiles/git-bash/bin/bash.exe'
+        case.assertEqual(Path(pi_result['shellPath']), expected_bash)
+        output = pi_result['result'].get('structuredContent', {}).get('output', '')
+        case.assertIn('pi-native-git-bash-token', output)
+        # Git Bash presents its internal POSIX path in $BASH, while Nu still
+        # resolves through the target device's managed Windows PATH.
+        case.assertIn('/usr/bin/bash', output)
+        case.assertIn(str(case.home / '.pixi/bin/nu').replace('\\', '/'), output.replace('\\', '/'))
         CodeGraphTests.test_managed_mcp_command_explores_only_an_explicitly_indexed_temporary_fixture(case)
         project = case.root / 'native-client-unindexed'
         project.mkdir()
