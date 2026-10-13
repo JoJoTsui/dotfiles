@@ -8,6 +8,7 @@ DEPLOY_PLAN=false
 DEPLOY_APPLY_ONLY=false
 DEPLOY_AGENTS_ONLY=false
 CLI_PLATFORM='' CLI_ROLE='' CLI_PROFILE='' CLI_CLASS='' CLI_ARCH=''
+CLI_BUNDLES='' CLI_BUNDLES_SET=false
 CLI_AGENTS='' CLI_AGENTS_SET=false
 
 fail() {
@@ -54,12 +55,14 @@ Usage: bash bootstrap.sh [options]
   --profile NAME            <platform>-<role> preset, or t9k
   --class NAME              Legacy alias: t9k, linux, win
   --arch NAME               x86_64, aarch64 (amd64/arm64 aliases accepted)
+  --bundles LIST            none (default), or comma-separated bio,gpu,desktop,developer
   --agents SELECTION        all (default), none, or kimi,pi,opencode,claude,codex
   --apply-only              Apply files with chezmoi; skip tool/agent installers
   --agents-only             Apply files and install agents with an existing toolchain
 
 Environment selectors: DOTFILES_PLATFORM, DOTFILES_ROLE, DOTFILES_PROFILE,
-DOTFILES_CLASS, DOTFILES_ARCH, DOTFILES_AGENTS. Explicit flags override environment selectors.
+DOTFILES_CLASS, DOTFILES_ARCH, DOTFILES_AGENTS, DOTFILES_BUNDLES.
+Explicit flags override environment selectors.
 Conflicting explicit preset/component flags are errors.
 Every state root is scoped to the target home. This entry point does not change
 system configuration, account login shells, auth, history imports, or indexes.
@@ -68,7 +71,7 @@ HELP
         --plan) DEPLOY_PLAN=true; shift ;;
         --apply-only) DEPLOY_APPLY_ONLY=true; shift ;;
         --agents-only) DEPLOY_AGENTS_ONLY=true; shift ;;
-        --home|--platform|--role|--profile|--class|--arch|--source|--agents)
+        --home|--platform|--role|--profile|--class|--arch|--source|--agents|--bundles)
             [ "$#" -ge 2 ] || fail "$1 requires a value"
             case "$1" in
                 --home) DEPLOY_HOME="$2" ;;
@@ -78,6 +81,7 @@ HELP
                 --class) CLI_CLASS="$2" ;;
                 --arch) CLI_ARCH="$2" ;;
                 --source) DEPLOY_SOURCE="$2" ;;
+                --bundles) CLI_BUNDLES="$2"; CLI_BUNDLES_SET=true ;;
                 --agents) CLI_AGENTS="$2"; CLI_AGENTS_SET=true ;;
             esac
             shift 2 ;;
@@ -112,6 +116,9 @@ if "$DEPLOY_PLAN"; then
     printf ',"source":'; json_string "$DEPLOY_SOURCE"
     printf ',"tools":'; json_array "${DEPLOY_TOOLS[@]}"
     printf ',"packages":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else print_common_packages; fi
+    printf ',"bundles":'; json_array ${DEPLOY_BUNDLES[@]+"${DEPLOY_BUNDLES[@]}"}
+    printf ',"bundlePackages":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else print_bundle_packages; fi
+    printf ',"bundlePrerequisites":'; print_bundle_prerequisites
     printf ',"agents":'; json_array ${DEPLOY_AGENTS[@]+"${DEPLOY_AGENTS[@]}"}
     printf ',"agentPackages":'; print_agent_packages
     printf ',"managers":{"pixi":'; json_string "$PIXI_VERSION"
@@ -158,6 +165,7 @@ unset OPENCODE_CONFIG_CONTENT OPENCODE_CLI_CONFIG_CONTENT
 export HISTFILE="$HOME/.bash_history" TMPDIR="$HOME/.cache/tmp"
 export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$CARGO_HOME/bin:$PATH"
 export DOTFILES_PLATFORM="$DEPLOY_PLATFORM" DOTFILES_ROLE="$DEPLOY_ROLE" DOTFILES_ARCH="$DEPLOY_ARCH"
+export DOTFILES_BUNDLES="$DEPLOY_BUNDLES_CSV"
 unset DOTFILES_CLASS DOTFILES_PROFILE
 
 DEPLOY_STEP=prepare-state

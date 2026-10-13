@@ -31,3 +31,9 @@ deployment, skill helper execution, real account access, history import,
 repository index, or agent model request occurred. macOS/WSL/native Windows
 execution is pending their downstream gates; Linux rendering alone is not
 native execution.
+
+After merging specialist-bundle integration, all 49 combined tests ran in
+82.215 seconds: 45 passed and four opt-in network install/resolution suites
+were skipped. Bash syntax and staged whitespace checks passed. The bundle
+exclusion and Git attributes exclusion were both retained in the sole merge
+conflict, `.chezmoiignore`.
