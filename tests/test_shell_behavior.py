@@ -56,10 +56,12 @@ class ShellBehaviorTests(unittest.TestCase):
         launcher.write_text('#!/bin/sh\nexec "' + str(pixi) + '" "$@"\n')
         launcher.chmod(0o755)
 
-    def deploy(self, role="workstation", *, overrides=None):
+    def deploy(self, role=None, *, overrides=None):
+        role = role or os.environ.get("DOTFILES_TEST_ROLE", "workstation")
         result = subprocess.run([
             "bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
-            "--home", str(self.home), "--platform", "linux", "--role", role, "--apply-only",
+            "--home", str(self.home), "--platform", os.environ.get("DOTFILES_TEST_PLATFORM", "linux"),
+            "--role", role, "--apply-only",
         ], env=dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi, **(overrides or {})), cwd=SOURCE,
             capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)

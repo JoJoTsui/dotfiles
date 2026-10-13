@@ -145,6 +145,8 @@ DEPLOY_STEP=apply-source.agent-payload
 validate_agent_payload
 DEPLOY_STEP=apply-source.client-settings
 validate_client_settings
+DEPLOY_STEP=apply-source.macos-discovery
+validate_macos_config
 
 # History databases and credentials remain within the selected device root.
 for relative in .config/atuin .config/atuin/config.toml .local/share/atuin .local/share/atuin/meta.db .local/share/atuin/history.db .local/share/atuin/records.db .local/share/atuin/key .local/share/atuin/session; do
@@ -188,6 +190,7 @@ DEPLOY_STEP=apply-source
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
 run_step apply-source.agent-payload deploy_agent_payload
 run_step apply-source.client-settings deploy_client_settings
+run_step apply-source.macos-discovery deploy_macos_config
 if "$DEPLOY_AGENTS_ONLY"; then
     run_step install-agents install_agents
 elif ! "$DEPLOY_APPLY_ONLY"; then

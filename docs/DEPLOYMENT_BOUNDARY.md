@@ -1,5 +1,11 @@
 # Public deployment boundary
 
+Native macOS discovery reuses rendered settings through an owned copy catalog;
+read [macOS deployment](MACOS_DEPLOYMENT.md) when changing Nu/pip native paths
+or generated autoload resources. Its adapter runs in every source-apply mode
+and after shell/history preparation, validating source/destination paths before
+any state mutation.
+
 `bash bootstrap.sh --help` documents selectors and the CLI. The implementation
 uses system Bash 3.2-compatible syntax so a fresh macOS host does not require
 Python, Node, Bun, or managed Bash before bootstrap can start. Native Windows
