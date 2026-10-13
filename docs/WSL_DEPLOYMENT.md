@@ -127,3 +127,12 @@ inventory also confirmed all 29 owned common environments' exact numeric
 version components and Linux subdirs. Helix's source pin `25.07.1` appears as
 `25.7.1` in Conda metadata; native verification accepts that numeric spelling
 equivalence while keeping each component exact.
+
+The native Nu checks launch with `-e` and an explicit harmless print and exit.
+This loads ordinary env/config and vendor startup, which command-only `-c`
+omits. The verifier's `--probe-nu` mode checks the same launch in an existing
+rendered WSL home and always reports `nativePass: false`. Its two-role
+regression reproduced the missing `EDITOR` with `-c` and passes with `-e`,
+including role settings, navigation/log commands, prompt and history hooks.
+The focused WSL/shell gate passed all 19 cases with zero skips in 78.101
+seconds on Linux. All four actual WSL2 architecture/role cells remain pending.
