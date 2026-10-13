@@ -36,8 +36,13 @@ Seven behavior checks passed:
 
 Red tests first established missing status/preparation/import/activation
 behavior, and then caught secret argv echo and history state symlink writes.
-The shared shell suite and combined public deployment suite are run again after
-refreshing the ticket branch from integration.
+After refreshing the ticket branch from integration, the combined deployment,
+agent, bundle, shell and history suite passed 47 tests in 44 seconds, with seven
+explicit skips for opt-in network/tool checks and system Python's absent TOML
+support. The deterministic bundle registry case was then run with managed
+Python. The required legacy T9K and Linux simulated applies both passed, and
+standalone Nu printed `standalone-ok` in both homes with inherited host settings
+removed. Source-following Bash ShellCheck and POSIX driver ShellCheck passed.
 
 During an earlier red sync test, the pinned config's precedence over
 `ATUIN_SYNC_ADDRESS` briefly opened a hosted browser-flow session. No account

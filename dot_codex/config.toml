@@ -9,6 +9,7 @@ model_reasoning_effort = "medium"
 # ── Auth & Privacy ────────────────────────────────────────────────────
 forced_login_method = "chatgpt"
 approvals_reviewer = "auto_review"
+check_for_update_on_startup = false
 
 # ── Providers ─────────────────────────────────────────────────────────
 [model_providers.deepseek]

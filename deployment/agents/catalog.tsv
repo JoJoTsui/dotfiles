@@ -1,0 +1,7 @@
+# name|package|exact version|commands|minimum Node|trusted lifecycle dependencies
+kimi|@moonshot-ai/kimi-code|2.1.1|kimi|22.19.0|@moonshot-ai/kimi-code
+pi|@earendil-works/pi-coding-agent|1.2.0|pi|22.19.0|
+opencode|@opencode/cli|2.0.27|opencode,opencode2|22.0.0|@opencode/cli
+claude|@anthropic-ai/claude-code|2.1.296|claude|22.0.0|@anthropic-ai/claude-code
+codex|@openai/codex|0.162.1|codex|16.0.0|
+codegraph|@colbymchenry/codegraph|1.6.2|codegraph|24.0.0|

@@ -1,0 +1,23 @@
+# Desired selected bundles; merge with the device registry before Pixi sync.
+version = 1
+[envs]
+{{- $subdir := "linux-64" }}
+{{- if eq .arch "aarch64" }}{{ $subdir = "linux-aarch64" }}{{ end }}
+{{- if eq .platform "macos" }}
+{{- if eq .arch "aarch64" }}{{ $subdir = "osx-arm64" }}{{ else }}{{ $subdir = "osx-64" }}{{ end }}
+{{- else if eq .platform "windows" }}{{ $subdir = "win-64" }}{{ end }}
+{{- $selected := .bundles }}
+{{- $platform := .platform }}
+{{- range splitList "\n" (include "deployment/bundle-tools.tsv") }}
+{{- if and (ne . "") (not (hasPrefix "#" .)) }}
+{{- $fields := splitList "|" . }}
+{{- if and (has (index $fields 0) $selected) (or (eq (index $fields 5) "all") (has $platform (splitList "," (index $fields 5)))) }}
+
+[envs.{{ index $fields 1 | quote }}]
+channels = {{ splitList "," (index $fields 4) | toJson }}
+platform = {{ $subdir | quote }}
+dependencies = { {{- $sep := "" }}{{ range splitList "," (index $fields 2) }}{{ $package := splitList "==" . }}{{ $sep }}{{ index $package 0 | quote }} = {{ printf "==%s" (index $package 1) | quote }}{{ $sep = ", " }}{{ end }} }
+exposed = { {{- $sep := "" }}{{ range splitList "," (index $fields 3) }}{{ $mapping := splitList "=" . }}{{ $sep }}{{ index $mapping 0 | quote }} = {{ index $mapping 1 | quote }}{{ $sep = ", " }}{{ end }} }
+{{- end }}
+{{- end }}
+{{- end }}

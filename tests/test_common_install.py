@@ -40,12 +40,8 @@ class CommonInstallTests(unittest.TestCase):
         for attempt in (1, 2):
             result = subprocess.run(command, cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=1800)
             (home / f"install-{attempt}.log").write_text(result.stdout + result.stderr)
-            # Ticket 04 supplies the next stage. A midpoint check establishes
-            # only common success, and never calls the full bootstrap a pass.
-            if result.returncode:
-                self.assertEqual(result.returncode, 1, result.stderr[-5000:])
-                self.assertIn("agent installation awaits ticket 04", result.stderr, result.stderr[-5000:])
-                self.assertNotIn("dotfiles: applied", result.stdout)
+            self.assertEqual(result.returncode, 0, result.stderr[-7000:])
+            self.assertIn("dotfiles: applied", result.stdout)
             managed_path = f"{home}/.local/bin:{home}/.pixi/bin:{home}/.bun/bin:{home}/.cargo/bin:/usr/bin:/bin"
             diagnostic_environment = dict(environment, PATH=managed_path,
                 XDG_CONFIG_HOME=str(home / ".config"), XDG_DATA_HOME=str(home / ".local/share"),

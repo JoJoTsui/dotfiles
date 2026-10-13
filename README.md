@@ -34,10 +34,11 @@ Ordinary deployment changes user files only; it has no system or account
 login-shell action. See [the deployment boundary](docs/DEPLOYMENT_BOUNDARY.md)
 for the adapter contract and isolated verification.
 
-The deployment foundation implements verified manager provisioning, file
-application, and pinned common tools. The agent installer currently reports an
-explicit pending-ticket-04 failure before full bootstrap completion. Use
-`--apply-only` for configuration validation while that next slice is underway.
+The deployment foundation implements verified managers, working-source file
+application, pinned common tools, and frozen Bun agent installation. Use
+`--apply-only` for configuration validation, or `--agents-only` to install
+clients with an already available pinned Bun/Node toolchain. Shell/history and
+foreign native validation are covered by their separate implementation slices.
 
 ## Deployment profiles
 
@@ -91,6 +92,7 @@ dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
                             # rerere, lfs filters, gh credential helper
 dot_condarc                 # TUNA mirrors, nvidia/pytorch/conda-forge/bioconda channels
 deployment/common-tools.tsv  # exact common requirements and command exposures
+deployment/agents/           # exact per-client package manifests + bun.lock
 deployment/inventory/        # preserved optional/specialist inventory
 dot_config/
   starship.toml             # Catppuccin powerline prompt
@@ -102,7 +104,7 @@ dot_config/
   dotfiles/pixi-global.toml.tmpl # desired tools merged into the local registry
   zellij/config.kdl.tmpl    # multiplexer: custom keybinds, default_shell nu-login
   nushell/                  # env.nu.tmpl, config.nu, adjacent managed resources
-  opencode/opencode.jsonc   # canonical opencode config (headroom + MCPs)
+  opencode/opencode.jsonc.tmpl # OpenCode2 config (headroom + MCPs)
 dot_pixi/
   config.toml                 # netfs-redirect = never (network mount)
 dot_claude/settings.json.tmpl    # Claude Code on GLM-5.3 / glm-5.3-flash
@@ -196,6 +198,20 @@ under `deployment/inventory`; they are opt-in rather than common defaults.
 Native Windows bootstrap exceptions and execution are supplied by ticket 11;
 Unix-only conda entries are excluded from its desired manifest.
 
+Select whole optional bundles explicitly:
+
+```bash
+bash bootstrap.sh --profile linux-remote-compute --bundles bio,gpu --plan
+bash bootstrap.sh --profile linux-workstation --bundles developer
+```
+
+`--bundles none` is the default. Invalid names and unsupported whole-bundle
+targets fail before creating state. Every selected tool has its own pinned Pixi
+environment and exposed command. Herdr/Zellij settings accompany `developer`,
+and `fetchChromSizes` accompanies `bio`. Reapplying with fewer bundles preserves
+previous installations. Read [bundle inventory](deployment/inventory/README.md)
+for target support, host prerequisites, and retained setup-on-use capabilities.
+
 Env vars and configs only ever reference binaries that this manifest (or a
 bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 
@@ -207,13 +223,17 @@ bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 | **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
 | **kimi-code** | `~/.kimi-code/config.toml.tmpl`, `tui.toml` | `credentials/`, `oauth/`, sessions | key injected from `KIMI_API_KEY` at init; `kimi login` per host |
 | **pi** | `~/.pi/agent/settings.json`, `models-store.json` (MiniMax M2.7/M3 catalog) | `auth.json` (MiniMax key), `sessions/`, `trust.json` | minimal terminal harness; `pi auth login` per host |
-| **opencode** | `~/.config/opencode/opencode.jsonc` | `~/.opencode` install, plugins | headroom provider + codegraph/headroom MCPs, serena disabled; watcher off for network FS |
+| **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; built-in Headroom provider, optional Headroom MCP disabled; remote profile ignores update events |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
-The previous Bun client inventory is preserved in
-`deployment/inventory/legacy-bun-package.json`. Ticket 04 supplies exact agent
-manifests and locks; source application already preserves the device's existing
-`~/.bun/install/global/package.json` rather than overwriting it.
+All five clients install through Bun by default. `--agents none` or
+`--agents codex,kimi` controls installation without removing omitted clients;
+CodeGraph remains a default independent of selection. Each exact manifest and
+frozen Bun lock installs into `~/.bun/managed/<name>` and exposes real launchers
+under `~/.bun/bin` and `~/.local/bin` using managed Node. The existing global
+Bun registry remains intact. Legacy clients and optional integrations remain
+documented under `deployment/inventory`. See [agent installation](docs/AGENT_INSTALLATION.md)
+for versions, lifecycle trust, update policy, and isolated diagnostic checks.
 
 Common pattern: **config in git, credentials on the host** — auth flows run
 per host (`claude` login / env token, `codex login`, `kimi login`,

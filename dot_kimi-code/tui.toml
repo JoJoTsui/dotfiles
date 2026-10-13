@@ -15,7 +15,7 @@ enabled = true # true | false
 notification_condition = "unfocused" # "unfocused" | "always"
 
 [upgrade]
-auto_install = true # true | false
+auto_install = false # Repo pins and locks own upgrades.
 
 # [status_line]
 # Pick and order the built-in footer slots: mode, goal, model, tasks, cwd, git, tips

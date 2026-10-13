@@ -10,10 +10,17 @@ system
 clash
 .git
 .gitignore
-# Optional developer/bio payloads accompany their selected bundle (ticket 08).
+# Optional developer/bio payloads accompany their selected bundle.
+{{- if not (has "developer" .bundles) }}
 .config/herdr
 .config/zellij
+{{- end }}
+{{- if not (has "bio" .bundles) }}
 .local/bin/fetchChromSizes
+{{- end }}
+{{- if not (and (has "desktop" .bundles) (has .platform (list "linux" "wsl"))) }}
+.local/bin/firefox
+{{- end }}
 **/*keys.json
 **/auth.json
 **/credentials*
