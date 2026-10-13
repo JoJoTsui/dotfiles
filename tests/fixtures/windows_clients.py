@@ -61,7 +61,11 @@ console.log(JSON.stringify({shellPath:settings.getShellPath(),result}));
         # Git Bash presents its internal POSIX path in $BASH, while Nu still
         # resolves through the target device's managed Windows PATH.
         case.assertIn('/usr/bin/bash', output)
-        case.assertIn(str(case.home / '.pixi/bin/nu').replace('\\', '/'), output.replace('\\', '/'))
+        expected_nu = str(case.home / '.pixi/bin/nu').replace('\\', '/')
+        drive, marker, suffix = expected_nu.partition(':/')
+        if marker:
+            expected_nu = f'/{drive.lower()}/{suffix}'
+        case.assertIn(expected_nu, output.replace('\\', '/'))
         CodeGraphTests.test_managed_mcp_command_explores_only_an_explicitly_indexed_temporary_fixture(case)
         project = case.root / 'native-client-unindexed'
         project.mkdir()
