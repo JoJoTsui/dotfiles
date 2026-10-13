@@ -1,0 +1,22 @@
+#!/bin/sh
+# Generate the pinned Nu adapter only after managed Atuin and Nu exist.
+set -eu
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+fail() { printf 'dotfiles-history-prepare: %s\n' "$*" >&2; exit 1; }
+for command in atuin nu python; do
+    [ -x "$PIXI_HOME/bin/$command" ] || fail "required managed command missing: $PIXI_HOME/bin/$command"
+done
+"$PIXI_HOME/bin/python" "$HOME/.local/lib/dotfiles/history.py" check
+for directory in "$HOME/.local" "$XDG_DATA_HOME" "$XDG_DATA_HOME/nushell" "$XDG_DATA_HOME/nushell/vendor" "$XDG_DATA_HOME/nushell/vendor/autoload" "$ATUIN_CONFIG_DIR" "$ATUIN_DATA_DIR"; do
+    [ ! -L "$directory" ] || fail "history state directory is a symlink: $directory"
+done
+autoload="$XDG_DATA_HOME/nushell/vendor/autoload"
+mkdir -p "$autoload"
+[ ! -L "$autoload/atuin.nu" ] || fail 'history startup artifact is a symlink'
+temporary=$(mktemp "$autoload/.atuin.XXXXXX")
+trap 'rm -f "$temporary"' EXIT HUP INT TERM
+"$PIXI_HOME/bin/atuin" init nu > "$temporary"
+chmod 600 "$temporary"
+"$PIXI_HOME/bin/nu" --config "$temporary" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
+mv -f "$temporary" "$autoload/atuin.nu"
+printf 'dotfiles-history-prepare: prepared Nushell history\n'

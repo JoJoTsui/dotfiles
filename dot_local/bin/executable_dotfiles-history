@@ -1,0 +1,12 @@
+#!/bin/sh
+# Account activation and migration are explicit device actions.
+set -eu
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+: "${ATUIN_CONFIG_DIR:=$XDG_CONFIG_HOME/atuin}"
+: "${ATUIN_DATA_DIR:=$XDG_DATA_HOME/atuin}"
+export ATUIN_CONFIG_DIR ATUIN_DATA_DIR
+fail() { printf 'dotfiles-history: %s\n' "$*" >&2; exit 1; }
+[ -x "$PIXI_HOME/bin/python" ] || fail 'managed Python is not installed'
+[ -x "$PIXI_HOME/bin/atuin" ] || fail 'managed Atuin is not installed'
+if [ "$#" -eq 0 ]; then set -- status; fi
+exec "$PIXI_HOME/bin/python" "$HOME/.local/lib/dotfiles/history.py" "$@"

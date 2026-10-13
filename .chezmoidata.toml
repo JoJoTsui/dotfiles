@@ -13,6 +13,8 @@ defaults = [
   { name = "XDG_DATA_HOME", base = "HOME", suffix = ".local/share" },
   { name = "XDG_STATE_HOME", base = "HOME", suffix = ".local/state" },
   { name = "XDG_CACHE_HOME", base = "HOME", suffix = ".cache" },
+  { name = "ATUIN_CONFIG_DIR", base = "XDG_CONFIG_HOME", suffix = "atuin" },
+  { name = "ATUIN_DATA_DIR", base = "XDG_DATA_HOME", suffix = "atuin" },
   { name = "PIXI_HOME", base = "HOME", suffix = ".pixi" },
   { name = "BUN_INSTALL", base = "HOME", suffix = ".bun" },
   { name = "CARGO_HOME", base = "HOME", suffix = ".cargo" },

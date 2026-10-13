@@ -143,6 +143,35 @@ Startup needs no external completion checkout. Bootstrap generates and validates
 Nu prompt/completion artifacts after installation. See
 [shared shell settings](docs/SHARED_SHELL_SETTINGS.md) for guards and test evidence.
 
+## Shared command history
+
+Atuin hooks are enabled for interactive Nushell, Bash, and Zsh after ordinary
+bootstrap. All shells search the same local history; new devices report
+**sync pending activation** and can record/search offline. Hosted sync and
+recognized-secret filtering are configured by default. Account activation and
+history migration are deliberate device actions:
+
+```text
+dotfiles-history status
+dotfiles-history first-device       # first account/device; browser setup for hosted Atuin
+dotfiles-history join               # same account and encryption key on another device
+dotfiles-history import             # show available formats; import nothing
+dotfiles-history import bash --file /path/to/selected-history
+dotfiles-history import zsh --file /path/to/selected-history
+dotfiles-history import nu --file /path/to/selected-history.txt
+dotfiles-history import nu-db --file /path/to/selected-history.sqlite3
+dotfiles-history sync
+```
+
+Activation input is hidden; passwords and keys are never command arguments.
+Keep the same key privately backed up for all devices. The importer uses each
+native parser, filters in isolated staging, then preserves accepted command
+metadata. Ordinary bootstrap never activates accounts or imports history.
+Agent conversations, credentials and trust state stay outside this collection.
+See [history setup and its native-shell limits](docs/SHARED_HISTORY.md) and
+[isolated Linux evidence](docs/verification/shared-history.md). Native
+macOS/WSL/Windows execution belongs to their platform tickets.
+
 ## Toolchain: pixi global
 
 The pinned Pixi bootstrap installs under `~/.pixi/bin`. Common tools are
