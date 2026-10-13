@@ -10,7 +10,10 @@ Pinned user-scoped installer exceptions close the Windows package gaps.
 **Blocked by:** 06 — Configure CodeGraph access without automatic indexing;
 07 — Enable shared shell history and deliberate device setup.
 
-**Status:** Draft awaiting review; publish as ready-for-agent after approval.
+**Status:** Implemented; native Windows execution is pending. Local Linux
+PowerShell planning/copy application and actual Atuin explicit-file migration
+checks passed. See [Windows evidence](../../../verification/windows.md) for the
+verified and pending cells.
 
 - [ ] Native Windows detection, explicit selection, and both roles produce correct native home/configuration/tool paths; Windows ARM is rejected as outside the initial target matrix.
 - [ ] Pixi installs supported required packages, including RTK, uv, Nushell, zoxide, Tailspin, and the compatible Node runtime.
@@ -21,3 +24,31 @@ Pinned user-scoped installer exceptions close the Windows package gaps.
 - [ ] All clients discover portable real-file instructions/skills and supported CodeGraph configuration without automatic indexing or overwriting unrelated client state.
 - [ ] User-scoped bootstrap/reapplication preserve credentials and history; required installer failure propagates and account activation pending is reported distinctly.
 - [ ] Native Windows runner tests exercise these behaviors; Linux render/plan success is not represented as native Windows execution.
+
+The public `bootstrap.ps1` boundary, pinned exception catalog, shared shell
+adapters, payload/client merge, history migration and native runner are in this
+ticket. The Windows checks above remain unchecked until the native workflow
+actually runs. No system/account change, real credential request, existing
+history read or user-project index was used during local validation.
+
+TDD evidence: public planning failed before the boundary existed; copy/reapply
+and exception ownership failed before their adapters existed. A native Nu
+history preservation regression failed when copying the rendered directory and
+passed after limiting copies to source-owned config files. Explicit-file Nu
+import tests failed before the public aliases/parser and passed against actual
+Atuin 18.23. The native fixtures are committed for Windows execution; Linux
+syntax checks do not validate Windows executables, consoles or Known Folders.
+The ordinary Nu startup probe also failed with the pin's `-c` mode (missing
+EDITOR), then passed with `-e`, an explicit JSON print and exit. Its isolated
+XDG roots precede startup and it uses no individual config-file flags.
+
+After integrating native macOS and WSL changes, the full applicable repository
+suite passed 87 tests in 294.755 seconds: 72 executed and 15 explicitly skipped.
+The two WSL PowerShell planning/refusal checks omitted by that invocation's
+tool-flag naming passed separately in 1.573 seconds. All native Windows runtime
+acceptance remains pending; no skipped cell is counted as native execution.
+After the corrected WSL startup integration at a720b3c, the applicable selector
+and shared startup suite passed 40 tests in 162.083 seconds: 39 executed, with
+only the actual native Windows installation test skipped. The native installer
+provides both `.cmd` and bare POSIX companion agent launchers; their Windows
+execution through Nu/Git Bash is explicitly included in the pending native gate.

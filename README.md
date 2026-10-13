@@ -34,6 +34,11 @@ Ordinary deployment changes user files only; it has no system or account
 login-shell action. See [the deployment boundary](docs/DEPLOYMENT_BOUNDARY.md)
 for the adapter contract and isolated verification.
 
+Native Windows uses `./bootstrap.ps1 -Profile windows-workstation` from
+PowerShell 5.1 or newer. Its managed shells are Nushell and PortableGit's Git
+Bash; WSL supplies the full trio. See [Windows deployment](docs/WINDOWS_DEPLOYMENT.md)
+for native paths, pinned exceptions and pending runner evidence.
+
 The deployment foundation implements verified managers, working-source file
 application, pinned common tools, and frozen Bun agent installation. Use
 `--apply-only` for configuration validation, or `--agents-only` to install

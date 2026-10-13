@@ -15,13 +15,14 @@ defaults = [
   { name = "XDG_CACHE_HOME", base = "HOME", suffix = ".cache" },
   { name = "ATUIN_CONFIG_DIR", base = "XDG_CONFIG_HOME", suffix = "atuin" },
   { name = "ATUIN_DATA_DIR", base = "XDG_DATA_HOME", suffix = "atuin" },
+  { name = "_ZO_DATA_DIR", base = "XDG_DATA_HOME", suffix = "zoxide" },
   { name = "PIXI_HOME", base = "HOME", suffix = ".pixi" },
   { name = "BUN_INSTALL", base = "HOME", suffix = ".bun" },
   { name = "CARGO_HOME", base = "HOME", suffix = ".cargo" },
   { name = "RUSTUP_HOME", base = "HOME", suffix = ".rustup" },
-  { name = "MAMBA_EXE", base = "PIXI_HOME", suffix = "bin/micromamba" },
+  { name = "MAMBA_EXE", base = "PIXI_HOME", suffix = "bin/micromamba", windowsSuffix = "bin/micromamba.exe" },
   { name = "MAMBA_ROOT_PREFIX", base = "XDG_DATA_HOME", suffix = "micromamba" },
-  { name = "EDITOR", value = "hx", windows = "notepad" },
+  { name = "EDITOR", value = "hx" },
   { name = "UV_PYTHON_PREFERENCE", setting = "pythonPreference" },
   { name = "PIP_INDEX_URL", setting = "pythonIndex" },
   { name = "UV_DEFAULT_INDEX", setting = "pythonIndex" },
@@ -32,10 +33,20 @@ defaults = [
   { name = "PAGER", value = "less" },
   { name = "TAILSPIN_PAGER", value = "less -R [FILE]" },
 ]
+windowsDefaults = [
+  { name = "APPDATA", base = "HOME", suffix = "AppData/Roaming" },
+  { name = "LOCALAPPDATA", base = "HOME", suffix = "AppData/Local" },
+  { name = "KIMI_SHELL_PATH", base = "XDG_DATA_HOME", suffix = "dotfiles/git-bash/bin/bash.exe" },
+  { name = "CLAUDE_CODE_GIT_BASH_PATH", base = "XDG_DATA_HOME", suffix = "dotfiles/git-bash/bin/bash.exe" },
+  { name = "HELIX_RUNTIME", base = "XDG_DATA_HOME", suffix = "dotfiles/helix/runtime" },
+]
 # The first directory wins. Compatibility tool directories are never added.
 paths = [
   { base = "BUN_INSTALL", suffix = "bin" },
   { base = "HOME", suffix = ".local/bin" },
   { base = "PIXI_HOME", suffix = "bin" },
   { base = "CARGO_HOME", suffix = "bin" },
+]
+windowsPaths = [
+  { base = "XDG_DATA_HOME", suffix = "dotfiles/git-bash/bin" },
 ]

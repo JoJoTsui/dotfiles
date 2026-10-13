@@ -212,3 +212,12 @@ enabled = false
 [logs]
 # Command output, agent hooks, and file logs are outside this deployment.
 enabled = false
+
+[logs.search]
+enabled = false
+
+[logs.daemon]
+enabled = false
+
+[logs.ai]
+enabled = false

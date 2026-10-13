@@ -13,6 +13,7 @@ import urllib.request
 import urllib.error
 import base64
 import unittest
+from fixtures.processes import stop_client
 from fixtures.shell_env import managed_shell_environment
 
 try:
@@ -225,12 +226,7 @@ class CodeGraphTests(unittest.TestCase):
                 self.assertFalse((SOURCE / ".codegraph").exists())
                 self.assertFalse((self.home / ".codegraph").exists())
             finally:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+                stop_client(process)
                 process.stdin.close()
                 reader.join(timeout=5)
                 process.stdout.close()
@@ -298,12 +294,7 @@ class CodeGraphTests(unittest.TestCase):
                         else:
                             self.assertEqual(server["status"]["status"], "connected", server)
                     finally:
-                        process.terminate()
-                        try:
-                            process.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            process.kill()
-                            process.wait(timeout=5)
+                        stop_client(process)
         self.assertFalse((project / ".codegraph").exists())
         self.assertFalse((self.home / ".codegraph").exists())
         self.assertFalse((SOURCE / ".codegraph").exists())
