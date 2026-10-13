@@ -1,8 +1,8 @@
 # dotfiles
 
-Chezmoi-managed dotfiles for Linux dev environments: shell, prompt, git, Python
-toolchain, global CLI tools (via pixi), and the coding-agent configs
-(Claude Code, Codex, kimi-code, pi, opencode, herdr).
+Chezmoi-managed dotfiles for Linux, macOS, WSL, and native Windows: shells,
+prompt, Git/Python toolchains, Pixi-managed CLI tools, and coding-agent
+configuration (Claude Code, Codex, kimi-code, pi, opencode, herdr).
 
 The repo is the **source state**; `chezmoi` applies it to a host in **copy
 mode** (plain files, no symlinks — config watchers in VS Code and Claude Code
@@ -39,11 +39,12 @@ PowerShell 5.1 or newer. Its managed shells are Nushell and PortableGit's Git
 Bash; WSL supplies the full trio. See [Windows deployment](docs/WINDOWS_DEPLOYMENT.md)
 for native paths, pinned exceptions and pending runner evidence.
 
-The deployment foundation implements verified managers, working-source file
-application, pinned common tools, and frozen Bun agent installation. Use
-`--apply-only` for configuration validation, or `--agents-only` to install
-clients with an already available pinned Bun/Node toolchain. Shell/history and
-foreign native validation are covered by their separate implementation slices.
+Common tools, shared Nushell-first shell behavior, encrypted history setup, all
+five Bun-managed agents, portable instructions/skills, and selectable specialist
+bundles are implemented. Use `--apply-only` for configuration validation, or
+`--agents-only` when a host already has the pinned Bun/Node toolchain. Follow
+the [new-host setup guide](docs/NEW_HOST_SETUP.md) for selection, activation,
+verification, and explicit updates.
 
 ## Deployment profiles
 
@@ -85,6 +86,7 @@ never enter git):
 bootstrap.sh                # one-shot new-host setup (see above)
 deployment/                 # pure profile resolution and installer adapters
 tests/test_deployment.py    # public boundary checks in disposable homes
+tests/verify_portable.py    # fourteen-cell local and opt-in network matrix
 .chezmoidata.toml           # canonical shared shell defaults and PATH priority
 dot_env_core.tmpl           # generated POSIX env for bash+zsh: PATH, EDITOR,
                             # rustup TUNA mirrors, noproxy/unproxy (rendered URL)

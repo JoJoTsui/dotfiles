@@ -1,8 +1,12 @@
-# Portable deployment review
+# Portable deployment implementation tracker
 
-The grill is complete and committed as `fdd818c`. These artifacts are drafts
-for the `to-spec` and `to-tickets` review steps. Tracker publication and
-implementation have not occurred.
+The grill, specification, and tickets are committed in this repository. This
+file tracks implementation locally; no GitHub issue tracker is configured for
+these tickets. Tickets 01–12 are implemented with the evidence recorded in
+their status lines and verification notes. Ticket 13 integrates the complete
+matrix and onboarding flow. Native macOS, Windows, and WSL execution remains
+pending the committed native workflows, and WSL ARM64 additionally needs a
+suitable self-hosted runner.
 
 ## Specification review
 
@@ -12,7 +16,8 @@ home produce a rendered target, installation plan, and observable result.
 Post-apply shell/tool behavior verifies that output. Deterministic checks,
 network resolution/install checks, and native execution report separate results.
 
-Review whether this boundary matches expectations before publishing the spec.
+The accepted boundary separates local plan/render checks, network installation
+and resolution, and native execution. See the [final matrix evidence](../../verification/complete-matrix.md).
 
 ## Ticket review
 
@@ -37,8 +42,8 @@ schedule.
 | [12: Explicit verified updates](tickets/12-explicit-updates.md) | 08, 09, 10, 11 | Deliberately refresh compatible pins/locks and revalidate the selected deployment targets. |
 | [13: Complete deployment and onboarding verification](tickets/13-complete-matrix-onboarding.md) | 12 | Provide a documented new-host flow and one verification entry point covering the complete matrix. |
 
-Review ticket granularity, whether each blocking edge is necessary, and whether
-any tickets should be merged or split before publishing.
+The numbered dependency order was used for implementation. Platform-native
+claims remain pending until the corresponding native runner reports pass.
 
 ## Requirement coverage
 
@@ -63,14 +68,6 @@ exclusion.
 
 ## Tracker setup
 
-The repository has a GitHub remote for `JoJoTsui/dotfiles`, an existing
-single-context glossary/ADR layout, and an installed `triage` skill. There is
-no configured tracker or triage vocabulary yet.
-
-The related setup workflow must select GitHub Issues or local Markdown, confirm
-triage vocabulary, and review the resulting tracker/domain instruction draft.
-The recommended GitHub configuration is prepared in the
-[tracker setup proposal](tracker-setup.md); it is not active configuration.
-The specification will use `ready-for-agent` when published. Tickets will be
-published in dependency order, as sub-issues of the spec on a real tracker or as
-one Markdown file per ticket under the configured local convention.
+The repository-local Markdown files are the implementation tracker. The
+[GitHub tracker proposal](tracker-setup.md) remains inactive; no remote issues
+were created as part of the implementation.
