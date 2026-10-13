@@ -184,10 +184,14 @@ def main():
                 (home / '.config/atuin/config.toml').write_text(config.replace('https://api.atuin.sh', service.address).replace('auto_sync = true', 'auto_sync = false'))
                 shutil.copyfile(tool_home / '.pixi/bin/atuin.exe', home / '.pixi/bin/atuin.exe')
                 env = environment(home, tool_home)
+                phase = name + ' sync endpoint verification'
                 resolved = subprocess.run([str(home / '.pixi/bin/atuin.exe'), 'config', 'get', '--resolved', 'sync_address'],
                                           env=env, capture_output=True, text=True, timeout=15)
-                if resolved.returncode or resolved.stdout.strip().rstrip('/') != service.address:
-                    raise RuntimeError('synthetic service boundary was not established')
+                actual_address = resolved.stdout.strip().strip('"').rstrip('/')
+                if resolved.returncode:
+                    raise RuntimeError(f'Atuin sync endpoint query failed (exit {resolved.returncode}): {resolved.stderr.strip()[:160]}')
+                if actual_address != service.address:
+                    raise RuntimeError(f'Atuin did not resolve the synthetic loopback endpoint: {actual_address[:160]!r}')
                 console.clear()
                 process = subprocess.Popen([sys.executable, str(source / 'dot_local/lib/dotfiles/history.py'), action], env=env)
                 try:
