@@ -44,8 +44,12 @@ JSON with profile selectors, source/home, tools/actions, state roots, and target
 settings. Secret values never enter this output. Extend this metadata when a
 new installer becomes available; do not invoke installers to compute a plan.
 
-At this integration midpoint, the agent adapter deliberately fails as pending
-ticket 04. A successful common stage is not full bootstrap completion.
+`--agents all|none|<comma-separated names>` selects client installation while
+CodeGraph remains an independent default. `--agents-only` applies source and
+installs selected packages with existing pinned Bun/Node, skipping common
+installation and shell preparation. It conflicts with `--apply-only`.
+See [agent ownership and validation](AGENT_INSTALLATION.md) for supported
+locks, runtime overrides, and partial deployment acceptance.
 
 ## Common tools and registry ownership
 

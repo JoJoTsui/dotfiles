@@ -1,0 +1,41 @@
+{
+  // Validated by @opencode/cli 2.0.27's loader. The public config.json URL
+  // still describes V1; the exact pinned source schema is documented in
+  // docs/AGENT_INSTALLATION.md.
+  "update": "disable",
+  "watcher": {
+    // V2 supports ignore patterns, not the old ineffective enabled flag.
+    "ignore": {{ if eq .role "remote-compute" }}["**"]{{ else }}["node_modules/**", "dist/**", ".git/**"]{{ end }}
+  },
+  "plugins": [],
+  "providers": {
+    "headroom": {
+      // Built into the pinned client; no SDK package download on first use.
+      "package": "@opencode/ai/providers/openai-compatible",
+      "name": "Headroom Proxy",
+      "settings": { "baseURL": "http://127.0.0.1:8787/v1", "provider": "headroom" },
+      "models": {
+        "claude-sonnet-4-6": { "name": "Claude Sonnet 4.6", "limit": { "context": 200000, "output": 16384 } },
+        "claude-opus-4-6": { "name": "Claude Opus 4.6", "limit": { "context": 200000, "output": 16384 } },
+        "claude-haiku-4-5-20251001": { "name": "Claude Haiku 4.5", "limit": { "context": 200000, "output": 8192 } },
+        "gpt-4o": { "name": "GPT-4o", "limit": { "context": 128000, "output": 16384 } },
+        "gpt-4.1": { "name": "GPT-4.1", "limit": { "context": 1048576, "output": 32768 } }
+      }
+    }
+  },
+  "mcp": {
+    "servers": {
+      "codegraph": {
+        "type": "local",
+        "command": ["codegraph", "serve", "--mcp"],
+        "disabled": true,
+        "codemode": false
+      },
+      "headroom": {
+        "type": "local",
+        "command": ["headroom", "mcp", "serve"],
+        "disabled": true
+      }
+    }
+  }
+}

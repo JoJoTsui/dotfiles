@@ -6,7 +6,9 @@ DEPLOY_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 DEPLOY_HOME="${HOME:?HOME must be set}"
 DEPLOY_PLAN=false
 DEPLOY_APPLY_ONLY=false
+DEPLOY_AGENTS_ONLY=false
 CLI_PLATFORM='' CLI_ROLE='' CLI_PROFILE='' CLI_CLASS='' CLI_ARCH=''
+CLI_AGENTS='' CLI_AGENTS_SET=false
 
 fail() {
     printf 'dotfiles: %s\n' "$*" >&2
@@ -52,10 +54,12 @@ Usage: bash bootstrap.sh [options]
   --profile NAME            <platform>-<role> preset, or t9k
   --class NAME              Legacy alias: t9k, linux, win
   --arch NAME               x86_64, aarch64 (amd64/arm64 aliases accepted)
+  --agents SELECTION        all (default), none, or kimi,pi,opencode,claude,codex
   --apply-only              Apply files with chezmoi; skip tool/agent installers
+  --agents-only             Apply files and install agents with an existing toolchain
 
 Environment selectors: DOTFILES_PLATFORM, DOTFILES_ROLE, DOTFILES_PROFILE,
-DOTFILES_CLASS, DOTFILES_ARCH. Explicit flags override environment selectors.
+DOTFILES_CLASS, DOTFILES_ARCH, DOTFILES_AGENTS. Explicit flags override environment selectors.
 Conflicting explicit preset/component flags are errors.
 Every state root is scoped to the target home. This entry point does not change
 system configuration, account login shells, auth, history imports, or indexes.
@@ -63,7 +67,8 @@ HELP
             exit 0 ;;
         --plan) DEPLOY_PLAN=true; shift ;;
         --apply-only) DEPLOY_APPLY_ONLY=true; shift ;;
-        --home|--platform|--role|--profile|--class|--arch|--source)
+        --agents-only) DEPLOY_AGENTS_ONLY=true; shift ;;
+        --home|--platform|--role|--profile|--class|--arch|--source|--agents)
             [ "$#" -ge 2 ] || fail "$1 requires a value"
             case "$1" in
                 --home) DEPLOY_HOME="$2" ;;
@@ -73,11 +78,13 @@ HELP
                 --class) CLI_CLASS="$2" ;;
                 --arch) CLI_ARCH="$2" ;;
                 --source) DEPLOY_SOURCE="$2" ;;
+                --agents) CLI_AGENTS="$2"; CLI_AGENTS_SET=true ;;
             esac
             shift 2 ;;
         *) fail "unknown option: $1" ;;
     esac
 done
+if "$DEPLOY_APPLY_ONLY" && "$DEPLOY_AGENTS_ONLY"; then fail '--apply-only and --agents-only conflict'; fi
 
 case "$DEPLOY_HOME" in /*) ;; *) fail "--home must be an absolute path" ;; esac
 [ "$DEPLOY_HOME" != / ] || fail '--home cannot be the filesystem root'
@@ -92,6 +99,8 @@ resolve_profile
 source "$DEPLOY_SOURCE/deployment/installers.sh"
 if "$DEPLOY_APPLY_ONLY"; then
     DEPLOY_ACTIONS=(apply-source)
+elif "$DEPLOY_AGENTS_ONLY"; then
+    DEPLOY_ACTIONS=(install-managers apply-source install-agents)
 fi
 if "$DEPLOY_PLAN"; then
     printf '{"platform":'; json_string "$DEPLOY_PLATFORM"
@@ -102,7 +111,9 @@ if "$DEPLOY_PLAN"; then
     printf ',"home":'; json_string "$DEPLOY_HOME"
     printf ',"source":'; json_string "$DEPLOY_SOURCE"
     printf ',"tools":'; json_array "${DEPLOY_TOOLS[@]}"
-    printf ',"packages":'; print_common_packages
+    printf ',"packages":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else print_common_packages; fi
+    printf ',"agents":'; json_array ${DEPLOY_AGENTS[@]+"${DEPLOY_AGENTS[@]}"}
+    printf ',"agentPackages":'; print_agent_packages
     printf ',"managers":{"pixi":'; json_string "$PIXI_VERSION"
     printf ',"chezmoi":'; json_string "$CHEZMOI_VERSION"
     printf ',"rustup":'; json_string "$RUSTUP_VERSION"; printf '}'
@@ -120,7 +131,7 @@ fi
 # Refuse pre-existing state directory symlinks before mkdir or installers can
 # follow them. This check covers every parent used during state preparation.
 [ ! -L "$DEPLOY_HOME" ] || fail "target home is a symlink: $DEPLOY_HOME"
-for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config .config/chezmoi .config/dotfiles .cache .cache/tmp .pixi .pixi/bin .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml .bun .bun/install .bun/install/global .cargo .cargo/bin .rustup .codex .claude; do
+for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config .config/chezmoi .config/dotfiles .config/opencode .cache .cache/tmp .pixi .pixi/bin .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml .bun .bun/bin .bun/managed .bun/install .bun/install/global .cargo .cargo/bin .rustup .codex .claude .kimi-code .pi .pi/agent; do
     [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target state root is a symlink: $DEPLOY_HOME/$relative"
 done
 
@@ -136,8 +147,12 @@ export CARGO_HOME="$HOME/.cargo" RUSTUP_HOME="$HOME/.rustup"
 export UV_CACHE_DIR="$HOME/.cache/uv" UV_TOOL_DIR="$HOME/.local/share/uv/tools" UV_TOOL_BIN_DIR="$HOME/.local/bin"
 export PIP_CACHE_DIR="$HOME/.cache/pip"
 export NPM_CONFIG_USERCONFIG="$HOME/.npmrc" NPM_CONFIG_CACHE="$HOME/.cache/npm"
+export npm_config_userconfig="$NPM_CONFIG_USERCONFIG" npm_config_cache="$NPM_CONFIG_CACHE" npm_config_prefix="$HOME/.local"
 export ATUIN_CONFIG_DIR="$HOME/.config/atuin" ATUIN_DATA_DIR="$HOME/.local/share/atuin"
 export CODEX_HOME="$HOME/.codex" CLAUDE_CONFIG_DIR="$HOME/.claude"
+export KIMI_CODE_HOME="$HOME/.kimi-code" PI_CODING_AGENT_DIR="$HOME/.pi/agent"
+export OPENCODE_CONFIG_DIR="$HOME/.config/opencode" OPENCODE_CONFIG="$HOME/.config/opencode/opencode.jsonc"
+unset OPENCODE_CONFIG_CONTENT OPENCODE_CLI_CONFIG_CONTENT
 export HISTFILE="$HOME/.bash_history" TMPDIR="$HOME/.cache/tmp"
 export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$CARGO_HOME/bin:$PATH"
 export DOTFILES_PLATFORM="$DEPLOY_PLATFORM" DOTFILES_ROLE="$DEPLOY_ROLE" DOTFILES_ARCH="$DEPLOY_ARCH"
@@ -152,9 +167,15 @@ run_step install-managers install_managers
 DEPLOY_STEP=apply-source
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
-if ! "$DEPLOY_APPLY_ONLY"; then
+if "$DEPLOY_AGENTS_ONLY"; then
+    run_step install-agents install_agents
+elif ! "$DEPLOY_APPLY_ONLY"; then
     run_step install-common install_common
     run_step install-agents install_agents
     run_step prepare-shell prepare_shell
 fi
-printf 'dotfiles: applied %s to %s (copy mode)\n' "$DEPLOY_PROFILE" "$HOME"
+if "$DEPLOY_AGENTS_ONLY"; then
+    printf 'dotfiles: applied agent files and selected packages for %s to %s (copy mode)\n' "$DEPLOY_PROFILE" "$HOME"
+else
+    printf 'dotfiles: applied %s to %s (copy mode)\n' "$DEPLOY_PROFILE" "$HOME"
+fi

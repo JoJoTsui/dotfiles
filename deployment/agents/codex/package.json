@@ -1,0 +1,6 @@
+{
+  "name": "dotfiles-managed-codex",
+  "private": true,
+  "dependencies": { "@openai/codex": "0.162.1" },
+  "trustedDependencies": []
+}
