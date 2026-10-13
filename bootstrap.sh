@@ -7,6 +7,7 @@ DEPLOY_HOME="${HOME:?HOME must be set}"
 DEPLOY_PLAN=false
 DEPLOY_APPLY_ONLY=false
 CLI_PLATFORM='' CLI_ROLE='' CLI_PROFILE='' CLI_CLASS='' CLI_ARCH=''
+CLI_BUNDLES=''
 
 fail() {
     printf 'dotfiles: %s\n' "$*" >&2
@@ -52,6 +53,7 @@ Usage: bash bootstrap.sh [options]
   --profile NAME            <platform>-<role> preset, or t9k
   --class NAME              Legacy alias: t9k, linux, win
   --arch NAME               x86_64, aarch64 (amd64/arm64 aliases accepted)
+  --bundles LIST            none (default), or comma-separated bio,gpu,desktop,developer
   --apply-only              Apply files with chezmoi; skip tool/agent installers
 
 Environment selectors: DOTFILES_PLATFORM, DOTFILES_ROLE, DOTFILES_PROFILE,
@@ -63,7 +65,7 @@ HELP
             exit 0 ;;
         --plan) DEPLOY_PLAN=true; shift ;;
         --apply-only) DEPLOY_APPLY_ONLY=true; shift ;;
-        --home|--platform|--role|--profile|--class|--arch|--source)
+        --home|--platform|--role|--profile|--class|--arch|--source|--bundles)
             [ "$#" -ge 2 ] || fail "$1 requires a value"
             case "$1" in
                 --home) DEPLOY_HOME="$2" ;;
@@ -73,6 +75,7 @@ HELP
                 --class) CLI_CLASS="$2" ;;
                 --arch) CLI_ARCH="$2" ;;
                 --source) DEPLOY_SOURCE="$2" ;;
+                --bundles) CLI_BUNDLES="$2" ;;
             esac
             shift 2 ;;
         *) fail "unknown option: $1" ;;
@@ -103,6 +106,9 @@ if "$DEPLOY_PLAN"; then
     printf ',"source":'; json_string "$DEPLOY_SOURCE"
     printf ',"tools":'; json_array "${DEPLOY_TOOLS[@]}"
     printf ',"packages":'; print_common_packages
+    printf ',"bundles":'; json_array ${DEPLOY_BUNDLES[@]+"${DEPLOY_BUNDLES[@]}"}
+    printf ',"bundlePackages":'; print_bundle_packages
+    printf ',"bundlePrerequisites":'; print_bundle_prerequisites
     printf ',"managers":{"pixi":'; json_string "$PIXI_VERSION"
     printf ',"chezmoi":'; json_string "$CHEZMOI_VERSION"
     printf ',"rustup":'; json_string "$RUSTUP_VERSION"; printf '}'
@@ -141,6 +147,7 @@ export CODEX_HOME="$HOME/.codex" CLAUDE_CONFIG_DIR="$HOME/.claude"
 export HISTFILE="$HOME/.bash_history" TMPDIR="$HOME/.cache/tmp"
 export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$CARGO_HOME/bin:$PATH"
 export DOTFILES_PLATFORM="$DEPLOY_PLATFORM" DOTFILES_ROLE="$DEPLOY_ROLE" DOTFILES_ARCH="$DEPLOY_ARCH"
+export DOTFILES_BUNDLES="$DEPLOY_BUNDLES_CSV"
 unset DOTFILES_CLASS DOTFILES_PROFILE
 
 DEPLOY_STEP=prepare-state

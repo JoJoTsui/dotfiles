@@ -3,5 +3,6 @@
   "role": {{ .role | toJson }},
   "arch": {{ .arch | toJson }},
   "profile": {{ printf "%s-%s" .platform .role | toJson }},
+  "bundles": {{ .bundles | toJson }},
   "mode": "copy"
 }

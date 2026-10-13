@@ -3,6 +3,7 @@
 # isolation, step failures, and working-tree source application.
 # shellcheck disable=SC2034 # Plan arrays are consumed by the sourced caller.
 source "$DEPLOY_SOURCE/deployment/common.sh"
+source "$DEPLOY_SOURCE/deployment/bundles.sh"
 source "$DEPLOY_SOURCE/deployment/managers.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)
 
@@ -19,7 +20,7 @@ install_managers() {
 # the device registry. Pixi owns installation and exposure after that merge.
 install_common() {
     DEPLOY_STEP=install-common.merge-manifest
-    "$DEPLOY_PIXI" exec --spec "$(common_python_spec)" python "$DEPLOY_SOURCE/deployment/merge_pixi.py" "$XDG_CONFIG_HOME/dotfiles/pixi-global.toml" "$PIXI_HOME/manifests/pixi-global.toml"
+    "$DEPLOY_PIXI" exec --spec "$(common_python_spec)" python "$DEPLOY_SOURCE/deployment/merge_pixi.py" "$XDG_CONFIG_HOME/dotfiles/pixi-global.toml" "$XDG_CONFIG_HOME/dotfiles/pixi-bundles.toml" "$PIXI_HOME/manifests/pixi-global.toml"
     DEPLOY_STEP=install-common.pixi-sync
     "$DEPLOY_PIXI" global sync
     DEPLOY_STEP=install-common.rustup
@@ -35,6 +36,8 @@ install_common() {
         done
         IFS=$saved_ifs
     done < "$DEPLOY_SOURCE/deployment/common-tools.tsv"
+    DEPLOY_STEP=install-common.verify-bundle-exposure
+    verify_bundle_exposure
 }
 # Ticket 04 replaces this explicit pending adapter.
 install_agents() { fail 'agent installation awaits ticket 04'; }

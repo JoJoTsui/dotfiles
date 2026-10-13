@@ -1,0 +1,7 @@
+#!/bin/sh
+# The upstream Linux Firefox payload loads GUI libraries dynamically. Keep its
+# declared user-scoped runtime libraries local to this process.
+set -eu
+firefox_prefix="${PIXI_HOME:-$HOME/.pixi}/envs/firefox"
+export LD_LIBRARY_PATH="$firefox_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$firefox_prefix/bin/firefox" "$@"

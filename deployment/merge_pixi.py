@@ -26,11 +26,12 @@ def toml_value(value):
 
 
 def main():
-    desired_path, registry_path = map(Path, sys.argv[1:])
+    desired_paths = list(map(Path, sys.argv[1:-1]))
+    registry_path = Path(sys.argv[-1])
+    if not desired_paths:
+        raise ValueError("at least one desired manifest is required")
     if registry_path.is_symlink() or registry_path.parent.is_symlink():
         raise ValueError("Pixi registry or parent is a symlink")
-    with desired_path.open("rb") as handle:
-        desired = tomllib.load(handle)
     existing = {"version": 1, "envs": {}}
     if registry_path.exists():
         with registry_path.open("rb") as handle:
@@ -38,15 +39,18 @@ def main():
     if existing.get("version") != 1:
         raise ValueError("unsupported Pixi registry version")
     environments = existing.setdefault("envs", {})
-    for name, owned in desired["envs"].items():
-        environment = environments.setdefault(name, {})
-        for field, value in owned.items():
-            if field in ("dependencies", "exposed"):
-                environment.setdefault(field, {}).update(value)
-            elif field == "channels":
-                environment[field] = list(dict.fromkeys(value + environment.get(field, [])))
-            else:
-                environment[field] = value
+    for desired_path in desired_paths:
+        with desired_path.open("rb") as handle:
+            desired = tomllib.load(handle)
+        for name, owned in desired["envs"].items():
+            environment = environments.setdefault(name, {})
+            for field, value in owned.items():
+                if field in ("dependencies", "exposed"):
+                    environment.setdefault(field, {}).update(value)
+                elif field == "channels":
+                    environment[field] = list(dict.fromkeys(value + environment.get(field, [])))
+                else:
+                    environment[field] = value
     exposed_owners = {}
     for name, environment in environments.items():
         for command in environment.get("exposed", {}):
