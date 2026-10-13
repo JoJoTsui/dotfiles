@@ -327,11 +327,10 @@ function Install-Asset([string]$Name) {
             if ($asset.kind -eq 'helix') { Copy-RegularTree $files[0].DirectoryName $target }
             else { Copy-RegularTree $files[0].FullName $target }
         } elseif ($asset.kind -eq 'portable-git') {
-            # The upstream SFX uses a contained post-install step; its published
-            # silent extraction contract requires doubled backslashes.
+            # PortableGit is a 7-Zip SFX archive. Extract it directly into the
+            # managed directory and let the version check validate the result.
             $script:Step = "install-managers.$Name.extract"
-            $escapedTarget = $target.Replace('\', '\\')
-            $argumentLine = '-y -InstallPath="' + $escapedTarget + '"'
+            $argumentLine = '-o"' + $target + '" -y'
             $process = Start-Process -FilePath $archive -ArgumentList $argumentLine -Wait -PassThru -WindowStyle Hidden
             if ($process.ExitCode) { $script:FailureCode = $process.ExitCode; Stop-Deployment 'required command failed' }
         } elseif ($asset.kind -eq 'rustup') {

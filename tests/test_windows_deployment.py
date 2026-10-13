@@ -27,10 +27,10 @@ class WindowsBoundaryTests(unittest.TestCase):
                 "GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL", "NODE_OPTIONS", "CLAUDE_CONFIG_DIR",
             ):
                 self.env.pop(name)
-        # PowerShell itself initializes its module cache before script entry.
-        # Confine that runtime to this test, apart from the protected profile.
+        # Give PowerShell a disposable OS profile so its startup cache cannot
+        # write into either the target home or the protected profile.
         runtime = self.root / 'powershell-runtime'
-        self.env.update(HOME=str(runtime), USERPROFILE=str(self.original),
+        self.env.update(HOME=str(runtime), USERPROFILE=str(runtime),
                         APPDATA=str(runtime / "roaming"), LOCALAPPDATA=str(runtime / "local"))
         # PowerShell records noninteractive startup data by script path. Warm
         # the actual deployment entrypoint in plan mode; a separate no-op
