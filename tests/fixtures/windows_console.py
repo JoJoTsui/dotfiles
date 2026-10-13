@@ -178,6 +178,8 @@ def main():
             ):
                 phase = name + ' console activation'
                 home = report.parent / ('console-device-' + name)
+                for relative in ('AppData/Roaming', 'AppData/Local'):
+                    (home / relative).mkdir(parents=True, exist_ok=True)
                 (home / '.config/atuin').mkdir(parents=True)
                 (home / '.pixi/bin').mkdir(parents=True)
                 config = (source / 'dot_config/atuin/config.toml').read_text()
