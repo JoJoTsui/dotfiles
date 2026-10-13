@@ -137,7 +137,17 @@ try {
     $selectedBundles = @(Get-Bundles)
     $packages = @(Get-Packages)
     $bundlePackages = @(Get-BundlePackages)
-    $exceptions = @([IO.File]::ReadAllText((Join-Path $Source 'deployment/windows-assets.json')) | ConvertFrom-Json)
+    $rawExceptions = @([IO.File]::ReadAllText((Join-Path $Source 'deployment/windows-assets.json')) | ConvertFrom-Json)
+    $exceptionRecords = New-Object System.Collections.ArrayList
+    $pendingAssetRecords = New-Object System.Collections.Stack
+    $pendingAssetRecords.Push($rawExceptions)
+    while ($pendingAssetRecords.Count -gt 0) {
+        $candidate = $pendingAssetRecords.Pop()
+        if ($candidate -is [Array]) {
+            foreach ($item in $candidate) { $pendingAssetRecords.Push($item) }
+        } else { [void]$exceptionRecords.Add($candidate) }
+    }
+    $exceptions = @($exceptionRecords.ToArray())
     $roots = [ordered]@{
         config = Join-Path $TargetHome '.config'; data = Join-Path $TargetHome '.local/share'
         state = Join-Path $TargetHome '.local/state'; cache = Join-Path $TargetHome '.cache'

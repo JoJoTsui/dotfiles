@@ -330,7 +330,9 @@ function Install-Asset([string]$Name) {
             # The upstream SFX uses a contained post-install step; its published
             # silent extraction contract requires doubled backslashes.
             $escapedTarget = $target.Replace('\', '\\')
-            Invoke-Tool $archive @('-y', '-gm2', "-InstallPath=$escapedTarget") -Quiet | Out-Null
+            $argumentLine = '-y -gm2 -InstallPath="' + $escapedTarget + '"'
+            $process = Start-Process -FilePath $archive -ArgumentList $argumentLine -Wait -PassThru -NoNewWindow
+            if ($process.ExitCode) { $script:FailureCode = $process.ExitCode; Stop-Deployment 'required command failed' }
         } elseif ($asset.kind -eq 'rustup') {
             Invoke-Tool $archive @('-y', '--no-modify-path', '--default-toolchain', 'none', '--profile', 'minimal') -Quiet | Out-Null
         } elseif ($asset.kind -eq 'exe') { Copy-RegularTree $archive $target }

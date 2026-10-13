@@ -12,6 +12,7 @@ import time
 import urllib.request
 import base64
 import errno
+from collections import Counter
 from urllib.parse import unquote, urlparse
 from fixtures.processes import stop_client
 from fixtures.shell_env import managed_shell_environment
@@ -104,6 +105,23 @@ class AgentPayloadTests(unittest.TestCase):
             return True
         except ValueError:
             return False
+
+    def skill_path_kind(self, value):
+        parsed = urlparse(str(value))
+        if parsed.scheme not in ("", "file"):
+            return "other-uri"
+        if parsed.scheme == "file":
+            host = unquote(parsed.netloc)
+            if host == "~":
+                return "file-home-uri"
+            if host not in ("", "localhost"):
+                return "file-other-host"
+            raw = unquote(parsed.path)
+        else:
+            raw = str(value)
+        if raw.startswith(("~/", "/~/")):
+            return "home-relative"
+        return "absolute" if Path(raw).is_absolute() else "relative"
 
     def test_skill_path_membership_resolves_home_relative_paths(self):
         self.assertTrue(self.skill_path_is_in_home("~/.agents/skills/tdd/SKILL.md"))
@@ -241,7 +259,9 @@ class AgentPayloadTests(unittest.TestCase):
                 self.assertFalse(skills["implement-spec"]["autoinvoke"])
                 managed = [skill for skill in data if self.skill_path_is_in_home(skill["path"])]
                 expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
-                self.assertEqual({skill["id"] for skill in managed}, expected)
+                path_kinds = Counter(self.skill_path_kind(skill["path"]) for skill in data)
+                self.assertEqual({skill["id"] for skill in managed}, expected,
+                                 f"managed={len(managed)}; path_kinds={dict(path_kinds)}")
                 self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
             finally:
                 stop_client(process)
@@ -289,6 +309,13 @@ await loader.reload();
 const skills=loader.getSkills().skills;
 const roots=[path.join(process.env.PI_CODING_AGENT_DIR,"skills"),path.join(process.env.HOME,".agents/skills")]
   .filter(root=>existsSync(root)).map(root=>realpathSync(root));
+const pathKind=value=>{
+  const raw=String(value);
+  if (raw.startsWith("file://~/") || raw.startsWith("file:///~/")) return "file-home-uri";
+  if (raw.startsWith("~/")) return "home-relative";
+  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) return raw.startsWith("file:") ? "file-uri" : "other-uri";
+  return path.isAbsolute(raw) ? "absolute" : "relative";
+};
 const managed=skills.filter(skill=>{
   try {
     let raw=String(skill.filePath);
@@ -301,7 +328,9 @@ const managed=skills.filter(skill=>{
   }
   catch { return false; }
 });
+const pathKinds=skills.reduce((counts,skill)=>{const kind=pathKind(skill.filePath); counts[kind]=(counts[kind]||0)+1; return counts;},{});
 console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.disableModelInvocation).length,
+  pathKinds,rootCount:roots.length,
   prompt:formatSkillsForPrompt(skills),instructions:loader.getAgentsFiles().agentsFiles}));
 """
         diagnostic = subprocess.run([node, "--input-type=module", "-e", script, Path(module).as_uri()],
@@ -310,7 +339,8 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
         self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
         data = json.loads(diagnostic.stdout)
         expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
-        self.assertEqual((data["count"], data["explicit"]), (len(expected), 24))
+        self.assertEqual((data["count"], data["explicit"]), (len(expected), 24),
+                         f"root_count={data['rootCount']}; path_kinds={data['pathKinds']}")
         self.assertIn("<name>tdd</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])
         self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))

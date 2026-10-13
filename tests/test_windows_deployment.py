@@ -29,8 +29,9 @@ class WindowsBoundaryTests(unittest.TestCase):
                 self.env.pop(name)
         # PowerShell itself initializes its module cache before script entry.
         # Confine that runtime to this test, apart from the protected profile.
-        self.env.update(HOME=str(self.root / 'powershell-runtime'), USERPROFILE=str(self.original),
-                        APPDATA=str(self.original / "roaming"), LOCALAPPDATA=str(self.original / "local"))
+        runtime = self.root / 'powershell-runtime'
+        self.env.update(HOME=str(runtime), USERPROFILE=str(self.original),
+                        APPDATA=str(runtime / "roaming"), LOCALAPPDATA=str(runtime / "local"))
 
     def deploy(self, *arguments, env=None):
         return subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
