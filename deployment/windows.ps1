@@ -329,6 +329,7 @@ function Install-Asset([string]$Name) {
         } elseif ($asset.kind -eq 'portable-git') {
             # The upstream SFX uses a contained post-install step; its published
             # silent extraction contract requires doubled backslashes.
+            $script:Step = "install-managers.$Name.extract"
             $escapedTarget = $target.Replace('\', '\\')
             $argumentLine = '-y -gm2 -InstallPath="' + $escapedTarget + '"'
             $process = Start-Process -FilePath $archive -ArgumentList $argumentLine -Wait -PassThru -NoNewWindow
@@ -337,6 +338,7 @@ function Install-Asset([string]$Name) {
             Invoke-Tool $archive @('-y', '--no-modify-path', '--default-toolchain', 'none', '--profile', 'minimal') -Quiet | Out-Null
         } elseif ($asset.kind -eq 'exe') { Copy-RegularTree $archive $target }
         else { Stop-Deployment 'unknown Windows asset type' }
+        $script:Step = "install-managers.$Name.verify"
         $version = Invoke-Tool $diagnostic @('--version') -Quiet
         if (-not $version.Contains($asset.version)) { Stop-Deployment "installed $Name did not report its pinned version" }
     } finally { Remove-Item -LiteralPath $scratch -Recurse -Force }

@@ -32,6 +32,17 @@ class WindowsBoundaryTests(unittest.TestCase):
         runtime = self.root / 'powershell-runtime'
         self.env.update(HOME=str(runtime), USERPROFILE=str(self.original),
                         APPDATA=str(runtime / "roaming"), LOCALAPPDATA=str(runtime / "local"))
+        warmup = subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0"],
+                                cwd=SOURCE, env=self.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(warmup.returncode, 0, warmup.stderr)
+        self.original_profile_state = self.original_profile_entries()
+
+    def original_profile_entries(self):
+        return tuple(sorted(path.relative_to(self.original).as_posix()
+                            for path in self.original.rglob("*")))
+
+    def assert_original_profile_unchanged(self):
+        self.assertEqual(self.original_profile_entries(), self.original_profile_state)
 
     def deploy(self, *arguments, env=None):
         return subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
@@ -74,7 +85,7 @@ $asset | ConvertTo-Json -Compress
         self.assertEqual(plan["roots"]["appData"], str(self.home / "AppData/Roaming"))
         self.assertEqual(plan["roots"]["localAppData"], str(self.home / "AppData/Local"))
         self.assertFalse(self.home.exists())
-        self.assertEqual(list(self.original.iterdir()), [])
+        self.assert_original_profile_unchanged()
 
     def test_apply_only_copies_native_discovery_and_preserves_device_content(self):
         chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
@@ -194,7 +205,7 @@ $asset | ConvertTo-Json -Compress
         result = self.deploy('-ApplyOnly')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('symlink or reparse', result.stderr)
-        self.assertEqual(list(self.original.iterdir()), [])
+        self.assert_original_profile_unchanged()
 
     def test_native_installer_directory_rejects_nested_reparse_paths_before_application(self):
         chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
@@ -209,7 +220,7 @@ $asset | ConvertTo-Json -Compress
         result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('symlink or reparse', result.stderr)
-        self.assertEqual(list(self.original.iterdir()), [])
+        self.assert_original_profile_unchanged()
         self.assertFalse((self.home / '.config').exists())
 
     def test_invalid_client_syntax_preserves_every_client_and_hides_values(self):
