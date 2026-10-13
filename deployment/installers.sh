@@ -5,6 +5,7 @@
 source "$DEPLOY_SOURCE/deployment/common.sh"
 source "$DEPLOY_SOURCE/deployment/managers.sh"
 source "$DEPLOY_SOURCE/deployment/agents.sh"
+source "$DEPLOY_SOURCE/deployment/shell.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)
 
 install_managers() {
@@ -37,4 +38,4 @@ install_common() {
         IFS=$saved_ifs
     done < "$DEPLOY_SOURCE/deployment/common-tools.tsv"
 }
-prepare_shell() { :; }
+prepare_shell() { prepare_managed_shell; }

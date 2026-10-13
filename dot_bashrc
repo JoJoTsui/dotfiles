@@ -1,47 +1,16 @@
-#!/bin/bash
-
-# Core environment shared with nushell (set before interactive check)
+# Shared values also reach non-interactive Bash when this file is sourced.
 [ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+case $- in *i*) ;; *) return ;; esac
 
-# user rwx settings
-umask 0022
-
-
-# pixi
-eval "$(pixi completion --shell bash)"
-
-
-
-# Node is exposed by the pinned Pixi nodejs environment.
-
-# If not running interactively, don't do anything
-case $- in
-    *i*) ;;
-      *) return;;
-esac
-
-
-
-# >>> mamba initialize >>>
-# !! Contents within this block are managed by 'micromamba shell init' !!
-export MAMBA_EXE="${MAMBA_EXE:-$(command -v micromamba || echo "${JOEY}/gizmo/micromamba")}"
-export MAMBA_ROOT_PREFIX="${MAMBA_ROOT_PREFIX:-${JOEY}/micromamba}"
-__mamba_setup="$("$MAMBA_EXE" shell hook --shell bash --root-prefix "$MAMBA_ROOT_PREFIX" 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__mamba_setup"
-else
-    alias micromamba="$MAMBA_EXE"  # Fallback on help from micromamba activate
+# Initialization syntax is shell-specific. Fresh --apply-only shells can start
+# before packages exist; ordinary bootstrap checks every required exposure.
+if command -v pixi >/dev/null 2>&1; then eval "$(pixi completion --shell bash)"; fi
+if [ -x "$MAMBA_EXE" ]; then
+    _dotfiles_mamba_setup=$("$MAMBA_EXE" shell hook --shell bash --root-prefix "$MAMBA_ROOT_PREFIX" 2>/dev/null)
+    if [ "$?" -eq 0 ]; then eval "$_dotfiles_mamba_setup"; fi
+    unset _dotfiles_mamba_setup
 fi
-unset __mamba_setup
-# <<< mamba initialize <<<
-
-
-
-# starship
-eval "$(starship init bash)"
-# zoxide
-eval "$(zoxide init bash)"
-# direnv
-eval "$(direnv hook bash)"
-# Set up fzf key bindings and fuzzy completion
-eval "$(fzf --bash)"
+if command -v starship >/dev/null 2>&1; then eval "$(starship init bash)"; fi
+if command -v zoxide >/dev/null 2>&1; then eval "$(zoxide init bash)"; fi
+if command -v direnv >/dev/null 2>&1; then eval "$(direnv hook bash)"; fi
+if command -v fzf >/dev/null 2>&1; then eval "$(fzf --bash)"; fi

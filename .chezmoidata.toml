@@ -1,0 +1,39 @@
+# One shared value model. Adapters contain shell syntax, not copied defaults.
+[sharedShell]
+umask = "0022"
+pythonIndex = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+pythonPreference = "managed"
+defaults = [
+  { name = "JOEY", base = "HOME", suffix = "joey" },
+  { name = "GIZMO", base = "JOEY", suffix = "gizmo" },
+  { name = "BIO_GIZMO", base = "JOEY", suffix = "bio_gizmo" },
+  { name = "NUSHELL_PATH", base = "GIZMO", suffix = "nushell" },
+  { name = "JSHELL", base = "JOEY", suffix = "SHELL" },
+  { name = "XDG_CONFIG_HOME", base = "HOME", suffix = ".config" },
+  { name = "XDG_DATA_HOME", base = "HOME", suffix = ".local/share" },
+  { name = "XDG_STATE_HOME", base = "HOME", suffix = ".local/state" },
+  { name = "XDG_CACHE_HOME", base = "HOME", suffix = ".cache" },
+  { name = "PIXI_HOME", base = "HOME", suffix = ".pixi" },
+  { name = "BUN_INSTALL", base = "HOME", suffix = ".bun" },
+  { name = "CARGO_HOME", base = "HOME", suffix = ".cargo" },
+  { name = "RUSTUP_HOME", base = "HOME", suffix = ".rustup" },
+  { name = "MAMBA_EXE", base = "PIXI_HOME", suffix = "bin/micromamba" },
+  { name = "MAMBA_ROOT_PREFIX", base = "XDG_DATA_HOME", suffix = "micromamba" },
+  { name = "EDITOR", value = "hx", windows = "notepad" },
+  { name = "UV_PYTHON_PREFERENCE", setting = "pythonPreference" },
+  { name = "PIP_INDEX_URL", setting = "pythonIndex" },
+  { name = "UV_DEFAULT_INDEX", setting = "pythonIndex" },
+  { name = "RUSTUP_UPDATE_ROOT", value = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup" },
+  { name = "RUSTUP_DIST_SERVER", value = "https://mirrors.tuna.tsinghua.edu.cn/rustup" },
+  { name = "CHOKIDAR_USEPOLLING", value = "0", remote = "1" },
+  { name = "LESSCHARSET", value = "utf-8" },
+  { name = "PAGER", value = "less" },
+  { name = "TAILSPIN_PAGER", value = "less -R [FILE]" },
+]
+# The first directory wins. Compatibility tool directories are never added.
+paths = [
+  { base = "BUN_INSTALL", suffix = "bin" },
+  { base = "HOME", suffix = ".local/bin" },
+  { base = "PIXI_HOME", suffix = "bin" },
+  { base = "CARGO_HOME", suffix = "bin" },
+]

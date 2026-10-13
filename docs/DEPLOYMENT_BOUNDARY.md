@@ -88,6 +88,12 @@ their top-level functions remain in `installers.sh`. Agent selection must
 preserve local Bun state. Shell preparation must leave account activation,
 history import, and repository indexing to their explicit boundaries.
 
+`deployment/shell.sh` calls the managed `dotfiles-shell-prepare` command during
+required shell preparation. That command validates new Nu prompt/completion
+resources before replacing working files and rejects symlinked startup state.
+The shared shell model and actual interactive/non-interactive Nu distinction
+are documented in [shared shell settings](SHARED_SHELL_SETTINGS.md).
+
 ## Isolated acceptance checks
 
 Run `DOTFILES_TEST_CHEZMOI=/path/to/chezmoi python3 -m unittest discover -s tests -v`.

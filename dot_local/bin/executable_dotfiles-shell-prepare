@@ -1,0 +1,29 @@
+#!/bin/sh
+# Rebuild only repo-owned Nu startup artifacts, after common tools exist.
+set -eu
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+fail() { printf 'dotfiles-shell-prepare: %s\n' "$*" >&2; exit 1; }
+for command in pixi nu starship zoxide; do
+    [ -x "$PIXI_HOME/bin/$command" ] || fail "required managed command missing: $PIXI_HOME/bin/$command"
+done
+for directory in "$HOME/.local" "$XDG_DATA_HOME" "$XDG_DATA_HOME/nushell" "$XDG_DATA_HOME/nushell/vendor" "$XDG_DATA_HOME/nushell/vendor/autoload"; do
+    [ ! -L "$directory" ] || fail "startup state directory is a symlink: $directory"
+done
+autoload="$XDG_DATA_HOME/nushell/vendor/autoload"
+mkdir -p "$autoload"
+for filename in starship.nu pixi-completions.nu; do
+    [ ! -L "$autoload/$filename" ] || fail "startup artifact is a symlink: $autoload/$filename"
+done
+starship_temporary=$(mktemp "$autoload/.starship.XXXXXX")
+pixi_temporary=$(mktemp "$autoload/.pixi.XXXXXX")
+trap 'rm -f "$starship_temporary" "$pixi_temporary"' EXIT HUP INT TERM
+"$PIXI_HOME/bin/starship" init nu > "$starship_temporary"
+"$PIXI_HOME/bin/pixi" completion --shell nushell > "$pixi_temporary"
+chmod 600 "$starship_temporary" "$pixi_temporary"
+# Nu omits vendor autoload under -c. Validate both new resources before either
+# replaces the last working artifact, then validate the managed base config.
+"$PIXI_HOME/bin/nu" --config "$pixi_temporary" --env-config "$starship_temporary" -c 'null'
+"$PIXI_HOME/bin/nu" --config "$XDG_CONFIG_HOME/nushell/config.nu" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
+mv -f "$starship_temporary" "$autoload/starship.nu"
+mv -f "$pixi_temporary" "$autoload/pixi-completions.nu"
+printf 'dotfiles-shell-prepare: prepared Nushell startup\n'
