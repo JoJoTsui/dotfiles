@@ -168,6 +168,7 @@ class HistoryBehaviorTests(unittest.TestCase):
         self.assertFalse((self.home / ".local/share/atuin/session").exists())
         self.assertFalse((self.home / ".local/share/atuin/key").exists())
         self.assertFalse((self.home / ".local/share/atuin/history.db").exists())
+        self.assertFalse((self.home / ".local/share/atuin/meta.db").exists())
         self.assertEqual(native_history.read_text(), "echo synthetic-existing-history\n")
 
     def test_supported_shells_record_and_search_one_local_history_while_filtering_known_secrets(self):

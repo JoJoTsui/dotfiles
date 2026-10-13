@@ -54,8 +54,10 @@ def validate_roots():
             logs = settings.get("logs", {})
             if logs.get("enabled", True) or any(logs.get(child, {}).get("enabled", False) for child in ("search", "daemon", "ai")):
                 raise HistoryError("native history file logging must be disabled before running Atuin")
-        for name in ("db_path", "record_store_path", "key_path"):
-            value = os.environ.get("ATUIN_" + name.upper(), settings.get(name))
+        for name in ("db_path", "record_store_path", "key_path", "meta.db_path"):
+            environment_name = "ATUIN_META__DB_PATH" if name == "meta.db_path" else "ATUIN_" + name.upper()
+            setting_value = settings.get("meta", {}).get("db_path") if name == "meta.db_path" else settings.get(name)
+            value = os.environ.get(environment_name, setting_value)
             if value:
                 candidate = Path(os.path.expandvars(os.path.expanduser(value)))
                 reject_symlinks(candidate)
@@ -91,15 +93,33 @@ def default_sources():
 
 
 def status(atuin):
-    # Atuin 18.23 moved authentication into meta.db. Its offline doctor reports
-    # only auth state/last sync, without returning the stored tokens.
-    output = run_atuin(atuin, ["doctor"])
-    start = output.find("\n{")
-    if start < 0:
-        raise HistoryError("Atuin diagnostic output has no status document")
-    diagnostic = json.loads(output[start + 1:])
-    sync = diagnostic["atuin"]["sync"]
-    if sync is None:
+    # Atuin doctor also enumerates every process and mounted disk. Read only
+    # the local activation metadata so status stays fast and works offline.
+    meta_db = configured_path(atuin, "meta.db_path")
+    for path in (meta_db, Path(str(meta_db) + "-wal"), Path(str(meta_db) + "-shm")):
+        reject_symlinks(path)
+    authenticated = False
+    last_sync = "no last sync"
+    if meta_db.is_file():
+        try:
+            with sqlite3.connect(meta_db.absolute().as_uri() + "?mode=ro", uri=True, timeout=1) as connection:
+                tables = {row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'")}
+                if "meta" in tables:
+                    authenticated = connection.execute(
+                        "SELECT 1 FROM meta WHERE key IN ('session', 'hub_session') LIMIT 1").fetchone() is not None
+                    if authenticated:
+                        row = connection.execute(
+                            "SELECT value FROM meta WHERE key = 'last_sync_time'").fetchone()
+                        if row:
+                            last_sync = row[0]
+        except sqlite3.Error as error:
+            raise HistoryError("Atuin activation metadata is unavailable") from error
+    # Atuin 18.23 migrates this legacy file into meta.db when its own store is
+    # first opened. Recognize it without opening the store or reading its token.
+    if not authenticated and (Path(os.environ["ATUIN_DATA_DIR"]) / "session").is_file():
+        authenticated = True
+    if not authenticated:
         print("history: sync pending activation; local history works offline")
         print("use dotfiles-history first-device or dotfiles-history join")
     elif not configured_path(atuin, "key_path").is_file():
@@ -107,7 +127,7 @@ def status(atuin):
         print("join with the same account and key using dotfiles-history join")
     else:
         print("history: activation configured; local history is available offline")
-        print(f"last recorded sync: {sync['last_sync']}; run dotfiles-history sync to verify current sync")
+        print(f"last recorded sync: {last_sync}; run dotfiles-history sync to verify current sync")
 
 
 @contextmanager
