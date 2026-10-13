@@ -112,3 +112,18 @@ The available yq parser accepted the workflow. These checks establish the
 planning/refusal contracts and syntax; native Windows/WSL execution remains
 pending until the workflow runs. Both WSL2 x86-64 roles and both WSL2 ARM64
 roles therefore remain explicitly pending at this implementation point.
+
+After composing the portable Unix test selectors, all 40 WSL-selected
+boundary/shell/payload/CodeGraph/history cases passed in 175.614 seconds with
+zero skips. These ran actual pinned Linux binaries in independently writable
+fixture homes using `DOTFILES_TEST_PLATFORM=wsl` and the remote compute role.
+They prove Linux execution of WSL-rendered configuration, including client
+discovery, MCP, encrypted loopback history and terminal shell behavior. They
+do not establish a WSL kernel or Windows interoperability result.
+
+The required deterministic suite separately ran 70 cases: 39 passed and 31
+explicit missing-hook/network/tool checks skipped. Read-only public Pixi
+inventory also confirmed all 29 owned common environments' exact numeric
+version components and Linux subdirs. Helix's source pin `25.07.1` appears as
+`25.7.1` in Conda metadata; native verification accepts that numeric spelling
+equivalence while keeping each component exact.

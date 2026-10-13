@@ -29,3 +29,8 @@ source/home, actual Windows command/path interoperability, default tools and
 clients, all three shells, history, and preserved local state. ARM64 is an
 explicit opt-in self-hosted target. Unchecked native acceptance remains pending;
 Linux rendering, borrowed-tool diagnostics and parser checks do not mark it passed.
+
+Post-dependency composition: 40 WSL-selected actual Linux shell/client/MCP/history
+and isolated boundary cases passed, zero skips, 175.614s. The earlier required
+deterministic gate remains recorded as 70 cases / 39 passed / 31 explicit skips.
+All four WSL2 native architecture/role cells remain pending actual CI execution.

@@ -126,6 +126,12 @@ def main():
                        PI_CODING_AGENT_DIR=str(home / ".pi/agent"), TMPDIR=str(home / ".cache/tmp"))
 
         def versions():
+            # Conda normalizes numeric components: Helix's declared 25.07.1
+            # appears as 25.7.1 in installed metadata. Compare exact components
+            # rather than treating that spelling as a different release.
+            def version_components(value):
+                return tuple(int(part) if part.isdecimal() else part for part in value.split("."))
+
             seen = {}
             inventory = json.loads(run([home / ".pixi/bin/pixi", "global", "list", "--json"], env=managed).stdout)
             installed = {item["name"]: item for item in inventory}
@@ -137,7 +143,8 @@ def main():
                 require(actual["platform"] == expected_platform, "Pixi installed an unexpected Linux subdir")
                 actual_dependencies = {item["name"]: item["version"] for item in actual["dependencies"]}
                 for dependency, pin in package["dependencies"].items():
-                    require(actual_dependencies.get(dependency) == pin.removeprefix("=="),
+                    require(dependency in actual_dependencies and
+                            version_components(actual_dependencies[dependency]) == version_components(pin.removeprefix("==")),
                             f"Installed package {dependency} does not match its exact source pin")
                 for exposed, binary in package["exposed"].items():
                     dependency = binary if binary in package["dependencies"] else next(iter(package["dependencies"]))
