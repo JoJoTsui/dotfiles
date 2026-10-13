@@ -22,7 +22,8 @@ def verify_clients(case, source, environment):
                      DOTFILES_TEST_HOME=str(case.home),
                      DOTFILES_TEST_TEMP_ROOT=str(case.root),
                      DOTFILES_TEST_SOURCE=str(source),
-                     DOTFILES_TEST_RUNNER_HOME=str(Path(case.env.get('HOME', str(case.root))).resolve()))
+                     DOTFILES_TEST_RUNNER_HOME=str(Path(case.env.get('HOME', str(case.root))).resolve()),
+                     CODEGRAPH_NO_DAEMON='1')
     saved = {key: os.environ.get(key) for key in overrides}
     os.environ.update(overrides)
     # The test methods discover their executables through os.environ, while

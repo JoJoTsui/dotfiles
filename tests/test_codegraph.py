@@ -55,7 +55,7 @@ class CodeGraphTests(unittest.TestCase):
                 "XDG_CACHE_HOME": str(self.home / ".cache"),
                 "CODEX_HOME": str(self.home / ".codex"),
                 "KIMI_CODE_HOME": str(self.home / ".kimi-code"),
-                "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1",
+                "CODEGRAPH_NO_DOWNLOAD": "1", "CODEGRAPH_NO_DAEMON": "1", "DO_NOT_TRACK": "1",
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
                 "DISABLE_TELEMETRY": "1", "DISABLE_AUTOUPDATER": "1"}
         return managed_shell_environment(self.home, environment)
