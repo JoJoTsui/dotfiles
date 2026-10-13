@@ -14,7 +14,10 @@ SOURCE = Path(__file__).resolve().parents[2]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--verify", action="store_true", required=True)
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--verify", action="store_true")
+    mode.add_argument("--probe-nu", action="store_true",
+                      help="check ordinary Nu startup in an existing rendered home; never a native WSL2 pass")
     parser.add_argument("--role", choices=("workstation", "remote-compute"), default="workstation")
     parser.add_argument("--arch", choices=("x86_64", "aarch64"), default="x86_64")
     parser.add_argument("--home", type=Path, required=True)
@@ -61,7 +64,38 @@ def main():
         if not condition:
             raise RuntimeError(message)
 
+    def ordinary_nu(script):
+        # -e enters the REPL startup path; -c bypasses ordinary config/env
+        # discovery even though explicit --config flags can hide that omission.
+        return run([arguments.home / ".pixi/bin/nu", "-e", script + "; exit"], cwd=arguments.home)
+
+    def probe_nu_startup():
+        script = '''print ({
+            editor: $env.EDITOR?, polling: $env.CHOKIDAR_USEPOLLING?, prompt: $env.STARSHIP_SHELL?,
+            logs: (scope commands | where name == "logs" | length),
+            zoxide: (scope aliases | where name == "z" | length),
+            historyHooks: ($env.config.hooks.pre_execution | length)
+        } | to json --raw)'''
+        startup = json.loads(ordinary_nu(script).stdout)
+        require(startup["editor"] == "hx", "Ordinary Nu startup did not load the managed env configuration")
+        require(startup["polling"] == ("1" if arguments.role == "remote-compute" else "0"),
+                "Ordinary Nu startup did not load its host-role setting")
+        require(startup["logs"] == 1 and startup["zoxide"] == 1,
+                "Ordinary Nu startup did not load the managed shell configuration")
+        require(startup["prompt"] == "nu" and startup["historyHooks"] > 0,
+                "Ordinary Nu startup did not load the prompt/history vendor resources")
+        return startup
+
     try:
+        if arguments.probe_nu:
+            report["phase"] = "rendered-nu-startup"
+            report["layer"] = "configuration"
+            require(arguments.home.is_absolute(), "Select an absolute rendered home for the Nu probe")
+            profile = json.loads((arguments.home / ".config/dotfiles/profile.json").read_text())
+            require(profile["platform"] == "wsl" and profile["role"] == arguments.role,
+                    "Nu probe requires the matching rendered WSL role")
+            check("ordinary Nu env/config/vendor startup", probe_nu_startup)
+            return 0
         kernel = platform.release().lower()
         if platform.system() != "Linux" or "microsoft" not in kernel or "wsl2" not in kernel:
             raise RuntimeError("Native WSL2 kernel required; ordinary Linux and WSL1 are not a WSL2 pass")
@@ -182,12 +216,12 @@ def main():
             for shell in ("bash", "zsh", "nu"):
                 executable = home / ".pixi/bin" / shell
                 if shell == "nu":
-                    script = "$env | select " + " ".join(names) + " | to json --raw"
-                    result = run([executable, "-c", script], cwd=home)
+                    script = "print ($env | select " + " ".join(names) + " | to json --raw)"
+                    result = ordinary_nu(script)
                     actual = json.loads(result.stdout)
                     require([actual[name] for name in names] == expected, "Standalone Nu shared values differ")
                     navigation = '^zoxide add native-wsl-navigation; z native-wsl-navigation; print $env.PWD; logs --print ../application.log'
-                    output = run([executable, "-c", navigation], cwd=home).stdout
+                    output = ordinary_nu(navigation).stdout
                 else:
                     script = '. "$HOME/.env_core"; . "$HOME/.env_core"; printf "%s\\n" ' + " ".join(f'"${{{name}}}"' for name in names)
                     require(run([executable, "-c", script], cwd=home).stdout.splitlines() == expected,

@@ -34,3 +34,10 @@ Post-dependency composition: 40 WSL-selected actual Linux shell/client/MCP/histo
 and isolated boundary cases passed, zero skips, 175.614s. The earlier required
 deterministic gate remains recorded as 70 cases / 39 passed / 31 explicit skips.
 All four WSL2 native architecture/role cells remain pending actual CI execution.
+
+The native Nu launch now uses ordinary REPL startup (`-e`, then harmless print
+and explicit exit). A two-role public `--probe-nu` regression reproduced the
+old command-only startup failure and verifies shared env/config, prompt and
+history resources without explicit config flags. The focused WSL/shell suite
+passed 19 cases, zero skips, 78.101s on Linux; the probe reports native acceptance
+as false and does not fill any pending WSL2 cell.
