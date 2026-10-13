@@ -279,8 +279,9 @@ def main():
             require(bun_registry.read_bytes() == original_bun_registry, "Reapplication replaced the Bun global registry")
             for name, before in launchers.items():
                 require((home / ".bun/bin" / name).read_bytes() == before, "Agent opt-out changed an existing launcher")
-            require("native-wsl-preserved-history" in run([home / ".pixi/bin/atuin", "search", "--cmd-only",
-                    "native-wsl-preserved-history"], env=managed).stdout, "Reapplication lost local command history")
+            preserved_history = run([home / ".pixi/bin/atuin", "search", "--cmd-only",
+                                     "native-wsl-preserved-history"], env=history_environment).stdout
+            require("native-wsl-preserved-history" in preserved_history, "Reapplication lost local command history")
             run([home / ".pixi/bin/device-zoxide", "--version"], env=managed)
             require("pending activation" in run([home / ".local/bin/dotfiles-history", "status"], env=managed).stdout.lower(),
                     "Ordinary bootstrap activated history sync")
