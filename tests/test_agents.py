@@ -6,6 +6,7 @@ import subprocess
 import shutil
 import tempfile
 import unittest
+from pins import agent_pins, common_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -35,11 +36,11 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(plan["agents"], ["kimi", "pi", "opencode", "claude", "codex"])
         selected = {item["name"]: item for item in plan["agentPackages"]}
         self.assertEqual(selected["codex"]["package"], "@openai/codex")
-        self.assertEqual(selected["codex"]["version"], "0.162.1")
+        self.assertEqual(selected["codex"]["version"], agent_pins()["codex"]["version"])
         self.assertEqual(selected["kimi"]["package"], "@moonshot-ai/kimi-code")
         self.assertEqual(selected["opencode"]["package"], "@opencode/cli")
-        self.assertEqual(selected["opencode"]["version"], "2.0.27")
-        self.assertEqual(selected["codegraph"]["version"], "1.6.2")
+        self.assertEqual(selected["opencode"]["version"], agent_pins()["opencode"]["version"])
+        self.assertEqual(selected["codegraph"]["version"], agent_pins()["codegraph"]["version"])
         self.assertEqual(len(selected), 6)
         self.assertFalse(self.home.exists())
 
@@ -69,10 +70,10 @@ class AgentTests(unittest.TestCase):
         tools = self.root / "tools"
         tools.mkdir()
         bun = tools / "bun"
-        bun.write_text('#!/bin/sh\nif [ "$1" = --version ]; then echo 1.3.11; else exit 23; fi\n')
+        bun.write_text('#!/bin/sh\nif [ "$1" = --version ]; then echo ' + common_pin("bun") + '; else exit 23; fi\n')
         bun.chmod(0o755)
         node = tools / "node"
-        node.write_text('#!/bin/sh\necho v24.21.0\n')
+        node.write_text('#!/bin/sh\necho v' + common_pin("nodejs") + '\n')
         node.chmod(0o755)
         registry = self.home / ".bun/install/global/package.json"
         registry.parent.mkdir(parents=True)
@@ -153,8 +154,7 @@ class AgentInstallTests(unittest.TestCase):
                            XDG_DATA_HOME=str(home / ".local/share"), XDG_STATE_HOME=str(home / ".local/state"),
                            XDG_CACHE_HOME=str(home / ".cache"), BUN_INSTALL=str(home / ".bun"),
                            CODEX_HOME=str(home / ".codex"), CLAUDE_CONFIG_DIR=str(home / ".claude"))
-        expected = {"kimi": "2.1.1", "pi": "1.2.0", "opencode": "2.0.27",
-                    "claude": "2.1.296", "codex": "0.162.1", "codegraph": "1.6.2"}
+        expected = {name: item["version"] for name, item in agent_pins().items()}
         previous = None
         for attempt, selector in enumerate((None, "none", "codex", "all"), 1):
             selected_command = command if selector is None else [*command, "--agents", selector]

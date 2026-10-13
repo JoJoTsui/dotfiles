@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pins import common_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -56,7 +57,7 @@ class CommonInstallTests(unittest.TestCase):
                     diagnostic = subprocess.run([location.stdout.strip(), "--version"], env=diagnostic_environment, capture_output=True, text=True, timeout=30)
                     self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
             node = subprocess.run([str(home / ".pixi/bin/node"), "--version"], env=diagnostic_environment, capture_output=True, text=True)
-            self.assertEqual(node.stdout.strip(), "v24.21.0")
+            self.assertEqual(node.stdout.strip(), "v" + common_pin("nodejs"))
             pip = subprocess.run([str(home / ".pixi/bin/pip"), "config", "get", "global.index-url"], env=diagnostic_environment, capture_output=True, text=True)
             self.assertEqual(pip.returncode, 0, pip.stderr)
             self.assertEqual(pip.stdout.strip(), "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple")

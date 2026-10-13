@@ -15,6 +15,7 @@ import base64
 import unittest
 from fixtures.processes import stop_client
 from fixtures.shell_env import managed_shell_environment
+from pins import agent_pins
 
 try:
     import tomllib
@@ -201,7 +202,7 @@ class CodeGraphTests(unittest.TestCase):
                 initialized = request(1, "initialize", {"protocolVersion": "2024-11-05",
                     "capabilities": {"roots": {"listChanged": False}},
                     "clientInfo": {"name": "dotfiles-fixture", "version": "1"}, "rootUri": project.as_uri()})
-                self.assertEqual(initialized["serverInfo"]["version"], "1.6.2")
+                self.assertEqual(initialized["serverInfo"]["version"], agent_pins()["codegraph"]["version"])
                 self.assertIn("built-in tools", initialized["instructions"])
                 send({"jsonrpc": "2.0", "method": "notifications/initialized"})
                 tools = request(2, "tools/list", {})["tools"]

@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from pins import common_pin, manager_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -70,10 +71,10 @@ class DeploymentTests(unittest.TestCase):
                         "rtk", "atuin", "zoxide", "tspin", "less", "rustup"):
             self.assertIn(command, plan["tools"])
         packages = {item["environment"]: item for item in plan["packages"]}
-        self.assertEqual(packages["rtk-cli"]["dependencies"], {"rtk-cli": "==0.51.0"})
+        self.assertEqual(packages["rtk-cli"]["dependencies"], {"rtk-cli": "==" + common_pin("rtk-cli")})
         self.assertEqual(packages["tailspin"]["exposed"], {"tspin": "tspin"})
-        self.assertEqual(packages["nodejs"]["dependencies"], {"nodejs": "==24.21.0"})
-        self.assertEqual(packages["python"]["dependencies"], {"python": "==3.13.16", "pip": "==26.2.1"})
+        self.assertEqual(packages["nodejs"]["dependencies"], {"nodejs": "==" + common_pin("nodejs")})
+        self.assertEqual(packages["python"]["dependencies"], {"python": "==" + common_pin("python"), "pip": "==" + common_pin("pip")})
         self.assertNotIn("codex", packages)
         for specialist in ("samtools", "nvtop", "zed", "firefox"):
             self.assertNotIn(specialist, packages)
@@ -168,9 +169,9 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(json.loads(bun_registry.read_text())["dependencies"], {"my-agent": "1.0.0"})
         desired = (self.home / ".config/dotfiles/pixi-global.toml").read_text()
         self.assertIn('[envs."rtk-cli"]', desired)
-        self.assertIn('"rtk-cli" = "==0.51.0"', desired)
+        self.assertIn('"rtk-cli" = "==' + common_pin("rtk-cli") + '"', desired)
         self.assertIn('"tspin" = "tspin"', desired)
-        self.assertIn('"pip" = "==26.2.1"', desired)
+        self.assertIn('"pip" = "==' + common_pin("pip") + '"', desired)
         self.assertNotIn('[envs."codex"]', desired)
         for specialist in ("samtools", "nvtop", "zed", "firefox"):
             self.assertNotIn(f'[envs."{specialist}"]', desired)
@@ -200,7 +201,7 @@ class DeploymentTests(unittest.TestCase):
         if not chezmoi:
             self.skipTest("actual apply requires chezmoi")
         pixi = self.guards / "pixi"
-        pixi.write_text('#!/bin/sh\ncase "$1 $2" in "--version ") echo "pixi 0.81.0" ;; "exec "*) exit 0 ;; "global sync") exit 37 ;; *) exit 95 ;; esac\n')
+        pixi.write_text('#!/bin/sh\ncase "$1 $2" in "--version ") echo "pixi ' + manager_pin("PIXI_VERSION") + '" ;; "exec "*) exit 0 ;; "global sync") exit 37 ;; *) exit 95 ;; esac\n')
         pixi.chmod(0o755)
         result = self.deploy("--platform", "linux", env=dict(self.env,
                              DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_PIXI_BIN=str(pixi)))

@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 import sys
+from pins import manager_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -105,7 +106,7 @@ class BundleTests(unittest.TestCase):
         registry.parent.mkdir(parents=True)
         registry.write_text('version = 1\n[envs.device-extra]\nchannels = ["conda-forge"]\ndependencies = { zoxide = "==0.10.0" }\nexposed = { device-zoxide = "zoxide" }\n')
         pixi = self.root / "controlled-pixi"
-        pixi.write_text('#!/bin/sh\ncase "$1 $2" in "--version ") echo "pixi 0.81.0" ;; "exec "*) shift 3; shift; exec ' + shlex.quote(sys.executable) + ' "$@" ;; "global sync") exit 37 ;; *) exit 95 ;; esac\n')
+        pixi.write_text('#!/bin/sh\ncase "$1 $2" in "--version ") echo "pixi ' + manager_pin("PIXI_VERSION") + '" ;; "exec "*) shift 3; shift; exec ' + shlex.quote(sys.executable) + ' "$@" ;; "global sync") exit 37 ;; *) exit 95 ;; esac\n')
         pixi.chmod(0o755)
         environment = dict(self.environment, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_PIXI_BIN=str(pixi))
         for selection in ("bio", "none"):

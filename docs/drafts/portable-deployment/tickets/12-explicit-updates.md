@@ -12,12 +12,12 @@ as tested. Ordinary bootstrap continues to install the recorded version set.
 10 — Deliver WSL deployment and verify its Windows integration;
 11 — Deliver the common environment on native Windows.
 
-**Status:** Draft awaiting review; publish as ready-for-agent after approval.
+**Status:** Implemented; candidate network resolution and native runner results remain external checks.
 
-- [ ] Ordinary bootstrap uses recorded versions and supported locks rather than silently refreshing packages to latest.
-- [ ] An explicit update operation refreshes managed pins/locks and Windows exception versions, producing a reviewable change set.
-- [ ] Updates validate Bun/Node/agent/CodeGraph engine compatibility and the version-dependent agent integration schemas.
-- [ ] Resolution checks cover common defaults and declared supported requested bundles across the target matrix; required conflicts/failures are visible.
+- [x] Ordinary bootstrap uses recorded exact versions and frozen Bun lockfiles; no bootstrap path refreshes packages to latest. Pixi global has no committed transitive lock, which is documented.
+- [x] `deployment/update_versions.py refresh` applies an explicit proposal to a staged source copy, regenerates changed Bun locks, checks manager/Windows pins, and writes a reviewable diff only after validation.
+- [x] Agent candidate metadata is checked against the pinned Node version; `verify` checks all agent Node engines, frozen Bun locks, and agent/CodeGraph/Windows configuration contracts.
+- [x] An opt-in network test resolves the common environments and every declared supported bundle/target pair in a temporary Pixi workspace. Resolver failures are nonzero.
 - [ ] Isolated install/diagnostic checks and native execution verify their actual targets, with unavailable network or runtime coverage reported separately.
-- [ ] Repeat update/deployment with the same version set is idempotent and does not change authentication, existing history, project indexes, or unrelated installations.
-- [ ] Documentation describes refreshing, reviewing, verifying, and applying a version set without claiming an unverified update passed.
+- [x] Reapplying the same proposal is idempotent; refresh writes only deployment source catalogs, assets, and agent package/lock files, never device credentials, history, project indexes, or installations.
+- [x] [Update verification guide](../../verification/updates.md) documents proposal, review, resolution, and native verification boundaries.
