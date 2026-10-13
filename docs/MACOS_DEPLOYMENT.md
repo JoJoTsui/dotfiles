@@ -48,7 +48,10 @@ See [Nu startup paths](https://www.nushell.sh/book/configuration.html),
 `nu-login` prefers Nu for interactive managed terminals and retains Bash for
 scripts and agent subprocesses. A terminal application can select
 `~/.local/bin/nu-login` as its startup command. Bootstrap leaves account shell
-selection to the user. Remote VS Code Machine settings emit `osx` keys, managed
+selection unchanged by default; `--login-shell` opts in to registering the
+launcher and selecting it with `chsh`. `--system-config` separately adds the
+portable Bash defaults to `/etc/bashrc`, preserving a first-run backup.
+Remote VS Code Machine settings emit `osx` keys, managed
 micromamba paths, and selectable Bash/Nu profiles; Bash retains the secondary
 shell guard for Claude. Rendering that payload does not execute VS Code Server.
 

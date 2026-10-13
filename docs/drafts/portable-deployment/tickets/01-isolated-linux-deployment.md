@@ -24,20 +24,23 @@ boundary reused by later slices.
 ## Implementation and evidence
 
 Public boundary: `bash bootstrap.sh --plan`, `--home`, `--source`, `--platform`,
-`--role`, `--profile`, `--class`, `--arch`, and `--apply-only`. Plans are JSON.
+`--role`, `--profile`, `--class`, `--arch`, `--apply-only`, `--system-config`,
+and `--login-shell`. Plans are JSON.
 The boundary uses Bash 3.2-compatible syntax and actual working-tree chezmoi
 application with explicit destination/config/cache/state paths. Canonical
 platform/role/architecture data and an observable target profile file are
 deployed; legacy class metadata remains compatible.
 
-Checks run: nine public-boundary acceptance tests passed with actual chezmoi
+Checks run: public-boundary acceptance tests passed with actual chezmoi
 v2.72.2 supplied from an isolated tool directory. They include all 14 accepted
 profile/architecture plans, controlled platform detection, both Linux role
 applications and reapplications, uncommitted source, copy-mode/executable
 targets, placeholder credentials, bookkeeping exclusion, isolated state roots,
-symlink refusal, and named required failures. ShellCheck and `git diff --check`
-passed. No real-home apply, account operation, existing-history read/import,
-user-project indexing, or system configuration action was performed.
+symlink refusal, named required failures, and explicit-action plan metadata.
+Simulated homes are rejected before either opt-in action can run. ShellCheck
+and `git diff --check` passed. No real-home apply, account operation,
+existing-history read/import, user-project indexing, or system configuration
+action was performed.
 
 Extension contract: [deployment boundary](../../../DEPLOYMENT_BOUNDARY.md).
 `deployment/installers.sh` declares plan arrays and functions
@@ -46,4 +49,5 @@ Sourcing remains free of external side effects. Tickets 02/04 replace the
 explicit pending common/agent installer failures; `--apply-only` is already
 usable. This evidence establishes Linux file application and deterministic
 planning, not network installation or native foreign execution. Bootstrap
-offers no system/login-shell action; those changes cannot happen implicitly.
+offers system configuration and login-shell actions only through explicit
+options; simulated runs reject them before state creation.

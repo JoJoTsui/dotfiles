@@ -57,6 +57,16 @@ installation and shell preparation. It conflicts with `--apply-only`.
 See [agent ownership and validation](AGENT_INSTALLATION.md) for supported
 locks, runtime overrides, and partial deployment acceptance.
 
+Unix-only `--system-config` adds the portable managed block to the existing
+system Bash rc (`/etc/bash.bashrc` or `/etc/bashrc`), preserving the original
+file in a `.dotfiles.bak` backup on first change. `--login-shell`
+registers the deployed `~/.local/bin/nu-login` in `/etc/shells` and selects
+it through `chsh`. Both options are off by default, appear in plan output when
+requested, and reject foreign platforms or a target home different from the
+current account's home. `--login-shell` requires normal shell preparation, so
+it cannot combine with `--apply-only` or `--agents-only`. Native Windows uses
+managed terminal shells and does not offer these account/system options.
+
 ## Common tools and registry ownership
 
 `deployment/common-tools.tsv` is the canonical common catalog. Each row names
@@ -142,8 +152,9 @@ share writable installed prefixes. Native macOS/Windows/ARM and shell behavior
 remain separate checks; package-resolution success does not establish them.
 
 A designated home whose pre-existing state directories are symlinks is rejected
-before state creation. `/etc` and account login-shell changes are absent from
-this boundary. Provider environment values explicitly supplied by the device
+before state creation. Ordinary and simulated deployments never perform system
+or account changes; explicit options are blocked from simulated homes. Provider
+environment values explicitly supplied by the device
 owner are rendered only into the selected target; existing real-home auth files
 are never loaded by bootstrap.
 

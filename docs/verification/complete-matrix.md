@@ -58,16 +58,17 @@ fail explicitly without creating their target home.
 | [0002](../adr/0002-canonical-shell-settings.md) | Shared values have one canonical source with shell adapters. | `test_shell_behavior.py` compares Nu/Bash/Zsh values and preserves device overrides; native startup remains a platform CI check. |
 | [0003](../adr/0003-encrypted-shell-history-sync.md) | One Atuin history with hosted encrypted sync, deliberate activation/import, and filtering. | Synthetic two-device loopback encryption, history fixtures, and explicit import tests; no real account or history is used. |
 | [0004](../adr/0004-platform-runtime-boundaries.md) | Platform-specific runtimes and native execution boundaries are explicit. | Target catalog resolution plus native macOS/Windows/WSL workflows; WSL ARM64 awaits a suitable self-hosted runner. |
-| [0005](../adr/0005-user-scoped-nushell-startup.md) | Managed launchers prefer Nu; ordinary deployment stays user-scoped. | Plan asserts `primaryShell=nu` and no system/login-shell changes; isolated apply/reapply and native shell startup tests. |
+| [0005](../adr/0005-user-scoped-nushell-startup.md) | Managed launchers prefer Nu; ordinary deployment stays user-scoped. | Default plan asserts `primaryShell=nu` and no system/login-shell changes; explicit action plans and simulated-home guards cover opt-ins; native shell startup remains a CI check. |
 
 ## Verification snapshot
 
 On 2026-10-13, the Ticket 13 local run passed 14 matrix cells, 98 read-only
 plans, and 56 bundle outcomes. The pin/catalog check passed for 29 common
 environments, 79 bundle-tool rows, six agents, and eight Windows exceptions.
-The deterministic suite passed 95 tests: 28 passed and 67 environment-dependent
-checks were explicitly skipped. Those skips are reported rather than treated
-as evidence for installed or native behavior.
+The deterministic suite passed 99 tests: 32 passed and 67 environment-dependent
+checks were explicitly skipped. The added opt-in checks confirm plan visibility,
+simulated-home refusal, and native Windows rejection. Those skips are reported
+rather than treated as evidence for installed or native behavior.
 
 The opt-in network run also passed from fresh temporary roots: the common
 installer completed two apply/install passes and its managed command, pip and

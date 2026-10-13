@@ -1,0 +1,12 @@
+# Optional portable defaults for interactive system Bash sessions.
+case $- in *i*) ;; *) return ;; esac
+
+export PS1='\[\e[1;32m\][\w \u@\h]\n\$ \[\e[0m\]'
+set -o emacs
+alias ll='ls -al'
+if [ "$(uname -s)" = Darwin ]; then
+    alias ls='ls -G'
+else
+    alias ls='ls --color=auto'
+    alias grep='grep --color=auto'
+fi

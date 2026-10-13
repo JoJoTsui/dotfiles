@@ -30,8 +30,9 @@ The public boundary applies this **working tree**, including uncommitted
 changes, with an explicit source and destination. Every XDG and package-manager
 state root follows the selected home. Planning prints JSON without creating
 files, installing, authenticating, importing history, or indexing projects.
-Ordinary deployment changes user files only; it has no system or account
-login-shell action. See [the deployment boundary](docs/DEPLOYMENT_BOUNDARY.md)
+Ordinary deployment changes user files only. Unix deployments can opt in to
+system Bash defaults or changing the account login shell; those actions reject
+simulated homes. See [the deployment boundary](docs/DEPLOYMENT_BOUNDARY.md)
 for the adapter contract and isolated verification.
 
 Native Windows uses `./bootstrap.ps1 -Profile windows-workstation` from
@@ -120,6 +121,7 @@ dot_pixi/
   config.toml                 # netfs-redirect = never (network mount)
 dot_vscode-server/…         # remote compute Machine settings
 system/bash.bashrc          # manual system banner payload; never auto-applied
+deployment/system/bashrc    # portable Bash defaults; installed only by --system-config
 docs/                       # CLAUDE_SETUP_T9K.md, vscode-win-settings.jsonc
 clash/                      # Clash Verge profile merge (app config, not $HOME)
 ```

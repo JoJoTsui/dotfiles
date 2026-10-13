@@ -7,6 +7,8 @@ DEPLOY_HOME="${HOME:?HOME must be set}"
 DEPLOY_PLAN=false
 DEPLOY_APPLY_ONLY=false
 DEPLOY_AGENTS_ONLY=false
+DEPLOY_SYSTEM_CONFIG=false
+DEPLOY_LOGIN_SHELL=false
 CLI_PLATFORM='' CLI_ROLE='' CLI_PROFILE='' CLI_CLASS='' CLI_ARCH=''
 CLI_BUNDLES='' CLI_BUNDLES_SET=false
 CLI_AGENTS='' CLI_AGENTS_SET=false
@@ -57,6 +59,8 @@ Usage: bash bootstrap.sh [options]
   --arch NAME               x86_64, aarch64 (amd64/arm64 aliases accepted)
   --bundles LIST            none (default), or comma-separated bio,gpu,desktop,developer
   --agents SELECTION        all (default), none, or kimi,pi,opencode,claude,codex
+  --system-config           Add managed Bash defaults to the system Bash rc
+  --login-shell             Set this account's login shell to the managed Nu launcher
   --apply-only              Apply files with chezmoi; skip tool/agent installers
   --agents-only             Apply files and install agents with an existing toolchain
 
@@ -64,13 +68,16 @@ Environment selectors: DOTFILES_PLATFORM, DOTFILES_ROLE, DOTFILES_PROFILE,
 DOTFILES_CLASS, DOTFILES_ARCH, DOTFILES_AGENTS, DOTFILES_BUNDLES.
 Explicit flags override environment selectors.
 Conflicting explicit preset/component flags are errors.
-Every state root is scoped to the target home. This entry point does not change
-system configuration, account login shells, auth, history imports, or indexes.
+Every state root is scoped to the target home. System Bash configuration and
+the account login shell change only with their explicit options; auth, history
+imports, and project indexes remain separate actions.
 HELP
             exit 0 ;;
         --plan) DEPLOY_PLAN=true; shift ;;
         --apply-only) DEPLOY_APPLY_ONLY=true; shift ;;
         --agents-only) DEPLOY_AGENTS_ONLY=true; shift ;;
+        --system-config) DEPLOY_SYSTEM_CONFIG=true; shift ;;
+        --login-shell) DEPLOY_LOGIN_SHELL=true; shift ;;
         --home|--platform|--role|--profile|--class|--arch|--source|--agents|--bundles)
             [ "$#" -ge 2 ] || fail "$1 requires a value"
             case "$1" in
@@ -89,6 +96,9 @@ HELP
     esac
 done
 if "$DEPLOY_APPLY_ONLY" && "$DEPLOY_AGENTS_ONLY"; then fail '--apply-only and --agents-only conflict'; fi
+if "$DEPLOY_LOGIN_SHELL" && { "$DEPLOY_APPLY_ONLY" || "$DEPLOY_AGENTS_ONLY"; }; then
+    fail '--login-shell requires a full deployment with shell preparation'
+fi
 
 case "$DEPLOY_HOME" in /*) ;; *) fail "--home must be an absolute path" ;; esac
 [ "$DEPLOY_HOME" != / ] || fail '--home cannot be the filesystem root'
@@ -101,11 +111,16 @@ source "$DEPLOY_SOURCE/deployment/profile.sh"
 resolve_profile
 # shellcheck source=deployment/installers.sh
 source "$DEPLOY_SOURCE/deployment/installers.sh"
+if "$DEPLOY_SYSTEM_CONFIG" || "$DEPLOY_LOGIN_SHELL"; then
+    case "$DEPLOY_PLATFORM" in linux|wsl|macos) ;; *) fail 'system and login-shell options are unavailable on native Windows' ;; esac
+fi
 if "$DEPLOY_APPLY_ONLY"; then
     DEPLOY_ACTIONS=(apply-source)
 elif "$DEPLOY_AGENTS_ONLY"; then
     DEPLOY_ACTIONS=(install-managers apply-source install-agents)
 fi
+if "$DEPLOY_SYSTEM_CONFIG"; then DEPLOY_ACTIONS+=(configure-system); fi
+if "$DEPLOY_LOGIN_SHELL"; then DEPLOY_ACTIONS+=(set-login-shell); fi
 if "$DEPLOY_PLAN"; then
     printf '{"platform":'; json_string "$DEPLOY_PLATFORM"
     printf ',"role":'; json_string "$DEPLOY_ROLE"
@@ -131,8 +146,28 @@ if "$DEPLOY_PLAN"; then
     printf ',"cache":'; json_string "$DEPLOY_HOME/.cache"
     printf ',"pixi":'; json_string "$DEPLOY_HOME/.pixi"
     printf ',"bun":'; json_string "$DEPLOY_HOME/.bun"
-    printf '},"settings":{"mode":"copy","primaryShell":"nu","systemChanges":false,"loginShellChanges":false}}\n'
+    printf '},"settings":{"mode":"copy","primaryShell":"nu","systemChanges":'
+    if "$DEPLOY_SYSTEM_CONFIG" || "$DEPLOY_LOGIN_SHELL"; then printf 'true'; else printf 'false'; fi
+    printf ',"loginShellChanges":'
+    if "$DEPLOY_LOGIN_SHELL"; then printf 'true'; else printf 'false'; fi
+    printf '}}\n'
     exit 0
+fi
+
+# Account and system actions are unavailable to simulated-home applies, even
+# when their explicit switches are present. Resolve the passwd home separately
+# from HOME so an isolated test environment cannot impersonate the real account.
+if "$DEPLOY_SYSTEM_CONFIG" || "$DEPLOY_LOGIN_SHELL"; then
+    actual_platform="$(PATH=/usr/bin:/bin detect_platform)"
+    [ "$DEPLOY_PLATFORM" = "$actual_platform" ] || fail 'system and login-shell options require the detected native platform'
+    case "$DEPLOY_PLATFORM" in
+        linux|wsl)
+            account_record="$(/usr/bin/getent passwd "$(/usr/bin/id -u)")" || fail 'cannot resolve the current account home'
+            account_home="$(printf '%s\n' "$account_record" | /usr/bin/awk -F: '{print $6}')" ;;
+        macos)
+            account_home="$(/usr/bin/dscl . -read "/Users/$(/usr/bin/id -un)" NFSHomeDirectory | /usr/bin/awk '{print $2}')" || fail 'cannot resolve the current account home' ;;
+    esac
+    [ -n "$account_home" ] && [ "$DEPLOY_HOME" = "$account_home" ] || fail 'system and login-shell options cannot target a simulated or different home'
 fi
 
 # Refuse pre-existing state directory symlinks before mkdir or installers can
@@ -198,6 +233,8 @@ elif ! "$DEPLOY_APPLY_ONLY"; then
     run_step install-agents install_agents
     run_step prepare-shell prepare_shell
 fi
+if "$DEPLOY_SYSTEM_CONFIG"; then run_step configure-system configure_system; fi
+if "$DEPLOY_LOGIN_SHELL"; then run_step set-login-shell set_login_shell; fi
 if "$DEPLOY_AGENTS_ONLY"; then
     printf 'dotfiles: applied agent files and selected packages for %s to %s (copy mode)\n' "$DEPLOY_PROFILE" "$HOME"
 else

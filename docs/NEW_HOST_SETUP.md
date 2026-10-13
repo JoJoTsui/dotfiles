@@ -74,6 +74,21 @@ Use `--apply-only` to apply and validate files without installing tools or
 agents. Normal bootstrap installs pinned common tools and selected agents.
 `--agents-only` is for a host that already has the pinned Bun and Node runtime.
 
+On Linux, macOS, and WSL, system Bash defaults and account login-shell changes
+are separate explicit opt-ins:
+
+```sh
+bash bootstrap.sh --system-config
+bash bootstrap.sh --login-shell
+```
+
+`--system-config` backs up the platform Bash rc once and installs an owned,
+repeatable block. `--login-shell` registers the managed Nu launcher in
+`/etc/shells` and calls `chsh`; it requires a full deployment and the current
+account home. These flags are unavailable on native Windows. Planning reports
+the requested actions without applying them. Simulated homes cannot execute
+either action.
+
 ## Start Nushell and shared history
 
 Managed interactive launchers prefer Nushell. Bash and Zsh remain available on

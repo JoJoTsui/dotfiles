@@ -151,6 +151,34 @@ class DeploymentTests(unittest.TestCase):
         self.assertNotIn("synthetic-plan-secret", json.dumps(plan))
         self.assertFalse(self.home.exists())
 
+    def test_plan_reports_explicit_system_and_login_shell_actions_without_running_them(self):
+        plan = self.plan("--platform", "linux", "--system-config", "--login-shell")
+        self.assertTrue(plan["settings"]["systemChanges"])
+        self.assertTrue(plan["settings"]["loginShellChanges"])
+        self.assertEqual(plan["actions"][-2:], ["configure-system", "set-login-shell"])
+        self.assertFalse(self.home.exists())
+        self.assertEqual(list(self.original_home.iterdir()), [])
+
+    def test_privileged_options_reject_a_simulated_home_before_writing(self):
+        result = self.deploy("--platform", "linux", "--system-config", "--login-shell")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot target a simulated or different home", result.stderr)
+        self.assertNotIn("forbidden external command", result.stderr)
+        self.assertFalse(self.home.exists())
+        self.assertEqual(list(self.original_home.iterdir()), [])
+
+    def test_privileged_options_are_rejected_for_native_windows_plans(self):
+        result = self.deploy("--plan", "--platform", "windows", "--system-config")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unavailable on native Windows", result.stderr)
+        self.assertFalse(self.home.exists())
+
+    def test_login_shell_opt_in_requires_normal_shell_preparation(self):
+        result = self.deploy("--plan", "--apply-only", "--login-shell")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires a full deployment with shell preparation", result.stderr)
+        self.assertFalse(self.home.exists())
+
     def test_apply_renders_owned_manifest_without_replacing_local_registries(self):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not chezmoi:
