@@ -114,6 +114,11 @@ explains every changed pair.
   — validate as JSON-with-comments, not shell (historical `.sh` naming retired).
 - Not applied to `$HOME` (ignored): `system/`, `clash/`, `docs/`, `deployment/`,
   `tests/`. Ordinary bootstrap has no system or account login-shell action.
+- **Agent payloads use the public bootstrap copier**: raw skills under ignored
+  `deployment/agent-payload/` retain filenames and permissions without executing
+  helpers. Its catalog produces regular discovery files and managed instruction
+  blocks while preserving unrelated device content. Read `docs/AGENT_PAYLOAD.md`
+  before changing global instructions, skills, or their copy adapters.
 
 ## Known rough edges
 

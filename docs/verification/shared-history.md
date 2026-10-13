@@ -44,6 +44,14 @@ Python. The required legacy T9K and Linux simulated applies both passed, and
 standalone Nu printed `standalone-ok` in both homes with inherited host settings
 removed. Source-following Bash ShellCheck and POSIX driver ShellCheck passed.
 
+After the instructions/skills payload landed at `da7cefc7`, its additive copier
+and the history preparation stage were merged together. The affected public
+deployment, payload and history checks passed 29 cases in 47 seconds using
+managed Python, with four client-discovery checks explicitly skipped because
+their opt-in CLI fixture paths were not selected in this run. Those discovery
+results remain in [the payload evidence](agent-payload.md). ShellCheck and
+diff-check also passed for this final merge.
+
 During an earlier red sync test, the pinned config's precedence over
 `ATUIN_SYNC_ADDRESS` briefly opened a hosted browser-flow session. No account
 credentials or history were sent, and no account/login was activated. That test

@@ -1,7 +1,7 @@
 {
   "env": {
-    "ANTHROPIC_AUTH_TOKEN": "{{ .glmToken }}",
-    "ANTHROPIC_BASE_URL": "{{ .glmBaseUrl }}",
+    "ANTHROPIC_AUTH_TOKEN": {{ .glmToken | toJson }},
+    "ANTHROPIC_BASE_URL": {{ .glmBaseUrl | toJson }},
     "ANTHROPIC_MODEL": "glm-5.3",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm-5.3",
     "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME": "glm-5.3",
