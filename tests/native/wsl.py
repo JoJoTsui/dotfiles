@@ -36,7 +36,7 @@ def main():
     environment = {"HOME": str(arguments.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color",
                    "LANG": "C.UTF-8", "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1",
                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1",
-                   "DISABLE_AUTOUPDATER": "1"}
+                   "DISABLE_AUTOUPDATER": "1", "DOTFILES_TEST_TRACE_CLIENT_SETTINGS": "1"}
     for name in ("WSL_DISTRO_NAME", "WSL_INTEROP"):
         if os.environ.get(name):
             environment[name] = os.environ[name]

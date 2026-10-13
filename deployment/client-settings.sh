@@ -29,6 +29,10 @@ deploy_client_settings() {
         export DOTFILES_SETTINGS_TARGET="$HOME/$target"
         export DOTFILES_SETTINGS_BASELINE="$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
         if ! DOTFILES_SETTINGS_OUTPUT=config "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$policy.config" 2> "$stage/parser.log"; then
+            if [ "${DOTFILES_TEST_TRACE_CLIENT_SETTINGS:-}" = 1 ]; then
+                printf 'dotfiles: client settings parser detail (test-only):\n' >&2
+                cat "$stage/parser.log" >&2
+            fi
             rm -rf "$stage"
             fail "cannot merge client config ($format): $target; check its syntax"
         fi

@@ -228,7 +228,13 @@ function Apply-Source {
 function Get-Asset([string]$Name) {
     $asset = @($exceptions | Where-Object { $_.name -eq $Name })
     if ($asset.Count -ne 1) { Stop-Deployment "missing pinned Windows asset: $Name" }
-    return $asset[0]
+    $record = $asset[0]
+    return [pscustomobject]@{
+        name = [string]$record.name; version = [string]$record.version
+        url = [string]$record.url; sha256 = [string]$record.sha256
+        kind = [string]$record.kind; entry = [string]$record.entry
+        target = [string]$record.target
+    }
 }
 function Get-Pin([string]$Name) {
     foreach ($row in (Read-Catalog 'deployment/common-tools.tsv')) {
@@ -285,7 +291,7 @@ function Install-Asset([string]$Name) {
     $script:Step = "install-managers.$Name"
     $scratch = Get-Scratch $Name
     try {
-        $archive = Join-Path $scratch $asset.entry
+        $archive = Join-Path -Path $scratch -ChildPath ([string]$asset.entry)
         if ($asset.kind -in @('zip', 'helix')) { $archive += '.zip' }
         Download-Verified $asset $archive
         if ($asset.kind -in @('zip', 'helix')) {
