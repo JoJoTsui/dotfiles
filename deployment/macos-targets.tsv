@@ -1,0 +1,11 @@
+# Canonical source relative to home|native target relative to home|optional
+.config/nushell/env.nu|Library/Application Support/nushell/env.nu
+.config/nushell/config.nu|Library/Application Support/nushell/config.nu
+.config/nushell/proxy.nu|Library/Application Support/nushell/proxy.nu
+.config/nushell/zoxide.nu|Library/Application Support/nushell/zoxide.nu
+.config/nushell/micromamba.nu|Library/Application Support/nushell/micromamba.nu
+.config/nushell/direnv.nu|Library/Application Support/nushell/direnv.nu
+.config/pip/pip.conf|Library/Application Support/pip/pip.conf
+.local/share/nushell/vendor/autoload/starship.nu|Library/Application Support/nushell/autoload/starship.nu|optional
+.local/share/nushell/vendor/autoload/pixi-completions.nu|Library/Application Support/nushell/autoload/pixi-completions.nu|optional
+.local/share/nushell/vendor/autoload/atuin.nu|Library/Application Support/nushell/autoload/atuin.nu|optional
