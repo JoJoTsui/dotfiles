@@ -1,6 +1,7 @@
 # Repo bookkeeping and non-$HOME payloads — never applied to the home directory.
 README.md
 AGENTS.md
+GLOSSARY.md
 bootstrap.sh
 docs
 system
