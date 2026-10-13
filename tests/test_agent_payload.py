@@ -361,17 +361,27 @@ function resolveSkillFile(value) {
   else if (raw.startsWith("file:")) raw=fileURLToPath(new URL(raw));
   return realpathSync(raw);
 }
+const comparablePath=value=>{
+  let resolved=path.resolve(value);
+  if (process.platform==="win32") resolved=resolved.toLowerCase();
+  return resolved.replace(/[\\/]+$/,"");
+};
+const isWithin=(file,root)=>{
+  const candidate=comparablePath(file),base=comparablePath(root);
+  return candidate===base||candidate.startsWith(base+path.sep);
+};
 const pathKind=value=>{
   const raw=String(value);
+  if (path.isAbsolute(raw)) return "absolute";
   if (raw.startsWith("file://~/") || raw.startsWith("file:///~/")) return "file-home-uri";
   if (raw.startsWith("~/")) return "home-relative";
   if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) return raw.startsWith("file:") ? "file-uri" : "other-uri";
-  return path.isAbsolute(raw) ? "absolute" : "relative";
+  return "relative";
 };
 const managed=skills.filter(skill=>{
   try {
     const file=resolveSkillFile(skill.filePath);
-    return roots.some(root=>file.startsWith(root+path.sep));
+    return roots.some(root=>isWithin(file,root));
   }
   catch { return false; }
 });
@@ -380,7 +390,7 @@ const pathScopes=skills.reduce((counts,skill)=>{
   let scope="unresolved";
   try {
     const file=resolveSkillFile(skill.filePath);
-    scope=scopeRoots.find(([,root])=>file===root||file.startsWith(root+path.sep))?.[0]||"outside";
+    scope=scopeRoots.find(([,root])=>isWithin(file,root))?.[0]||"outside";
   } catch {}
   counts[scope]=(counts[scope]||0)+1; return counts;
 },{});
