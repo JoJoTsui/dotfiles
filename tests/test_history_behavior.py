@@ -61,7 +61,8 @@ class HistoryBehaviorTests(unittest.TestCase):
         }
         result = subprocess.run([
             "bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
-            "--home", str(self.home), "--platform", "linux", "--apply-only",
+            "--home", str(self.home), "--platform", os.environ.get("DOTFILES_TEST_PLATFORM", "linux"),
+            "--role", os.environ.get("DOTFILES_TEST_ROLE", "workstation"), "--apply-only",
         ], env=dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi), cwd=SOURCE,
             capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)

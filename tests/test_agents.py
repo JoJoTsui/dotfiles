@@ -23,7 +23,8 @@ class AgentTests(unittest.TestCase):
 
     def deploy(self, *arguments, env=None):
         return subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"),
-                               "--home", str(self.home), "--platform", "linux", *arguments],
+                               "--home", str(self.home), "--platform", os.environ.get("DOTFILES_TEST_PLATFORM", "linux"),
+                               "--role", os.environ.get("DOTFILES_TEST_ROLE", "workstation"), *arguments],
                               cwd=SOURCE, env=env or self.env, capture_output=True,
                               text=True, timeout=30)
 
