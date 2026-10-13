@@ -59,6 +59,10 @@ Legacy `--class t9k` / `DOTFILES_CLASS=t9k` maps to Linux remote compute;
 receive `~/.vscode-server` settings. The current host uses the documented
 `linux-remote-compute` preset and remains outside deployment validation.
 
+WSL uses the Unix bootstrap and all three shells with Linux home/tool paths.
+Read [WSL deployment](docs/WSL_DEPLOYMENT.md) for native Windows interoperability
+checks, disposable WSL2 CI, and the explicitly pending ARM64 execution target.
+
 Template data (all from environment variables at init time, so credentials
 never enter git):
 

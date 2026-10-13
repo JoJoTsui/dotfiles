@@ -12,6 +12,7 @@ import time
 import urllib.request
 import base64
 from fixtures.processes import stop_client
+from fixtures.shell_env import managed_shell_environment
 
 try:
     import tomllib
@@ -37,12 +38,16 @@ class AgentPayloadTests(unittest.TestCase):
     def deploy(self, *arguments, env=None, source=SOURCE):
         return subprocess.run(["/bin/bash", str(source / "bootstrap.sh"),
                                "--source", str(source), "--home", str(self.home),
-                               "--platform", "linux", "--apply-only", *arguments],
+                               "--platform", os.environ.get("DOTFILES_TEST_PLATFORM", "linux"),
+                               "--role", os.environ.get("DOTFILES_TEST_ROLE", "workstation"),
+                               "--apply-only", *arguments],
                               cwd=source, env=env or self.env, capture_output=True,
                               text=True, timeout=60)
 
     def diagnostic_env(self):
-        return {"HOME": str(self.home), "PATH": os.defpath,
+        codegraph = os.environ.get("DOTFILES_TEST_CODEGRAPH")
+        path = f"{Path(codegraph).parent}{os.pathsep}{os.defpath}" if codegraph else os.defpath
+        environment = {"HOME": str(self.home), "PATH": path,
                 "XDG_CONFIG_HOME": str(self.home / ".config"),
                 "XDG_DATA_HOME": str(self.home / ".local/share"),
                 "XDG_STATE_HOME": str(self.home / ".local/state"),
@@ -51,7 +56,9 @@ class AgentPayloadTests(unittest.TestCase):
                 "CODEX_HOME": str(self.home / ".codex"),
                 "CLAUDE_CONFIG_DIR": str(self.home / ".claude"),
                 "KIMI_CODE_HOME": str(self.home / ".kimi-code"),
-                "PI_CODING_AGENT_DIR": str(self.home / ".pi/agent")}
+                "PI_CODING_AGENT_DIR": str(self.home / ".pi/agent"),
+                "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1"}
+        return managed_shell_environment(self.home, environment)
 
     def test_default_payload_is_usable_even_when_agent_installation_is_disabled(self):
         result = self.deploy("--agents", "none")

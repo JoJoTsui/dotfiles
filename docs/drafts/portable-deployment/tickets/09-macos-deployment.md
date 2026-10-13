@@ -11,12 +11,18 @@ rendering.
 **Blocked by:** 06 — Configure CodeGraph access without automatic indexing;
 07 — Enable shared shell history and deliberate device setup.
 
-**Status:** Draft awaiting review; publish as ready-for-agent after approval.
+**Status:** Implemented; native macOS execution pending CI.
 
-- [ ] Platform detection and explicit macOS selection render correct target paths for Intel/Apple silicon and both host roles.
-- [ ] Common pinned dependencies resolve for both architectures, with Linux-specific exposures or required packages excluded or adapted.
+- [x] Explicit macOS selection renders native target paths for Intel/Apple silicon and both roles; the native gate also checks Darwin/architecture detection.
+- [x] Common pinned dependencies resolve for both architectures through the existing foreign-target gate; macOS reuses that exact common catalog.
 - [ ] Native user-scoped bootstrap installs and exposes the common tools and all default Bun-managed agents with compatible runtimes.
 - [ ] Standalone Nushell, Zsh, and Bash share intended values and integrations; interactive preference does not change the account login shell implicitly.
 - [ ] Agent instruction/skill discovery, supported CodeGraph integration, TUNA configuration, zoxide, Tailspin logs, and pending/activated history behavior work through the deployment boundary.
-- [ ] Role-specific settings follow the chosen role, and real-file output/idempotence preserve local credentials and unrelated user state.
+- [x] Role-specific rendering, regular-file output, idempotence, credentials and unrelated state preservation passed in all four isolated combinations.
 - [ ] Native macOS runner checks exercise installation and shell/tool behavior for the declared architectures; unavailable native execution is reported pending, not passed by a Linux render.
+
+Implementation: [macOS deployment](../../../MACOS_DEPLOYMENT.md). Distinct local
+and pending native layers: [verification evidence](../../../verification/macos.md).
+The committed native workflow covers both architectures/roles and requires
+installed commands and ordinary discovery. Unchecked runtime criteria await
+native execution; their implementation is included in this ticket.

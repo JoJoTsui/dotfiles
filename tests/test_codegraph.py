@@ -14,6 +14,7 @@ import urllib.error
 import base64
 import unittest
 from fixtures.processes import stop_client
+from fixtures.shell_env import managed_shell_environment
 
 try:
     import tomllib
@@ -38,13 +39,15 @@ class CodeGraphTests(unittest.TestCase):
     def deploy(self, *arguments):
         return subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"),
                                "--source", str(SOURCE), "--home", str(self.home),
-                               "--platform", "linux", "--apply-only", *arguments],
+                               "--platform", os.environ.get("DOTFILES_TEST_PLATFORM", "linux"),
+                               "--role", os.environ.get("DOTFILES_TEST_ROLE", "workstation"),
+                               "--apply-only", *arguments],
                               cwd=SOURCE, env=self.env, capture_output=True,
                               text=True, timeout=60)
 
     def diagnostic_env(self):
         binary = os.environ.get("DOTFILES_TEST_CODEGRAPH", "")
-        return {"HOME": str(self.home), "PATH": f"{Path(binary).parent}:/usr/bin:/bin",
+        environment = {"HOME": str(self.home), "PATH": f"{Path(binary).parent}:/usr/bin:/bin",
                 "XDG_CONFIG_HOME": str(self.home / ".config"),
                 "XDG_DATA_HOME": str(self.home / ".local/share"),
                 "XDG_STATE_HOME": str(self.home / ".local/state"),
@@ -54,6 +57,7 @@ class CodeGraphTests(unittest.TestCase):
                 "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1",
                 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
                 "DISABLE_TELEMETRY": "1", "DISABLE_AUTOUPDATER": "1"}
+        return managed_shell_environment(self.home, environment)
 
     def test_fresh_home_configures_managed_codegraph_even_when_agents_are_disabled(self):
         result = self.deploy("--agents", "none")

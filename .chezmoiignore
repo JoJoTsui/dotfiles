@@ -11,8 +11,10 @@ docs
 system
 clash
 .git
+.github
 .gitignore
 .gitattributes
+.github
 # Runtime client files merge through the public boundary; source application
 # must not overwrite unrelated settings or authentication before that merge.
 .claude.json
