@@ -144,6 +144,10 @@ done
 DEPLOY_STEP=apply-source.agent-payload
 validate_agent_payload
 
+# History databases and credentials remain within the selected device root.
+for relative in .config/atuin .config/atuin/config.toml .local/share/atuin .local/share/atuin/meta.db .local/share/atuin/history.db .local/share/atuin/records.db .local/share/atuin/key .local/share/atuin/session; do
+    [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target history state path is a symlink: $DEPLOY_HOME/$relative"
+done
 # A designated home also designates every package-manager and XDG state root.
 # Inherited roots cannot route a simulated deployment into the actual host.
 export HOME="$DEPLOY_HOME"

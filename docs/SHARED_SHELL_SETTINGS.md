@@ -41,6 +41,13 @@ in its required shell preparation stage. Generated resources and device state
 are not imported into git. Nu vendor autoload is interactive: ordinary `-c`
 execution omits it. See [Nu configuration](https://www.nushell.sh/book/configuration.html).
 
+History preparation follows shell preparation. `dotfiles-history-prepare`
+generates and validates the pinned Atuin Nu resource in that same vendor
+autoload directory; Bash/Zsh initialize their bundled hooks after fzf. Both
+adapters share canonical `ATUIN_CONFIG_DIR`/`ATUIN_DATA_DIR` values. See
+[history setup](SHARED_HISTORY.md) for explicit activation/import and the
+limitations of each shell's separate native history.
+
 `logs` forwards files, flags and piped input to `tspin`. The shared default
 `TAILSPIN_PAGER='less -R [FILE]'` satisfies Tailspin's pager placeholder and
 keeps ANSI highlighting visible; existing pager overrides win. `logs --print

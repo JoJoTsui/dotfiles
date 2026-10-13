@@ -7,6 +7,7 @@ source "$DEPLOY_SOURCE/deployment/bundles.sh"
 source "$DEPLOY_SOURCE/deployment/managers.sh"
 source "$DEPLOY_SOURCE/deployment/agents.sh"
 source "$DEPLOY_SOURCE/deployment/shell.sh"
+source "$DEPLOY_SOURCE/deployment/history.sh"
 source "$DEPLOY_SOURCE/deployment/payload.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)
 
@@ -42,4 +43,4 @@ install_common() {
     DEPLOY_STEP=install-common.verify-bundle-exposure
     verify_bundle_exposure
 }
-prepare_shell() { prepare_managed_shell; }
+prepare_shell() { prepare_managed_shell; prepare_history; }
