@@ -283,8 +283,14 @@ def main():
                                       'unicode_password': True, 'wrong_key_retry': True, 'mode_restored': True,
                                       'native_encrypted_two_device_sync': True}) + '\n')
         return 0
-    except Exception:
-        report.write_text(json.dumps({'status': 'failed', 'native_console': True, 'phase': phase}) + '\n')
+    except Exception as exc:
+        detail = str(exc)
+        for name in ('username', 'password', 'key'):
+            secret = locals().get(name)
+            if isinstance(secret, str) and secret:
+                detail = detail.replace(secret, '<redacted>')
+        report.write_text(json.dumps({'status': 'failed', 'native_console': True, 'phase': phase,
+                                      'error': type(exc).__name__, 'detail': detail[:240]}) + '\n')
         return 1
 
 
