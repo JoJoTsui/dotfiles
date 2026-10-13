@@ -398,6 +398,9 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
   pathKinds,pathScopes,rootCount:roots.length,homeMatches:process.env.HOME===process.env.DOTFILES_TEST_HOME,
   osHomeMatchesTarget:homedir()===process.env.DOTFILES_TEST_HOME,
   skillPaths:settingsManager.getSkillPaths(),
+  rootPaths:roots,scopeRootPaths:scopeRoots,
+  skillPathSamples:skills.slice(0,3).map(skill=>String(skill.filePath)),
+  resolvedSkillPathSamples:skills.slice(0,3).map(skill=>{try{return resolveSkillFile(skill.filePath)}catch(error){return String(error)}}),
   agentDirMatchesTarget:path.resolve(process.env.PI_CODING_AGENT_DIR)===path.join(process.env.DOTFILES_TEST_HOME,".pi/agent"),
   targetSkillsExist:existsSync(process.env.DOTFILES_TEST_HOME+"/.agents/skills"),
   prompt:formatSkillsForPrompt(skills),instructions:loader.getAgentsFiles().agentsFiles}));
@@ -413,7 +416,9 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
                          f"os_home_matches_target={data['osHomeMatchesTarget']}; "
                          f"skill_paths={data['skillPaths']}; agent_dir_matches_target={data['agentDirMatchesTarget']}; "
                          f"target_skills_exist={data['targetSkillsExist']}; "
-                         f"path_kinds={data['pathKinds']}; path_scopes={data['pathScopes']}")
+                          f"path_kinds={data['pathKinds']}; path_scopes={data['pathScopes']}; "
+                          f"roots={data['rootPaths']}; scopes={data['scopeRootPaths']}; "
+                          f"file_samples={data['skillPathSamples']}; resolved_samples={data['resolvedSkillPathSamples']}")
         self.assertIn("<name>tdd</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])
         self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
