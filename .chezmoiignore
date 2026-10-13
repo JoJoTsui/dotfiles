@@ -3,6 +3,8 @@ README.md
 AGENTS.md
 GLOSSARY.md
 bootstrap.sh
+deployment
+tests
 docs
 system
 clash
@@ -12,6 +14,6 @@ clash
 **/auth.json
 **/credentials*
 
-{{- if ne .class "t9k" }}
+{{- if ne .role "remote-compute" }}
 .vscode-server
 {{- end }}

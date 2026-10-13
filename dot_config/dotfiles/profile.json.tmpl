@@ -1,0 +1,7 @@
+{
+  "platform": {{ .platform | toJson }},
+  "role": {{ .role | toJson }},
+  "arch": {{ .arch | toJson }},
+  "profile": {{ printf "%s-%s" .platform .role | toJson }},
+  "mode": "copy"
+}

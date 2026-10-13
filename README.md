@@ -19,25 +19,49 @@ export KIMI_API_KEY=...    # optional: kimi-code key  (default REPLACE_ME)
 bash bootstrap.sh
 ```
 
-`bootstrap.sh` is idempotent: installs pixi and chezmoi into `~/.local/bin`,
-runs `chezmoi init --apply <clone>`, `pixi global sync` (installs every CLI
-tool from the manifest), installs the bun global packages (the coding-agent
-CLI suite), installs rustup (TUNA mirrors, minimal profile — matches the
-`RUSTUP_*` vars), clones nushell's `nu_scripts` completions (with a mirror
-fallback), and optionally installs the system-wide bash banner.
+Inspect the selected deployment before running it:
 
-## Host classes
+```bash
+bash bootstrap.sh --profile linux-remote-compute --plan
+bash bootstrap.sh --profile linux-workstation --home /tmp/example-home --apply-only
+```
 
-`.chezmoi.toml.tmpl` picks a class at init — `t9k` (T9K/K8s container),
-`linux`, or `win` — overridable with `DOTFILES_CLASS`. Only `t9k` gets
-`~/.vscode-server` settings (`.chezmoiignore` gates it).
+The public boundary applies this **working tree**, including uncommitted
+changes, with an explicit source and destination. Every XDG and package-manager
+state root follows the selected home. Planning prints JSON without creating
+files, installing, authenticating, importing history, or indexing projects.
+Ordinary deployment changes user files only; it has no system or account
+login-shell action. See [the deployment boundary](docs/DEPLOYMENT_BOUNDARY.md)
+for the adapter contract and isolated verification.
+
+The initial deployment foundation implements chezmoi provisioning and file
+application. Common-tool and agent installer adapters currently fail with
+explicit pending-ticket messages; tickets 02 and 04 implement them before the
+complete bootstrap is released. Use `--apply-only` for configuration validation.
+
+## Deployment profiles
+
+Platform (`linux`, `macos`, `wsl`, `windows`) and host role (`workstation`,
+`remote-compute`) are independent. Platform detection distinguishes WSL;
+role defaults to workstation even over SSH. Select both through a preset such
+as `--profile linux-remote-compute`, or use `--platform` and `--role`.
+Command-line selections override environment inputs; conflicting explicit
+presets and component selections fail before writing files.
+
+Legacy `--class t9k` / `DOTFILES_CLASS=t9k` maps to Linux remote compute;
+`linux` and `win` map to their workstation profiles. Remote compute targets
+receive `~/.vscode-server` settings. The current host uses the documented
+`linux-remote-compute` preset and remains outside deployment validation.
 
 Template data (all from environment variables at init time, so credentials
 never enter git):
 
 | data | env var | default |
 | --- | --- | --- |
-| `class` | `DOTFILES_CLASS` | detected |
+| `platform` | `DOTFILES_PLATFORM` | detected |
+| `role` | `DOTFILES_ROLE` | workstation |
+| `arch` | `DOTFILES_ARCH` | detected; x86_64/aarch64 |
+| `class` | `DOTFILES_CLASS` (legacy input) | compatibility metadata |
 | `proxyUrl` | `HTTP_PROXY_URL` | `http://127.0.0.1:7890` |
 | `glmBaseUrl` | `GLM_BASE_URL` | `https://open.bigmodel.cn/api/anthropic` |
 | `glmToken` | `GLM_API_TOKEN` | `REPLACE_ME` |
@@ -46,9 +70,11 @@ never enter git):
 ## Layout (chezmoi source state)
 
 ```
-.chezmoi.toml.tmpl          # host-class detection, copy mode, secrets from env
+.chezmoi.toml.tmpl          # profile data, copy mode, secrets from env
 .chezmoiignore              # bookkeeping + non-$HOME payloads never applied
 bootstrap.sh                # one-shot new-host setup (see above)
+deployment/                 # pure profile resolution and installer adapters
+tests/test_deployment.py    # public boundary checks in disposable homes
 dot_env_core.tmpl           # shared POSIX env for bash+zsh: PATH, EDITOR,
                             # rustup TUNA mirrors, noproxy/unproxy (rendered URL)
 dot_profile                 # login shells: exec-nu guard (TTY + no Claude session)
@@ -81,8 +107,8 @@ dot_claude/settings.json.tmpl    # Claude Code on GLM-5.3 / glm-5.3-flash
 dot_codex/config.toml            # Codex CLI, env_key-based providers
 dot_kimi-code/{config.toml.tmpl,tui.toml}
 dot_pi/agent/{settings.json,models-store.json}
-dot_vscode-server/…         # remote Machine settings (class t9k only)
-system/bash.bashrc          # optional /etc banner+aliases (bootstrap installs)
+dot_vscode-server/…         # remote compute Machine settings
+system/bash.bashrc          # manual system banner payload; never auto-applied
 docs/                       # CLAUDE_SETUP_T9K.md, vscode-win-settings.jsonc
 clash/                      # Clash Verge profile merge (app config, not $HOME)
 ```
@@ -149,19 +175,15 @@ per host (`claude` login / env token, `codex login`, `kimi login`,
 ## Validating on a simulated host
 
 ```bash
-# --source applies the *working tree*; `init --apply "$PWD"` would clone
-# committed HEAD instead (that is what bootstrap.sh does on a fresh host).
-H=/tmp/dotfiles-sim; rm -rf "$H"; mkdir -p "$H"
-HOME="$H" chezmoi init --source "$PWD" --no-tty    # render .chezmoi.toml.tmpl
-HOME="$H" chezmoi --source "$PWD" --no-tty apply    # class auto-detected
-find "$H" -maxdepth 3                              # inspect the applied state
+# Existing chezmoi can be supplied without installing into the current host.
+simulated_home=$(mktemp -d /tmp/dotfiles-sim.XXXXXX)
+DOTFILES_CHEZMOI_BIN=$(command -v chezmoi) bash bootstrap.sh \
+  --source "$PWD" --home "$simulated_home" --class t9k --apply-only
+eza --all "$simulated_home"
+rm -rf "$simulated_home"
 
-# other class, in a fresh home:
-H=/tmp/dotfiles-sim-linux; rm -rf "$H"; mkdir -p "$H"
-HOME="$H" DOTFILES_CLASS=linux chezmoi init --source "$PWD" --no-tty
-HOME="$H" DOTFILES_CLASS=linux chezmoi --source "$PWD" --no-tty apply
-
-chezmoi diff                              # drift vs current source (on a real host)
+# Automated acceptance checks (no network or real account operations).
+DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest discover -s tests -v
 ```
 
 ## Maintenance
