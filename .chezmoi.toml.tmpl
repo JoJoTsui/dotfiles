@@ -1,32 +1,50 @@
-# Rendered once by `chezmoi init`. Non-interactive on purpose: the host class
-# is detected and credentials come from the environment, never from git.
-
-{{- $class := env "DOTFILES_CLASS" -}}
-{{- if not $class -}}
-{{-   if eq .chezmoi.os "windows" -}}
-{{-     $class = "win" -}}
-{{-   else if hasPrefix "managed-notebook" .chezmoi.hostname -}}
-{{-     $class = "t9k" -}}
-{{-   else -}}
-{{-     $class = "linux" -}}
-{{-   end -}}
+# Canonical selectors are exported by bootstrap.sh. Direct chezmoi use retains
+# the old DOTFILES_CLASS aliases for the manual simulated-home recipe.
+{{- $legacy := env "DOTFILES_CLASS" -}}
+{{- if and $legacy (not (has $legacy (list "t9k" "linux" "win"))) -}}
+{{-   fail (printf "invalid DOTFILES_CLASS %q" $legacy) -}}
 {{- end -}}
-{{- $proxy := env "HTTP_PROXY_URL" -}}
-{{- if not $proxy -}}{{- $proxy = "http://127.0.0.1:7890" -}}{{- end -}}
-{{- $glmBase := env "GLM_BASE_URL" -}}
-{{- if not $glmBase -}}{{- $glmBase = "https://open.bigmodel.cn/api/anthropic" -}}{{- end -}}
-{{- $glmToken := env "GLM_API_TOKEN" -}}
-{{- if not $glmToken -}}{{- $glmToken = "REPLACE_ME" -}}{{- end -}}
-{{- $kimiKey := env "KIMI_API_KEY" -}}
-{{- if not $kimiKey -}}{{- $kimiKey = "REPLACE_ME" -}}{{- end -}}
+{{- $platform := env "DOTFILES_PLATFORM" -}}
+{{- if not $platform -}}
+{{-   if eq $legacy "win" -}}{{- $platform = "windows" -}}
+{{-   else if $legacy -}}{{- $platform = "linux" -}}
+{{-   else if eq .chezmoi.os "darwin" -}}{{- $platform = "macos" -}}
+{{-   else if eq .chezmoi.os "windows" -}}{{- $platform = "windows" -}}
+{{-   else if or (env "WSL_DISTRO_NAME") (env "WSL_INTEROP") -}}{{- $platform = "wsl" -}}
+{{-   else -}}{{- $platform = "linux" -}}{{- end -}}
+{{- end -}}
+{{- $role := env "DOTFILES_ROLE" -}}
+{{- if not $role -}}
+{{-   if eq $legacy "t9k" -}}{{- $role = "remote-compute" -}}
+{{-   else -}}{{- $role = "workstation" -}}{{- end -}}
+{{- end -}}
+{{- if not (has $platform (list "linux" "macos" "wsl" "windows")) -}}{{- fail "invalid DOTFILES_PLATFORM" -}}{{- end -}}
+{{- if not (has $role (list "workstation" "remote-compute")) -}}{{- fail "invalid DOTFILES_ROLE" -}}{{- end -}}
+{{- $arch := env "DOTFILES_ARCH" -}}
+{{- if not $arch -}}{{- $arch = .chezmoi.arch -}}{{- end -}}
+{{- if eq $arch "amd64" -}}{{- $arch = "x86_64" -}}{{- end -}}
+{{- if eq $arch "arm64" -}}{{- $arch = "aarch64" -}}{{- end -}}
+{{- if not (has $arch (list "x86_64" "aarch64")) -}}{{- fail "unsupported DOTFILES_ARCH" -}}{{- end -}}
+{{- if and (eq $platform "windows") (eq $arch "aarch64") -}}{{- fail "Windows ARM is outside the supported matrix" -}}{{- end -}}
+{{- $class := "linux" -}}
+{{- if eq $platform "windows" -}}{{- $class = "win" -}}
+{{- else if and (eq $platform "linux") (eq $role "remote-compute") -}}{{- $class = "t9k" -}}{{- end -}}
+{{- $proxy := env "HTTP_PROXY_URL" | default "http://127.0.0.1:7890" -}}
+{{- $glmBase := env "GLM_BASE_URL" | default "https://open.bigmodel.cn/api/anthropic" -}}
+{{- $glmToken := env "GLM_API_TOKEN" | default "REPLACE_ME" -}}
+{{- $kimiKey := env "KIMI_API_KEY" | default "REPLACE_ME" -}}
 
-# Copy mode: VS Code and Claude Code watch config files; plain copies avoid the
-# symlink-watcher failure modes documented in docs/CLAUDE_SETUP_T9K.md.
+# Plain files preserve config watcher behavior. Explicit sourceDir also makes
+# later direct chezmoi commands operate on this working source state.
 mode = "copy"
+sourceDir = {{ .chezmoi.sourceDir | quote }}
 
 [data]
-    class = "{{ $class }}"
-    proxyUrl = "{{ $proxy }}"
-    glmBaseUrl = "{{ $glmBase }}"
-    glmToken = "{{ $glmToken }}"
-    kimiApiKey = "{{ $kimiKey }}"
+    platform = {{ $platform | quote }}
+    role = {{ $role | quote }}
+    arch = {{ $arch | quote }}
+    class = {{ $class | quote }}
+    proxyUrl = {{ $proxy | quote }}
+    glmBaseUrl = {{ $glmBase | quote }}
+    glmToken = {{ $glmToken | quote }}
+    kimiApiKey = {{ $kimiKey | quote }}

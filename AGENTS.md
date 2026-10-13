@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Read `README.md` for orientation (layout, host classes, coding-agent table).
+Read `README.md` for orientation (layout, deployment profiles, coding-agent table).
 This file is the operational contract for working in this repo.
 
 ## Model
@@ -22,16 +22,20 @@ Rules that follow from it:
   without it, contents apply verbatim.
 - `.chezmoiignore` patterns match **target** names (verified via
   `chezmoi ignored`), and cover everything not meant for `$HOME`:
-  `README.md`, `AGENTS.md`, `bootstrap.sh`, `docs`, `system`, `clash`,
-  `.vscode-server` (non-t9k classes).
+  `README.md`, `AGENTS.md`, `bootstrap.sh`, `deployment`, `tests`, `docs`,
+  `system`, `clash`, `.vscode-server` (workstation roles).
 
 ## Template data
 
 Defined in `.chezmoi.toml.tmpl`, sourced from environment variables at init:
-`class` (`DOTFILES_CLASS`, else detected: t9k/linux/win), `proxyUrl`
+`platform` (`DOTFILES_PLATFORM`), `role` (`DOTFILES_ROLE`, default workstation),
+`arch` (`DOTFILES_ARCH`), legacy `class` metadata, `proxyUrl`
 (`HTTP_PROXY_URL`), `glmBaseUrl` (`GLM_BASE_URL`), `glmToken`
 (`GLM_API_TOKEN`), `kimiApiKey` (`KIMI_API_KEY`). Defaults keep unattended
-init non-interactive; token defaults are the literal `REPLACE_ME` — a rendered
+init non-interactive. `bootstrap.sh` resolves profile presets and legacy aliases
+then exports canonical selectors. Read `docs/DEPLOYMENT_BOUNDARY.md` when
+changing selection, planning, state isolation, or installer adapters.
+Token defaults are the literal `REPLACE_ME` — a rendered
 target containing `REPLACE_ME` is healthy, a committed real token is an
 incident (rotate it; history rewrite is not a substitute).
 
@@ -48,21 +52,24 @@ incident (rotate it; history rewrite is not a substitute).
 ## Validating a change (simulated host)
 
 1. Edit the source file(s); commit-worthy changes are staged but uncommitted.
-2. `H=/tmp/dotfiles-sim; rm -rf "$H"; mkdir -p "$H";`
-   `HOME="$H" chezmoi init --source "$PWD" --no-tty` (renders the config
-   template), then `HOME="$H" chezmoi --source "$PWD" --no-tty apply`.
-   The `--source` form applies the **working tree**; `init --apply "$PWD"`
-   (what `bootstrap.sh` runs) clones *committed HEAD* and is invisible to
-   staged work. Repeat with `DOTFILES_CLASS=linux` in a fresh `$H` to
-   exercise the ignore branch.
-3. Check the rendered target (`grep` the templated value, confirm file is a
-   regular file not a symlink), then delete `$H`.
+2. Use a fresh `simulated_home=$(mktemp -d /tmp/dotfiles-sim.XXXXXX)` and run
+   `DOTFILES_CHEZMOI_BIN=$(command -v chezmoi) bash bootstrap.sh --source "$PWD" --home "$simulated_home" --class t9k --apply-only`.
+   The boundary applies the **working tree** and isolates XDG/package-manager
+   roots. Repeat with `--class linux` in a fresh simulated home to exercise
+   the ignore branch. `init --apply "$PWD"` clones committed HEAD and misses
+   working changes; the public bootstrap does not use that form.
+3. Check rendered values with `rg`, confirm required files are regular files,
+   then delete the simulated home after any shell checks.
 4. For nushell edits, also run
-   `nu --config $H/.config/nushell/config.nu --env-config $H/.config/nushell/env.nu -c 'print "ok"'`
+   `nu --config "$simulated_home/.config/nushell/config.nu" --env-config "$simulated_home/.config/nushell/env.nu" -c 'print "ok"'`
    with `JOEY/JSHELL/...` unset (`env -u`) — config must bootstrap standalone
    (needs `$H/.config/nushell/nu_scripts` present, see rough edges).
 
-Done when: the simulated apply succeeds for both classes, the nushell check
+Run `DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest discover -s tests -v`
+for changes to the public deployment boundary; actual apply tests report a skip
+when chezmoi is unavailable. They must run before claiming application passed.
+
+Done when: the simulated apply succeeds for both legacy profiles, the nushell check
 passes (if touched), `git status` shows no secret files, and the commit body
 explains every changed pair.
 
@@ -103,16 +110,16 @@ explains every changed pair.
 - **JSONC files**: `dot_config/opencode/opencode.jsonc`,
   `dot_vscode-server/…/settings.json.tmpl`, `docs/vscode-win-settings.jsonc`
   — validate as JSON-with-comments, not shell (historical `.sh` naming retired).
-- Not applied to `$HOME` (ignored): `system/`, `clash/`, `docs/` — `system/`
-  reaches `/etc/bash.bashrc` only via `bootstrap.sh`.
+- Not applied to `$HOME` (ignored): `system/`, `clash/`, `docs/`, `deployment/`,
+  `tests/`. Ordinary bootstrap has no system or account login-shell action.
 
 ## Known rough edges
 
 - `config.nu` sources `~/.config/nushell/nu_scripts/...` — if bootstrap's clone
   failed (github.com unreachable; gh-proxy fallback also listed in
   `bootstrap.sh`), nu startup errors until it exists.
-- `chezmoi init --source <dir>` does not persist sourceDir; `bootstrap.sh`
-  uses `chezmoi init --apply <clone>` (verified), which clones the local repo.
+- `.chezmoi.toml.tmpl` explicitly persists `sourceDir`; bootstrap passes source,
+  destination, config, cache, and state paths on both init and apply.
 - Legacy live tree (JSHELL) is still symlink-managed and ahead in places this
   source intentionally diverged from (portable paths, GLM-5.3, env_key
   secrets); when folding live changes in, adapt rather than copy verbatim.
