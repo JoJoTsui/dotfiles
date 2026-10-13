@@ -1,27 +1,11 @@
-# ~/.profile: executed by the command interpreter for login shells.
-
-# Shared core env (used by both bash and nushell)
-# [ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
-
-# if running bash, include .bashrc
-if [ -n "$BASH_VERSION" ] && [ -f "$HOME/.bashrc" ]; then
+# POSIX-safe login environment; .bash_profile delegates here.
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+if [ -n "${BASH_VERSION:-}" ] && [ -f "$HOME/.bashrc" ]; then
     . "$HOME/.bashrc"
 fi
-
-# Launch nushell for login shells only
-# if [ -n "${GIZMO}" ] && [ -z "${NU_VERSION}" ]; then
-    # export SHELL="${GIZMO}/nushell/nu"
-    # exec "${SHELL}" -l
-# fi
-
-# Only start Nushell if we are in an interactive terminal
-# AND we are not running inside a Claude Code session
-# POSIX-safe equivalent of [[ -t 0 && $- == *i* && -z "$ANTHROPIC_API_KEY$ANTHROPIC_AUTH_TOKEN" ]]:
-# dash may source this file, so no bashisms here.
-if [ -t 0 ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${ANTHROPIC_AUTH_TOKEN:-}" ]; then
-    case $- in
-        *i*) export SHELL="nu"; exec nu ;;
-    esac
-fi
-
-
+case $- in
+    *i*)
+        if [ -x "$HOME/.local/bin/nu-login" ] && _dotfiles_can_start_nu; then
+            exec "$HOME/.local/bin/nu-login"
+        fi ;;
+esac
