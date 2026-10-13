@@ -32,14 +32,12 @@ class WindowsBoundaryTests(unittest.TestCase):
         runtime = self.root / 'powershell-runtime'
         self.env.update(HOME=str(runtime), USERPROFILE=str(self.original),
                         APPDATA=str(runtime / "roaming"), LOCALAPPDATA=str(runtime / "local"))
-        # The PowerShell executable initializes its noninteractive startup
-        # cache on the first -File invocation. Exercise that host behavior with
-        # a no-op script before snapshotting the protected profile.
-        startup_probe = self.root / "powershell-startup.ps1"
-        startup_probe.write_text("exit 0\n")
-        warmup = subprocess.run([POWERSHELL, "-NoLogo", "-NoProfile", "-NonInteractive", "-File", str(startup_probe)],
-                                cwd=SOURCE, env=self.env, capture_output=True, text=True, timeout=30)
+        # PowerShell records noninteractive startup data by script path. Warm
+        # the actual deployment entrypoint in plan mode; a separate no-op
+        # script leaves bootstrap.ps1's first-run cache in the protected tree.
+        warmup = self.deploy("-Plan")
         self.assertEqual(warmup.returncode, 0, warmup.stderr)
+        self.assertFalse(self.home.exists())
         self.original_profile_state = self.original_profile_entries()
 
     def original_profile_entries(self):

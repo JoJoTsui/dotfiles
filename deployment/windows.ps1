@@ -331,8 +331,8 @@ function Install-Asset([string]$Name) {
             # silent extraction contract requires doubled backslashes.
             $script:Step = "install-managers.$Name.extract"
             $escapedTarget = $target.Replace('\', '\\')
-            $argumentLine = '-y -gm2 -InstallPath="' + $escapedTarget + '"'
-            $process = Start-Process -FilePath $archive -ArgumentList $argumentLine -Wait -PassThru -NoNewWindow
+            $argumentLine = '-y -InstallPath="' + $escapedTarget + '"'
+            $process = Start-Process -FilePath $archive -ArgumentList $argumentLine -Wait -PassThru -WindowStyle Hidden
             if ($process.ExitCode) { $script:FailureCode = $process.ExitCode; Stop-Deployment 'required command failed' }
         } elseif ($asset.kind -eq 'rustup') {
             Invoke-Tool $archive @('-y', '--no-modify-path', '--default-toolchain', 'none', '--profile', 'minimal') -Quiet | Out-Null
