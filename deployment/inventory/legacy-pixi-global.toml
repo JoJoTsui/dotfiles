@@ -1,9 +1,6 @@
 version = 1
 
-[envs.codex]
-channels = ["conda-forge"]
-dependencies = { codex = "*" }
-exposed = { codex = "codex", codex-code-mode-host = "codex-code-mode-host" }
+# Codex migrated to the Bun-owned agent inventory; do not install a Pixi copy.
 
 [envs.nushell]
 channels = ["conda-forge"]

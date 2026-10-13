@@ -8,7 +8,13 @@ DEPLOY_PLAN=false
 DEPLOY_APPLY_ONLY=false
 CLI_PLATFORM='' CLI_ROLE='' CLI_PROFILE='' CLI_CLASS='' CLI_ARCH=''
 
-fail() { printf 'dotfiles: %s\n' "$*" >&2; exit 1; }
+fail() {
+    printf 'dotfiles: %s\n' "$*" >&2
+    if [ -n "${DEPLOY_STEP:-}" ]; then
+        printf 'dotfiles: step %s failed (exit 1)\n' "$DEPLOY_STEP" >&2
+    fi
+    exit 1
+}
 json_string() {
     local value="$1"
     value=${value//\\/\\\\}
@@ -96,6 +102,10 @@ if "$DEPLOY_PLAN"; then
     printf ',"home":'; json_string "$DEPLOY_HOME"
     printf ',"source":'; json_string "$DEPLOY_SOURCE"
     printf ',"tools":'; json_array "${DEPLOY_TOOLS[@]}"
+    printf ',"packages":'; print_common_packages
+    printf ',"managers":{"pixi":'; json_string "$PIXI_VERSION"
+    printf ',"chezmoi":'; json_string "$CHEZMOI_VERSION"
+    printf ',"rustup":'; json_string "$RUSTUP_VERSION"; printf '}'
     printf ',"actions":'; json_array "${DEPLOY_ACTIONS[@]}"
     printf ',"roots":{"config":'; json_string "$DEPLOY_HOME/.config"
     printf ',"data":'; json_string "$DEPLOY_HOME/.local/share"
@@ -110,7 +120,7 @@ fi
 # Refuse pre-existing state directory symlinks before mkdir or installers can
 # follow them. This check covers every parent used during state preparation.
 [ ! -L "$DEPLOY_HOME" ] || fail "target home is a symlink: $DEPLOY_HOME"
-for relative in .local .local/bin .local/run .local/share .local/state .config .config/chezmoi .cache .cache/tmp .pixi .bun .cargo .rustup .codex .claude; do
+for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config .config/chezmoi .config/dotfiles .cache .cache/tmp .pixi .pixi/bin .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml .bun .bun/install .bun/install/global .cargo .cargo/bin .rustup .codex .claude; do
     [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target state root is a symlink: $DEPLOY_HOME/$relative"
 done
 
@@ -129,7 +139,7 @@ export NPM_CONFIG_USERCONFIG="$HOME/.npmrc" NPM_CONFIG_CACHE="$HOME/.cache/npm"
 export ATUIN_CONFIG_DIR="$HOME/.config/atuin" ATUIN_DATA_DIR="$HOME/.local/share/atuin"
 export CODEX_HOME="$HOME/.codex" CLAUDE_CONFIG_DIR="$HOME/.claude"
 export HISTFILE="$HOME/.bash_history" TMPDIR="$HOME/.cache/tmp"
-export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$CARGO_HOME/bin:$PATH"
 export DOTFILES_PLATFORM="$DEPLOY_PLATFORM" DOTFILES_ROLE="$DEPLOY_ROLE" DOTFILES_ARCH="$DEPLOY_ARCH"
 unset DOTFILES_CLASS DOTFILES_PROFILE
 

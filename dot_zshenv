@@ -7,5 +7,4 @@
 # user rwx settings
 umask 0022
 
-# fnm node (before any interactive check, same as .bashrc)
-eval "$(fnm env --use-on-cd --shell zsh)"
+# Node is exposed by the pinned Pixi nodejs environment.

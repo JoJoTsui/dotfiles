@@ -34,10 +34,10 @@ Ordinary deployment changes user files only; it has no system or account
 login-shell action. See [the deployment boundary](docs/DEPLOYMENT_BOUNDARY.md)
 for the adapter contract and isolated verification.
 
-The initial deployment foundation implements chezmoi provisioning and file
-application. Common-tool and agent installer adapters currently fail with
-explicit pending-ticket messages; tickets 02 and 04 implement them before the
-complete bootstrap is released. Use `--apply-only` for configuration validation.
+The deployment foundation implements verified manager provisioning, file
+application, and pinned common tools. The agent installer currently reports an
+explicit pending-ticket-04 failure before full bootstrap completion. Use
+`--apply-only` for configuration validation while that next slice is underway.
 
 ## Deployment profiles
 
@@ -78,9 +78,9 @@ tests/test_deployment.py    # public boundary checks in disposable homes
 dot_env_core.tmpl           # shared POSIX env for bash+zsh: PATH, EDITOR,
                             # rustup TUNA mirrors, noproxy/unproxy (rendered URL)
 dot_profile                 # login shells: exec-nu guard (TTY + no Claude session)
-dot_bashrc                  # bash init: fnm, pixi, mamba, starship, zoxide,
+dot_bashrc                  # bash init: pixi, mamba, starship, zoxide,
                             # direnv, fzf
-dot_zshenv                  # every zsh: env_core + umask + fnm (bash parity)
+dot_zshenv                  # every zsh: env_core + umask (bash parity)
 dot_zshrc                   # interactive zsh: same inits as .bashrc (+ compinit)
 dot_local/bin/executable_nu-login   # login wrapper: bash -l -> exec nu (zellij
                                     # shell); executable_ => +x in target state
@@ -89,7 +89,8 @@ dot_local/bin/executable_fetchChromSizes  # UCSC chrom.sizes fetcher (POSIX sh)
 dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
                             # rerere, lfs filters, gh credential helper
 dot_condarc                 # TUNA mirrors, nvidia/pytorch/conda-forge/bioconda channels
-dot_bun/install/global/package.json  # bun global packages = coding-agent CLI suite
+deployment/common-tools.tsv  # exact common requirements and command exposures
+deployment/inventory/        # preserved optional/specialist inventory
 dot_config/
   starship.toml             # Catppuccin powerline prompt
   direnv/direnvrc           # layout_micromamba
@@ -97,11 +98,11 @@ dot_config/
   herdr/config.toml         # agent muxer: catppuccin theme, default shell nu
   pip/pip.conf              # PyPI via TUNA mirror
   uv/uv.toml                # python-preference=managed + TUNA default index
+  dotfiles/pixi-global.toml.tmpl # desired tools merged into the local registry
   zellij/config.kdl.tmpl    # multiplexer: custom keybinds, default_shell nu-login
   nushell/                  # env.nu, config.nu, micromamba.nu, direnv.nu, proxy.nu.tmpl
   opencode/opencode.jsonc   # canonical opencode config (headroom + MCPs)
 dot_pixi/
-  manifests/pixi-global.toml  # every global CLI tool (conda-forge envs)
   config.toml                 # netfs-redirect = never (network mount)
 dot_claude/settings.json.tmpl    # Claude Code on GLM-5.3 / glm-5.3-flash
 dot_codex/config.toml            # Codex CLI, env_key-based providers
@@ -133,7 +134,7 @@ Shared settings are defined once and mirrored:
 - `dot_config/nushell/env.nu` mirrors those values with guarded
   `$env.X? | default …`, so standalone `nu` (spawned without bash) behaves
   the same.
-- Interactive inits (fnm, pixi completion, micromamba, starship, zoxide,
+- Interactive inits (pixi completion, micromamba, starship, zoxide,
   direnv, fzf) are kept structurally identical across `.bashrc` and
   `.zshrc`; zsh adds `compinit`, which its completion system requires.
 - Multiplexers start nu the same way: zellij panes launch the managed
@@ -142,12 +143,25 @@ Shared settings are defined once and mirrored:
 
 ## Toolchain: pixi global
 
-All CLI tools (nu, starship, delta, direnv, fnm, fzf, gh, git, ruff, uv,
-helix/`hx`, ty, vivid, python/`pip`, zellij, herdr, codex, micromamba,
-**bash, zsh, bun**, …) are declared in
-`dot_pixi/manifests/pixi-global.toml` as per-tool conda-forge envs. On a
-host: `pixi global sync` installs/updates them all; `pixi global update`
-bumps; `pixi global add <pkg>` edits the manifest — commit the change.
+The pinned Pixi bootstrap installs under `~/.pixi/bin`. Common tools are
+declared once in `deployment/common-tools.tsv` and rendered as per-tool
+conda-forge environments in `~/.config/dotfiles/pixi-global.toml`. Bootstrap
+merges owned entries into the device's Pixi registry, preserving unrelated
+environments, extra dependencies/exposures, and channels, then runs sync.
+RTK uses package `rtk-cli` and exposes `rtk`; Tailspin exposes `tspin` and
+includes `less`. Bun and Node are common defaults. Python/pip and uv discover
+the rendered TUNA configuration.
+
+Pixi global has no lockfile. Exact direct pins are enforced, while solver-selected
+builds and transitive dependencies can drift. Update source pins deliberately
+and rerun validation; an unqualified global update is not the maintained update
+path. Chezmoi and the lightweight Rustup manager use checksum-verified pinned
+upstream assets. Rustup installs no compiler toolchain by default.
+
+Bioinformatics, GPU, desktop, and additional developer tools remain discoverable
+under `deployment/inventory`; they are opt-in rather than common defaults.
+Native Windows bootstrap exceptions and execution are supplied by ticket 11;
+Unix-only conda entries are excluded from its desired manifest.
 
 Env vars and configs only ever reference binaries that this manifest (or a
 bootstrap step) installs — see the matching invariant in `AGENTS.md`.
@@ -163,10 +177,10 @@ bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 | **opencode** | `~/.config/opencode/opencode.jsonc` | `~/.opencode` install, plugins | headroom provider + codegraph/headroom MCPs, serena disabled; watcher off for network FS |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
-The agent CLIs themselves are recorded in
-`~/.bun/install/global/package.json` (claude-code, kimi-code, opencode,
-pi-coding-agent, codegraph, larksuite …) and installed by `bootstrap.sh` via
-`bun add -g --trust`.
+The previous Bun client inventory is preserved in
+`deployment/inventory/legacy-bun-package.json`. Ticket 04 supplies exact agent
+manifests and locks; source application already preserves the device's existing
+`~/.bun/install/global/package.json` rather than overwriting it.
 
 Common pattern: **config in git, credentials on the host** — auth flows run
 per host (`claude` login / env token, `codex login`, `kimi login`,
@@ -184,6 +198,9 @@ rm -rf "$simulated_home"
 
 # Automated acceptance checks (no network or real account operations).
 DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest discover -s tests -v
+
+# Separate real Linux network installation and harmless CLI diagnostics.
+DOTFILES_TEST_INSTALL=1 python3 -m unittest discover -s tests -p test_common_install.py -v
 ```
 
 ## Maintenance

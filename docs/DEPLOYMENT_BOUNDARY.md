@@ -8,7 +8,8 @@ gets a PowerShell entry point in ticket 11.
 Planning supports the complete accepted platform/role/architecture matrix but
 is selection evidence only. The ticket-01 actual execution checks cover Linux
 workstation and remote compute file application; foreign native execution and
-tool/agent installers are separate downstream tickets.
+foreign execution is separate downstream work. Ticket 02 adds actual Linux
+common-tool installation and separately records foreign package resolution.
 
 ## Extending installers
 
@@ -43,8 +44,45 @@ JSON with profile selectors, source/home, tools/actions, state roots, and target
 settings. Secret values never enter this output. Extend this metadata when a
 new installer becomes available; do not invoke installers to compute a plan.
 
-At this integration midpoint, common/agent adapters deliberately fail as
-pending tickets 02/04. They are not successful no-ops or released installers.
+At this integration midpoint, the agent adapter deliberately fails as pending
+ticket 04. A successful common stage is not full bootstrap completion.
+
+## Common tools and registry ownership
+
+`deployment/common-tools.tsv` is the canonical common catalog. Each row names
+an environment, exact package specifications, explicit exposed commands, and
+`all` or `unix` conda targets. `deployment/common.sh` reads that catalog for
+plan metadata; the chezmoi template renders the same rows into the desired
+`~/.config/dotfiles/pixi-global.toml`, including the selected native subdir.
+Extend optional inventories through separate desired manifests or merge their
+selected entries into that desired manifest before the common installer runs.
+
+`deployment/managers.sh` provisions checksum-verified upstream Pixi and
+Chezmoi assets. Chezmoi's one intended owner is the bootstrap binary under
+`~/.local/bin`; it is absent from the Pixi catalog. `DOTFILES_PIXI_BIN` can
+explicitly supply Pixi at its required pin for isolated boundary checks.
+`--apply-only` provisions/uses Chezmoi without provisioning Pixi.
+
+The common installer uses `pixi exec` with the catalog's exact Python pin to
+run `deployment/merge_pixi.py`, then runs `pixi global sync`. The merge keeps
+unrelated environments and extra dependency/exposure entries/channels. An
+exposure collision across environments fails before writing the registry.
+The source state never applies over Pixi or Bun runtime registries. Pixi global
+has no lockfile: exact direct versions leave build/transitive solver drift;
+workspace resolution locks used for verification are evidence, not global
+installation locks. See [Pixi's global manifest](https://pixi.prefix.dev/latest/global_tools/manifest/)
+and [its CI lockfile limitation](https://pixi.prefix.dev/latest/integration/ci/github_actions/).
+
+Rustup is a checksum-verified pinned common manager installed with
+`--default-toolchain none --no-modify-path`. It preserves existing toolchains;
+a fresh common install does not claim usable Cargo/Rust compiler tooling.
+Those toolchains belong to the developer inventory or explicit on-use setup.
+Required errors identify their manager, merge, sync, Rustup, or exposure step.
+
+Use separate feature modules for the later shell, agent, and bundle adapters;
+their top-level functions remain in `installers.sh`. Agent selection must
+preserve local Bun state. Shell preparation must leave account activation,
+history import, and repository indexing to their explicit boundaries.
 
 ## Isolated acceptance checks
 
@@ -61,6 +99,16 @@ state), checked for regular executable files, credential placeholders, and
 bookkeeping exclusion. Plans cover all 14 supported profile/architecture
 combinations. Controlled failing executables test only failure propagation;
 they do not establish successful package/native execution.
+
+`DOTFILES_TEST_INSTALL=1 python3 -m unittest discover -s tests -p test_common_install.py -v`
+runs real Linux network installation and harmless CLI diagnostics twice. Its
+PATH contains only selected managed roots and system prerequisites. Pip and uv
+must discover TUNA configuration, and an unrelated declared Pixi environment
+must remain exposed after reapplication. An optional retained test home uses
+`DOTFILES_TEST_INSTALL_HOME=/tmp/...`; downstream checks can use its binaries
+read-only while writing to their own separate home/state roots. Do not copy or
+share writable installed prefixes. Native macOS/Windows/ARM and shell behavior
+remain separate checks; package-resolution success does not establish them.
 
 A designated home whose pre-existing state directories are symlinks is rejected
 before state creation. `/etc` and account login-shell changes are absent from

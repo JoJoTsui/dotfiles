@@ -10,6 +10,10 @@ system
 clash
 .git
 .gitignore
+# Optional developer/bio payloads accompany their selected bundle (ticket 08).
+.config/herdr
+.config/zellij
+.local/bin/fetchChromSizes
 **/*keys.json
 **/auth.json
 **/credentials*

@@ -64,6 +64,21 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(self.plan("--profile", "macos-workstation", env=legacy)["profile"], "macos-workstation")
         self.assertEqual(self.plan()["role"], "workstation")
 
+    def test_common_plan_names_default_tools_and_exact_package_owners(self):
+        plan = self.plan("--platform", "linux")
+        for command in ("pixi", "uv", "bun", "node", "nu", "bash", "zsh",
+                        "rtk", "atuin", "zoxide", "tspin", "less", "rustup"):
+            self.assertIn(command, plan["tools"])
+        packages = {item["environment"]: item for item in plan["packages"]}
+        self.assertEqual(packages["rtk-cli"]["dependencies"], {"rtk-cli": "==0.51.0"})
+        self.assertEqual(packages["tailspin"]["exposed"], {"tspin": "tspin"})
+        self.assertEqual(packages["nodejs"]["dependencies"], {"nodejs": "==24.21.0"})
+        self.assertEqual(packages["python"]["dependencies"], {"python": "==3.13.16", "pip": "==26.2.1"})
+        self.assertNotIn("codex", packages)
+        for specialist in ("samtools", "nvtop", "zed", "firefox"):
+            self.assertNotIn(specialist, packages)
+        self.assertFalse(self.home.exists())
+
     def test_invalid_or_conflicting_selections_fail_before_writing(self):
         cases = (
             ("--platform", "plan9"),
@@ -135,6 +150,31 @@ class DeploymentTests(unittest.TestCase):
         self.assertNotIn("synthetic-plan-secret", json.dumps(plan))
         self.assertFalse(self.home.exists())
 
+    def test_apply_renders_owned_manifest_without_replacing_local_registries(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual apply requires chezmoi")
+        registry = self.home / ".pixi/manifests/pixi-global.toml"
+        registry.parent.mkdir(parents=True)
+        existing = 'version = 1\n[envs.my-tool]\nchannels = ["conda-forge"]\ndependencies = { my-tool = "==1.0.0" }\n'
+        registry.write_text(existing)
+        bun_registry = self.home / ".bun/install/global/package.json"
+        bun_registry.parent.mkdir(parents=True)
+        bun_registry.write_text('{"dependencies":{"my-agent":"1.0.0"}}\n')
+        result = self.deploy("--apply-only", "--platform", "linux",
+                             env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(registry.read_text(), existing)
+        self.assertEqual(json.loads(bun_registry.read_text())["dependencies"], {"my-agent": "1.0.0"})
+        desired = (self.home / ".config/dotfiles/pixi-global.toml").read_text()
+        self.assertIn('[envs."rtk-cli"]', desired)
+        self.assertIn('"rtk-cli" = "==0.51.0"', desired)
+        self.assertIn('"tspin" = "tspin"', desired)
+        self.assertIn('"pip" = "==26.2.1"', desired)
+        self.assertNotIn('[envs."codex"]', desired)
+        for specialist in ("samtools", "nvtop", "zed", "firefox"):
+            self.assertNotIn(f'[envs."{specialist}"]', desired)
+
     def test_apply_refuses_state_roots_that_escape_through_symlinks(self):
         self.home.mkdir()
         (self.home / ".local").symlink_to(self.original_home, target_is_directory=True)
@@ -153,6 +193,31 @@ class DeploymentTests(unittest.TestCase):
         result = self.deploy("--apply-only", env=dict(self.env, DOTFILES_CHEZMOI_BIN=str(installer)))
         self.assertEqual(result.returncode, 42)
         self.assertIn("step apply-source failed (exit 42)", result.stderr)
+        self.assertNotIn("applied", result.stdout)
+
+    def test_required_pixi_sync_failure_is_named_and_returns_failure(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual apply requires chezmoi")
+        pixi = self.guards / "pixi"
+        pixi.write_text('#!/bin/sh\ncase "$1 $2" in "--version ") echo "pixi 0.81.0" ;; "exec "*) exit 0 ;; "global sync") exit 37 ;; *) exit 95 ;; esac\n')
+        pixi.chmod(0o755)
+        result = self.deploy("--platform", "linux", env=dict(self.env,
+                             DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_PIXI_BIN=str(pixi)))
+        self.assertEqual(result.returncode, 37, result.stderr)
+        self.assertIn("step install-common.pixi-sync failed (exit 37)", result.stderr)
+        self.assertNotIn("applied", result.stdout)
+
+    def test_unverified_manager_download_fails_before_execution_or_apply(self):
+        downloader = self.guards / "curl"
+        downloader.write_text('#!/bin/sh\nwhile [ "$#" -gt 0 ]; do if [ "$1" = -o ]; then shift; printf "corrupt archive\\n" > "$1"; exit 0; fi; shift; done\nexit 94\n')
+        downloader.chmod(0o755)
+        result = self.deploy("--platform", "linux")
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("SHA-256 mismatch", result.stderr)
+        self.assertIn("step install-managers.pixi failed (exit 1)", result.stderr)
+        self.assertFalse((self.home / ".env_core").exists())
+        self.assertFalse((self.home / ".pixi/bin/pixi").exists())
         self.assertNotIn("applied", result.stdout)
 
     def test_all_profile_plans_resolve_the_accepted_platform_role_matrix(self):

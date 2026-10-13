@@ -12,8 +12,7 @@ eval "$(pixi completion --shell bash)"
 
 
 
-# fnm node
-eval "$(fnm env --use-on-cd --shell bash)"
+# Node is exposed by the pinned Pixi nodejs environment.
 
 # If not running interactively, don't do anything
 case $- in

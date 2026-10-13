@@ -2,34 +2,40 @@
 # files. Later tickets extend these adapters; bootstrap owns selection, state
 # isolation, step failures, and working-tree source application.
 # shellcheck disable=SC2034 # Plan arrays are consumed by the sourced caller.
-DEPLOY_TOOLS=(chezmoi)
+source "$DEPLOY_SOURCE/deployment/common.sh"
+source "$DEPLOY_SOURCE/deployment/managers.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)
 
 install_managers() {
-    if [ -n "${DOTFILES_CHEZMOI_BIN:-}" ]; then
-        [ -x "$DOTFILES_CHEZMOI_BIN" ] || fail 'DOTFILES_CHEZMOI_BIN is not executable'
-        DEPLOY_CHEZMOI=$DOTFILES_CHEZMOI_BIN
-        return
+    if ! "$DEPLOY_APPLY_ONLY"; then
+        DEPLOY_STEP=install-managers.pixi
+        install_pixi
     fi
-    DEPLOY_CHEZMOI="$HOME/.local/bin/chezmoi"
-    [ ! -x "$DEPLOY_CHEZMOI" ] || return 0
-    local version=2.72.2 asset_os asset_arch scratch
-    case "$DEPLOY_PLATFORM" in
-        linux|wsl) asset_os=linux ;;
-        macos) asset_os=darwin ;;
-        *) fail 'native Windows provisioning requires the PowerShell adapter' ;;
-    esac
-    case "$DEPLOY_ARCH" in x86_64) asset_arch=amd64 ;; aarch64) asset_arch=arm64 ;; esac
-    scratch=$(mktemp -d "$TMPDIR/chezmoi.XXXXXX")
-    curl -fsSL --retry 2 "https://github.com/twpayne/chezmoi/releases/download/v$version/chezmoi_${version}_${asset_os}_${asset_arch}.tar.gz" -o "$scratch/chezmoi.tar.gz"
-    tar -xzf "$scratch/chezmoi.tar.gz" -C "$scratch" chezmoi
-    cp "$scratch/chezmoi" "$DEPLOY_CHEZMOI"
-    chmod 755 "$DEPLOY_CHEZMOI"
-    rm -rf "$scratch"
+    DEPLOY_STEP=install-managers.chezmoi
+    install_chezmoi
 }
 
-# Fail rather than represent not-yet-implemented installation as success.
-# Tickets 02 and 04 replace these adapters before complete bootstrap release.
-install_common() { fail 'common-tool installation awaits ticket 02; use --apply-only for configuration validation'; }
+# A pinned ephemeral Python runs the merge without first replacing or writing
+# the device registry. Pixi owns installation and exposure after that merge.
+install_common() {
+    DEPLOY_STEP=install-common.merge-manifest
+    "$DEPLOY_PIXI" exec --spec "$(common_python_spec)" python "$DEPLOY_SOURCE/deployment/merge_pixi.py" "$XDG_CONFIG_HOME/dotfiles/pixi-global.toml" "$PIXI_HOME/manifests/pixi-global.toml"
+    DEPLOY_STEP=install-common.pixi-sync
+    "$DEPLOY_PIXI" global sync
+    DEPLOY_STEP=install-common.rustup
+    install_rustup
+    DEPLOY_STEP=install-common.verify-exposure
+    local environment specifications mappings targets mapping saved_ifs
+    while IFS='|' read -r environment specifications mappings targets; do
+        case "$environment" in ''|\#*) continue ;; esac
+        common_target_matches "$targets" || continue
+        saved_ifs=$IFS; IFS=,
+        for mapping in $mappings; do
+            [ -x "$PIXI_HOME/bin/${mapping%%=*}" ] || fail "required command not exposed by Pixi: ${mapping%%=*}"
+        done
+        IFS=$saved_ifs
+    done < "$DEPLOY_SOURCE/deployment/common-tools.tsv"
+}
+# Ticket 04 replaces this explicit pending adapter.
 install_agents() { fail 'agent installation awaits ticket 04'; }
 prepare_shell() { :; }
