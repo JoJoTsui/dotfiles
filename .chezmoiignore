@@ -9,6 +9,7 @@ docs
 system
 clash
 .git
+.github
 .gitignore
 .gitattributes
 .github

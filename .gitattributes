@@ -1,3 +1,13 @@
+# Unix entry points must run when this source is checked out on Windows and
+# copied into WSL, or when native Windows invokes its managed Git Bash adapter.
+*.sh text eol=lf
+*.py text eol=lf
+*.ps1 text eol=lf
+*.nu text eol=lf
+*.tmpl text eol=lf
+dot_* text eol=lf
+dot_local/bin/executable_* text eol=lf
+
 # Preserve the approved skill snapshot, including intentional Markdown spacing
 # and Unix helper line endings, across client and platform checkouts.
 deployment/agent-payload/skills/** -text -whitespace
