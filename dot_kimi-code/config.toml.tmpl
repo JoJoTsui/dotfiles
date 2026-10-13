@@ -6,7 +6,7 @@ default_model = "kimi-code/kimi-for-coding"
 
 [providers."managed:kimi-code"]
 type = "kimi"
-api_key = "{{ .kimiApiKey }}"
+api_key = {{ .kimiApiKey | toJson }}
 base_url = "https://api.kimi.com/coding/v1"
 
 [models."kimi-code/kimi-for-coding"]
@@ -50,8 +50,8 @@ effort = "max"
 # ── Services ──────────────────────────────────────────────────────────
 [services.moonshot_search]
 base_url = "https://api.kimi.com/coding/v1/search"
-api_key = "{{ .kimiApiKey }}"
+api_key = {{ .kimiApiKey | toJson }}
 
 [services.moonshot_fetch]
 base_url = "https://api.kimi.com/coding/v1/fetch"
-api_key = "{{ .kimiApiKey }}"
+api_key = {{ .kimiApiKey | toJson }}
