@@ -1,7 +1,8 @@
 # Dotfiles deployment design
 
-The design choices below are confirmed individually. The full design awaits
-confirmation of shared understanding before implementation begins.
+The design interview is complete: the substantive choices below are confirmed.
+The specification and ticket breakdown are being prepared for review;
+implementation is outside the current conversion request.
 The current remote compute host's live configuration is outside deployment
 and validation targets.
 
@@ -161,8 +162,8 @@ from native execution.
   CI. CI execution remains pending until those runners actually run; local
   template checks do not stand in for it.
 
-No design decision remains open. The remaining interview step is confirmation
-that this document captures the shared understanding before implementation.
+No design decision remains open. The next review covers the specification's
+test boundaries and the ticket breakdown before tracker publication.
 
 ## Decision records
 

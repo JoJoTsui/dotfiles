@@ -1,0 +1,22 @@
+# 07: Enable shared shell history and deliberate device setup
+
+**Parent:** [Portable deployment specification](../spec.md)
+
+**What to build:** Commands entered in supported shells use Atuin history by
+default, remain usable offline, and synchronize through hosted encrypted sync
+after deliberate device activation. Setup offers optional one-time import of
+existing history from each available shell and clearly distinguishes installed
+integration from activated sync.
+
+**Blocked by:** 03 — Deliver shared Nushell-first shell behavior.
+
+**Status:** Draft awaiting review; publish as ready-for-agent after approval.
+
+- [ ] Atuin hooks and hosted encrypted sync settings deploy by default in supported Nushell, Bash, and Zsh adapters.
+- [ ] Local command history and search work before login and while offline; sync activation status is visible and pending activation does not masquerade as a synced device.
+- [ ] Device setup supports first-device setup and joining the same account/encryption key, keeping those values outside source control and logs.
+- [ ] Ordinary bootstrap does not log in, create a real account, read existing device history, or import it automatically.
+- [ ] Setup offers explicit one-time import from each available shell, including Nushell's applicable text or database importer; automatic single-shell detection is not presented as an all-shell import.
+- [ ] Built-in secret filtering remains enabled; synthetic recognized credentials exercise exclusion, with native-shell filtering limitations documented accurately.
+- [ ] Coding-agent conversations, sessions, credentials, and trust state remain outside shared shell history.
+- [ ] Synthetic command/import fixtures and isolated sync credentials/endpoints verify recording, search, offline operation, activation, import choice, and sync behavior without uploading real device history.
