@@ -3,7 +3,7 @@
   "theme": "dark",
   "defaultProvider": "minimax-cn",
   "defaultModel": "MiniMax-M3",
-  "skills": ["~/.agents/skills"],
+  "skills": {{ list (joinPath .chezmoi.homeDir ".agents" "skills") | toPrettyJson }},
   "enableInstallTelemetry": false,
   "tuiMode": "fullscreen",
   "terminal": {

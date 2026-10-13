@@ -257,6 +257,7 @@ class AgentPayloadTests(unittest.TestCase):
             listener.bind(("127.0.0.1", 0))
             port = listener.getsockname()[1]
         environment = dict(self.diagnostic_env(),
+                           OPENCODE_TEST_HOME=str(self.home),
                            OPENCODE_CONFIG_DIR=str(self.home / ".config/opencode"),
                            OPENCODE_CONFIG=str(self.home / ".config/opencode/opencode.jsonc"),
                            OPENCODE_SERVER_PASSWORD="synthetic-payload-test")
