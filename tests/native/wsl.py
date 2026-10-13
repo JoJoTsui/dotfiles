@@ -241,7 +241,8 @@ def main():
             uv = run([home / ".pixi/bin/uv", "--show-settings", "pip", "install", "--dry-run", "--system",
                       "--python", home / ".pixi/bin/python", "--offline", "dotfiles-unavailable==0.0.0"],
                      env=managed, allow_failure=True)
-            require(expected[2] + "/" in uv.stdout + uv.stderr, "uv did not discover the TUNA configuration")
+            # uv 0.13 prints the configured index without a trailing slash.
+            require(expected[2] in uv.stdout + uv.stderr, "uv did not discover the TUNA configuration")
             return {"shells": ["nu", "bash", "zsh"], "mirrors": "TUNA", "legacyEnvironment": "absent"}
 
         check("standalone shells, navigation, logs and mirrors", standalone_shells)

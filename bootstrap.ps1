@@ -5,7 +5,7 @@ param(
     [string]$Source = $PSScriptRoot,
     [string]$Platform,
     [string]$Role,
-    [string]$Profile,
+    [Alias('Profile')][string]$ProfilePreset,
     [string]$Class,
     [string]$Arch,
     [string]$Agents,
@@ -52,12 +52,12 @@ function Get-Selection {
         if ($Class -ne 'win') { Stop-Deployment 'native PowerShell accepts the legacy win class only' }
         $selectedPlatform = 'windows'; $selectedRole = 'workstation'
     }
-    if ($Profile) {
-        if ($Profile -notmatch '^windows-(workstation|remote-compute)$') { Stop-Deployment 'native PowerShell requires a windows profile' }
-        if ($Class -and $Profile -ne 'windows-workstation') { Stop-Deployment 'conflicting profile and class selections' }
-        $selectedPlatform = 'windows'; $selectedRole = $Profile.Substring(8)
+    if ($ProfilePreset) {
+        if ($ProfilePreset -notmatch '^windows-(workstation|remote-compute)$') { Stop-Deployment 'native PowerShell requires a windows profile' }
+        if ($Class -and $ProfilePreset -ne 'windows-workstation') { Stop-Deployment 'conflicting profile and class selections' }
+        $selectedPlatform = 'windows'; $selectedRole = $ProfilePreset.Substring(8)
     }
-    if (($Class -or $Profile) -and (($Role -and $Role -ne $selectedRole) -or ($Platform -and $Platform -ne $selectedPlatform))) {
+    if (($Class -or $ProfilePreset) -and (($Role -and $Role -ne $selectedRole) -or ($Platform -and $Platform -ne $selectedPlatform))) {
         Stop-Deployment 'conflicting platform/role and profile/class selections'
     }
     if ($Platform) { $selectedPlatform = $Platform }

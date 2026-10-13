@@ -2,6 +2,7 @@
 import os
 import signal
 import subprocess
+import time
 
 
 def stop_client(process):
@@ -32,3 +33,12 @@ def stop_client(process):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=5)
+    # wait() reaps the leader only. A client may leave helper processes in
+    # the private group; let SIGKILL reach them before the test removes HOME.
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(process.pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)

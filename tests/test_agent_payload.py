@@ -66,7 +66,9 @@ class AgentPayloadTests(unittest.TestCase):
         if parsed.scheme not in ("", "file"):
             return None
         raw = unquote(parsed.path) if parsed.scheme == "file" else str(value)
-        path = Path(raw)
+        if raw == "~":
+            return self.home.resolve()
+        path = self.home / raw[2:] if raw.startswith("~/") else Path(raw)
         if not path.is_absolute():
             path = self.home / path
         return path.resolve()
@@ -80,6 +82,10 @@ class AgentPayloadTests(unittest.TestCase):
             return True
         except ValueError:
             return False
+
+    def test_skill_path_membership_resolves_home_relative_paths(self):
+        self.assertTrue(self.skill_path_is_in_home("~/.agents/skills/tdd/SKILL.md"))
+        self.assertFalse(self.skill_path_is_in_home("~/../outside/SKILL.md"))
 
     def test_default_payload_is_usable_even_when_agent_installation_is_disabled(self):
         result = self.deploy("--agents", "none")
@@ -221,11 +227,20 @@ class AgentPayloadTests(unittest.TestCase):
         if not codex:
             self.skipTest("requires the pinned Codex CLI")
         self.assertEqual(self.deploy().returncode, 0)
-        diagnostic = subprocess.run([codex, "debug", "prompt-input"], cwd=self.home,
-                                    env=self.diagnostic_env(), capture_output=True,
-                                    text=True, timeout=30)
-        self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
-        messages = json.loads(diagnostic.stdout)
+        with tempfile.TemporaryFile(mode="w+b") as stdout, tempfile.TemporaryFile(mode="w+b") as stderr:
+            process = subprocess.Popen([codex, "debug", "prompt-input"], cwd=self.home,
+                                       env=self.diagnostic_env(), stdout=stdout, stderr=stderr,
+                                       start_new_session=os.name != "nt")
+            try:
+                process.wait(timeout=30)
+            finally:
+                stop_client(process)
+            stdout.seek(0)
+            stderr.seek(0)
+            diagnostic_stdout = stdout.read().decode("utf-8", errors="replace")
+            diagnostic_stderr = stderr.read().decode("utf-8", errors="replace")
+        self.assertEqual(process.returncode, 0, diagnostic_stderr)
+        messages = json.loads(diagnostic_stdout)
         text = "\n".join(part.get("text", "") for message in messages for part in message.get("content", []))
         self.assertIn("~/.agents/RTK.md", text)
         self.assertIn("<!-- DOTFILES_AGENT_START -->", text)
@@ -241,14 +256,14 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(self.deploy().returncode, 0)
         script = """
 const {DefaultResourceLoader,formatSkillsForPrompt} = await import(process.argv[1]);
-import {realpathSync} from "node:fs";
+import {existsSync,realpathSync} from "node:fs";
 import path from "node:path";
 const loader = new DefaultResourceLoader({cwd:process.cwd(),agentDir:process.env.PI_CODING_AGENT_DIR,
   noExtensions:true,noThemes:true,noPromptTemplates:true});
 await loader.reload();
 const skills=loader.getSkills().skills;
 const roots=[path.join(process.env.PI_CODING_AGENT_DIR,"skills"),path.join(process.env.HOME,".agents/skills")]
-  .map(root=>realpathSync(root));
+  .filter(root=>existsSync(root)).map(root=>realpathSync(root));
 const managed=skills.filter(skill=>{
   try { const file=realpathSync(skill.filePath); return roots.some(root=>file.startsWith(root+path.sep)); }
   catch { return false; }
