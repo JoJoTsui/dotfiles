@@ -71,6 +71,10 @@ class AgentPayloadTests(unittest.TestCase):
                 "CLAUDE_CONFIG_DIR": str(self.home / ".claude"),
                 "KIMI_CODE_HOME": str(self.home / ".kimi-code"),
                 "PI_CODING_AGENT_DIR": str(self.home / ".pi/agent"),
+                "DOTFILES_TEST_HOME": str(self.home),
+                "DOTFILES_TEST_TEMP_ROOT": str(self.root),
+                "DOTFILES_TEST_SOURCE": str(SOURCE),
+                "DOTFILES_TEST_RUNNER_HOME": str(Path(os.environ.get("HOME", str(self.root))).resolve()),
                 "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1"}
         return managed_shell_environment(self.home, environment)
 
@@ -122,6 +126,24 @@ class AgentPayloadTests(unittest.TestCase):
         if raw.startswith(("~/", "/~/")):
             return "home-relative"
         return "absolute" if Path(raw).is_absolute() else "relative"
+
+    def skill_path_scope(self, value):
+        path = self.local_skill_path(value)
+        if path is None:
+            return "remote"
+        roots = (
+            ("device-home", self.home.resolve()),
+            ("test-temp", self.root.resolve()),
+            ("source-tree", SOURCE.resolve()),
+            ("runner-home", Path(os.environ.get("HOME", str(self.root))).resolve()),
+        )
+        for label, root in roots:
+            try:
+                path.relative_to(root)
+                return label
+            except ValueError:
+                pass
+        return "outside"
 
     def test_skill_path_membership_resolves_home_relative_paths(self):
         self.assertTrue(self.skill_path_is_in_home("~/.agents/skills/tdd/SKILL.md"))
@@ -260,8 +282,9 @@ class AgentPayloadTests(unittest.TestCase):
                 managed = [skill for skill in data if self.skill_path_is_in_home(skill["path"])]
                 expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
                 path_kinds = Counter(self.skill_path_kind(skill["path"]) for skill in data)
+                path_scopes = Counter(self.skill_path_scope(skill["path"]) for skill in data)
                 self.assertEqual({skill["id"] for skill in managed}, expected,
-                                 f"managed={len(managed)}; path_kinds={dict(path_kinds)}")
+                                 f"managed={len(managed)}; path_kinds={dict(path_kinds)}; path_scopes={dict(path_scopes)}")
                 self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
             finally:
                 stop_client(process)
@@ -309,6 +332,20 @@ await loader.reload();
 const skills=loader.getSkills().skills;
 const roots=[path.join(process.env.PI_CODING_AGENT_DIR,"skills"),path.join(process.env.HOME,".agents/skills")]
   .filter(root=>existsSync(root)).map(root=>realpathSync(root));
+const scopeRoots=[
+  ["device-home",process.env.DOTFILES_TEST_HOME],
+  ["test-temp",process.env.DOTFILES_TEST_TEMP_ROOT],
+  ["source-tree",process.env.DOTFILES_TEST_SOURCE],
+  ["runner-home",process.env.DOTFILES_TEST_RUNNER_HOME]
+].filter(([,root])=>root&&existsSync(root)).map(([name,root])=>[name,realpathSync(root)]);
+function resolveSkillFile(value) {
+  let raw=String(value);
+  if (raw.startsWith("file://~/")) raw=path.join(process.env.HOME,decodeURIComponent(raw.slice("file://~/".length)));
+  else if (raw.startsWith("file:///~/")) raw=path.join(process.env.HOME,decodeURIComponent(raw.slice("file:///~/".length)));
+  else if (raw.startsWith("~/")) raw=path.join(process.env.HOME,raw.slice(2));
+  else if (raw.startsWith("file:")) raw=fileURLToPath(new URL(raw));
+  return realpathSync(raw);
+}
 const pathKind=value=>{
   const raw=String(value);
   if (raw.startsWith("file://~/") || raw.startsWith("file:///~/")) return "file-home-uri";
@@ -318,19 +355,22 @@ const pathKind=value=>{
 };
 const managed=skills.filter(skill=>{
   try {
-    let raw=String(skill.filePath);
-    if (raw.startsWith("file://~/")) raw=path.join(process.env.HOME,decodeURIComponent(raw.slice("file://~/".length)));
-    else if (raw.startsWith("file:///~/")) raw=path.join(process.env.HOME,decodeURIComponent(raw.slice("file:///~/".length)));
-    else if (raw.startsWith("~/")) raw=path.join(process.env.HOME,raw.slice(2));
-    else if (raw.startsWith("file:")) raw=fileURLToPath(new URL(raw));
-    const file=realpathSync(raw);
+    const file=resolveSkillFile(skill.filePath);
     return roots.some(root=>file.startsWith(root+path.sep));
   }
   catch { return false; }
 });
 const pathKinds=skills.reduce((counts,skill)=>{const kind=pathKind(skill.filePath); counts[kind]=(counts[kind]||0)+1; return counts;},{});
+const pathScopes=skills.reduce((counts,skill)=>{
+  let scope="unresolved";
+  try {
+    const file=resolveSkillFile(skill.filePath);
+    scope=scopeRoots.find(([,root])=>file===root||file.startsWith(root+path.sep))?.[0]||"outside";
+  } catch {}
+  counts[scope]=(counts[scope]||0)+1; return counts;
+},{});
 console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.disableModelInvocation).length,
-  pathKinds,rootCount:roots.length,
+  pathKinds,pathScopes,rootCount:roots.length,
   prompt:formatSkillsForPrompt(skills),instructions:loader.getAgentsFiles().agentsFiles}));
 """
         diagnostic = subprocess.run([node, "--input-type=module", "-e", script, Path(module).as_uri()],
@@ -340,7 +380,7 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
         data = json.loads(diagnostic.stdout)
         expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
         self.assertEqual((data["count"], data["explicit"]), (len(expected), 24),
-                         f"root_count={data['rootCount']}; path_kinds={data['pathKinds']}")
+                         f"root_count={data['rootCount']}; path_kinds={data['pathKinds']}; path_scopes={data['pathScopes']}")
         self.assertIn("<name>tdd</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])
         self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
