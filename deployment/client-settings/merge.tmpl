@@ -65,7 +65,9 @@
 {{- else -}}
 {{- template "client-defaults" (list $host $desired $previous) -}}
 {{- $policies := include "deployment/client-settings/policies.json" | fromJson -}}
-{{- range $path := get $policies (env "DOTFILES_SETTINGS_POLICY") -}}
+{{- $policy := env "DOTFILES_SETTINGS_POLICY" -}}
+{{- if not (hasKey $policies $policy) -}}{{- fail (printf "unknown client settings policy %q" $policy) -}}{{- end -}}
+{{- range $path := get $policies $policy -}}
 {{- $value := $desired -}}
 {{- range $part := $path -}}{{- $value = get $value $part -}}{{- end -}}
 {{- $_ := setValueAtPath $path $value $host -}}

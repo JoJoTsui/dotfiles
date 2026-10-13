@@ -225,15 +225,29 @@ function Apply-Source {
     Merge-ClientSettings
     Copy-NativeConfiguration
 }
+function Get-AssetString($Record, [string]$Field) {
+    $property = $Record.PSObject.Properties[$Field]
+    if (-not $property) { Stop-Deployment "missing Windows asset field: $Field" }
+    $value = $property.Value
+    while ($value -is [Array]) {
+        if ($value.Count -ne 1) { Stop-Deployment "Windows asset field is not a scalar: $Field" }
+        $value = $value[0]
+    }
+    if ($value -isnot [string] -or -not $value) { Stop-Deployment "Windows asset field is not a string: $Field" }
+    return $value
+}
 function Get-Asset([string]$Name) {
     $asset = @($exceptions | Where-Object { $_.name -eq $Name })
     if ($asset.Count -ne 1) { Stop-Deployment "missing pinned Windows asset: $Name" }
     $record = $asset[0]
     return [pscustomobject]@{
-        name = [string]$record.name; version = [string]$record.version
-        url = [string]$record.url; sha256 = [string]$record.sha256
-        kind = [string]$record.kind; entry = [string]$record.entry
-        target = [string]$record.target
+        name = (Get-AssetString $record 'name')
+        version = (Get-AssetString $record 'version')
+        url = (Get-AssetString $record 'url')
+        sha256 = (Get-AssetString $record 'sha256')
+        kind = (Get-AssetString $record 'kind')
+        entry = (Get-AssetString $record 'entry')
+        target = (Get-AssetString $record 'target')
     }
 }
 function Get-Pin([string]$Name) {
@@ -251,14 +265,16 @@ function Get-Scratch([string]$Name) {
     return $directory
 }
 function Download-Verified($Asset, [string]$Destination) {
-    if ($Asset.url -notmatch '^https://' -or $Asset.sha256 -notmatch '^[a-f0-9]{64}$') { Stop-Deployment 'installer catalog requires HTTPS and a pinned SHA-256' }
+    $url = Get-AssetString $Asset 'url'
+    $sha256 = Get-AssetString $Asset 'sha256'
+    if ($url -notmatch '^https://' -or $sha256 -notmatch '^[a-f0-9]{64}$') { Stop-Deployment "installer catalog requires HTTPS and a pinned SHA-256: $($Asset.name)" }
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     for ($attempt = 0; $attempt -lt 3; $attempt++) {
-        try { Invoke-WebRequest -UseBasicParsing -Uri $Asset.url -OutFile $Destination -TimeoutSec 180; break }
+        try { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $Destination -TimeoutSec 180; break }
         catch { if ($attempt -eq 2) { Stop-Deployment "cannot download required pinned asset: $($Asset.name)" } }
     }
     $actual = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $Asset.sha256) { Stop-Deployment "SHA-256 mismatch for $($Asset.name); payload was not executed" }
+    if ($actual -ne $sha256) { Stop-Deployment "SHA-256 mismatch for $($Asset.name); payload was not executed" }
 }
 function Expand-VerifiedZip([string]$Archive, [string]$Directory) {
     Add-Type -AssemblyName System.IO.Compression.FileSystem

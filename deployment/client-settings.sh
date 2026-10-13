@@ -17,7 +17,7 @@ validate_client_settings() {
 }
 
 deploy_client_settings() {
-    local format source target policy stage
+    local format source target policy stage trace_policy
     validate_client_settings
     stage=$(mktemp -d "$TMPDIR/client-settings.XXXXXX")
     # Render the entire batch before changing a client's files. Invalid existing
@@ -30,6 +30,14 @@ deploy_client_settings() {
         export DOTFILES_SETTINGS_BASELINE="$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
         if ! DOTFILES_SETTINGS_OUTPUT=config "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$policy.config" 2> "$stage/parser.log"; then
             if [ "${DOTFILES_TEST_TRACE_CLIENT_SETTINGS:-}" = 1 ]; then
+                printf 'dotfiles: client settings shell policy (test-only): <%s>\n' "${DOTFILES_SETTINGS_POLICY-<unset>}" >&2
+                printf '%s\n' '{{ env "DOTFILES_SETTINGS_POLICY" }}' > "$stage/policy.tmpl"
+                if trace_policy=$("$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$stage/policy.tmpl" 2> "$stage/policy-query.log"); then
+                    printf 'dotfiles: client settings template policy (test-only): <%s>\n' "$trace_policy" >&2
+                else
+                    printf 'dotfiles: client settings template policy query failed (test-only):\n' >&2
+                    cat "$stage/policy-query.log" >&2
+                fi
                 printf 'dotfiles: client settings parser detail (test-only):\n' >&2
                 cat "$stage/parser.log" >&2
             fi
