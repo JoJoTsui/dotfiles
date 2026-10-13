@@ -128,12 +128,11 @@ def main():
             source_roundtrip = run(["wslpath", "-u", source_windows]).stdout.strip()
             require(Path(source_roundtrip).resolve() == SOURCE, "Linux source path failed its UNC roundtrip")
             windows_command = run(["wslpath", "-u", arguments.windows_command]).stdout.strip()
-            windows_cwd = Path(windows_command).parent
-            windows_cwd_text = arguments.windows_command.rsplit("\\", 1)[0]
-            # Explicitly leave the Linux UNC working directory and read the
-            # spaced fixture through cmd.exe's native Windows path parser.
-            command = f'cd /d "{windows_cwd_text}" && type "{arguments.windows_file}"'
-            output = run([windows_command, "/d", "/c", command], cwd=windows_cwd).stdout
+            # Run from the mounted fixture directory so cmd.exe resolves a
+            # relative filename. This tests the spaced Windows cwd without
+            # nesting absolute paths inside cmd.exe's /c quoting rules.
+            output = run([windows_command, "/d", "/c", "type fixture.txt"],
+                         cwd=Path(linux_file).parent).stdout
             require(arguments.interop_token in output, "Windows command execution did not read the fixture")
             return {"windowsCommand": "cmd.exe", "windowsPathWithSpaces": True, "linuxPathRoundtrip": True}
 

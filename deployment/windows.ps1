@@ -272,7 +272,8 @@ function Expand-VerifiedZip([string]$Archive, [string]$Directory) {
 }
 function Install-Asset([string]$Name) {
     $asset = Get-Asset $Name
-    $target = Join-Path $TargetHome $asset.target
+    $assetTarget = [string]$asset.target
+    $target = Join-Path -Path $TargetHome -ChildPath $assetTarget
     Assert-SafePath $target
     $diagnostic = $target
     if ($Name -eq 'git-bash') { $diagnostic = Join-Path $target 'bin/git.exe' }
