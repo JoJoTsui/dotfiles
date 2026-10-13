@@ -14,6 +14,7 @@ if (-not [IO.File]::Exists($env:DOTFILES_TEST_POWERSHELL)) { $env:DOTFILES_TEST_
 $env:DOTFILES_TEST_NATIVE_WINDOWS_INSTALL = '1'
 $env:DOTFILES_TEST_WINDOWS_ROLE = $Role
 $env:PYTHONUTF8 = '1'
+$env:DOTFILES_TEST_WINDOWS_TEMP = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ReportDirectory))
 $managerHome = Join-Path ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ReportDirectory))) ('dotfiles-windows-manager-' + [Guid]::NewGuid().ToString('N'))
 $started = [DateTime]::UtcNow.ToString('o')
 $report = [ordered]@{

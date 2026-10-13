@@ -15,7 +15,11 @@ POWERSHELL = os.environ.get("DOTFILES_TEST_POWERSHELL") or shutil.which("pwsh") 
 @unittest.skipUnless(POWERSHELL, "set DOTFILES_TEST_POWERSHELL for the public Windows boundary")
 class WindowsBoundaryTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-windows-")
+        # The native harness has already bootstrapped a manager home. Keep
+        # fixture homes beside it, not below it, because Pi scans ancestor
+        # directories for skills.
+        self.temporary = tempfile.TemporaryDirectory(
+            prefix="dotfiles-windows-", dir=os.environ.get("DOTFILES_TEST_WINDOWS_TEMP"))
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.home = self.root / "device with spaces"
