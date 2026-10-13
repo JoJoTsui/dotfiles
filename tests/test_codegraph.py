@@ -72,10 +72,13 @@ class CodeGraphTests(unittest.TestCase):
             self.assertNotIn("env", server)
         opencode = json.loads("\n".join(line for line in (self.home / ".config/opencode/opencode.jsonc").read_text().splitlines()
                                       if not line.lstrip().startswith("//")))
+        self.assertEqual(opencode["skills"], ["~/.agents/skills"])
         server = opencode["mcp"]["servers"]["codegraph"]
         self.assertEqual(server["command"], ["codegraph", "serve", "--mcp"])
         self.assertFalse(server["disabled"])
         self.assertFalse(server["codemode"])
+        self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["skills"],
+                         ["../../.agents/skills"])
         codex = (self.home / ".codex/config.toml").read_text()
         self.assertIn('[mcp_servers.codegraph]', codex)
         self.assertFalse((self.home / ".codegraph").exists())
@@ -92,8 +95,8 @@ class CodeGraphTests(unittest.TestCase):
             ".kimi-code/config.toml": 'default_model = "device/model"\n[providers."managed:kimi-code"]\napi_key = "synthetic-device-token"\n[models."device/model"]\nprovider = "device"\n',
             ".kimi-code/tui.toml": 'theme = "device-theme"\n[update]\nauto_install = true\n',
             ".kimi-code/mcp.json": '{"mcpServers":{"device":{"command":"device-mcp","env":{"SYNTHETIC_TOKEN":"keep"}}}}',
-            ".config/opencode/opencode.jsonc": '{// a device comment\n"theme":"device-theme","providers":{"device":{"settings":{"apiKey":"synthetic-device-token"}}},"mcp":{"servers":{"device":{"type":"local","command":["device-mcp"]}}}}',
-            ".pi/agent/settings.json": '{"theme":"device-theme","enableInstallTelemetry":false,"deviceSetting":false}',
+            ".config/opencode/opencode.jsonc": '{// a device comment\n"theme":"device-theme","skills":["./device-skills"],"providers":{"device":{"settings":{"apiKey":"synthetic-device-token"}}},"mcp":{"servers":{"device":{"type":"local","command":["device-mcp"]}}}}',
+            ".pi/agent/settings.json": '{"theme":"device-theme","skills":["./device-skills"],"enableInstallTelemetry":false,"deviceSetting":false}',
             ".pi/agent/models-store.json": '{"device":{"models":[{"id":"custom-model"}]}}',
             ".codex/auth.json": '{"synthetic-only":"untouched"}\n',
             ".pi/agent/auth.json": '{"synthetic-only":"untouched"}\n',
@@ -125,7 +128,10 @@ class CodeGraphTests(unittest.TestCase):
         self.assertEqual(opencode["theme"], "device-theme")
         self.assertEqual(opencode["providers"]["device"]["settings"]["apiKey"], "synthetic-device-token")
         self.assertEqual(opencode["mcp"]["servers"]["device"]["command"], ["device-mcp"])
+        self.assertEqual(opencode["skills"], ["./device-skills", "~/.agents/skills"])
         self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["theme"], "device-theme")
+        self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["skills"],
+                         ["./device-skills", "../../.agents/skills"])
         self.assertEqual(json.loads((self.home / ".pi/agent/models-store.json").read_text())["device"], {"models": [{"id": "custom-model"}]})
         for relative in (".codex/auth.json", ".pi/agent/auth.json"):
             self.assertEqual((self.home / relative).read_text(), original[relative])

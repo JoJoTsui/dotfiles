@@ -3,6 +3,8 @@
 The portable skill tree lives at `~/.agents/skills`. Claude Code's real-file
 adapter lives at `~/.claude/skills`; its resources and relative references have
 the same layout. Built-in client skills and plugin payloads stay client-owned.
+Pi resolves the shared tree relative to its managed agent directory, and
+OpenCode V2 registers it explicitly in the managed config.
 
 Claude Code and Kimi expose a `Skill` tool; OpenCode exposes its own skill
 mechanism. Codex and Pi can read a skill's instructions with their file or shell

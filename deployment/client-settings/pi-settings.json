@@ -3,6 +3,7 @@
   "theme": "dark",
   "defaultProvider": "minimax-cn",
   "defaultModel": "MiniMax-M3",
+  "skills": ["../../.agents/skills"],
   "enableInstallTelemetry": false,
   "tuiMode": "fullscreen",
   "terminal": {

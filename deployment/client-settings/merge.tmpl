@@ -10,6 +10,11 @@
 {{- $old := dict -}}
 {{- if and (hasKey $previous $key) (kindIs "map" (get $previous $key)) -}}{{- $old = get $previous $key -}}{{- end -}}
 {{- template "client-defaults" (list (get $host $key) $value $old) -}}
+{{- else if and (eq $key "skills") (kindIs "slice" $value) (kindIs "slice" (get $host $key)) -}}
+{{- /* Keep user skill paths while always registering the shared library. */ -}}
+{{- $skills := get $host $key -}}
+{{- range $path := $value -}}{{- if not (has $path $skills) -}}{{- $skills = append $skills $path -}}{{- end -}}{{- end -}}
+{{- $_ := set $host $key $skills -}}
 {{- else if and (hasKey $previous $key) (deepEqual (get $host $key) (get $previous $key)) -}}
 {{- $_ := set $host $key $value -}}
 {{- end -}}

@@ -3,6 +3,9 @@
   // still describes V1; the exact pinned source schema is documented in
   // docs/AGENT_INSTALLATION.md.
   "update": "disable",
+  // V2's compatibility discovery can vary; register the shared managed tree
+  // explicitly so the default skills remain available to every user.
+  "skills": ["~/.agents/skills"],
   "watcher": {
     // V2 supports ignore patterns, not the old ineffective enabled flag.
     "ignore": {{ if eq .role "remote-compute" }}["**"]{{ else }}["node_modules/**", "dist/**", ".git/**"]{{ end }}
