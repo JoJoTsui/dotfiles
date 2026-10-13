@@ -10,7 +10,10 @@ Pinned user-scoped installer exceptions close the Windows package gaps.
 **Blocked by:** 06 — Configure CodeGraph access without automatic indexing;
 07 — Enable shared shell history and deliberate device setup.
 
-**Status:** Draft awaiting review; publish as ready-for-agent after approval.
+**Status:** Implemented; native Windows execution is pending. Local Linux
+PowerShell planning/copy application and actual Atuin explicit-file migration
+checks passed. See [Windows evidence](../../../verification/windows.md) for the
+verified and pending cells.
 
 - [ ] Native Windows detection, explicit selection, and both roles produce correct native home/configuration/tool paths; Windows ARM is rejected as outside the initial target matrix.
 - [ ] Pixi installs supported required packages, including RTK, uv, Nushell, zoxide, Tailspin, and the compatible Node runtime.
@@ -21,3 +24,17 @@ Pinned user-scoped installer exceptions close the Windows package gaps.
 - [ ] All clients discover portable real-file instructions/skills and supported CodeGraph configuration without automatic indexing or overwriting unrelated client state.
 - [ ] User-scoped bootstrap/reapplication preserve credentials and history; required installer failure propagates and account activation pending is reported distinctly.
 - [ ] Native Windows runner tests exercise these behaviors; Linux render/plan success is not represented as native Windows execution.
+
+The public `bootstrap.ps1` boundary, pinned exception catalog, shared shell
+adapters, payload/client merge, history migration and native runner are in this
+ticket. The Windows checks above remain unchecked until the native workflow
+actually runs. No system/account change, real credential request, existing
+history read or user-project index was used during local validation.
+
+TDD evidence: public planning failed before the boundary existed; copy/reapply
+and exception ownership failed before their adapters existed. A native Nu
+history preservation regression failed when copying the rendered directory and
+passed after limiting copies to source-owned config files. Explicit-file Nu
+import tests failed before the public aliases/parser and passed against actual
+Atuin 18.23. The native fixtures are committed for Windows execution; Linux
+syntax checks do not validate Windows executables, consoles or Known Folders.

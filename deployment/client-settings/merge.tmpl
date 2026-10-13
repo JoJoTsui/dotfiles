@@ -39,6 +39,24 @@
 {{- $desired = fromJsonc $desiredText -}}
 {{- if lstat $target -}}{{- $host = include $target | fromJsonc -}}{{- end -}}
 {{- end -}}
+{{- /* Native clients can spawn an .exe directly; .cmd wrappers are not a
+       portable stdio MCP command. Keep this in the shared merge contract. */ -}}
+{{- if eq .platform "windows" -}}
+{{- $node := joinPath (env "PIXI_HOME") "bin" "node.exe" -}}
+{{- $shim := joinPath (env "HOME") ".bun" "managed" "codegraph" "node_modules" "@colbymchenry" "codegraph" "npm-shim.js" -}}
+{{- $policy := env "DOTFILES_SETTINGS_POLICY" -}}
+{{- if has $policy (list "claude-mcp" "kimi-mcp") -}}
+{{- $_ := setValueAtPath (list "mcpServers" "codegraph" "command") $node $desired -}}
+{{- $_ := setValueAtPath (list "mcpServers" "codegraph" "args") (list $shim "serve" "--mcp") $desired -}}
+{{- else if eq $policy "codex" -}}
+{{- $_ := setValueAtPath (list "mcp_servers" "codegraph" "command") $node $desired -}}
+{{- $_ := setValueAtPath (list "mcp_servers" "codegraph" "args") (list $shim "serve" "--mcp") $desired -}}
+{{- else if eq $policy "opencode" -}}
+{{- $_ := setValueAtPath (list "mcp" "servers" "codegraph" "command") (list $node $shim "serve" "--mcp") $desired -}}
+{{- else if eq $policy "pi-settings" -}}
+{{- $_ := set $desired "shellPath" (env "KIMI_SHELL_PATH") -}}
+{{- end -}}
+{{- end -}}
 {{- if not (kindIs "map" $host) -}}{{- fail "client config must be an object/table" -}}{{- end -}}
 {{- if lstat $baseline -}}{{- $previous = include $baseline | fromJson -}}{{- end -}}
 {{- if eq (env "DOTFILES_SETTINGS_OUTPUT") "baseline" -}}

@@ -3,6 +3,8 @@ README.md
 AGENTS.md
 GLOSSARY.md
 bootstrap.sh
+bootstrap.ps1
+.github
 deployment
 tests
 docs

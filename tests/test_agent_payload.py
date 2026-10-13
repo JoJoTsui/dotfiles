@@ -11,6 +11,7 @@ import threading
 import time
 import urllib.request
 import base64
+from fixtures.processes import stop_client
 
 try:
     import tomllib
@@ -182,12 +183,7 @@ class AgentPayloadTests(unittest.TestCase):
                 self.assertEqual(len([skill for skill in data if str(skill["path"]).startswith(str(self.home))]), 105)
                 self.assertTrue(str(skills["tdd"]["path"]).startswith(str(self.home)))
             finally:
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
+                stop_client(process)
 
     def test_pinned_codex_reads_shared_instructions_and_automatic_skills(self):
         codex = os.environ.get("DOTFILES_TEST_CODEX")
@@ -308,12 +304,7 @@ console.log(JSON.stringify({count:skills.length,explicit:skills.filter(s=>s.disa
                         advertised = {name.removeprefix("skill:") for name in names}
                         self.assertTrue(expected.issubset(advertised), expected - advertised)
                     finally:
-                        process.terminate()
-                        try:
-                            process.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            process.kill()
-                            process.wait(timeout=5)
+                        stop_client(process)
                         process.stdin.close()
                         reader.join(timeout=5)
                         process.stdout.close()

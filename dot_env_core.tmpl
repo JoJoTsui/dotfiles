@@ -1,8 +1,21 @@
 # Shared POSIX environment, generated from .chezmoidata.toml.
 # Idempotent, and safe for dash, Bash 3.2 and Zsh.
-{{ range .sharedShell.defaults -}}
+{{ if eq .platform "windows" -}}
+# Git Bash uses POSIX paths for its PATH but Windows-absolute roots for native
+# Rust/Python tools. Their filesystem parsers do not understand /c/... paths.
+_dotfiles_native_home=$HOME
+if command -v cygpath >/dev/null 2>&1; then
+    _dotfiles_native_home=$(cygpath -m "$HOME")
+fi
+{{ end -}}
+{{- $defaults := .sharedShell.defaults -}}
+{{- if eq .platform "windows" -}}{{- $defaults = concat $defaults .sharedShell.windowsDefaults -}}{{- end -}}
+{{ range $defaults -}}
 {{- if (get . "base") }}
-{{ printf ": \"${%s:=${%s}/%s}\"" .name .base .suffix }}
+{{- $base := .base -}}{{- $suffix := .suffix -}}
+{{- if and (eq $.platform "windows") (eq $base "HOME") -}}{{- $base = "_dotfiles_native_home" -}}{{- end -}}
+{{- if and (eq $.platform "windows") (get . "windowsSuffix") -}}{{- $suffix = .windowsSuffix -}}{{- end }}
+{{ printf ": \"${%s:=${%s}/%s}\"" .name $base $suffix }}
 {{- else }}
 {{- $value := get . "value" -}}
 {{- if (get . "setting") }}{{ $value = index $.sharedShell .setting }}{{ end -}}
@@ -13,12 +26,22 @@
 export {{ .name }}
 {{ end }}
 _dotfiles_prepend_path() {
+{{ if eq .platform "windows" -}}
+    if command -v cygpath >/dev/null 2>&1; then
+        set -- "$(cygpath -u "$1")"
+    fi
+{{ end -}}
     case ":$PATH:" in *":$1:"*) ;; *) PATH="$1${PATH:+:$PATH}" ;; esac
 }
-{{ range reverse .sharedShell.paths -}}
+{{ $paths := .sharedShell.paths -}}
+{{- if eq .platform "windows" -}}{{- $paths = concat $paths .sharedShell.windowsPaths -}}{{- end -}}
+{{ range reverse $paths -}}
 {{ printf "_dotfiles_prepend_path \"${%s}/%s\"" .base .suffix }}
 {{ end -}}
 unset -f _dotfiles_prepend_path
+{{ if eq .platform "windows" -}}
+unset _dotfiles_native_home
+{{ end -}}
 export PATH
 umask {{ .sharedShell.umask }}
 

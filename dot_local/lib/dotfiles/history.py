@@ -13,8 +13,8 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
-from urllib.parse import quote
 import uuid
 
 
@@ -32,8 +32,8 @@ class PrivateArgumentParser(argparse.ArgumentParser):
 def reject_symlinks(path):
     home = Path(os.environ["HOME"])
     for component in (path, *path.parents):
-        if component.is_symlink():
-            raise HistoryError(f"history state path is a symlink: {component}")
+        if component.is_symlink() or getattr(component, "is_junction", lambda: False)():
+            raise HistoryError(f"history state path is a symlink or junction: {component}")
         if component == home:
             break  # macOS /tmp and /var have ordinary system aliases.
 
@@ -50,10 +50,17 @@ def validate_roots():
         reject_symlinks(Path(os.environ["ATUIN_DATA_DIR"]) / name)
     if config.is_file():
         settings = tomllib.loads(config.read_text())
+        if os.name == "nt":
+            logs = settings.get("logs", {})
+            if logs.get("enabled", True) or any(logs.get(child, {}).get("enabled", False) for child in ("search", "daemon", "ai")):
+                raise HistoryError("native history file logging must be disabled before running Atuin")
         for name in ("db_path", "record_store_path", "key_path"):
             value = os.environ.get("ATUIN_" + name.upper(), settings.get(name))
             if value:
-                reject_symlinks(Path(os.path.expandvars(os.path.expanduser(value))))
+                candidate = Path(os.path.expandvars(os.path.expanduser(value)))
+                reject_symlinks(candidate)
+                if os.name == "nt" and Path(os.environ["HOME"]) not in candidate.parents:
+                    raise HistoryError("native history write path is outside the designated home")
 
 
 def run_atuin(atuin, arguments, *, env=None):
@@ -78,8 +85,9 @@ def configured_path(atuin, setting):
 def default_sources():
     home = Path(os.environ["HOME"])
     config = Path(os.environ["XDG_CONFIG_HOME"])
+    nu_config = Path(os.environ.get("APPDATA", str(config))) if os.name == "nt" else config
     return {"bash": home / ".bash_history", "zsh": home / ".zsh_history",
-            "nu": config / "nushell/history.txt", "nu-db": config / "nushell/history.sqlite3"}
+            "nu": nu_config / "nushell/history.txt", "nu-db": nu_config / "nushell/history.sqlite3"}
 
 
 def status(atuin):
@@ -106,10 +114,34 @@ def status(atuin):
 def private_terminal():
     # Atuin hides passwords but its encryption-key prompt normally echoes.
     # Hide all activation input and restore the caller's terminal afterwards.
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        import msvcrt
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetConsoleMode.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel.GetConsoleMode.restype = wintypes.BOOL
+        kernel.SetConsoleMode.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.SetConsoleMode.restype = wintypes.BOOL
+        try:
+            descriptor = wintypes.HANDLE(msvcrt.get_osfhandle(sys.stdin.fileno()))
+            output = wintypes.HANDLE(msvcrt.get_osfhandle(sys.stdout.fileno()))
+        except (OSError, ValueError):
+            raise HistoryError("device activation requires an interactive Windows console; credentials are never CLI arguments") from None
+        original = wintypes.DWORD()
+        output_mode = wintypes.DWORD()
+        if not kernel.GetConsoleMode(descriptor, ctypes.byref(original)) or not kernel.GetConsoleMode(output, ctypes.byref(output_mode)):
+            raise HistoryError("device activation requires an interactive Windows console; redirected input/output is rejected")
+        if not kernel.SetConsoleMode(descriptor, original.value & ~0x0004):  # ENABLE_ECHO_INPUT
+            raise HistoryError("cannot mask Windows console input; activation was not started")
+        try:
+            yield
+        finally:
+            if not kernel.SetConsoleMode(descriptor, original.value):
+                raise HistoryError("cannot restore the original Windows console input mode")
+        return
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise HistoryError("device activation requires an interactive terminal; credentials are never CLI arguments")
-    if os.name != "posix":
-        raise HistoryError("native Windows activation requires its verified console adapter")
     import termios
     descriptor = sys.stdin.fileno()
     original = termios.tcgetattr(descriptor)
@@ -127,9 +159,20 @@ def activate_device(atuin, action):
     if action == "join":
         print("Supply the existing device's key at the hidden prompt; never paste it into a shell command.", flush=True)
     with private_terminal():
-        result = subprocess.run([str(atuin), "register" if action == "first-device" else "login"], check=False)
-    if result.returncode:
-        raise HistoryError(f"{action} failed (exit {result.returncode}); local history remains available")
+        process = subprocess.Popen([str(atuin), "register" if action == "first-device" else "login"])
+        try:
+            result = process.wait()
+        except BaseException:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+            raise
+    if result:
+        raise HistoryError(f"{action} failed (exit {result}); local history remains available")
     status(atuin)
     print("History migration is optional. Run dotfiles-history import to choose each shell separately.")
 
@@ -140,6 +183,63 @@ def sync_history(atuin):
         raise HistoryError(f"sync failed (exit {result.returncode}); local history remains available offline")
 
 
+def import_nu_file(atuin, kind, source, database, environment):
+    """Parse only the selected file; never call Windows Known Folder importers.
+
+    Pin18.23 quirks are deliberate: LF-terminated text lines, literal CR bytes,
+    lossy SQLite text, signed session hex, and unscaled duration_ms.
+    The native CLI creates the schema/default origin in unauthenticated staging.
+    """
+    run_atuin(atuin, ["history", "start", "--", "dotfiles-import-schema-seed"], env=environment)
+    with sqlite3.connect(database) as connection:
+        columns = [row[1] for row in connection.execute("PRAGMA table_info(history)")]
+        expected = {"id", "timestamp", "duration", "exit", "command", "cwd", "session", "hostname",
+                    "deleted_at", "author", "intent", "shell", "author_kind"}
+        if set(columns) != expected:
+            raise HistoryError("Atuin history schema differs from the verified Nu-file adapter")
+        template = dict(zip(columns, connection.execute("SELECT * FROM history LIMIT 1").fetchone()))
+        connection.execute("DELETE FROM history")
+        entries = []
+        if kind == "nu":
+            lines = source.read_bytes().split(b"\n")[:-1]
+            timestamp = time.time_ns() - min(max(len(lines) - 1, 0), 0xFFFFFFFF) * 1_000_000
+            for line in lines:
+                current = timestamp
+                timestamp += 1_000_000
+                try:
+                    command = line.decode("utf-8").replace("<\\n>", "\n")
+                except UnicodeDecodeError:
+                    continue
+                entries.append({"timestamp": current, "command": command, "cwd": "unknown", "exit": -1,
+                                "duration": -1, "shell": "nu", "deleted_at": None, "intent": None, "author_kind": None})
+        else:
+            def text(value):
+                return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+            with sqlite3.connect(source.absolute().as_uri() + "?mode=ro", uri=True) as original:
+                with sqlite3.connect(":memory:") as snapshot:
+                    original.backup(snapshot)
+                    rows = snapshot.execute("SELECT command_line, start_timestamp, session_id, hostname, cwd, "
+                                            "duration_ms, exit_status FROM history ORDER BY start_timestamp").fetchall()
+            for command, milliseconds, session, hostname, cwd, duration, exit_status in rows:
+                timestamp = milliseconds * 1_000_000
+                if not -(1 << 63) <= timestamp < (1 << 63):
+                    timestamp = 0
+                entries.append({"timestamp": timestamp, "command": text(command), "cwd": text(cwd),
+                                "exit": exit_status, "duration": duration, "session": format(session & ((1 << 64) - 1), "x"),
+                                "hostname": text(hostname) + ":" + template["author"], "shell": "nu",
+                                "deleted_at": None, "intent": None, "author_kind": None})
+        placeholders = ",".join("?" for _ in columns)
+        names = ",".join('"' + name + '"' for name in columns)
+        for values in entries:
+            # Fresh UUIDv7 IDs match the importer's identity policy; source Nu
+            # row IDs are not Atuin history identities.
+            random = uuid.uuid4().int
+            identity = ((time.time_ns() // 1_000_000) << 80) | (7 << 76) | (((random >> 64) & 0xFFF) << 64)
+            identity |= (2 << 62) | (random & ((1 << 62) - 1))
+            entry = dict(template, **values, id=uuid.UUID(int=identity).hex)
+            connection.execute(f"INSERT INTO history ({names}) VALUES ({placeholders})", [entry[name] for name in columns])
+
+
 def import_history(atuin, kind, source):
     if kind is None:
         print("Choose an explicit one-time import: dotfiles-history import FORMAT [--file PATH]")
@@ -147,6 +247,10 @@ def import_history(atuin, kind, source):
             print(f"{name}: {'available' if path.is_file() else 'not found'} ({path})")
         print("Nothing imported. Nu text and SQLite use different importers; select each needed format.")
         return
+    portable_nu = kind in ("nu-file", "nu-db-file") or (os.name == "nt" and kind in ("nu", "nu-db"))
+    kind = {"nu-file": "nu", "nu-db-file": "nu-db"}.get(kind, kind)
+    if portable_nu and not source:
+        raise HistoryError("portable Nu migration requires an explicit --file; native Known Folder import is never invoked")
     data = configured_path(atuin, "data_dir")
     imports = data / "dotfiles-imports"
     reject_symlinks(imports)
@@ -188,19 +292,26 @@ def import_history(atuin, kind, source):
             (stage_atuin / "config.toml").write_text(
                 'auto_sync = false\nupdate_check = false\nsecrets_filter = true\n'
                 'sync_address = "http://127.0.0.1:1"\n' + filters +
-                '[logs]\nenabled = false\n[daemon]\nenabled = false\nautostart = false\n')
+                '[logs]\nenabled = false\n[logs.search]\nenabled = false\n'
+                '[logs.daemon]\nenabled = false\n[logs.ai]\nenabled = false\n'
+                '[daemon]\nenabled = false\nautostart = false\n')
             stage_env = {key: value for key, value in os.environ.items() if not key.startswith("ATUIN_")}
             stage_env.update(HOME=str(staging), XDG_CONFIG_HOME=str(stage_config),
                              XDG_DATA_HOME=str(staging / ".local/share"),
                              XDG_CACHE_HOME=str(staging / ".cache"),
                              ATUIN_CONFIG_DIR=str(stage_atuin), ATUIN_DATA_DIR=str(stage_data),
                              ATUIN_SESSION="0123456789abcdef0123456789abcdef")
+            if os.name == "nt":
+                stage_env.update(USERPROFILE=str(staging), APPDATA=str(staging / "AppData/Roaming"),
+                                 LOCALAPPDATA=str(staging / "AppData/Local"))
             for key in ("ATUIN_HISTORY_FILTER", "ATUIN_CWD_FILTER"):
                 if key in os.environ:
                     stage_env[key] = os.environ[key]
             stage_env["HISTFILE"] = str(source.absolute())
             importer = kind
-            if kind in ("nu", "nu-db"):
+            if portable_nu:
+                import_nu_file(atuin, kind, source, stage_data / "history.db", stage_env)
+            elif kind in ("nu", "nu-db"):
                 # The pinned Nu importers ignore HISTFILE and use BaseDirs.
                 # Relocate a selected snapshot into that isolated native path.
                 nu_config = (staging / "Library/Application Support/nushell"
@@ -210,11 +321,12 @@ def import_history(atuin, kind, source):
                     shutil.copyfile(source, nu_config / "history.txt")
                 else:
                     importer = "nu-hist-db"
-                    uri = "file:" + quote(str(source.absolute()), safe="/") + "?mode=ro"
+                    uri = source.absolute().as_uri() + "?mode=ro"
                     with sqlite3.connect(uri, uri=True) as original:
                         with sqlite3.connect(nu_config / "history.sqlite3") as snapshot:
                             original.backup(snapshot)
-            run_atuin(atuin, ["import", importer], env=stage_env)
+            if not portable_nu:
+                run_atuin(atuin, ["import", importer], env=stage_env)
             run_atuin(atuin, ["history", "prune"], env=stage_env)
             # The pinned importer bypasses should_save; pruning in unauthenticated
             # staging keeps rejected commands out of both device DB and record WAL.
@@ -247,7 +359,7 @@ def main():
     parser = PrivateArgumentParser(prog="dotfiles-history")
     commands = parser.add_subparsers(dest="command", required=True)
     migrate = commands.add_parser("import", help="explicit one-time native-shell history migration")
-    migrate.add_argument("format", nargs="?", choices=("bash", "zsh", "nu", "nu-db"))
+    migrate.add_argument("format", nargs="?", choices=("bash", "zsh", "nu", "nu-db", "nu-file", "nu-db-file"))
     migrate.add_argument("--file", help="explicit source file; default is the selected shell's native file")
     commands.add_parser("status", help="offline activation status; no credentials are displayed")
     commands.add_parser("first-device", help="explicit first-account registration with hidden terminal input")
@@ -257,7 +369,7 @@ def main():
     arguments = parser.parse_args()
     validate_roots()
     os.environ.setdefault("ATUIN_SESSION", uuid.uuid4().hex)
-    atuin = Path(os.environ["PIXI_HOME"]) / "bin/atuin"
+    atuin = Path(os.environ["PIXI_HOME"]) / ("bin/atuin.exe" if os.name == "nt" else "bin/atuin")
     if not atuin.is_file():
         raise HistoryError("managed Atuin is not installed")
     if arguments.command == "import":
