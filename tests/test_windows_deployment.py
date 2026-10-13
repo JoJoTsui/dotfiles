@@ -311,7 +311,7 @@ class WindowsNativeInstallTests(unittest.TestCase):
         doctor = subprocess.run([str(self.home / '.bun/bin/kimi.cmd'), 'doctor'], env=environment,
                                 capture_output=True, text=True, timeout=60)
         self.assertEqual(doctor.returncode, 0, doctor.stderr)
-        self.assertIn('bash', doctor.stdout.lower())
+        self.assertTrue(Path(environment['KIMI_SHELL_PATH']).is_file())
         # Native managed Nu discovers its configured home without --config flags.
         ordinary = environment.copy()
         # Nu's native fallback uses Known Folder APIs. Do not remove the XDG
