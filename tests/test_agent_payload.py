@@ -28,7 +28,9 @@ SOURCE = Path(__file__).resolve().parents[1]
 
 class AgentPayloadTests(unittest.TestCase):
     def setUp(self):
-        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-agent-payload-")
+        # Agent clients search ancestor directories for skills. Keep the fake
+        # device outside the runner's HOME tree so its payload cannot shadow it.
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-agent-payload-", dir="/tmp")
         self.addCleanup(self.cleanup_temporary_home)
         self.root = Path(self.temporary.name)
         self.home = self.root / "device"
