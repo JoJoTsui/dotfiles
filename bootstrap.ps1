@@ -175,6 +175,9 @@ try {
     [Console]::Out.WriteLine("dotfiles: applied $($selection.profile) to $TargetHome (copy mode)")
 } catch {
     [Console]::Error.WriteLine('dotfiles: ' + $_.Exception.Message)
+    if ($_.InvocationInfo.ScriptLineNumber) {
+        [Console]::Error.WriteLine("dotfiles: source line $($_.InvocationInfo.ScriptLineNumber)")
+    }
     [Console]::Error.WriteLine("dotfiles: step $script:Step failed (exit $script:FailureCode)")
     exit $script:FailureCode
 }

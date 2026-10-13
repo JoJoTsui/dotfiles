@@ -47,21 +47,22 @@ function Assert-OwnedState {
         $ancestor = [IO.Path]::GetDirectoryName($ancestor)
     }
     foreach ($relative in @('.local', '.local/bin', '.local/lib', '.local/share', '.local/state', '.local/run', '.config', '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml', '.bun', '.bun/bin', '.bun/managed', '.bun/install/global', '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin', '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi', '.pi/agent')) {
-        Assert-SafePath (Join-Path $TargetHome $relative)
+        Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ([string]$relative))
     }
-    foreach ($name in @('meta.db', 'history.db', 'records.db', 'key', 'session', 'host_id')) { Assert-SafePath (Join-Path $TargetHome ".local/share/atuin/$name") }
+    foreach ($name in @('meta.db', 'history.db', 'records.db', 'key', 'session', 'host_id')) { Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ".local/share/atuin/$name") }
     foreach ($asset in $exceptions) {
-        Assert-Relative $asset.target
-        Assert-InstallerDirectory (Join-Path $TargetHome $asset.target)
+        $assetTarget = [string]$asset.target
+        Assert-Relative $assetTarget
+        Assert-InstallerDirectory (Join-Path -Path $TargetHome -ChildPath $assetTarget)
     }
     foreach ($row in (Read-Catalog 'deployment/agent-payload/targets.tsv')) {
         Assert-Relative $row.columns[1]; Assert-Relative $row.columns[2]
-        Assert-CopyTree (Join-Path $Source "deployment/agent-payload/$($row.columns[1])") (Join-Path $TargetHome $row.columns[2])
+        Assert-CopyTree (Join-Path $Source "deployment/agent-payload/$($row.columns[1])") (Join-Path -Path $TargetHome -ChildPath ([string]$row.columns[2]))
     }
     foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
         foreach ($part in $row.columns) { Assert-Relative $part }
         Assert-SafePath (Join-Path $Source "deployment/client-settings/$($row.columns[1])") -SourcePath
-        Assert-SafePath (Join-Path $TargetHome $row.columns[2])
+        Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ([string]$row.columns[2]))
         Assert-SafePath (Join-Path $TargetHome ".local/state/dotfiles/client-settings/$($row.columns[3]).json")
     }
     foreach ($relative in @('nushell', 'uv', 'pip')) { Assert-SafePath (Join-Path $roots.appData $relative) }

@@ -186,7 +186,7 @@ install -d -o dotfilesci -g dotfilesci /home/dotfilesci/source /home/dotfilesci/
             $report.cleanup = 'disposable distro unregistered'
         }
     }
-    Remove-Item -LiteralPath $ciArchive, $ciSourceArchive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $ciArchive, $ciSourceArchive, $ciFixture -Force -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $ciInterop) {
         Remove-Item -LiteralPath $ciInterop -Recurse -Force -ErrorAction SilentlyContinue
     }

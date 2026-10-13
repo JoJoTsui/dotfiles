@@ -112,6 +112,8 @@ def main():
                 "Interop token must contain only letters, digits, and hyphens")
         require(not any(char in arguments.windows_file for char in ('"', '\r', '\n')),
                 "Windows fixture path contains unsupported command characters")
+        require(" " in arguments.windows_file,
+                "Keep the Windows interoperability fixture under a path containing spaces")
         environment["HOME"] = str(home)
         report["phase"] = "windows-interoperability"
 
@@ -121,16 +123,17 @@ def main():
                     "The mounted Windows file does not contain the disposable fixture token")
             windows_roundtrip = run(["wslpath", "-w", linux_file]).stdout.strip()
             require(windows_roundtrip.lower() == arguments.windows_file.lower(),
-                    "Windows path with spaces failed its WSL conversion roundtrip")
+                    "Windows fixture path failed its WSL conversion roundtrip")
             source_windows = run(["wslpath", "-w", str(SOURCE)]).stdout.strip()
             source_roundtrip = run(["wslpath", "-u", source_windows]).stdout.strip()
             require(Path(source_roundtrip).resolve() == SOURCE, "Linux source path failed its UNC roundtrip")
             windows_command = run(["wslpath", "-u", arguments.windows_command]).stdout.strip()
-            # Launch Windows executables from a Windows-mounted drive. A Linux
-            # source cwd maps to a WSL UNC path, which cmd.exe cannot use.
             windows_cwd = Path(windows_command).parent
-            output = run([windows_command, "/d", "/c", f'type "{arguments.windows_file}"'],
-                         cwd=windows_cwd).stdout
+            windows_cwd_text = arguments.windows_command.rsplit("\\", 1)[0]
+            # Explicitly leave the Linux UNC working directory and read the
+            # spaced fixture through cmd.exe's native Windows path parser.
+            command = f'cd /d "{windows_cwd_text}" && type "{arguments.windows_file}"'
+            output = run([windows_command, "/d", "/c", command], cwd=windows_cwd).stdout
             require(arguments.interop_token in output, "Windows command execution did not read the fixture")
             return {"windowsCommand": "cmd.exe", "windowsPathWithSpaces": True, "linuxPathRoundtrip": True}
 

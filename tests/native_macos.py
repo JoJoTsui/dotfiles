@@ -118,7 +118,7 @@ def check_native_discovery(home, role):
                     str(home / ".pixi/bin/python"), "--offline", "dotfiles-unavailable==0.0.0"]
     uv_settings = run([uv_command, "--show-settings", *uv_arguments],
                       env=env, cwd=home, allow_failure=True)
-    require(uv_settings.returncode == 0 and MIRROR + "/" in uv_settings.stdout + uv_settings.stderr,
+    require(uv_settings.returncode == 0 and MIRROR in uv_settings.stdout + uv_settings.stderr,
             "ordinary uv settings discovery")
     offline = run([uv_command, *uv_arguments], env=env, cwd=home, allow_failure=True)
     require(offline.returncode != 0, "ordinary uv offline dry run")
