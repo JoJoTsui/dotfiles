@@ -94,8 +94,10 @@ explains every changed pair.
 - **Legacy tool dirs stay off PATH**: `.env_core`/`env.nu` keep `$GIZMO`/
   `$BIO_GIZMO`/`$NUSHELL_PATH` as variables for legacy hosts and scripts, but
   never prepend them — every CLI (bio tools included) comes from the pixi
-  manifest; add tools to `dot_pixi/manifests/pixi-global.toml`, not to
-  `~/joey/gizmo`.
+  manifest or a declared bootstrap exception. Add common tools to
+  `deployment/common-tools.tsv`; read `deployment/inventory/README.md` when
+  changing optional ownership. Desired manifests under `.config/dotfiles`
+  merge into device registries; source application never replaces them.
 - **Scripts need the `executable_` source prefix**: chezmoi derives a target's
   exec bit from that attribute, *not* from the source file's mode (a 0755
   source without it renders 0644 — verified on chezmoi 2.59.1 and 2.72.2), so

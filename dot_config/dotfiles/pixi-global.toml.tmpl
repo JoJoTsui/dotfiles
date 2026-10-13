@@ -1,0 +1,22 @@
+# Desired common tools only. Bootstrap merges this into Pixi's local registry.
+# Never apply this file directly over ~/.pixi/manifests/pixi-global.toml.
+version = 1
+{{- $subdir := "linux-64" }}
+{{- if eq .arch "aarch64" }}{{ $subdir = "linux-aarch64" }}{{ end }}
+{{- if eq .platform "macos" }}
+{{- if eq .arch "aarch64" }}{{ $subdir = "osx-arm64" }}{{ else }}{{ $subdir = "osx-64" }}{{ end }}
+{{- else if eq .platform "windows" }}{{ $subdir = "win-64" }}{{ end }}
+{{- $platform := .platform }}
+{{- range splitList "\n" (include "deployment/common-tools.tsv") }}
+{{- if and (ne . "") (not (hasPrefix "#" .)) }}
+{{- $fields := splitList "|" . }}
+{{- if or (eq (index $fields 3) "all") (ne $platform "windows") }}
+
+[envs.{{ index $fields 0 | quote }}]
+channels = ["conda-forge"]
+platform = {{ $subdir | quote }}
+dependencies = { {{- $sep := "" }}{{ range splitList "," (index $fields 1) }}{{ $package := splitList "==" . }}{{ $sep }}{{ index $package 0 | quote }} = {{ printf "==%s" (index $package 1) | quote }}{{ $sep = ", " }}{{ end }} }
+exposed = { {{- $sep := "" }}{{ range splitList "," (index $fields 2) }}{{ $mapping := splitList "=" . }}{{ $sep }}{{ index $mapping 0 | quote }} = {{ index $mapping 1 | quote }}{{ $sep = ", " }}{{ end }} }
+{{- end }}
+{{- end }}
+{{- end }}
