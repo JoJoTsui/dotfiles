@@ -197,6 +197,7 @@ def main():
                                    ('password:', password if name == 'joined' else 'synthetic-wrong-password')]
                     cursor = 0
                     for prompt, value in prompts:
+                        phase = f'{name} console activation ({prompt})'
                         cursor = console.wait(process, prompt, cursor)
                         if console.mode() & 0x0004:
                             raise RuntimeError('activation input echo remained enabled')
