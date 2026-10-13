@@ -5,10 +5,12 @@
 source "$DEPLOY_SOURCE/deployment/common.sh"
 source "$DEPLOY_SOURCE/deployment/bundles.sh"
 source "$DEPLOY_SOURCE/deployment/managers.sh"
+source "$DEPLOY_SOURCE/deployment/agents.sh"
+source "$DEPLOY_SOURCE/deployment/shell.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)
 
 install_managers() {
-    if ! "$DEPLOY_APPLY_ONLY"; then
+    if ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
         DEPLOY_STEP=install-managers.pixi
         install_pixi
     fi
@@ -39,6 +41,4 @@ install_common() {
     DEPLOY_STEP=install-common.verify-bundle-exposure
     verify_bundle_exposure
 }
-# Ticket 04 replaces this explicit pending adapter.
-install_agents() { fail 'agent installation awaits ticket 04'; }
-prepare_shell() { :; }
+prepare_shell() { prepare_managed_shell; }

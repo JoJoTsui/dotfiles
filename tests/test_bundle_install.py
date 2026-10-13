@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import shutil
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -29,6 +30,7 @@ class BundleInstallTests(unittest.TestCase):
             if name.startswith(("DOTFILES_", "XDG_", "PIXI_", "BUN_", "CARGO_", "RUSTUP_", "ATUIN_", "UV_", "PIP_", "NPM_")) or name in (
                 "GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL",
                 "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN", "NODE_OPTIONS", "ENV", "BASH_ENV",
+                "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FALLBACK_LIBRARY_PATH",
             ):
                 environment.pop(name)
         environment.update(HOME=str(home), PATH="/usr/bin:/bin")
@@ -36,6 +38,15 @@ class BundleInstallTests(unittest.TestCase):
             supplied = os.environ.get(variable)
             if supplied:
                 self.assertTrue(str(Path(supplied).resolve()).startswith("/tmp/"), "supplied test manager must be under /tmp")
+                if setting == "DOTFILES_PIXI_BIN":
+                    # A fresh shell discovers its manager in the designated
+                    # managed PATH. Copy only the verified supplied executable;
+                    # all prefixes, registries, and caches remain independent.
+                    managed_pixi = home / ".pixi/bin/pixi"
+                    managed_pixi.parent.mkdir(parents=True, exist_ok=True)
+                    if Path(supplied).resolve() != managed_pixi.resolve():
+                        shutil.copy2(supplied, managed_pixi)
+                    supplied = str(managed_pixi)
                 environment[setting] = supplied
         registry = home / ".pixi/manifests/pixi-global.toml"
         if not registry.exists():

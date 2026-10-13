@@ -3,9 +3,10 @@
 # shellcheck disable=SC2034 # Public bootstrap adapter data.
 DEPLOY_BUNDLES=()
 DEPLOY_BUNDLES_CSV=''
-bundle_selection=${CLI_BUNDLES:-${DOTFILES_BUNDLES:-none}}
+bundle_selection=${DOTFILES_BUNDLES:-none}
+if "$CLI_BUNDLES_SET"; then bundle_selection=$CLI_BUNDLES; fi
 if [ "$bundle_selection" != none ]; then
-    case "$bundle_selection" in ,*|*,|*,,*) fail 'bundle list contains an empty name' ;; esac
+    case "$bundle_selection" in ''|,*|*,|*,,*) fail 'bundle list contains an empty name' ;; esac
     bundle_saved_ifs=$IFS; IFS=,
     for bundle_name in $bundle_selection; do
         case "$bundle_name" in bio|gpu|desktop|developer) ;; *) fail "invalid bundle '$bundle_name'; use none or bio,gpu,desktop,developer" ;; esac

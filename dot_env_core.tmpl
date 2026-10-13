@@ -1,63 +1,47 @@
-# Shared shell environment for bash + zsh (POSIX sh — dash must parse it).
-# Nushell mirrors these values in config/nushell/env.nu (guarded defaults).
-# Rendered by chezmoi: noproxy's URL comes from proxyUrl in .chezmoi.toml.tmpl.
-# Keep this idempotent: safe to source multiple times
-
-: "${JOEY:=$HOME/joey}"
-: "${GIZMO:=${JOEY}/gizmo}"
-: "${BIO_GIZMO:=${JOEY}/bio_gizmo}"
-: "${NUSHELL_PATH:=${GIZMO}/nushell}"
-: "${JSHELL:=${JOEY}/SHELL}"
-: "${CARGO_HOME:=${HOME}/.cargo}"
-: "${EDITOR:=hx}"
-: "${CHOKIDAR_USEPOLLING:=1}"
-
-# rustup
-: "${RUSTUP_UPDATE_ROOT:=https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup}"
-: "${RUSTUP_DIST_SERVER:=https://mirrors.tuna.tsinghua.edu.cn/rustup}"
-
-
-
-
-_prepend_path() {
-    [ -d "$1" ] || return 0
-    case ":$PATH:" in *":$1:"*) ;; *) PATH="$1:$PATH";; esac
+# Shared POSIX environment, generated from .chezmoidata.toml.
+# Idempotent, and safe for dash, Bash 3.2 and Zsh.
+{{ range .sharedShell.defaults -}}
+{{- if (get . "base") }}
+{{ printf ": \"${%s:=${%s}/%s}\"" .name .base .suffix }}
+{{- else }}
+{{- $value := get . "value" -}}
+{{- if (get . "setting") }}{{ $value = index $.sharedShell .setting }}{{ end -}}
+{{- if and (eq $.role "remote-compute") (get . "remote") }}{{ $value = .remote }}{{ end -}}
+{{- if and (eq $.platform "windows") (get . "windows") }}{{ $value = .windows }}{{ end }}
+{{ printf ": \"${%s:=%s}\"" .name $value }}
+{{- end }}
+export {{ .name }}
+{{ end }}
+_dotfiles_prepend_path() {
+    case ":$PATH:" in *":$1:"*) ;; *) PATH="$1${PATH:+:$PATH}" ;; esac
 }
+{{ range reverse .sharedShell.paths -}}
+{{ printf "_dotfiles_prepend_path \"${%s}/%s\"" .base .suffix }}
+{{ end -}}
+unset -f _dotfiles_prepend_path
+export PATH
+umask {{ .sharedShell.umask }}
 
-# GIZMO/BIO_GIZMO/NUSHELL_PATH stay defined as variables (legacy hosts and
-# scripts) but are NOT prepended anymore: every tool comes from the pixi
-# manifest (AGENTS.md "Invariants").
-_prepend_path "$CARGO_HOME/bin"
-_prepend_path "$HOME/.pixi/bin"
-_prepend_path "$HOME/.local/bin"
-_prepend_path "$HOME/.kimi-code/bin"
-_prepend_path "$HOME/.bun/bin"
-unset -f _prepend_path
-
-export JOEY GIZMO BIO_GIZMO NUSHELL_PATH JSHELL CARGO_HOME PATH EDITOR CHOKIDAR_USEPOLLING
-export RUSTUP_UPDATE_ROOT RUSTUP_DIST_SERVER
-
-# BAT & LESS
-: "${LESSCHARSET:=utf-8}"
 if command -v vivid >/dev/null 2>&1; then
     : "${LS_COLORS:=$(vivid generate dracula)}"
+    export LS_COLORS
 fi
 
-export LESSCHARSET LS_COLORS
-
-# proxy toggles — same names as nushell's noproxy/unproxy (proxy.nu); the URL
-# is rendered from proxyUrl in .chezmoi.toml.tmpl, so all shells stay in sync.
+# Public proxy helpers share the configured URL; enabling is deliberate.
 noproxy() {
-    http_proxy="{{ .proxyUrl }}"
-    https_proxy="{{ .proxyUrl }}"
-    HTTP_PROXY="{{ .proxyUrl }}"
-    HTTPS_PROXY="{{ .proxyUrl }}"
+    http_proxy='{{ .proxyUrl | replace "'" "'\"'\"'" }}'
+    https_proxy=$http_proxy HTTP_PROXY=$http_proxy HTTPS_PROXY=$http_proxy
     export http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 }
-unproxy() {
-    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
-}
+unproxy() { unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; }
 
-# devops
-UV_PYTHON_PREFERENCE=managed
-export UV_PYTHON_PREFERENCE
+# Tailspin owns highlighting/paging; arguments and stdin pass through unchanged.
+logs() { command tspin "$@"; }
+
+# One guard for managed login entry points. Direct Bash/Zsh stay available;
+# credentials and client session markers keep agent subprocesses in POSIX shells.
+_dotfiles_can_start_nu() {
+    [ -t 0 ] && [ -t 1 ] &&
+    [ -z "${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}${CLAUDECODE:-}${CLAUDE_CODE_ENTRYPOINT:-}${CODEX_THREAD_ID:-}${DOTFILES_SECONDARY_SHELL:-}" ] &&
+    command -v nu >/dev/null 2>&1
+}

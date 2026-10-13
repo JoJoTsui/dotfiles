@@ -1,0 +1,6 @@
+{
+  "name": "dotfiles-managed-codegraph",
+  "private": true,
+  "dependencies": { "@colbymchenry/codegraph": "1.6.2" },
+  "trustedDependencies": []
+}

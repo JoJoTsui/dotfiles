@@ -43,6 +43,12 @@ pending-agent failure after those successful stages was kept distinct from
 full-bootstrap completion. Actual GPU telemetry and graphical workloads are
 not established by installing a package or running its version diagnostic.
 
+After merging the completed shell and agent adapters, the same isolated test
+passed full bootstrap twice with `--agents none`, including default CodeGraph
+installation and managed shell preparation. Combined source/shell/agent/bundle
+discovery passed 34 checks, with six separately reported opt-in verification
+skips. This supplies actual Linux execution evidence for the combined slice.
+
 ## Repeatable checks
 
 Use Python 3.11 or newer for complete TOML registry assertions, a real isolated
@@ -74,12 +80,14 @@ python3 -m unittest discover -s tests -p test_bundle_install.py -v
 
 `DOTFILES_TEST_BUNDLE_SELECTION=bio,gpu` can select a smaller native sample.
 Supplied native-test managers through `DOTFILES_TEST_PIXI` and
-`DOTFILES_TEST_CHEZMOI` must be under `/tmp`; their executable is read only and
-all writable package/XDG/cache state follows the separate test home. Logs for
+`DOTFILES_TEST_CHEZMOI` must be under `/tmp`; the source executables are read
+only. The fixture copies just the supplied Pixi binary into its designated
+managed bin so fresh shells discover it; it shares no writable installed
+prefix. All writable package/XDG/cache state follows the separate test home. Logs for
 both application attempts stay in that home. The test never imports history,
 authenticates accounts, starts daemons, changes drivers/capabilities, or indexes
-user projects. Before ticket 04 is merged, the known pending-agent failure is
-reported explicitly after the bundle stage; it is not full-bootstrap success.
+user projects. Historical pre-ticket-04 midpoint evidence remains separate
+from the combined full-bootstrap result above.
 
 ## Runtime prerequisites and remaining evidence
 

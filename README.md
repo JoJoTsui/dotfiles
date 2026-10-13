@@ -34,10 +34,11 @@ Ordinary deployment changes user files only; it has no system or account
 login-shell action. See [the deployment boundary](docs/DEPLOYMENT_BOUNDARY.md)
 for the adapter contract and isolated verification.
 
-The deployment foundation implements verified manager provisioning, file
-application, and pinned common tools. The agent installer currently reports an
-explicit pending-ticket-04 failure before full bootstrap completion. Use
-`--apply-only` for configuration validation while that next slice is underway.
+The deployment foundation implements verified managers, working-source file
+application, pinned common tools, and frozen Bun agent installation. Use
+`--apply-only` for configuration validation, or `--agents-only` to install
+clients with an already available pinned Bun/Node toolchain. Shell/history and
+foreign native validation are covered by their separate implementation slices.
 
 ## Deployment profiles
 
@@ -75,21 +76,23 @@ never enter git):
 bootstrap.sh                # one-shot new-host setup (see above)
 deployment/                 # pure profile resolution and installer adapters
 tests/test_deployment.py    # public boundary checks in disposable homes
-dot_env_core.tmpl           # shared POSIX env for bash+zsh: PATH, EDITOR,
+.chezmoidata.toml           # canonical shared shell defaults and PATH priority
+dot_env_core.tmpl           # generated POSIX env for bash+zsh: PATH, EDITOR,
                             # rustup TUNA mirrors, noproxy/unproxy (rendered URL)
 dot_profile                 # login shells: exec-nu guard (TTY + no Claude session)
 dot_bashrc                  # bash init: pixi, mamba, starship, zoxide,
                             # direnv, fzf
 dot_zshenv                  # every zsh: env_core + umask (bash parity)
 dot_zshrc                   # interactive zsh: same inits as .bashrc (+ compinit)
-dot_local/bin/executable_nu-login   # login wrapper: bash -l -> exec nu (zellij
-                                    # shell); executable_ => +x in target state
+dot_local/bin/executable_nu-login   # guarded interactive Nu; Bash for scripts
+dot_local/bin/executable_dotfiles-shell-prepare # validated Nu startup artifacts
 dot_local/bin/executable_bat-modules    # bat syntax/module installer (bash)
 dot_local/bin/executable_fetchChromSizes  # UCSC chrom.sizes fetcher (POSIX sh)
 dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
                             # rerere, lfs filters, gh credential helper
 dot_condarc                 # TUNA mirrors, nvidia/pytorch/conda-forge/bioconda channels
 deployment/common-tools.tsv  # exact common requirements and command exposures
+deployment/agents/           # exact per-client package manifests + bun.lock
 deployment/inventory/        # preserved optional/specialist inventory
 dot_config/
   starship.toml             # Catppuccin powerline prompt
@@ -100,8 +103,8 @@ dot_config/
   uv/uv.toml                # python-preference=managed + TUNA default index
   dotfiles/pixi-global.toml.tmpl # desired tools merged into the local registry
   zellij/config.kdl.tmpl    # multiplexer: custom keybinds, default_shell nu-login
-  nushell/                  # env.nu, config.nu, micromamba.nu, direnv.nu, proxy.nu.tmpl
-  opencode/opencode.jsonc   # canonical opencode config (headroom + MCPs)
+  nushell/                  # env.nu.tmpl, config.nu, adjacent managed resources
+  opencode/opencode.jsonc.tmpl # OpenCode2 config (headroom + MCPs)
 dot_pixi/
   config.toml                 # netfs-redirect = never (network mount)
 dot_claude/settings.json.tmpl    # Claude Code on GLM-5.3 / glm-5.3-flash
@@ -126,20 +129,23 @@ guard in `~/.profile` (exception for Claude Code sessions:
 the pixi manifest, because coding agents spawn them (`SHELL=/bin/bash`,
 `#!/bin/sh` scripts, `zsh -c`).
 
-Shared settings are defined once and mirrored:
+Shared settings are generated from one model:
 
-- `~/.env_core` (POSIX, idempotent) is sourced by `.bashrc` and `~/.zshenv`;
-  it owns PATH, `EDITOR`, rustup TUNA mirrors, LS_COLORS and the
-  `noproxy`/`unproxy` toggles.
-- `dot_config/nushell/env.nu` mirrors those values with guarded
-  `$env.X? | default …`, so standalone `nu` (spawned without bash) behaves
-  the same.
+- `.chezmoidata.toml` owns shared values and managed PATH priority. Its POSIX
+  adapter `~/.env_core` is sourced by `.bashrc` and `~/.zshenv`; its guarded
+  Nu adapter gives standalone Nu the same defaults. Device overrides survive.
 - Interactive inits (pixi completion, micromamba, starship, zoxide,
   direnv, fzf) are kept structurally identical across `.bashrc` and
   `.zshrc`; zsh adds `compinit`, which its completion system requires.
 - Multiplexers start nu the same way: zellij panes launch the managed
-  `~/.local/bin/nu-login` (`bash -l` → `exec nu`), herdr sets
+  `~/.local/bin/nu-login` (TTY/client guard → Nu), herdr sets
   `default_shell = "nu"`.
+
+zoxide and `logs` are available in all supported shells. `logs` runs Tailspin
+with the managed less pager; `logs --print file.log` prints without paging.
+Startup needs no external completion checkout. Bootstrap generates and validates
+Nu prompt/completion artifacts after installation. See
+[shared shell settings](docs/SHARED_SHELL_SETTINGS.md) for guards and test evidence.
 
 ## Toolchain: pixi global
 
@@ -188,13 +194,17 @@ bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 | **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
 | **kimi-code** | `~/.kimi-code/config.toml.tmpl`, `tui.toml` | `credentials/`, `oauth/`, sessions | key injected from `KIMI_API_KEY` at init; `kimi login` per host |
 | **pi** | `~/.pi/agent/settings.json`, `models-store.json` (MiniMax M2.7/M3 catalog) | `auth.json` (MiniMax key), `sessions/`, `trust.json` | minimal terminal harness; `pi auth login` per host |
-| **opencode** | `~/.config/opencode/opencode.jsonc` | `~/.opencode` install, plugins | headroom provider + codegraph/headroom MCPs, serena disabled; watcher off for network FS |
+| **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; built-in Headroom provider, optional Headroom MCP disabled; remote profile ignores update events |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
-The previous Bun client inventory is preserved in
-`deployment/inventory/legacy-bun-package.json`. Ticket 04 supplies exact agent
-manifests and locks; source application already preserves the device's existing
-`~/.bun/install/global/package.json` rather than overwriting it.
+All five clients install through Bun by default. `--agents none` or
+`--agents codex,kimi` controls installation without removing omitted clients;
+CodeGraph remains a default independent of selection. Each exact manifest and
+frozen Bun lock installs into `~/.bun/managed/<name>` and exposes real launchers
+under `~/.bun/bin` and `~/.local/bin` using managed Node. The existing global
+Bun registry remains intact. Legacy clients and optional integrations remain
+documented under `deployment/inventory`. See [agent installation](docs/AGENT_INSTALLATION.md)
+for versions, lifecycle trust, update policy, and isolated diagnostic checks.
 
 Common pattern: **config in git, credentials on the host** — auth flows run
 per host (`claude` login / env token, `codex login`, `kimi login`,

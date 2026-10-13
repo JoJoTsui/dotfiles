@@ -63,7 +63,8 @@ incident (rotate it; history rewrite is not a substitute).
 4. For nushell edits, also run
    `nu --config "$simulated_home/.config/nushell/config.nu" --env-config "$simulated_home/.config/nushell/env.nu" -c 'print "ok"'`
    with `JOEY/JSHELL/...` unset (`env -u`) — config must bootstrap standalone
-   (needs `$H/.config/nushell/nu_scripts` present, see rough edges).
+   without the host's external completion checkout. Read
+   `docs/SHARED_SHELL_SETTINGS.md` for preparation and interactive checks.
 
 Run `DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest discover -s tests -v`
 for changes to the public deployment boundary; actual apply tests report a skip
@@ -77,14 +78,12 @@ explains every changed pair.
 
 - **`.env_core` is POSIX sh and idempotent** (`: "${VAR:=...}"` guards);
   bash sources it before the interactive check so non-interactive shells get PATH.
-- **Shared settings are defined once**: `dot_env_core.tmpl` (POSIX; sourced by
-  `.bashrc` and `.zshenv`) owns PATH, `EDITOR`, rustup mirrors and the
-  `noproxy`/`unproxy` toggles; `dot_config/nushell/env.nu` mirrors those
-  values with guarded `$env.X? | default`. Change a shared value in BOTH
-  files — except the proxy URL, which is rendered from `proxyUrl` into
-  `dot_env_core.tmpl` and `proxy.nu.tmpl`. The `.bashrc` and `.zshrc`
-  interactive blocks stay structurally in sync (zsh adds `compinit`, which its
-  completion system requires).
+- **Shared settings are defined once**: `.chezmoidata.toml` owns shared defaults
+  and PATH priority. `dot_env_core.tmpl` and
+  `dot_config/nushell/env.nu.tmpl` render its POSIX/Nu syntax; change the model,
+  then verify both adapters. Proxy input comes from `proxyUrl` and is quoted
+  separately for each shell. The `.bashrc` and `.zshrc` interactive blocks keep
+  equivalent managed-tool hooks (Zsh adds its required `compinit`).
 - **Env vars and managed binaries must match**: when a config or env var
   implies a command, the pixi manifest or a bootstrap step must install it in
   the same commit (`EDITOR=hx` → helix exposed as `hx`; `RUSTUP_*` → the
@@ -106,9 +105,10 @@ explains every changed pair.
 - **The exec-nu guard** in `dot_profile`/`dot_bashrc` stays POSIX-safe and
   fires only for a real interactive TTY outside a Claude Code session
   (rationale: `docs/CLAUDE_SETUP_T9K.md`).
-- **`dot_config/nushell/env.nu` keeps guarded `$env.JOEY? | default` bootstrap
+- **`dot_config/nushell/env.nu.tmpl` keeps guarded `$env.JOEY? | default` bootstrap
   + `path add … uniq`** — standalone `nu` (spawned without bash) must still
-  resolve `JSHELL`/`JOEY` for `micromamba.nu`.
+  resolve compatibility variables while `micromamba.nu` invokes managed
+  `MAMBA_EXE`, never a legacy tool tree.
 - **JSONC files**: `dot_config/opencode/opencode.jsonc`,
   `dot_vscode-server/…/settings.json.tmpl`, `docs/vscode-win-settings.jsonc`
   — validate as JSON-with-comments, not shell (historical `.sh` naming retired).
@@ -117,9 +117,9 @@ explains every changed pair.
 
 ## Known rough edges
 
-- `config.nu` sources `~/.config/nushell/nu_scripts/...` — if bootstrap's clone
-  failed (github.com unreachable; gh-proxy fallback also listed in
-  `bootstrap.sh`), nu startup errors until it exists.
+- Nu's vendor autoload runs for interactive sessions and is omitted by ordinary
+  `-c` execution. `dotfiles-shell-prepare` validates generated resources
+  explicitly; interactive tests establish prompt/completion discovery.
 - `.chezmoi.toml.tmpl` explicitly persists `sourceDir`; bootstrap passes source,
   destination, config, cache, and state paths on both init and apply.
 - Legacy live tree (JSHELL) is still symlink-managed and ahead in places this

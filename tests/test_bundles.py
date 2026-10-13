@@ -61,6 +61,7 @@ class BundleTests(unittest.TestCase):
             ("macos", "aarch64", "developer"),
             ("linux", "x86_64", "bio,unknown"),
             ("linux", "x86_64", "bio,,gpu"),
+            ("linux", "x86_64", ""),
         ):
             with self.subTest(platform=platform, architecture=architecture, bundle=bundle):
                 self.home = self.root / f"{platform}-{architecture}-{bundle}"

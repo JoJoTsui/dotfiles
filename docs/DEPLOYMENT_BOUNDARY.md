@@ -44,8 +44,12 @@ JSON with profile selectors, source/home, tools/actions, state roots, and target
 settings. Secret values never enter this output. Extend this metadata when a
 new installer becomes available; do not invoke installers to compute a plan.
 
-At this integration midpoint, the agent adapter deliberately fails as pending
-ticket 04. A successful common stage is not full bootstrap completion.
+`--agents all|none|<comma-separated names>` selects client installation while
+CodeGraph remains an independent default. `--agents-only` applies source and
+installs selected packages with existing pinned Bun/Node, skipping common/bundle
+installation and shell preparation. It conflicts with `--apply-only`.
+See [agent ownership and validation](AGENT_INSTALLATION.md) for supported
+locks, runtime overrides, and partial deployment acceptance.
 
 ## Common tools and registry ownership
 
@@ -61,6 +65,8 @@ whole bundle's targets and external host prerequisites. `--bundles` overrides
 unsupported-target rejection run before state creation. Plans include
 `bundles`, `bundlePackages`, and `bundlePrerequisites` in addition to the common
 package list; `tools` includes selected exposures and managed helpers.
+In `--agents-only` mode, both installation package lists are empty because
+that mode uses existing common/bundle prerequisites.
 
 `deployment/managers.sh` provisions checksum-verified upstream Pixi and
 Chezmoi assets. Chezmoi's one intended owner is the bootstrap binary under
@@ -96,6 +102,12 @@ GUI/GPU capability checks remain distinct. Selecting fewer bundles leaves
 device entries intact. Each tool keeps a separate environment, avoiding
 unrelated Python/HTSlib dependency conflicts. See [bundle validation](validation/bundles.md)
 for real solver/native evidence and reproducible opt-in checks.
+
+`deployment/shell.sh` calls the managed `dotfiles-shell-prepare` command during
+required shell preparation. That command validates new Nu prompt/completion
+resources before replacing working files and rejects symlinked startup state.
+The shared shell model and actual interactive/non-interactive Nu distinction
+are documented in [shared shell settings](SHARED_SHELL_SETTINGS.md).
 
 ## Isolated acceptance checks
 
