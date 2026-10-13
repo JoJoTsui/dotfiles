@@ -76,7 +76,10 @@ class AgentPayloadTests(unittest.TestCase):
                 "DOTFILES_TEST_SOURCE": str(SOURCE),
                 "DOTFILES_TEST_RUNNER_HOME": str(Path(os.environ.get("HOME", str(self.root))).resolve()),
                 "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1"}
-        return managed_shell_environment(self.home, environment)
+        managed = managed_shell_environment(self.home, environment)
+        self.assertEqual(managed.get("HOME"), str(self.home),
+                         "shared shell initialization changed the isolated HOME")
+        return managed
 
     def local_skill_path(self, value):
         parsed = urlparse(str(value))
@@ -284,7 +287,8 @@ class AgentPayloadTests(unittest.TestCase):
                 path_kinds = Counter(self.skill_path_kind(skill["path"]) for skill in data)
                 path_scopes = Counter(self.skill_path_scope(skill["path"]) for skill in data)
                 self.assertEqual({skill["id"] for skill in managed}, expected,
-                                 f"managed={len(managed)}; path_kinds={dict(path_kinds)}; path_scopes={dict(path_scopes)}")
+                                 f"managed={len(managed)}; home_matches={environment.get('HOME') == str(self.home)}; "
+                                 f"path_kinds={dict(path_kinds)}; path_scopes={dict(path_scopes)}")
                 self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
             finally:
                 stop_client(process)
@@ -370,7 +374,7 @@ const pathScopes=skills.reduce((counts,skill)=>{
   counts[scope]=(counts[scope]||0)+1; return counts;
 },{});
 console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.disableModelInvocation).length,
-  pathKinds,pathScopes,rootCount:roots.length,
+  pathKinds,pathScopes,rootCount:roots.length,homeMatches:process.env.HOME===process.env.DOTFILES_TEST_HOME,
   prompt:formatSkillsForPrompt(skills),instructions:loader.getAgentsFiles().agentsFiles}));
 """
         diagnostic = subprocess.run([node, "--input-type=module", "-e", script, Path(module).as_uri()],
@@ -380,7 +384,8 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
         data = json.loads(diagnostic.stdout)
         expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
         self.assertEqual((data["count"], data["explicit"]), (len(expected), 24),
-                         f"root_count={data['rootCount']}; path_kinds={data['pathKinds']}; path_scopes={data['pathScopes']}")
+                         f"root_count={data['rootCount']}; home_matches={data['homeMatches']}; "
+                         f"path_kinds={data['pathKinds']}; path_scopes={data['pathScopes']}")
         self.assertIn("<name>tdd</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])
         self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
