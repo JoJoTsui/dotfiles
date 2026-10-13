@@ -124,6 +124,13 @@ try {
     if (-not $TargetHome) { $TargetHome = Get-Input 'USERPROFILE' (Get-Input 'HOME') }
     if (-not $TargetHome -or -not [IO.Path]::IsPathRooted($TargetHome)) { Stop-Deployment 'TargetHome must be an absolute path' }
     $TargetHome = [IO.Path]::GetFullPath($TargetHome).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    if ([string]::IsNullOrWhiteSpace($Source)) {
+        $Source = $PSScriptRoot
+        if ([string]::IsNullOrWhiteSpace($Source) -and $PSCommandPath) {
+            $Source = Split-Path -Parent $PSCommandPath
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($Source)) { Stop-Deployment 'Source must identify the dotfiles working tree' }
     $Source = [IO.Path]::GetFullPath($Source)
     if (-not [IO.File]::Exists((Join-Path $Source '.chezmoi.toml.tmpl'))) { Stop-Deployment 'Source must be the dotfiles working tree' }
     $selectedAgents = @(Get-Agents)

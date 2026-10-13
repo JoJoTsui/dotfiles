@@ -11,6 +11,7 @@ import threading
 import time
 import urllib.request
 import base64
+import errno
 from urllib.parse import unquote, urlparse
 from fixtures.processes import stop_client
 from fixtures.shell_env import managed_shell_environment
@@ -27,7 +28,7 @@ SOURCE = Path(__file__).resolve().parents[1]
 class AgentPayloadTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-agent-payload-")
-        self.addCleanup(self.temporary.cleanup)
+        self.addCleanup(self.cleanup_temporary_home)
         self.root = Path(self.temporary.name)
         self.home = self.root / "device"
         self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
@@ -35,6 +36,17 @@ class AgentPayloadTests(unittest.TestCase):
             self.skipTest("actual payload apply requires chezmoi")
         self.env = {"HOME": str(self.root / "original"), "PATH": "/usr/bin:/bin",
                     "DOTFILES_CHEZMOI_BIN": self.chezmoi}
+
+    def cleanup_temporary_home(self):
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                self.temporary.cleanup()
+                return
+            except OSError as error:
+                if error.errno not in (errno.ENOTEMPTY, errno.EBUSY) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.1)
 
     def deploy(self, *arguments, env=None, source=SOURCE):
         return subprocess.run(["/bin/bash", str(source / "bootstrap.sh"),
@@ -65,7 +77,17 @@ class AgentPayloadTests(unittest.TestCase):
         parsed = urlparse(str(value))
         if parsed.scheme not in ("", "file"):
             return None
-        raw = unquote(parsed.path) if parsed.scheme == "file" else str(value)
+        if parsed.scheme == "file":
+            if unquote(parsed.netloc) == "~":
+                raw = "~" + unquote(parsed.path)
+            elif parsed.netloc in ("", "localhost"):
+                raw = unquote(parsed.path)
+            else:
+                return None
+        else:
+            raw = str(value)
+        if raw.startswith("/~/"):
+            raw = raw[1:]
         if raw == "~":
             return self.home.resolve()
         path = self.home / raw[2:] if raw.startswith("~/") else Path(raw)
@@ -85,6 +107,8 @@ class AgentPayloadTests(unittest.TestCase):
 
     def test_skill_path_membership_resolves_home_relative_paths(self):
         self.assertTrue(self.skill_path_is_in_home("~/.agents/skills/tdd/SKILL.md"))
+        self.assertTrue(self.skill_path_is_in_home("file://~/.agents/skills/tdd/SKILL.md"))
+        self.assertTrue(self.skill_path_is_in_home("file:///~/.agents/skills/tdd/SKILL.md"))
         self.assertFalse(self.skill_path_is_in_home("~/../outside/SKILL.md"))
 
     def test_default_payload_is_usable_even_when_agent_installation_is_disabled(self):
@@ -257,6 +281,7 @@ class AgentPayloadTests(unittest.TestCase):
         script = """
 const {DefaultResourceLoader,formatSkillsForPrompt} = await import(process.argv[1]);
 import {existsSync,realpathSync} from "node:fs";
+import {fileURLToPath} from "node:url";
 import path from "node:path";
 const loader = new DefaultResourceLoader({cwd:process.cwd(),agentDir:process.env.PI_CODING_AGENT_DIR,
   noExtensions:true,noThemes:true,noPromptTemplates:true});
@@ -265,7 +290,15 @@ const skills=loader.getSkills().skills;
 const roots=[path.join(process.env.PI_CODING_AGENT_DIR,"skills"),path.join(process.env.HOME,".agents/skills")]
   .filter(root=>existsSync(root)).map(root=>realpathSync(root));
 const managed=skills.filter(skill=>{
-  try { const file=realpathSync(skill.filePath); return roots.some(root=>file.startsWith(root+path.sep)); }
+  try {
+    let raw=String(skill.filePath);
+    if (raw.startsWith("file://~/")) raw=path.join(process.env.HOME,decodeURIComponent(raw.slice("file://~/".length)));
+    else if (raw.startsWith("file:///~/")) raw=path.join(process.env.HOME,decodeURIComponent(raw.slice("file:///~/".length)));
+    else if (raw.startsWith("~/")) raw=path.join(process.env.HOME,raw.slice(2));
+    else if (raw.startsWith("file:")) raw=fileURLToPath(new URL(raw));
+    const file=realpathSync(raw);
+    return roots.some(root=>file.startsWith(root+path.sep));
+  }
   catch { return false; }
 });
 console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.disableModelInvocation).length,
