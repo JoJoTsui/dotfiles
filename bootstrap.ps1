@@ -27,7 +27,9 @@ function Get-Input([string]$Name, [string]$Fallback = '') {
 }
 function Read-Catalog([string]$RelativePath) {
     foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source $RelativePath))) {
-        if ($line.Length -and -not $line.StartsWith('#')) { ,($line.Split('|')) }
+        if ($line.Length -and -not $line.StartsWith('#')) {
+            [pscustomobject]@{ columns = [string[]]($line.Split('|')) }
+        }
     }
 }
 function Get-Selection {
@@ -88,9 +90,9 @@ function Get-Bundles {
     $requested = @($selection.Split(','))
     $selected = @()
     foreach ($row in (Read-Catalog 'deployment/bundles.tsv')) {
-        if ($row[0] -in $requested) {
-            if ('windows-x86_64' -notin $row[1].Split(',')) { Stop-Deployment "unsupported bundle '$($row[0])' for windows-x86_64" }
-            $selected += $row[0]
+        if ($row.columns[0] -in $requested) {
+            if ('windows-x86_64' -notin $row.columns[1].Split(',')) { Stop-Deployment "unsupported bundle '$($row.columns[0])' for windows-x86_64" }
+            $selected += $row.columns[0]
         }
     }
     foreach ($name in $requested) { if ($name -notin $selected) { Stop-Deployment 'unknown bundle' } }
@@ -98,20 +100,20 @@ function Get-Bundles {
 }
 function Get-Packages {
     foreach ($row in (Read-Catalog 'deployment/common-tools.tsv')) {
-        if ($row[3] -ne 'all') { continue }
+        if ($row.columns[3] -ne 'all') { continue }
         $dependencies = [ordered]@{}; $exposed = [ordered]@{}
-        foreach ($specification in $row[1].Split(',')) { $parts = $specification.Split(@('=='), [StringSplitOptions]::None); $dependencies[$parts[0]] = '==' + $parts[1] }
-        foreach ($mapping in $row[2].Split(',')) { $parts = $mapping.Split('='); $exposed[$parts[0]] = $parts[1] }
-        [ordered]@{ environment = $row[0]; dependencies = $dependencies; exposed = $exposed }
+        foreach ($specification in $row.columns[1].Split(',')) { $parts = $specification.Split(@('=='), [StringSplitOptions]::None); $dependencies[$parts[0]] = '==' + $parts[1] }
+        foreach ($mapping in $row.columns[2].Split(',')) { $parts = $mapping.Split('='); $exposed[$parts[0]] = $parts[1] }
+        [ordered]@{ environment = $row.columns[0]; dependencies = $dependencies; exposed = $exposed }
     }
 }
 function Get-BundlePackages {
     foreach ($row in (Read-Catalog 'deployment/bundle-tools.tsv')) {
-        if ($row[0] -notin $selectedBundles -or ($row[5] -ne 'all' -and 'windows' -notin $row[5].Split(','))) { continue }
+        if ($row.columns[0] -notin $selectedBundles -or ($row.columns[5] -ne 'all' -and 'windows' -notin $row.columns[5].Split(','))) { continue }
         $dependencies = [ordered]@{}; $exposed = [ordered]@{}
-        foreach ($specification in $row[2].Split(',')) { $parts = $specification.Split(@('=='), [StringSplitOptions]::None); $dependencies[$parts[0]] = '==' + $parts[1] }
-        foreach ($mapping in $row[3].Split(',')) { $parts = $mapping.Split('='); $exposed[$parts[0]] = $parts[1] }
-        [ordered]@{ bundle = $row[0]; environment = $row[1]; dependencies = $dependencies; exposed = $exposed; channels = @($row[4].Split(',')) }
+        foreach ($specification in $row.columns[2].Split(',')) { $parts = $specification.Split(@('=='), [StringSplitOptions]::None); $dependencies[$parts[0]] = '==' + $parts[1] }
+        foreach ($mapping in $row.columns[3].Split(',')) { $parts = $mapping.Split('='); $exposed[$parts[0]] = $parts[1] }
+        [ordered]@{ bundle = $row.columns[0]; environment = $row.columns[1]; dependencies = $dependencies; exposed = $exposed; channels = @($row.columns[4].Split(',')) }
     }
 }
 
@@ -140,9 +142,9 @@ try {
     foreach ($package in $packages) { $tools += @($package.exposed.Keys) }
     foreach ($package in $bundlePackages) { $tools += @($package.exposed.Keys) }
     foreach ($row in (Read-Catalog 'deployment/agents/catalog.tsv')) {
-        if ($row[0] -eq 'codegraph' -or $row[0] -in $selectedAgents) {
-            $tools += $row[3].Split(',')
-            $agentPackages += [ordered]@{ name = $row[0]; package = $row[1]; version = $row[2]; manager = 'bun'; minimumNode = $row[4]; lock = "deployment/agents/$($row[0])/bun.lock" }
+        if ($row.columns[0] -eq 'codegraph' -or $row.columns[0] -in $selectedAgents) {
+            $tools += $row.columns[3].Split(',')
+            $agentPackages += [ordered]@{ name = $row.columns[0]; package = $row.columns[1]; version = $row.columns[2]; manager = 'bun'; minimumNode = $row.columns[4]; lock = "deployment/agents/$($row.columns[0])/bun.lock" }
         }
     }
     $actions = @('install-managers', 'apply-source', 'install-common', 'install-agents', 'prepare-shell')

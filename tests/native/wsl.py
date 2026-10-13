@@ -126,7 +126,11 @@ def main():
             source_roundtrip = run(["wslpath", "-u", source_windows]).stdout.strip()
             require(Path(source_roundtrip).resolve() == SOURCE, "Linux source path failed its UNC roundtrip")
             windows_command = run(["wslpath", "-u", arguments.windows_command]).stdout.strip()
-            output = run([windows_command, "/d", "/c", f'type "{arguments.windows_file}"']).stdout
+            # Launch Windows executables from a Windows-mounted drive. A Linux
+            # source cwd maps to a WSL UNC path, which cmd.exe cannot use.
+            windows_cwd = Path(windows_command).parent
+            output = run([windows_command, "/d", "/c", f'type "{arguments.windows_file}"'],
+                         cwd=windows_cwd).stdout
             require(arguments.interop_token in output, "Windows command execution did not read the fixture")
             return {"windowsCommand": "cmd.exe", "windowsPathWithSpaces": True, "linuxPathRoundtrip": True}
 

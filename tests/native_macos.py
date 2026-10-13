@@ -113,11 +113,15 @@ def check_native_discovery(home, role):
     debug = run([pip, "config", "debug"], env=env, cwd=home)
     require(str(home / "Library/Application Support/pip/pip.conf") in debug.stdout,
             "native pip discovery path")
-    uv = run([str(home / ".pixi/bin/uv"), "--show-settings", "pip", "install", "--dry-run",
-              "--system", "--python", str(home / ".pixi/bin/python"), "--offline",
-              "dotfiles-unavailable==0.0.0"], env=env, cwd=home, allow_failure=True)
-    require(uv.returncode != 0 and MIRROR + "/" in uv.stdout + uv.stderr,
-            "ordinary uv discovery during an offline dry run")
+    uv_command = str(home / ".pixi/bin/uv")
+    uv_arguments = ["pip", "install", "--dry-run", "--system", "--python",
+                    str(home / ".pixi/bin/python"), "--offline", "dotfiles-unavailable==0.0.0"]
+    uv_settings = run([uv_command, "--show-settings", *uv_arguments],
+                      env=env, cwd=home, allow_failure=True)
+    require(uv_settings.returncode == 0 and MIRROR + "/" in uv_settings.stdout + uv_settings.stderr,
+            "ordinary uv settings discovery")
+    offline = run([uv_command, *uv_arguments], env=env, cwd=home, allow_failure=True)
+    require(offline.returncode != 0, "ordinary uv offline dry run")
     # Validate ordinary discovery plus relative imports; --config flags would
     # hide a broken native location and are deliberately absent above.
     for name in ("env.nu", "config.nu", "proxy.nu", "direnv.nu", "micromamba.nu", "zoxide.nu"):

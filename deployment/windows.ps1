@@ -55,14 +55,14 @@ function Assert-OwnedState {
         Assert-InstallerDirectory (Join-Path $TargetHome $asset.target)
     }
     foreach ($row in (Read-Catalog 'deployment/agent-payload/targets.tsv')) {
-        Assert-Relative $row[1]; Assert-Relative $row[2]
-        Assert-CopyTree (Join-Path $Source "deployment/agent-payload/$($row[1])") (Join-Path $TargetHome $row[2])
+        Assert-Relative $row.columns[1]; Assert-Relative $row.columns[2]
+        Assert-CopyTree (Join-Path $Source "deployment/agent-payload/$($row.columns[1])") (Join-Path $TargetHome $row.columns[2])
     }
     foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
-        foreach ($part in $row) { Assert-Relative $part }
-        Assert-SafePath (Join-Path $Source "deployment/client-settings/$($row[1])") -SourcePath
-        Assert-SafePath (Join-Path $TargetHome $row[2])
-        Assert-SafePath (Join-Path $TargetHome ".local/state/dotfiles/client-settings/$($row[3]).json")
+        foreach ($part in $row.columns) { Assert-Relative $part }
+        Assert-SafePath (Join-Path $Source "deployment/client-settings/$($row.columns[1])") -SourcePath
+        Assert-SafePath (Join-Path $TargetHome $row.columns[2])
+        Assert-SafePath (Join-Path $TargetHome ".local/state/dotfiles/client-settings/$($row.columns[3]).json")
     }
     foreach ($relative in @('nushell', 'uv', 'pip')) { Assert-SafePath (Join-Path $roots.appData $relative) }
     foreach ($relative in @('nushell/env.nu', 'nushell/config.nu', 'nushell/proxy.nu', 'nushell/zoxide.nu', 'nushell/direnv.nu', 'nushell/micromamba.nu', 'uv/uv.toml', 'pip/pip.ini')) {
@@ -151,9 +151,9 @@ function Copy-InstructionBlock([string]$From, [string]$To) {
 function Copy-AgentPayload {
     $script:Step = 'apply-source.agent-payload'
     foreach ($row in (Read-Catalog 'deployment/agent-payload/targets.tsv')) {
-        $from = Join-Path $Source "deployment/agent-payload/$($row[1])"; $to = Join-Path $TargetHome $row[2]
-        if ($row[0] -eq 'block') { Copy-InstructionBlock $from $to }
-        elseif ($row[0] -in @('file', 'tree')) { Copy-RegularTree $from $to }
+        $from = Join-Path $Source "deployment/agent-payload/$($row.columns[1])"; $to = Join-Path $TargetHome $row.columns[2]
+        if ($row.columns[0] -eq 'block') { Copy-InstructionBlock $from $to }
+        elseif ($row.columns[0] -in @('file', 'tree')) { Copy-RegularTree $from $to }
         else { Stop-Deployment 'unknown agent payload kind' }
     }
 }
@@ -163,26 +163,26 @@ function Merge-ClientSettings {
     [IO.Directory]::CreateDirectory($stage) | Out-Null
     try {
         foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
-            $env:DOTFILES_SETTINGS_FORMAT = $row[0]; $env:DOTFILES_SETTINGS_POLICY = $row[3]
-            $env:DOTFILES_SETTINGS_SOURCE = Join-Path $Source "deployment/client-settings/$($row[1])"
-            $env:DOTFILES_SETTINGS_TARGET = Join-Path $TargetHome $row[2]
-            $env:DOTFILES_SETTINGS_BASELINE = Join-Path $roots.state "dotfiles/client-settings/$($row[3]).json"
+            $env:DOTFILES_SETTINGS_FORMAT = $row.columns[0]; $env:DOTFILES_SETTINGS_POLICY = $row.columns[3]
+            $env:DOTFILES_SETTINGS_SOURCE = Join-Path $Source "deployment/client-settings/$($row.columns[1])"
+            $env:DOTFILES_SETTINGS_TARGET = Join-Path $TargetHome $row.columns[2]
+            $env:DOTFILES_SETTINGS_BASELINE = Join-Path $roots.state "dotfiles/client-settings/$($row.columns[3]).json"
             foreach ($kind in @('config', 'baseline')) {
                 $env:DOTFILES_SETTINGS_OUTPUT = $kind
                 try {
                     $text = Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('execute-template', '--file', (Join-Path $Source 'deployment/client-settings/merge.tmpl'))) -Quiet
-                } catch { Stop-Deployment "cannot merge client config ($($row[0])): $($row[2]); check its syntax" }
-                Write-Utf8 (Join-Path $stage "$($row[3]).$kind") $text
-                Set-Private (Join-Path $stage "$($row[3]).$kind")
+                } catch { Stop-Deployment "cannot merge client config ($($row.columns[0])): $($row.columns[2]); check its syntax" }
+                Write-Utf8 (Join-Path $stage "$($row.columns[3]).$kind") $text
+                Set-Private (Join-Path $stage "$($row.columns[3]).$kind")
             }
         }
         foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
-            $destination = Join-Path $TargetHome $row[2]
-            $baseline = Join-Path $roots.state "dotfiles/client-settings/$($row[3]).json"
+            $destination = Join-Path $TargetHome $row.columns[2]
+            $baseline = Join-Path $roots.state "dotfiles/client-settings/$($row.columns[3]).json"
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($baseline)) | Out-Null
-            Move-Item -LiteralPath (Join-Path $stage "$($row[3]).config") -Destination $destination -Force
-            Move-Item -LiteralPath (Join-Path $stage "$($row[3]).baseline") -Destination $baseline -Force
+            Move-Item -LiteralPath (Join-Path $stage "$($row.columns[3]).config") -Destination $destination -Force
+            Move-Item -LiteralPath (Join-Path $stage "$($row.columns[3]).baseline") -Destination $baseline -Force
             Set-Private $destination; Set-Private $baseline
         }
     } finally {
@@ -231,7 +231,7 @@ function Get-Asset([string]$Name) {
 }
 function Get-Pin([string]$Name) {
     foreach ($row in (Read-Catalog 'deployment/common-tools.tsv')) {
-        foreach ($spec in $row[1].Split(',')) {
+        foreach ($spec in $row.columns[1].Split(',')) {
             if ($spec.StartsWith($Name + '==')) { return $spec.Substring($Name.Length + 2) }
         }
     }
@@ -355,9 +355,9 @@ function Install-Agents {
     if ((Invoke-Tool $node @('--version') -Quiet).Trim() -ne ('v' + (Get-Pin 'nodejs'))) { Stop-Deployment 'Node must match the common runtime pin' }
     $env:PATH = [IO.Path]::GetDirectoryName($node) + ';' + [IO.Path]::GetDirectoryName($bun) + ';' + $env:PATH
     foreach ($row in (Read-Catalog 'deployment/agents/catalog.tsv')) {
-        $name = $row[0]
+        $name = $row.columns[0]
         if ($name -ne 'codegraph' -and $name -notin $selectedAgents) { continue }
-        if ([version](Get-Pin 'nodejs') -lt [version]$row[4]) { Stop-Deployment "Node does not meet $name's minimum version" }
+        if ([version](Get-Pin 'nodejs') -lt [version]$row.columns[4]) { Stop-Deployment "Node does not meet $name's minimum version" }
         $project = Join-Path $roots.bun "managed/$name"
         foreach ($relative in @('', 'node_modules', 'package.json', 'bun.lock')) { Assert-SafePath (Join-Path $project $relative) }
         [IO.Directory]::CreateDirectory($project) | Out-Null
@@ -365,9 +365,9 @@ function Install-Agents {
         $script:Step = "install-agents.$name.install"
         $env:npm_config_global = 'false'; $env:pnpm_config_global = 'false'; $env:npm_config_location = 'project'
         Invoke-Tool $bun @('install', '--cwd', $project, '--frozen-lockfile') -Quiet | Out-Null
-        $packageDirectory = Join-Path $project ('node_modules/' + $row[1])
+        $packageDirectory = Join-Path $project ('node_modules/' + $row.columns[1])
         $package = [IO.File]::ReadAllText((Join-Path $packageDirectory 'package.json')) | ConvertFrom-Json
-        foreach ($command in $row[3].Split(',')) {
+        foreach ($command in $row.columns[3].Split(',')) {
             $entry = $package.bin
             if ($entry -isnot [string]) { $entry = $package.bin.$command }
             Assert-Relative $entry
@@ -375,7 +375,7 @@ function Install-Agents {
             if (-not [IO.File]::Exists($javascript)) { Stop-Deployment "$name did not expose $command" }
             foreach ($relative in @('.bun/bin', '.local/bin')) {
                 $launcher = Join-Path $TargetHome "$relative/$command.cmd"
-                $relativeEntry = ('.bun/managed/' + $name + '/node_modules/' + $row[1] + '/' + $entry).Replace('/', '\')
+                $relativeEntry = ('.bun/managed/' + $name + '/node_modules/' + $row.columns[1] + '/' + $entry).Replace('/', '\')
                 Write-Utf8 $launcher ("@echo off`r`n`"%~dp0..\..\.pixi\bin\node.exe`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n")
                 # Match npm's Windows discovery contract: native clients use
                 # .cmd, while Git Bash resolves the bare POSIX companion.
@@ -390,7 +390,7 @@ function Install-Agents {
             # Explicit Node invocation tests the same entry used by native MCP;
             # the native runner also checks the public .cmd launchers.
             $diagnostic = Invoke-Tool $node @($javascript, '--version') -Quiet
-            if (-not $diagnostic.Contains($row[2])) { Stop-Deployment "$name diagnostic did not report its pinned version" }
+            if (-not $diagnostic.Contains($row.columns[2])) { Stop-Deployment "$name diagnostic did not report its pinned version" }
             [Console]::Out.Write($diagnostic)
         }
     }
