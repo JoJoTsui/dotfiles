@@ -46,7 +46,7 @@ new installer becomes available; do not invoke installers to compute a plan.
 
 `--agents all|none|<comma-separated names>` selects client installation while
 CodeGraph remains an independent default. `--agents-only` applies source and
-installs selected packages with existing pinned Bun/Node, skipping common
+installs selected packages with existing pinned Bun/Node, skipping common/bundle
 installation and shell preparation. It conflicts with `--apply-only`.
 See [agent ownership and validation](AGENT_INSTALLATION.md) for supported
 locks, runtime overrides, and partial deployment acceptance.
@@ -58,8 +58,15 @@ an environment, exact package specifications, explicit exposed commands, and
 `all` or `unix` conda targets. `deployment/common.sh` reads that catalog for
 plan metadata; the chezmoi template renders the same rows into the desired
 `~/.config/dotfiles/pixi-global.toml`, including the selected native subdir.
-Extend optional inventories through separate desired manifests or merge their
-selected entries into that desired manifest before the common installer runs.
+Optional inventories use `deployment/bundle-tools.tsv` and a separate desired
+`~/.config/dotfiles/pixi-bundles.toml`. `deployment/bundles.tsv` declares each
+whole bundle's targets and external host prerequisites. `--bundles` overrides
+`DOTFILES_BUNDLES`; default `none` selects no optional tools. Selection and
+unsupported-target rejection run before state creation. Plans include
+`bundles`, `bundlePackages`, and `bundlePrerequisites` in addition to the common
+package list; `tools` includes selected exposures and managed helpers.
+In `--agents-only` mode, both installation package lists are empty because
+that mode uses existing common/bundle prerequisites.
 
 `deployment/managers.sh` provisions checksum-verified upstream Pixi and
 Chezmoi assets. Chezmoi's one intended owner is the bootstrap binary under
@@ -68,7 +75,8 @@ explicitly supply Pixi at its required pin for isolated boundary checks.
 `--apply-only` provisions/uses Chezmoi without provisioning Pixi.
 
 The common installer uses `pixi exec` with the catalog's exact Python pin to
-run `deployment/merge_pixi.py`, then runs `pixi global sync`. The merge keeps
+run `deployment/merge_pixi.py` with common and selected-bundle desired manifests,
+then runs `pixi global sync`. Both desired manifests merge atomically. The merge keeps
 unrelated environments and extra dependency/exposure entries/channels. An
 exposure collision across environments fails before writing the registry.
 The source state never applies over Pixi or Bun runtime registries. Pixi global
@@ -87,6 +95,13 @@ Use separate feature modules for the later shell, agent, and bundle adapters;
 their top-level functions remain in `installers.sh`. Agent selection must
 preserve local Bun state. Shell preparation must leave account activation,
 history import, and repository indexing to their explicit boundaries.
+
+Bundle command verification runs after common exposure checks. It verifies
+every selected Pixi wrapper, while harmless CLI diagnostics and specialized
+GUI/GPU capability checks remain distinct. Selecting fewer bundles leaves
+device entries intact. Each tool keeps a separate environment, avoiding
+unrelated Python/HTSlib dependency conflicts. See [bundle validation](validation/bundles.md)
+for real solver/native evidence and reproducible opt-in checks.
 
 `deployment/shell.sh` calls the managed `dotfiles-shell-prepare` command during
 required shell preparation. That command validates new Nu prompt/completion

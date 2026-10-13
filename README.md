@@ -169,6 +169,20 @@ under `deployment/inventory`; they are opt-in rather than common defaults.
 Native Windows bootstrap exceptions and execution are supplied by ticket 11;
 Unix-only conda entries are excluded from its desired manifest.
 
+Select whole optional bundles explicitly:
+
+```bash
+bash bootstrap.sh --profile linux-remote-compute --bundles bio,gpu --plan
+bash bootstrap.sh --profile linux-workstation --bundles developer
+```
+
+`--bundles none` is the default. Invalid names and unsupported whole-bundle
+targets fail before creating state. Every selected tool has its own pinned Pixi
+environment and exposed command. Herdr/Zellij settings accompany `developer`,
+and `fetchChromSizes` accompanies `bio`. Reapplying with fewer bundles preserves
+previous installations. Read [bundle inventory](deployment/inventory/README.md)
+for target support, host prerequisites, and retained setup-on-use capabilities.
+
 Env vars and configs only ever reference binaries that this manifest (or a
 bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 
