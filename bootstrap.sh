@@ -143,6 +143,8 @@ for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .lo
 done
 DEPLOY_STEP=apply-source.agent-payload
 validate_agent_payload
+DEPLOY_STEP=apply-source.client-settings
+validate_client_settings
 
 # History databases and credentials remain within the selected device root.
 for relative in .config/atuin .config/atuin/config.toml .local/share/atuin .local/share/atuin/meta.db .local/share/atuin/history.db .local/share/atuin/records.db .local/share/atuin/key .local/share/atuin/session; do
@@ -162,7 +164,10 @@ export PIP_CACHE_DIR="$HOME/.cache/pip"
 export NPM_CONFIG_USERCONFIG="$HOME/.npmrc" NPM_CONFIG_CACHE="$HOME/.cache/npm"
 export npm_config_userconfig="$NPM_CONFIG_USERCONFIG" npm_config_cache="$NPM_CONFIG_CACHE" npm_config_prefix="$HOME/.local"
 export ATUIN_CONFIG_DIR="$HOME/.config/atuin" ATUIN_DATA_DIR="$HOME/.local/share/atuin"
-export CODEX_HOME="$HOME/.codex" CLAUDE_CONFIG_DIR="$HOME/.claude"
+export CODEX_HOME="$HOME/.codex"
+# Claude's override also relocates its user .claude.json into that directory.
+# Normal HOME discovery keeps settings in .claude and user MCP/auth at .claude.json.
+unset CLAUDE_CONFIG_DIR
 export KIMI_CODE_HOME="$HOME/.kimi-code" PI_CODING_AGENT_DIR="$HOME/.pi/agent"
 export OPENCODE_CONFIG_DIR="$HOME/.config/opencode" OPENCODE_CONFIG="$HOME/.config/opencode/opencode.jsonc"
 unset OPENCODE_CONFIG_CONTENT OPENCODE_CLI_CONFIG_CONTENT
@@ -182,6 +187,7 @@ DEPLOY_STEP=apply-source
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
 run_step apply-source.agent-payload deploy_agent_payload
+run_step apply-source.client-settings deploy_client_settings
 if "$DEPLOY_AGENTS_ONLY"; then
     run_step install-agents install_agents
 elif ! "$DEPLOY_APPLY_ONLY"; then

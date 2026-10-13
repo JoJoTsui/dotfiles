@@ -119,6 +119,10 @@ explains every changed pair.
   helpers. Its catalog produces regular discovery files and managed instruction
   blocks while preserving unrelated device content. Read `docs/AGENT_PAYLOAD.md`
   before changing global instructions, skills, or their copy adapters.
+- **Client settings merge through bootstrap**: defaults under ignored
+  `deployment/client-settings/` merge into runtime paths excluded from Chezmoi.
+  Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,
+  ownership, or preservation. Index creation stays an explicit project action.
 
 ## Known rough edges
 

@@ -1,8 +1,8 @@
 # Portable agent instructions and skills
 
 Ordinary bootstrap and `--apply-only` deploy this payload regardless of agent
-installation selection. Direct `chezmoi apply` applies the configuration files;
-use the public bootstrap to include raw skill resources and merged instructions.
+installation selection. Use the public bootstrap for raw skill resources,
+merged instructions, and [merged client settings](AGENT_SETTINGS.md).
 
 `deployment/agent-payload` is the sole owned source. Its `targets.tsv` declares
 each relative source and destination, with three operations:
