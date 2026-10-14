@@ -103,5 +103,7 @@ Actions. It exercises actual installs/reapplication, stock PowerShell, managed
 Nu/Git Bash paths, TUNA discovery, all five skill-discovery interfaces, native
 MCP launches/connections, temporary CodeGraph indexing only, and real Windows
 console/history/sync fixtures. Uploaded artifacts contain reports only.
-Local verification and native pending cells are recorded in
-[Windows evidence](verification/windows.md).
+Both roles passed natively in run
+[38524061998](https://github.com/JoJoTsui/dotfiles/actions/runs/38524061998);
+[Windows evidence](verification/windows.md) records the distinct local checks,
+that result, and the two gates left deferred for an interactive Windows host.
