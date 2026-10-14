@@ -79,11 +79,13 @@ URL. Distro import, kernel startup, virtualization or product failures fail
 visibly. WSL1 and ordinary Linux cannot satisfy this gate. No deployed home,
 credential/history database or source archive is uploaded.
 
-WSL ARM64 has an opt-in `workflow_dispatch` input named `wsl_arm64`. It requires
-a self-hosted Windows ARM64 runner labeled `self-hosted`, `Windows`, `ARM64`,
-and `wsl2`. Both roles use the pinned ARM64 rootfs and the same actual WSL2
-checks. A missing suitable runner remains pending. Native Ubuntu ARM64
-execution and Linux ARM64 package solving are recorded separately.
+WSL ARM64 is not scheduled for native execution. It would need a self-hosted
+Windows ARM64 runner labeled `self-hosted`, `Windows`, `ARM64`, and `wsl2`,
+which this project does not have, so the former opt-in `workflow_dispatch` job
+was removed rather than left as a permanently pending cell. The pinned ARM64
+rootfs and the ARM64 planning/render checks remain, so a runner can be added
+without new source state. Native Ubuntu ARM64 execution and Linux ARM64 package
+solving are recorded separately.
 
 | Rootfs target | Official versioned source | SHA256 |
 | --- | --- | --- |
@@ -109,9 +111,20 @@ Linux PowerShell 7.6.6 parsed the controller and passed read-only ARM64 planning
 and non-Windows provisioning refusal. The Python gate rejected this ordinary
 Linux kernel before creating a deployment home and wrote `nativePass: false`.
 The available yq parser accepted the workflow. These checks establish the
-planning/refusal contracts and syntax; native Windows/WSL execution remains
-pending until the workflow runs. Both WSL2 x86-64 roles and both WSL2 ARM64
-roles therefore remain explicitly pending at this implementation point.
+planning/refusal contracts and syntax only.
+
+Both WSL2 x86-64 role cells have since passed natively in run
+[38524061914](https://github.com/JoJoTsui/dotfiles/actions/runs/38524061914) at
+commit `81857d6`, 2026-10-14, on a disposable Ubuntu 24.04.5 WSL2 distro. Each
+controller report records `nativePass: true` and `phase: complete`, and each
+passes the Windows executable/path roundtrip, a full default WSL bootstrap,
+managed command and agent versions, standalone shells with navigation/logs and
+TUNA mirrors, the `test_shell_behavior.py`, `test_agent_payload.py`,
+`test_codegraph.py` and `test_history_behavior.py` suites on actual WSL
+execution, and reapplication preserving credentials, history, unrelated
+installations and omitted agents while reporting activation as pending. No WSL2
+ARM64 cell has run; it is not scheduled, since no Windows ARM64 WSL2 runner is
+available.
 
 After composing the portable Unix test selectors, all 40 WSL-selected
 boundary/shell/payload/CodeGraph/history cases passed in 175.614 seconds with
@@ -135,4 +148,5 @@ rendered WSL home and always reports `nativePass: false`. Its two-role
 regression reproduced the missing `EDITOR` with `-c` and passes with `-e`,
 including role settings, navigation/log commands, prompt and history hooks.
 The focused WSL/shell gate passed all 19 cases with zero skips in 78.101
-seconds on Linux. All four actual WSL2 architecture/role cells remain pending.
+seconds on Linux. Both actual WSL2 x86-64 role cells have now passed natively;
+the WSL2 ARM64 cells remain unscheduled for want of a runner.
