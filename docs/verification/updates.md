@@ -80,8 +80,9 @@ under `/tmp`; it covers Linux and WSL on both architectures, both macOS
 architectures, native Windows x86-64, the common tools, and every declared
 bundle/target pair. Resolution proves metadata solvability, not native binary
 execution. Push the reviewed integration branch to run the native macOS,
-Windows, and WSL workflows before calling those targets verified. WSL ARM64
-native execution remains unavailable unless an ARM64 WSL runner is supplied.
+Windows, and WSL workflows before calling those targets verified. macOS, native
+Windows and WSL2 x86-64 have now passed natively at commit 81857d6; WSL ARM64
+is not scheduled unless a Windows ARM64 WSL runner is supplied.
 
 After the plan and resolution checks pass, install the candidate working tree
 only into a disposable Linux home. Inspect its commands and rendered state,
@@ -119,7 +120,9 @@ lock and configuration verification passed. The isolated Pixi resolver
 successfully locked every common and declared bundle target.
 
 No package version proposal was applied in this snapshot, so those checks
-validate the currently committed set. Native macOS, Windows, and WSL execution
-remains pending their runners. After a real proposal, repeat all layers above,
-review the complete diff, run the disposable-home install, and commit the
-accepted pin set before deploying it to a new host.
+validate the currently committed set. Native macOS, Windows and WSL2 x86-64
+execution has since passed their runners — runs 38524061897, 38524061998 and
+38524061914 at commit `81857d6` — while WSL2 ARM64 remains unscheduled. After a
+real proposal, repeat all layers above, review the complete diff, run the
+disposable-home install, and commit the accepted pin set before deploying it to
+a new host.

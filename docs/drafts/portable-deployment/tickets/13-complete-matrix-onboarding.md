@@ -12,7 +12,9 @@ deployment effects.
 
 **Status:** Implemented. Local matrix, deterministic tests, and opt-in Linux
 network/install verification passed on 2026-10-13. Native runner execution is
-reported separately and remains pending for its platform workflows.
+reported separately: macOS, native Windows and WSL2 x86-64 have since passed
+(runs 38524061897, 38524061998 and 38524061914 at commit `81857d6`), and only
+WSL2 ARM64 remains unscheduled because no Windows ARM64 WSL2 runner exists.
 
 - [x] The local matrix renders/checks all fourteen supported platform/architecture/role combinations, installation selections, defaults, and declared bundle outcomes.
 - [x] Verification isolates homes, package-manager/XDG roots, credentials, history fixtures, and installer effects; the current host's real home and system configuration are outside every target.

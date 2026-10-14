@@ -59,4 +59,4 @@ query an indexed project through `projectPath` even when launched in an
 unindexed directory; its unindexed response explains the fallback.
 
 Read [verification evidence](verification/codegraph.md) for the checks actually
-run and the native coverage still pending.
+run and the native coverage that has since passed.

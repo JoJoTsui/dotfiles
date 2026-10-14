@@ -39,8 +39,8 @@ tools produce explicit skips. TOML preservation checks need Python 3.11+; the
 managed Python 3.13.16 ran them. The public boundary itself has no Python
 prerequisite.
 
-macOS, WSL, native Windows, and ARM execution are pending the platform/matrix
-tickets. Portable config syntax and Linux execution are not native proof for
-those targets. Ticket05 separately established Pi's global instruction and
+macOS, WSL x86-64 and native Windows execution has since passed on the platform
+tickets' native runners; portable config syntax and Linux execution are not
+native proof, and only WSL2 ARM64 remains unscheduled for want of a runner. Ticket05 separately established Pi's global instruction and
 shared-library discovery; the CLI exploration here establishes the command
 those instructions use.

@@ -28,9 +28,9 @@ Pinned-client diagnostics sent no model prompt or authentication request:
 All nine payload/discovery tests passed in 19.481 seconds with the actual pinned
 clients. Secrets used by rendering tests were synthetic. No live-home
 deployment, skill helper execution, real account access, history import,
-repository index, or agent model request occurred. macOS/WSL/native Windows
-execution is pending their downstream gates; Linux rendering alone is not
-native execution.
+repository index, or agent model request occurred. Linux rendering alone is not
+native execution; the platform gates have since run natively, as recorded in the
+macOS, WSL and Windows verification notes.
 
 After merging specialist-bundle integration, all 49 combined tests ran in
 82.215 seconds: 45 passed and four opt-in network install/resolution suites

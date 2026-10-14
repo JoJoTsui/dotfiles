@@ -4,9 +4,9 @@ The grill, specification, and tickets are committed in this repository. This
 file tracks implementation locally; no GitHub issue tracker is configured for
 these tickets. Tickets 01–12 are implemented with the evidence recorded in
 their status lines and verification notes. Ticket 13 integrates the complete
-matrix and onboarding flow. Native macOS, Windows, and WSL execution remains
-pending the committed native workflows, and WSL ARM64 additionally needs a
-suitable self-hosted runner.
+matrix and onboarding flow. Native macOS, Windows and WSL2 x86-64 execution has
+passed on the committed native workflows; WSL2 ARM64 is not scheduled because no
+Windows ARM64 WSL2 runner is available.
 
 ## Specification review
 
@@ -43,7 +43,8 @@ schedule.
 | [13: Complete deployment and onboarding verification](tickets/13-complete-matrix-onboarding.md) | 12 | Provide a documented new-host flow and one verification entry point covering the complete matrix. |
 
 The numbered dependency order was used for implementation. Platform-native
-claims remain pending until the corresponding native runner reports pass.
+claims stood pending until the corresponding native runner reported pass; they
+are now recorded per platform, with WSL2 ARM64 explicitly unscheduled.
 
 ## Requirement coverage
 
