@@ -20,4 +20,4 @@ as tested. Ordinary bootstrap continues to install the recorded version set.
 - [x] An opt-in network test resolves the common environments and every declared supported bundle/target pair in a temporary Pixi workspace. Resolver failures are nonzero.
 - [ ] Isolated install/diagnostic checks and native execution verify their actual targets, with unavailable network or runtime coverage reported separately. Native macOS, Windows and WSL2 x86-64 execution is now verified; the remaining gap is WSL2 ARM64, for which no Windows ARM64 WSL2 runner is available, so it is reported as unscheduled rather than unavailable.
 - [x] Reapplying the same proposal is idempotent; refresh writes only deployment source catalogs, assets, and agent package/lock files, never device credentials, history, project indexes, or installations.
-- [x] [Update verification guide](../../verification/updates.md) documents proposal, review, resolution, and native verification boundaries.
+- [x] [Update verification guide](../../../verification/updates.md) documents proposal, review, resolution, and native verification boundaries.
