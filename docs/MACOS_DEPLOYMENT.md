@@ -86,5 +86,8 @@ Actions, read-only permissions, and no persisted checkout credentials. Jobs
 upload only JSON results with runtime, image, CPU, commit, run URL, and check
 metadata. Temporary homes/config/credentials/history are deleted after each
 run. Foreign execution fails with an unavailable report; skipped required
-behavior cannot count as a native pass. Native runs remain pending until CI
-executes; [local evidence](verification/macos.md) records the distinct Linux checks.
+behavior cannot count as a native pass. All four architecture/role cells have
+since passed natively in run
+[38524061897](https://github.com/JoJoTsui/dotfiles/actions/runs/38524061897);
+[verification evidence](verification/macos.md) records both the distinct local
+checks and that native result.

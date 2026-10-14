@@ -1,14 +1,22 @@
 # macOS verification
 
-Ticket09 implements native discovery and runtime verification. The current
-execution host is Linux x86-64; no macOS installer or binary was executed here.
+Ticket09 implements native discovery and runtime verification. Native macOS
+runners have now executed: workflow run
+[38524061897](https://github.com/JoJoTsui/dotfiles/actions/runs/38524061897) at
+commit `81857d6`, 2026-10-14. Each cell uploads only a JSON result report.
 
 | Target and role | Isolated plan/render/reapply | Native execution |
 | --- | --- | --- |
-| macOS Intel workstation | passed | pending CI |
-| macOS Intel remote compute | passed | pending CI |
-| macOS Apple silicon workstation | passed | pending CI |
-| macOS Apple silicon remote compute | passed | pending CI |
+| macOS Intel workstation | passed | passed (427.872s) |
+| macOS Intel remote compute | passed | passed (566.523s) |
+| macOS Apple silicon workstation | passed | passed (211.753s) |
+| macOS Apple silicon remote compute | passed | passed (292.463s) |
+
+All four cells report `status: passed` and `native_execution: true`. Each passes
+the same checks: native runtime and architecture, profile detection, two default
+installations, pinned commands and pending history, ordinary native configuration
+discovery, and native shell, instruction, CodeGraph and encrypted-history
+behavior.
 
 Local public-boundary checks established canonical regular copies at native
 Nu/pip paths, early source/destination symlink rejection, unrelated state/history/
@@ -18,10 +26,10 @@ The existing common gate already resolved Conda requirements for both macOS
 targets; this ticket leaves those pins unchanged.
 
 Real Linux Nu executed copied macOS resources with an explicit config directory,
-including generated Starship, Pixi completions, and Atuin hooks. This establishes
+including generated Starship, Pixi completions, and Atuin hooks. This established
 copied syntax/resources, rather than ordinary native macOS discovery. The native
-gate starts Nu without XDG/config overrides and checks native config/autoload
-paths and effective values; it also checks ordinary pip and uv TUNA discovery.
+gate has since started Nu without XDG/config overrides and checked native
+config/autoload paths, effective values, and ordinary pip and uv TUNA discovery.
 
 With `DOTFILES_TEST_PLATFORM=macos` and remote compute selected, 22 unaffected
 shell/history/agent cases passed. The initial 37-case run exposed two Kimi
@@ -37,7 +45,8 @@ four architecture/role render combinations, corrected actual Nu REPL startup,
 symlink guards, and native-verifier refusal on Linux. YAML parsing, Bash syntax,
 Python compilation and ShellCheck error checks passed. Native CI runs
 `tests/native_macos.py` per architecture/role and uploads only a result report.
-Foreign execution fails with `native_execution: false` and `status: unavailable`.
+Foreign execution fails with `native_execution: false` and `status: unavailable`
+rather than a pass.
 
 The final public-boundary gate passed all 14 checks in 25.942 seconds, including
 both legacy copy-mode/idempotent applies, the complete profile planning matrix,
