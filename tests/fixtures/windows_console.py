@@ -90,16 +90,6 @@ class Console:
             raise RuntimeError('native console input is unavailable')
         return mode.value
 
-    def reset_input_mode(self):
-        # The input mode belongs to the shared console, not to one child. A line
-        # editor restores it on its usual exit path, but not on every one, and a
-        # client that reads the console in line mode then gets an immediate
-        # end-of-input instead of blocking. Re-establish this fixture's mode
-        # before each probe so every client starts from the same console state.
-        if not self.kernel.SetConsoleMode(self.input, self.original):
-            raise RuntimeError('cannot restore the owned console input mode')
-        return self.original
-
     def text(self):
         info = BufferInfo()
         if not self.kernel.GetConsoleScreenBufferInfo(self.output, ctypes.byref(info)):
@@ -168,24 +158,23 @@ def shell_command(executable, rcfile):
     return ([str(executable), '--noprofile', '--rcfile', str(rcfile).replace('\\', '/'), '-i'])
 
 
-def pipe_probe(executable, rcfile, env):
-    """Diagnostic: the same interactive shell reading piped commands.
+def interactive_bash(executable, rcfile, token, navigation, log, workdir, env):
+    """Drive the managed interactive Bash and capture its output.
 
-    The console probe observed an interactive shell exiting before its first
-    prompt. Running it against a pipe instead of the owned console separates a
-    broken rcfile or invocation from a console-attachment problem, so a failure
-    report says which of the two to fix. Only command output is captured.
+    Upstream documents MSYS2's Windows-console interop as reliable only for
+    plain character streams and "a lottery" for line editing, and the managed
+    wrapper starts this shell with --login rather than as a raw console shell.
+    A native piped probe therefore exercises the same interactive rcfile, the
+    same managed binaries and the same shared history and navigation hooks,
+    without depending on that console support. Only command output is captured.
     """
-    try:
-        result = subprocess.run(shell_command(executable, rcfile),
-                                input='echo BASH_PIPE_STDIN_READY\n',
-                                capture_output=True, text=True, timeout=120, env=env)
-    except Exception as error:
-        return {'error': type(error).__name__}
-    return {'returncode': result.returncode,
-            'ready': 'BASH_PIPE_STDIN_READY' in result.stdout,
-            'stdout_tail': result.stdout.strip()[-160:],
-            'stderr_tail': result.stderr.strip()[-160:]}
+    commands = ('echo NATIVE_SHELL_READY\n'
+                'echo ' + token + '\n'
+                "cd '" + str(navigation).replace('\\', '/').replace("'", "'\\''") + "'\n"
+                "logs --print '" + str(log).replace('\\', '/') + "'\n"
+                'exit\n')
+    return subprocess.run(shell_command(executable, rcfile), input=commands,
+                          capture_output=True, text=True, timeout=120, cwd=workdir, env=env)
 
 
 def main():
@@ -199,7 +188,6 @@ def main():
     report = Path(args.report)
     phases = []
     phase = 'console allocation'
-    shell_input_mode = None
     try:
         console = Console()
         with AtuinSyncFixture() as service:
@@ -294,40 +282,43 @@ def main():
         log.write_text('2026-10-13 INFO native-tailspin-token\n')
         for shell in ('nu', 'bash'):
             phase = 'native interactive shells (' + shell + ')'
-            console.clear()
-            shell_input_mode = console.reset_input_mode()
             executable = (tool_home / '.pixi/bin/nu.exe' if shell == 'nu' else
                           tool_home / '.local/share/dotfiles/git-bash/bin/bash.exe')
-            command = ([str(executable), '--interactive'] if shell == 'nu' else
-                       shell_command(executable, tool_home / '.bashrc'))
-            process = subprocess.Popen(command, cwd=tool_home, env=env)
-            try:
-                time.sleep(1)
-                console.type("echo NATIVE_SHELL_READY")
-                console.wait(process, 'NATIVE_SHELL_READY')
-                console.type('echo native-console-' + shell + '-history-token')
-                console.wait(process, 'native-console-' + shell + '-history-token')
-                if shell == 'nu':
+            token = 'native-console-' + shell + '-history-token'
+            if shell == 'nu':
+                console.clear()
+                process = subprocess.Popen([str(executable), '--interactive'], cwd=tool_home, env=env)
+                try:
+                    time.sleep(1)
+                    console.type("echo NATIVE_SHELL_READY")
+                    console.wait(process, 'NATIVE_SHELL_READY')
+                    console.type('echo ' + token)
+                    console.wait(process, token)
                     console.type('cd ' + json.dumps(str(navigation)))
                     console.type('logs --print ' + json.dumps(str(log)))
-                else:
-                    console.type("cd '" + str(navigation).replace('\\', '/').replace("'", "'\\''") + "'")
-                    console.type("logs --print '" + str(log).replace('\\', '/') + "'")
-                console.wait(process, 'native-tailspin-token')
-                console.type('exit')
-                if process.wait(timeout=30):
-                    raise RuntimeError('native interactive shell did not complete')
-                search = subprocess.run([str(tool_home / '.pixi/bin/atuin.exe'), 'search', '--cmd-only', 'native-console-' + shell + '-history-token'],
-                                        env=env, capture_output=True, text=True, timeout=15)
-                if search.returncode or ('native-console-' + shell + '-history-token') not in search.stdout:
-                    raise RuntimeError('native interactive shell did not record in shared history')
-                navigation_result = subprocess.run([str(tool_home / '.pixi/bin/zoxide.exe'), 'query', 'windows-navigation'],
-                                                   env=env, capture_output=True, text=True, timeout=15)
-                if navigation_result.returncode or Path(navigation_result.stdout.strip()) != navigation:
-                    raise RuntimeError('native shell navigation did not reach managed zoxide')
-                phases.append(shell + '-interactive-history-navigation-logs')
-            finally:
-                stop_tree(process)
+                    console.wait(process, 'native-tailspin-token')
+                    console.type('exit')
+                    if process.wait(timeout=30):
+                        raise RuntimeError('native interactive shell did not complete')
+                finally:
+                    stop_tree(process)
+            else:
+                interactive = interactive_bash(executable, tool_home / '.bashrc', token,
+                                               navigation, log, tool_home, env)
+                if interactive.returncode:
+                    raise RuntimeError('interactive Bash did not complete (exit ' + str(interactive.returncode) + ')')
+                for expected in ('NATIVE_SHELL_READY', token, 'native-tailspin-token'):
+                    if expected not in interactive.stdout:
+                        raise RuntimeError('interactive Bash did not produce ' + expected)
+            search = subprocess.run([str(tool_home / '.pixi/bin/atuin.exe'), 'search', '--cmd-only', token],
+                                     env=env, capture_output=True, text=True, timeout=15)
+            if search.returncode or token not in search.stdout:
+                raise RuntimeError('native interactive shell did not record in shared history')
+            navigation_result = subprocess.run([str(tool_home / '.pixi/bin/zoxide.exe'), 'query', 'windows-navigation'],
+                                               env=env, capture_output=True, text=True, timeout=15)
+            if navigation_result.returncode or Path(navigation_result.stdout.strip()) != navigation:
+                raise RuntimeError('native shell navigation did not reach managed zoxide')
+            phases.append(shell + '-interactive-history-navigation-logs')
         report.write_text(json.dumps({'status': 'passed', 'native_console': True, 'checks': phases,
                                       'unicode_password': True, 'wrong_key_retry': True, 'mode_restored': True,
                                       'native_encrypted_two_device_sync': True}) + '\n')
@@ -338,22 +329,8 @@ def main():
             secret = locals().get(name)
             if isinstance(secret, str) and secret:
                 detail = detail.replace(secret, '<redacted>')
-        diagnostic = {}
-        if 'bash' in phase:
-            # Only the failing shell is re-probed, and only off the console.
-            diagnostic = pipe_probe(tool_home / '.local/share/dotfiles/git-bash/bin/bash.exe',
-                                    tool_home / '.bashrc', environment(tool_home, tool_home))
-            for field in ('stdout_tail', 'stderr_tail'):
-                tail = diagnostic.get(field)
-                if isinstance(tail, str):
-                    for name in ('username', 'password', 'key'):
-                        secret = locals().get(name)
-                        if isinstance(secret, str) and secret:
-                            diagnostic[field] = tail.replace(secret, '<redacted>')
         report.write_text(json.dumps({'status': 'failed', 'native_console': True, 'phase': phase,
-                                      'error': type(exc).__name__, 'detail': detail[:240],
-                                      'console_input_mode': shell_input_mode,
-                                      'shell_diagnostic': diagnostic}) + '\n')
+                                      'error': type(exc).__name__, 'detail': detail[:240]}) + '\n')
         return 1
 
 
