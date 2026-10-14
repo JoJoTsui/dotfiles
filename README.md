@@ -63,7 +63,8 @@ receive `~/.vscode-server` settings. The current host uses the documented
 
 WSL uses the Unix bootstrap and all three shells with Linux home/tool paths.
 Read [WSL deployment](docs/WSL_DEPLOYMENT.md) for native Windows interoperability
-checks, disposable WSL2 CI, and the explicitly pending ARM64 execution target.
+checks and disposable WSL2 CI. Native WSL2 x86-64 is verified; WSL2 ARM64 is not
+scheduled because no Windows ARM64 WSL2 runner is available.
 
 Template data (all from environment variables at init time, so credentials
 never enter git):

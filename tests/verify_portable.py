@@ -38,7 +38,7 @@ COMMON_TOOLS = {
 NATIVE_WORKFLOWS = {
     "macOS": ".github/workflows/native-macos.yml (Intel and Apple silicon; both roles)",
     "WSL2 x86-64": ".github/workflows/native-wsl.yml (Windows 2025; both roles)",
-    "WSL2 ARM64": "opt-in self-hosted Windows ARM64 WSL2 runner; pending until available",
+    "WSL2 ARM64": "self-hosted Windows ARM64 WSL2 runner; none configured, so not scheduled",
     "Windows x86-64": ".github/workflows/native-windows.yml (Windows 2025; both roles)",
 }
 

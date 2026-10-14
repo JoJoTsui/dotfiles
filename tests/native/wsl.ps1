@@ -24,7 +24,7 @@ $rootfs = if ($Architecture -eq 'x86_64') {
     }
 }
 $coverage = if ($Architecture -eq 'x86_64') { 'hosted Windows2025 WSL2 execution required' }
-            else { 'opt-in self-hosted Windows ARM64 WSL2 execution required; pending until run' }
+            else { 'self-hosted Windows ARM64 WSL2 execution unavailable; no ARM64 runner is configured' }
 if ($Plan) {
     @{
         platform = 'wsl'; role = $Role; architecture = $Architecture
