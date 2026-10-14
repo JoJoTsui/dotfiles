@@ -162,6 +162,35 @@ def check_pinned_tools(home, plan, report):
     require(not (home / ".github").exists(), "workflow bookkeeping excluded from target")
 
 
+def check_bundle_tools(home, bundles, report):
+    """Verify a selected bundle's tools are exposed and run harmlessly.
+
+    Only the selected bundle's macOS-supported rows are checked. The Linux
+    bundle evidence runs the same shape of diagnostic; this establishes it on a
+    native macOS runtime rather than inferring it from package metadata.
+    """
+    require(bundles, "native bundle execution requires an explicit selection")
+    selected = {name for name in bundles.split(",") if name}
+    env = managed_environment(home)
+    versions = {}
+    for line in (SOURCE / "deployment/bundle-tools.tsv").read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        bundle, _environment, _specifications, exposures, _channels, platforms = line.split("|")
+        if bundle not in selected:
+            continue
+        if platforms != "all" and "macos" not in platforms.split(","):
+            continue
+        for exposure in exposures.split(","):
+            command = exposure.split("=", 1)[0]
+            location = home / ".pixi/bin" / command
+            require(location.is_file() and not location.is_symlink(), f"bundle exposure: {command}")
+            diagnostic = run([str(location), "--version"], env=env, cwd=home, timeout=180)
+            versions[command] = (diagnostic.stdout + diagnostic.stderr).strip().splitlines()[0]
+    require(versions, "no macOS-supported tool matched the selected bundle")
+    report["bundle_versions"] = versions
+
+
 def seed_device(home):
     values = {
         ".claude/settings.json": '{"env":{"DEVICE_VALUE":"keep"}}\n',
@@ -235,6 +264,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", choices=("x86_64", "aarch64"), required=True)
     parser.add_argument("--role", choices=("workstation", "remote-compute"), required=True)
+    parser.add_argument("--bundles", default="",
+                        help="comma-separated optional bundle names to install with the common defaults")
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     machine = platform.machine()
@@ -242,7 +273,8 @@ def main():
     report = {"platform": "macos", "arch": args.arch, "actual_arch": actual_arch,
               "role": args.role, "native_execution": sys.platform == "darwin", "status": "unavailable",
               "runtime": platform.platform(), "image_version": os.environ.get("ImageVersion", "unknown"),
-              "commit": os.environ.get("GITHUB_SHA", "local"), "checks": []}
+              "commit": os.environ.get("GITHUB_SHA", "local"), "checks": [],
+              "bundles": [name for name in args.bundles.split(",") if name]}
     if os.environ.get("GITHUB_RUN_ID"):
         report["run_url"] = f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
     phase = "runtime"
@@ -261,10 +293,15 @@ def main():
             originals = seed_device(home)
             env = minimal_environment(home)
             command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--role", args.role]
+            if args.bundles:
+                command += ["--bundles", args.bundles]
             phase = "profile detection"
             plan = json.loads(run([*command, "--plan"], env=env, cwd=SOURCE).stdout)
             require(plan["platform"] == "macos" and plan["arch"] == args.arch and plan["role"] == args.role,
                     "detected macOS deployment profile")
+            if args.bundles:
+                require(plan.get("bundles") == sorted(name for name in args.bundles.split(",") if name),
+                        "requested bundle selection reached the native plan")
             report["checks"].append(phase)
             snapshot = None
             for attempt in (1, 2):
@@ -285,6 +322,10 @@ def main():
             phase = "native shell, instruction, CodeGraph and encrypted-history behavior"
             check_portable_suites(home, args.role, report)
             report["checks"].append(phase)
+            if args.bundles:
+                phase = "selected bundle exposures"
+                check_bundle_tools(home, args.bundles, report)
+                report["checks"].append(phase)
         report["status"] = "passed"
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
         report["failed_check"] = phase

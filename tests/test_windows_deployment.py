@@ -276,10 +276,38 @@ class WindowsNativeInstallTests(unittest.TestCase):
                                '-File', str(SOURCE / 'bootstrap.ps1'), '-TargetHome', str(self.home), *arguments],
                               cwd=SOURCE, env=env or self.env, capture_output=True, text=True, timeout=2400)
 
+    def assert_bundle_exposures(self, bundles, environment):
+        """Check a selected bundle's Windows-supported tools on the native runtime.
+
+        The Linux bundle evidence runs the same diagnostic shape; this establishes
+        it on native Windows instead of inferring it from package metadata.
+        """
+        selected = {name for name in bundles if name}
+        commands = set()
+        for line in (SOURCE / 'deployment/bundle-tools.tsv').read_text(encoding='utf-8').splitlines():
+            if not line or line.startswith('#'):
+                continue
+            bundle, _environment, _specifications, exposures, _channels, platforms = line.split('|')
+            if bundle not in selected or (platforms != 'all' and 'windows' not in platforms.split(',')):
+                continue
+            for exposure in exposures.split(','):
+                commands.add(exposure.split('=', 1)[0])
+        self.assertTrue(commands, 'no Windows-supported tool matched the selected bundle')
+        for command in sorted(commands):
+            location = self.home / '.pixi/bin' / (command + '.exe')
+            with self.subTest(bundle=command):
+                self.assertTrue(location.is_file() and not location.is_symlink(),
+                                f'managed bundle exposure: {location}')
+                diagnostic = subprocess.run([str(location), '--version'], env=environment,
+                                            capture_output=True, text=True, timeout=180)
+                self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
+
     def test_default_install_reapply_and_native_diagnostics(self):
         role = os.environ.get('DOTFILES_TEST_WINDOWS_ROLE', 'workstation')
         self.env['DOTFILES_ROLE'] = role
-        result = self.deploy('-Role', role)
+        bundles = [name for name in os.environ.get('DOTFILES_TEST_WINDOWS_BUNDLES', '').split(',') if name]
+        selection = ('-Bundles', ','.join(bundles)) if bundles else ()
+        result = self.deploy('-Role', role, *selection)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('sync pending activation', result.stdout)
         environment = self.env.copy()
@@ -316,6 +344,8 @@ class WindowsNativeInstallTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=60)
         self.assertEqual(doctor.returncode, 0, doctor.stderr)
         self.assertTrue(Path(environment['KIMI_SHELL_PATH']).is_file())
+        if bundles:
+            self.assert_bundle_exposures(bundles, environment)
         # Native managed Nu discovers its configured home without --config flags.
         ordinary = environment.copy()
         # Nu's native fallback uses Known Folder APIs. Do not remove the XDG

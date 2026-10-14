@@ -1,6 +1,7 @@
 # Native Windows acceptance; report files contain no homes, keys or history DBs.
 [CmdletBinding()]
-param([ValidateSet('workstation', 'remote-compute')][string]$Role = 'workstation', [string]$ReportDirectory)
+param([ValidateSet('workstation', 'remote-compute')][string]$Role = 'workstation',
+      [string]$Bundles, [string]$ReportDirectory)
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $source = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -13,6 +14,7 @@ $env:DOTFILES_TEST_POWERSHELL = Join-Path $PSHOME 'powershell.exe'
 if (-not [IO.File]::Exists($env:DOTFILES_TEST_POWERSHELL)) { $env:DOTFILES_TEST_POWERSHELL = Join-Path $PSHOME 'pwsh.exe' }
 $env:DOTFILES_TEST_NATIVE_WINDOWS_INSTALL = '1'
 $env:DOTFILES_TEST_WINDOWS_ROLE = $Role
+if ($Bundles) { $env:DOTFILES_TEST_WINDOWS_BUNDLES = $Bundles } else { Remove-Item Env:\DOTFILES_TEST_WINDOWS_BUNDLES -ErrorAction SilentlyContinue }
 $env:PYTHONUTF8 = '1'
 $env:DOTFILES_TEST_WINDOWS_TEMP = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ReportDirectory))
 $managerHome = Join-Path ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($ReportDirectory))) ('dotfiles-windows-manager-' + [Guid]::NewGuid().ToString('N'))
@@ -24,10 +26,13 @@ $report = [ordered]@{
     nativeExecution = $true; status = 'failed'
     knownFolderFallback = 'not exercised; explicit XDG startup boundary prevents writes to the CI user profile'
 }
+if ($Bundles) { $report.bundles = @($Bundles.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 try {
     # A native ApplyOnly seed verifies stock PowerShell without Git Bash and
     # supplies the pinned renderer to every preservation test.
-    & (Join-Path $source 'bootstrap.ps1') -TargetHome $managerHome -Role $Role -ApplyOnly
+    $seed = @{ TargetHome = $managerHome; Role = $Role; ApplyOnly = $true }
+    if ($Bundles) { $seed.Bundles = $Bundles }
+    & (Join-Path $source 'bootstrap.ps1') @seed
     if ($LASTEXITCODE) { throw 'native renderer preparation failed' }
     $env:DOTFILES_TEST_CHEZMOI = Join-Path $managerHome '.local/bin/chezmoi.exe'
     Push-Location $source

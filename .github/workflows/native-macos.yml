@@ -2,7 +2,7 @@ name: Native macOS deployment
 
 on:
   push:
-    branches: [main, 'integration/**', 'feature/portable-09']
+    branches: [main, 'integration/**']
   pull_request:
   workflow_dispatch:
 
@@ -51,5 +51,37 @@ jobs:
         with:
           name: native-macos-${{ matrix.arch }}-${{ matrix.role }}
           path: ${{ runner.temp }}/reports/native-macos.json
+          if-no-files-found: error
+          retention-days: 14
+
+  # Optional bundle execution. The default matrix above installs common defaults
+  # only, so bundle selection needs its own native slot; this covers Apple
+  # silicon, and the Intel and role cells are not claimed by it.
+  desktop:
+    name: macOS bundle desktop
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Select verification Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Verify isolated native bundle deployment
+        run: >-
+          python tests/native_macos.py
+          --arch aarch64
+          --role workstation
+          --bundles desktop
+          --report '${{ runner.temp }}/reports/native-macos-desktop.json'
+      - name: Upload verification report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-macos-desktop
+          path: ${{ runner.temp }}/reports/native-macos-desktop.json
           if-no-files-found: error
           retention-days: 14
