@@ -322,6 +322,11 @@ def import_history(atuin, kind, source):
                              ATUIN_CONFIG_DIR=str(stage_atuin), ATUIN_DATA_DIR=str(stage_data),
                              ATUIN_SESSION="0123456789abcdef0123456789abcdef")
             if os.name == "nt":
+                # Native Atuin resolves its home through the Windows Known Folder
+                # for the roaming profile, so this isolated staging profile needs
+                # the same standard AppData directories a native user has.
+                for relative in ("AppData/Roaming", "AppData/Local"):
+                    (staging / relative).mkdir(parents=True)
                 stage_env.update(USERPROFILE=str(staging), APPDATA=str(staging / "AppData/Roaming"),
                                  LOCALAPPDATA=str(staging / "AppData/Local"))
             for key in ("ATUIN_HISTORY_FILTER", "ATUIN_CWD_FILTER"):
