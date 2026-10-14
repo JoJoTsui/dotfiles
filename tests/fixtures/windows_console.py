@@ -90,6 +90,16 @@ class Console:
             raise RuntimeError('native console input is unavailable')
         return mode.value
 
+    def reset_input_mode(self):
+        # The input mode belongs to the shared console, not to one child. A line
+        # editor restores it on its usual exit path, but not on every one, and a
+        # client that reads the console in line mode then gets an immediate
+        # end-of-input instead of blocking. Re-establish this fixture's mode
+        # before each probe so every client starts from the same console state.
+        if not self.kernel.SetConsoleMode(self.input, self.original):
+            raise RuntimeError('cannot restore the owned console input mode')
+        return self.original
+
     def text(self):
         info = BufferInfo()
         if not self.kernel.GetConsoleScreenBufferInfo(self.output, ctypes.byref(info)):
@@ -165,6 +175,7 @@ def main():
     report = Path(args.report)
     phases = []
     phase = 'console allocation'
+    shell_input_mode = None
     try:
         console = Console()
         with AtuinSyncFixture() as service:
@@ -260,6 +271,7 @@ def main():
         for shell in ('nu', 'bash'):
             phase = 'native interactive shells (' + shell + ')'
             console.clear()
+            shell_input_mode = console.reset_input_mode()
             executable = (tool_home / '.pixi/bin/nu.exe' if shell == 'nu' else
                           tool_home / '.local/share/dotfiles/git-bash/bin/bash.exe')
             command = [str(executable), '--interactive'] if shell == 'nu' else [str(executable), '--noprofile', '--rcfile', str(tool_home / '.bashrc').replace('\\', '/'), '-i']
@@ -302,7 +314,8 @@ def main():
             if isinstance(secret, str) and secret:
                 detail = detail.replace(secret, '<redacted>')
         report.write_text(json.dumps({'status': 'failed', 'native_console': True, 'phase': phase,
-                                      'error': type(exc).__name__, 'detail': detail[:240]}) + '\n')
+                                      'error': type(exc).__name__, 'detail': detail[:240],
+                                      'console_input_mode': shell_input_mode}) + '\n')
         return 1
 
 
