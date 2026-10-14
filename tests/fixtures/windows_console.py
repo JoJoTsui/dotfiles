@@ -164,6 +164,30 @@ def environment(home, tool_home):
     return env
 
 
+def shell_command(executable, rcfile):
+    return ([str(executable), '--noprofile', '--rcfile', str(rcfile).replace('\\', '/'), '-i'])
+
+
+def pipe_probe(executable, rcfile, env):
+    """Diagnostic: the same interactive shell reading piped commands.
+
+    The console probe observed an interactive shell exiting before its first
+    prompt. Running it against a pipe instead of the owned console separates a
+    broken rcfile or invocation from a console-attachment problem, so a failure
+    report says which of the two to fix. Only command output is captured.
+    """
+    try:
+        result = subprocess.run(shell_command(executable, rcfile),
+                                input='echo BASH_PIPE_STDIN_READY\n',
+                                capture_output=True, text=True, timeout=120, env=env)
+    except Exception as error:
+        return {'error': type(error).__name__}
+    return {'returncode': result.returncode,
+            'ready': 'BASH_PIPE_STDIN_READY' in result.stdout,
+            'stdout_tail': result.stdout.strip()[-160:],
+            'stderr_tail': result.stderr.strip()[-160:]}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--home', required=True)
@@ -274,7 +298,8 @@ def main():
             shell_input_mode = console.reset_input_mode()
             executable = (tool_home / '.pixi/bin/nu.exe' if shell == 'nu' else
                           tool_home / '.local/share/dotfiles/git-bash/bin/bash.exe')
-            command = [str(executable), '--interactive'] if shell == 'nu' else [str(executable), '--noprofile', '--rcfile', str(tool_home / '.bashrc').replace('\\', '/'), '-i']
+            command = ([str(executable), '--interactive'] if shell == 'nu' else
+                       shell_command(executable, tool_home / '.bashrc'))
             process = subprocess.Popen(command, cwd=tool_home, env=env)
             try:
                 time.sleep(1)
@@ -313,9 +338,22 @@ def main():
             secret = locals().get(name)
             if isinstance(secret, str) and secret:
                 detail = detail.replace(secret, '<redacted>')
+        diagnostic = {}
+        if 'bash' in phase:
+            # Only the failing shell is re-probed, and only off the console.
+            diagnostic = pipe_probe(tool_home / '.local/share/dotfiles/git-bash/bin/bash.exe',
+                                    tool_home / '.bashrc', environment(tool_home, tool_home))
+            for field in ('stdout_tail', 'stderr_tail'):
+                tail = diagnostic.get(field)
+                if isinstance(tail, str):
+                    for name in ('username', 'password', 'key'):
+                        secret = locals().get(name)
+                        if isinstance(secret, str) and secret:
+                            diagnostic[field] = tail.replace(secret, '<redacted>')
         report.write_text(json.dumps({'status': 'failed', 'native_console': True, 'phase': phase,
                                       'error': type(exc).__name__, 'detail': detail[:240],
-                                      'console_input_mode': shell_input_mode}) + '\n')
+                                      'console_input_mode': shell_input_mode,
+                                      'shell_diagnostic': diagnostic}) + '\n')
         return 1
 
 
