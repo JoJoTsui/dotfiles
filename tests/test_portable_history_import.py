@@ -28,6 +28,12 @@ class PortableHistoryImportTests(unittest.TestCase):
                         XDG_DATA_HOME=str(self.home / '.local/share'), ATUIN_CONFIG_DIR=str(self.config),
                         ATUIN_DATA_DIR=str(self.home / '.local/share/atuin'), PIXI_HOME=str(self.home / '.pixi'),
                         ATUIN_SESSION='0123456789abcdef0123456789abcdef')
+        if os.name == 'nt':
+            # Native Atuin resolves its home through the Windows Known Folder for
+            # the roaming profile, so the simulated home needs the standard AppData
+            # directories just like the Windows console fixture creates them.
+            for relative in ('AppData/Roaming', 'AppData/Local'):
+                (self.home / relative).mkdir(parents=True, exist_ok=True)
         binary = self.home / ('.pixi/bin/atuin.exe' if os.name == 'nt' else '.pixi/bin/atuin')
         binary.parent.mkdir(parents=True)
         shutil.copyfile(ATUIN, binary)
