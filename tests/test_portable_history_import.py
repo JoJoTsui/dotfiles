@@ -1,5 +1,6 @@
 """Explicit-file history migration observed through the public CLI and Atuin."""
 import os
+from contextlib import closing
 from pathlib import Path
 import shutil
 import sqlite3
@@ -74,7 +75,7 @@ class PortableHistoryImportTests(unittest.TestCase):
     def test_nu_sqlite_preserves_public_metadata_and_signed_session(self):
         selected = self.root / 'selected-history.sqlite3'
         secret = 'ghp_' + 'a' * 36
-        with sqlite3.connect(selected) as connection:
+        with closing(sqlite3.connect(selected)) as connection:
             connection.execute('CREATE TABLE history(id INTEGER, command_line BLOB, start_timestamp INTEGER, '
                                'session_id INTEGER, hostname BLOB, cwd BLOB, duration_ms INTEGER, exit_status INTEGER, more_info BLOB)')
             connection.execute('INSERT INTO history VALUES(1, ?, 1700000000123, -1, ?, ?, 42, 7, ?)',

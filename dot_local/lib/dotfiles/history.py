@@ -102,17 +102,21 @@ def status(atuin):
     last_sync = "no last sync"
     if meta_db.is_file():
         try:
-            with sqlite3.connect(meta_db.absolute().as_uri() + "?mode=ro", uri=True, timeout=1) as connection:
-                tables = {row[0] for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'")}
-                if "meta" in tables:
-                    authenticated = connection.execute(
-                        "SELECT 1 FROM meta WHERE key IN ('session', 'hub_session') LIMIT 1").fetchone() is not None
-                    if authenticated:
-                        row = connection.execute(
-                            "SELECT value FROM meta WHERE key = 'last_sync_time'").fetchone()
-                        if row:
-                            last_sync = row[0]
+            connection = sqlite3.connect(meta_db.absolute().as_uri() + "?mode=ro", uri=True, timeout=1)
+            try:
+                with connection:
+                    tables = {row[0] for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+                    if "meta" in tables:
+                        authenticated = connection.execute(
+                            "SELECT 1 FROM meta WHERE key IN ('session', 'hub_session') LIMIT 1").fetchone() is not None
+                        if authenticated:
+                            row = connection.execute(
+                                "SELECT value FROM meta WHERE key = 'last_sync_time'").fetchone()
+                            if row:
+                                last_sync = row[0]
+            finally:
+                connection.close()
         except sqlite3.Error as error:
             raise HistoryError("Atuin activation metadata is unavailable") from error
     # Atuin 18.23 migrates this legacy file into meta.db when its own store is
@@ -211,53 +215,66 @@ def import_nu_file(atuin, kind, source, database, environment):
     The native CLI creates the schema/default origin in unauthenticated staging.
     """
     run_atuin(atuin, ["history", "start", "--", "dotfiles-import-schema-seed"], env=environment)
-    with sqlite3.connect(database) as connection:
-        columns = [row[1] for row in connection.execute("PRAGMA table_info(history)")]
-        expected = {"id", "timestamp", "duration", "exit", "command", "cwd", "session", "hostname",
-                    "deleted_at", "author", "intent", "shell", "author_kind"}
-        if set(columns) != expected:
-            raise HistoryError("Atuin history schema differs from the verified Nu-file adapter")
-        template = dict(zip(columns, connection.execute("SELECT * FROM history LIMIT 1").fetchone()))
-        connection.execute("DELETE FROM history")
-        entries = []
-        if kind == "nu":
-            lines = source.read_bytes().split(b"\n")[:-1]
-            timestamp = time.time_ns() - min(max(len(lines) - 1, 0), 0xFFFFFFFF) * 1_000_000
-            for line in lines:
-                current = timestamp
-                timestamp += 1_000_000
+    # A Connection context manager commits but never closes, and an open staging
+    # handle blocks removing the staging directory on Windows. Close explicitly.
+    connection = sqlite3.connect(database)
+    try:
+        with connection:
+            columns = [row[1] for row in connection.execute("PRAGMA table_info(history)")]
+            expected = {"id", "timestamp", "duration", "exit", "command", "cwd", "session", "hostname",
+                        "deleted_at", "author", "intent", "shell", "author_kind"}
+            if set(columns) != expected:
+                raise HistoryError("Atuin history schema differs from the verified Nu-file adapter")
+            template = dict(zip(columns, connection.execute("SELECT * FROM history LIMIT 1").fetchone()))
+            connection.execute("DELETE FROM history")
+            entries = []
+            if kind == "nu":
+                lines = source.read_bytes().split(b"\n")[:-1]
+                timestamp = time.time_ns() - min(max(len(lines) - 1, 0), 0xFFFFFFFF) * 1_000_000
+                for line in lines:
+                    current = timestamp
+                    timestamp += 1_000_000
+                    try:
+                        command = line.decode("utf-8").replace("<\\n>", "\n")
+                    except UnicodeDecodeError:
+                        continue
+                    entries.append({"timestamp": current, "command": command, "cwd": "unknown", "exit": -1,
+                                    "duration": -1, "shell": "nu", "deleted_at": None, "intent": None, "author_kind": None})
+            else:
+                def text(value):
+                    return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
+                original = sqlite3.connect(source.absolute().as_uri() + "?mode=ro", uri=True)
                 try:
-                    command = line.decode("utf-8").replace("<\\n>", "\n")
-                except UnicodeDecodeError:
-                    continue
-                entries.append({"timestamp": current, "command": command, "cwd": "unknown", "exit": -1,
-                                "duration": -1, "shell": "nu", "deleted_at": None, "intent": None, "author_kind": None})
-        else:
-            def text(value):
-                return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else str(value)
-            with sqlite3.connect(source.absolute().as_uri() + "?mode=ro", uri=True) as original:
-                with sqlite3.connect(":memory:") as snapshot:
-                    original.backup(snapshot)
-                    rows = snapshot.execute("SELECT command_line, start_timestamp, session_id, hostname, cwd, "
-                                            "duration_ms, exit_status FROM history ORDER BY start_timestamp").fetchall()
-            for command, milliseconds, session, hostname, cwd, duration, exit_status in rows:
-                timestamp = milliseconds * 1_000_000
-                if not -(1 << 63) <= timestamp < (1 << 63):
-                    timestamp = 0
-                entries.append({"timestamp": timestamp, "command": text(command), "cwd": text(cwd),
-                                "exit": exit_status, "duration": duration, "session": format(session & ((1 << 64) - 1), "x"),
-                                "hostname": text(hostname) + ":" + template["author"], "shell": "nu",
-                                "deleted_at": None, "intent": None, "author_kind": None})
-        placeholders = ",".join("?" for _ in columns)
-        names = ",".join('"' + name + '"' for name in columns)
-        for values in entries:
-            # Fresh UUIDv7 IDs match the importer's identity policy; source Nu
-            # row IDs are not Atuin history identities.
-            random = uuid.uuid4().int
-            identity = ((time.time_ns() // 1_000_000) << 80) | (7 << 76) | (((random >> 64) & 0xFFF) << 64)
-            identity |= (2 << 62) | (random & ((1 << 62) - 1))
-            entry = dict(template, **values, id=uuid.UUID(int=identity).hex)
-            connection.execute(f"INSERT INTO history ({names}) VALUES ({placeholders})", [entry[name] for name in columns])
+                    with original:
+                        snapshot = sqlite3.connect(":memory:")
+                        try:
+                            original.backup(snapshot)
+                            rows = snapshot.execute("SELECT command_line, start_timestamp, session_id, hostname, cwd, "
+                                                    "duration_ms, exit_status FROM history ORDER BY start_timestamp").fetchall()
+                        finally:
+                            snapshot.close()
+                finally:
+                    original.close()
+                for command, milliseconds, session, hostname, cwd, duration, exit_status in rows:
+                    timestamp = milliseconds * 1_000_000
+                    if not -(1 << 63) <= timestamp < (1 << 63):
+                        timestamp = 0
+                    entries.append({"timestamp": timestamp, "command": text(command), "cwd": text(cwd),
+                                    "exit": exit_status, "duration": duration, "session": format(session & ((1 << 64) - 1), "x"),
+                                    "hostname": text(hostname) + ":" + template["author"], "shell": "nu",
+                                    "deleted_at": None, "intent": None, "author_kind": None})
+            placeholders = ",".join("?" for _ in columns)
+            names = ",".join('"' + name + '"' for name in columns)
+            for values in entries:
+                # Fresh UUIDv7 IDs match the importer's identity policy; source Nu
+                # row IDs are not Atuin history identities.
+                random = uuid.uuid4().int
+                identity = ((time.time_ns() // 1_000_000) << 80) | (7 << 76) | (((random >> 64) & 0xFFF) << 64)
+                identity |= (2 << 62) | (random & ((1 << 62) - 1))
+                entry = dict(template, **values, id=uuid.UUID(int=identity).hex)
+                connection.execute(f"INSERT INTO history ({names}) VALUES ({placeholders})", [entry[name] for name in columns])
+    finally:
+        connection.close()
 
 
 def import_history(atuin, kind, source):
@@ -347,9 +364,15 @@ def import_history(atuin, kind, source):
                 else:
                     importer = "nu-hist-db"
                     uri = source.absolute().as_uri() + "?mode=ro"
-                    with sqlite3.connect(uri, uri=True) as original:
-                        with sqlite3.connect(nu_config / "history.sqlite3") as snapshot:
+                    original = sqlite3.connect(uri, uri=True)
+                    try:
+                        snapshot = sqlite3.connect(nu_config / "history.sqlite3")
+                        try:
                             original.backup(snapshot)
+                        finally:
+                            snapshot.close()
+                    finally:
+                        original.close()
             if not portable_nu:
                 run_atuin(atuin, ["import", importer], env=stage_env)
             run_atuin(atuin, ["history", "prune"], env=stage_env)
@@ -359,17 +382,21 @@ def import_history(atuin, kind, source):
             # old commands as if they had just run. Schema drift fails closed.
             run_atuin(atuin, ["history", "list", "--format", "{uuid}"])
             destination = configured_path(atuin, "db_path")
-            with sqlite3.connect(destination) as connection:
-                connection.execute("ATTACH DATABASE ? AS migration", (str(stage_data / "history.db"),))
-                local_columns = [row[1] for row in connection.execute("PRAGMA main.table_info(history)")]
-                imported_columns = [row[1] for row in connection.execute("PRAGMA migration.table_info(history)")]
-                if local_columns != imported_columns or not {"id", "command", "timestamp", "deleted_at"}.issubset(local_columns):
-                    raise HistoryError("Atuin history schema differs from the verified migration schema")
-                columns = ", ".join('"' + name.replace('"', '""') + '"' for name in local_columns)
-                before = connection.total_changes
-                connection.execute(f"INSERT OR IGNORE INTO main.history ({columns}) "
-                                   f"SELECT {columns} FROM migration.history WHERE deleted_at IS NULL")
-                imported = connection.total_changes - before
+            connection = sqlite3.connect(destination)
+            try:
+                with connection:
+                    connection.execute("ATTACH DATABASE ? AS migration", (str(stage_data / "history.db"),))
+                    local_columns = [row[1] for row in connection.execute("PRAGMA main.table_info(history)")]
+                    imported_columns = [row[1] for row in connection.execute("PRAGMA migration.table_info(history)")]
+                    if local_columns != imported_columns or not {"id", "command", "timestamp", "deleted_at"}.issubset(local_columns):
+                        raise HistoryError("Atuin history schema differs from the verified migration schema")
+                    columns = ", ".join('"' + name.replace('"', '""') + '"' for name in local_columns)
+                    before = connection.total_changes
+                    connection.execute(f"INSERT OR IGNORE INTO main.history ({columns}) "
+                                       f"SELECT {columns} FROM migration.history WHERE deleted_at IS NULL")
+                    imported = connection.total_changes - before
+            finally:
+                connection.close()
             # Accepted entries are now local. Persist the one-time marker before
             # building records, so a record-store error cannot duplicate imports.
             marker.write_text(json.dumps({"format": kind, "accepted": imported}) + "\n")

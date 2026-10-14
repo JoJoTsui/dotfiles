@@ -1,5 +1,6 @@
 """Shared history behavior with synthetic data and separately writable homes."""
 import os
+from contextlib import closing
 from pathlib import Path
 import select
 import signal
@@ -225,7 +226,7 @@ class HistoryBehaviorTests(unittest.TestCase):
         nu = self.root / "nu-import.fixture"
         nu.write_text(f"echo imported-nu-token<\\n>echo multiline-token\necho excluded-nu-{secret}\n")
         nu_db = self.root / "nu-sqlite.fixture"
-        with sqlite3.connect(nu_db) as connection:
+        with closing(sqlite3.connect(nu_db)) as connection:
             connection.execute("CREATE TABLE history(id INTEGER, command_line BLOB, start_timestamp INTEGER, "
                                "session_id INTEGER, hostname BLOB, cwd BLOB, duration_ms INTEGER, "
                                "exit_status INTEGER, more_info BLOB)")
