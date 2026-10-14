@@ -162,6 +162,23 @@ def check_pinned_tools(home, plan, report):
     require(not (home / ".github").exists(), "workflow bookkeeping excluded from target")
 
 
+def bundle_diagnostic(home, command, env):
+    """Run the first harmless diagnostic the exposed bundle command accepts.
+
+    `--version` is the recorded evidence where it works. A GUI entry point can
+    refuse it without a graphical session, and bundles.tsv declares that session
+    a host prerequisite this deployment never provisions, so `--help` is the
+    fallback. The repository already treats `--help` as the harmless diagnostic
+    for helpers whose real transport is unavailable.
+    """
+    for arguments in (["--version"], ["--help"]):
+        result = run([str(home / ".pixi/bin" / command), *arguments], env=env, cwd=home,
+                     timeout=180, allow_failure=True)
+        if result.returncode == 0:
+            return arguments[0], (result.stdout + result.stderr).strip().splitlines()[0]
+    return None, None
+
+
 def check_bundle_tools(home, bundles, report):
     """Verify a selected bundle's tools are exposed and run harmlessly.
 
@@ -185,8 +202,9 @@ def check_bundle_tools(home, bundles, report):
             command = exposure.split("=", 1)[0]
             location = home / ".pixi/bin" / command
             require(location.is_file() and not location.is_symlink(), f"bundle exposure: {command}")
-            diagnostic = run([str(location), "--version"], env=env, cwd=home, timeout=180)
-            versions[command] = (diagnostic.stdout + diagnostic.stderr).strip().splitlines()[0]
+            flag, output = bundle_diagnostic(home, command, env)
+            require(flag is not None, f"bundle command is exposed but runs no harmless diagnostic: {command}")
+            versions[command] = {"diagnostic": flag, "output": output}
     require(versions, "no macOS-supported tool matched the selected bundle")
     report["bundle_versions"] = versions
 

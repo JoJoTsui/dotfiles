@@ -298,9 +298,22 @@ class WindowsNativeInstallTests(unittest.TestCase):
             with self.subTest(bundle=command):
                 self.assertTrue(location.is_file() and not location.is_symlink(),
                                 f'managed bundle exposure: {location}')
-                diagnostic = subprocess.run([str(location), '--version'], env=environment,
-                                            capture_output=True, text=True, timeout=180)
-                self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
+                self.assert_runs_harmless_diagnostic(location, command, environment)
+
+    def assert_runs_harmless_diagnostic(self, location, command, environment):
+        """Accept the first harmless diagnostic the exposed bundle command runs.
+
+        `--version` is the recorded evidence where it works. A GUI entry point can
+        refuse it without a graphical session, and bundles.tsv declares that
+        session a host prerequisite this deployment never provisions, so `--help`
+        is the fallback, matching the harmless `--help` diagnostic used elsewhere.
+        """
+        for arguments in (['--version'], ['--help']):
+            diagnostic = subprocess.run([str(location), *arguments], env=environment,
+                                        capture_output=True, text=True, timeout=180)
+            if diagnostic.returncode == 0:
+                return arguments[0]
+        self.fail(f'bundle command is exposed but runs no harmless diagnostic: {command}')
 
     def test_default_install_reapply_and_native_diagnostics(self):
         role = os.environ.get('DOTFILES_TEST_WINDOWS_ROLE', 'workstation')
