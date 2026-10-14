@@ -130,7 +130,7 @@ class Console:
             if location >= 0:
                 return location + len(prompt)
             if process.poll() is not None:
-                raise RuntimeError('native client ended before its expected console prompt')
+                raise RuntimeError(f'native client ended (exit {process.returncode}) before its expected console prompt {prompt!r}')
             time.sleep(0.05)
         raise RuntimeError('native console prompt timed out')
 
@@ -258,6 +258,7 @@ def main():
         log = tool_home / 'native-console.log'
         log.write_text('2026-10-13 INFO native-tailspin-token\n')
         for shell in ('nu', 'bash'):
+            phase = 'native interactive shells (' + shell + ')'
             console.clear()
             executable = (tool_home / '.pixi/bin/nu.exe' if shell == 'nu' else
                           tool_home / '.local/share/dotfiles/git-bash/bin/bash.exe')
