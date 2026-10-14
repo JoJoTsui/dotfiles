@@ -227,12 +227,13 @@ class HistoryBehaviorTests(unittest.TestCase):
         nu.write_text(f"echo imported-nu-token<\\n>echo multiline-token\necho excluded-nu-{secret}\n")
         nu_db = self.root / "nu-sqlite.fixture"
         with closing(sqlite3.connect(nu_db)) as connection:
-            connection.execute("CREATE TABLE history(id INTEGER, command_line BLOB, start_timestamp INTEGER, "
-                               "session_id INTEGER, hostname BLOB, cwd BLOB, duration_ms INTEGER, "
-                               "exit_status INTEGER, more_info BLOB)")
-            for identifier, command in enumerate((b"echo imported-nu-db-token", f"echo excluded-nu-db-{secret}".encode()), 1):
-                connection.execute("INSERT INTO history VALUES(?,?,?,?,?,?,?,?,?)",
-                                   (identifier, command, 1700000003000, 1, b"synthetic", b"/synthetic", 100, 0, b""))
+            with connection:
+                connection.execute("CREATE TABLE history(id INTEGER, command_line BLOB, start_timestamp INTEGER, "
+                                   "session_id INTEGER, hostname BLOB, cwd BLOB, duration_ms INTEGER, "
+                                   "exit_status INTEGER, more_info BLOB)")
+                for identifier, command in enumerate((b"echo imported-nu-db-token", f"echo excluded-nu-db-{secret}".encode()), 1):
+                    connection.execute("INSERT INTO history VALUES(?,?,?,?,?,?,?,?,?)",
+                                       (identifier, command, 1700000003000, 1, b"synthetic", b"/synthetic", 100, 0, b""))
         for kind, path in (("zsh", zsh), ("nu", nu), ("nu-db", nu_db)):
             with self.subTest(format=kind):
                 before = path.read_bytes()

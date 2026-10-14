@@ -368,7 +368,8 @@ def import_history(atuin, kind, source):
                     try:
                         snapshot = sqlite3.connect(nu_config / "history.sqlite3")
                         try:
-                            original.backup(snapshot)
+                            with snapshot:
+                                original.backup(snapshot)
                         finally:
                             snapshot.close()
                     finally:

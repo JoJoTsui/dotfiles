@@ -76,14 +76,15 @@ class PortableHistoryImportTests(unittest.TestCase):
         selected = self.root / 'selected-history.sqlite3'
         secret = 'ghp_' + 'a' * 36
         with closing(sqlite3.connect(selected)) as connection:
-            connection.execute('CREATE TABLE history(id INTEGER, command_line BLOB, start_timestamp INTEGER, '
-                               'session_id INTEGER, hostname BLOB, cwd BLOB, duration_ms INTEGER, exit_status INTEGER, more_info BLOB)')
-            connection.execute('INSERT INTO history VALUES(1, ?, 1700000000123, -1, ?, ?, 42, 7, ?)',
-                               (b'echo portable-sqlite-\xff', b'fixture-host', b'/fixture/\xff', b'ignored'))
-            connection.execute('INSERT INTO history VALUES(2, ?, 9223372036854775807, 2, ?, ?, 100, 0, ?)',
-                               (b'echo corrupt-time-token', b'fixture-host', b'/fixture', b''))
-            connection.execute('INSERT INTO history VALUES(3, ?, 1700000000124, 3, ?, ?, 100, 0, ?)',
-                               (f'echo excluded-db-{secret}'.encode(), b'fixture-host', b'/fixture', b''))
+            with connection:
+                connection.execute('CREATE TABLE history(id INTEGER, command_line BLOB, start_timestamp INTEGER, '
+                                   'session_id INTEGER, hostname BLOB, cwd BLOB, duration_ms INTEGER, exit_status INTEGER, more_info BLOB)')
+                connection.execute('INSERT INTO history VALUES(1, ?, 1700000000123, -1, ?, ?, 42, 7, ?)',
+                                   (b'echo portable-sqlite-\xff', b'fixture-host', b'/fixture/\xff', b'ignored'))
+                connection.execute('INSERT INTO history VALUES(2, ?, 9223372036854775807, 2, ?, ?, 100, 0, ?)',
+                                   (b'echo corrupt-time-token', b'fixture-host', b'/fixture', b''))
+                connection.execute('INSERT INTO history VALUES(3, ?, 1700000000124, 3, ?, ?, 100, 0, ?)',
+                                   (f'echo excluded-db-{secret}'.encode(), b'fixture-host', b'/fixture', b''))
         original = selected.read_bytes()
         imported = self.history('import', 'nu-db-file', '--file', str(selected))
         self.assertEqual(imported.returncode, 0, imported.stderr)
