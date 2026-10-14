@@ -126,7 +126,8 @@ DOTFILES_TEST_NODE=/absolute/path/node \
 python3 -m unittest discover -s tests -p test_agents.py -v
 ```
 
-Native macOS/Windows/ARM execution remains separate CI acceptance. A
+Native execution is separate CI acceptance, and has since passed for macOS,
+native Windows and WSL2 x86-64; only WSL2 ARM64 is unscheduled. A
 cross-platform lock proves resolution/integrity metadata, not execution of
 foreign binaries or postinstall scripts. No account, credential, model request,
 real shell history, or user-repository index is part of these checks.

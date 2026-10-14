@@ -11,8 +11,8 @@ authenticated, imported, or indexed.
 | Native Linux x86-64 | Real pinned downloads, Pixi sync, Rustup manager installation, and harmless CLI diagnostics passed in an isolated home. The check reruns bootstrap and verifies managed command locations and retained unrelated Pixi exposure. |
 | TUNA discovery | Managed pip returns its configured TUNA index. Managed uv's settings display discovers the rendered TUNA index during an offline dry-run against a deliberately unavailable package. No Python package installation or mirror-network success is inferred from that diagnostic. |
 | Foreign resolution | Pixi workspace lock resolution succeeded for all 29 per-tool environments on their declared targets: 139 environment/target solves across Linux x86-64/ARM64, macOS Intel/ARM64, and native Windows x86-64. Windows omits six Unix-only conda entries for its later explicit exceptions. |
-| Native foreign/ARM execution | Pending. Resolution did not execute those binaries. Native platform adapters and their runners belong to later tickets. |
-| Full bootstrap | Pending ticket 04. Its explicit agent-stage failure is expected at this midpoint and never produces the full completion message. |
+| Native foreign/ARM execution | Recorded later, not by resolution. The 139 solves above are resolution evidence only. Native execution has since passed for macOS Intel and Apple silicon, native Windows x86-64, and WSL2 x86-64 on tickets 09–11's runners; WSL2 ARM64 is unscheduled for want of a runner. |
+| Full bootstrap | Recorded later by ticket 04. Its explicit agent-stage failure was expected at this midpoint and never produced the full completion message; the ticket is now implemented and its checks pass. |
 
 The real-install test is `tests/test_common_install.py`, enabled with
 `DOTFILES_TEST_INSTALL=1`. The retained validation home is

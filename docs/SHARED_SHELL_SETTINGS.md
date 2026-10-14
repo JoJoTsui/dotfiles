@@ -69,5 +69,6 @@ ownership. The shell suite covers role parity, overrides, idempotence, proxy
 escaping/unset, zoxide navigation, RTK, Tailspin plus actual less paging, script
 guards, real controlling-TTY Nu preference, ordinary interactive Nu discovery,
 repeatable resource generation, generator failure preservation, and startup
-before package installation. Native macOS/WSL/Windows and ARM execution remain
-the corresponding platform/matrix tickets' responsibility.
+before package installation. Native macOS/WSL/Windows execution was established
+by the corresponding platform/matrix tickets, and only WSL2 ARM64 is now
+unscheduled.

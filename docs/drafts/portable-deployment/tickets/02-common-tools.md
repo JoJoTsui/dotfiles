@@ -10,7 +10,8 @@ packages do not determine whether the common deployment succeeds.
 **Blocked by:** 01 — Resolve and apply an isolated Linux deployment.
 
 **Status:** Implemented. Isolated Linux x86-64 execution and declared foreign
-package resolution passed; native foreign/ARM execution remains separate work.
+package resolution passed; native foreign execution has since been established
+by tickets 09–11, leaving only WSL2 ARM64 unscheduled.
 
 - [x] Default bootstrap installs Pixi, uv, Bun, a compatible Node runtime, Nushell, Zsh, Bash, RTK, Atuin, zoxide, Tailspin, and Tailspin's pager on supported Linux targets.
 - [x] RTK and Tailspin are Pixi-managed and expose their standard commands; configuration-referenced common commands are installed by the manifest or a declared bootstrap step.
