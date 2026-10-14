@@ -44,5 +44,5 @@ case skipped), ShellCheck warning checks, `git diff --check`, and separate
 `--class t9k`/`--class linux` source applications with POSIX/Bash/Zsh parsing
 and standalone Nu execution. Ticket 02 separately records package installation
 and ownership; this ticket borrows those executables without claiming another
-installation. Native macOS, WSL, Windows, and ARM execution remains pending
-in its dedicated tickets. See [shared settings](../../../SHARED_SHELL_SETTINGS.md).
+installation. Native macOS, WSL x86-64 and Windows execution has since passed
+in its dedicated tickets; only WSL2 ARM is unscheduled. See [shared settings](../../../SHARED_SHELL_SETTINGS.md).

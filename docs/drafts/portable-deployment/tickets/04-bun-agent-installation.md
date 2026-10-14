@@ -11,7 +11,8 @@ manager completed.
 **Blocked by:** 02 — Install common tools through managed installers.
 
 **Status:** Implemented and verified on Linux x86-64; foreign native validation
-remains pending in tickets 09–11 and the complete matrix.
+has since passed for macOS, native Windows and WSL2 x86-64 through tickets
+09–11, with only WSL2 ARM64 unscheduled.
 
 - [x] The default installs all five named agents through Bun; Codex has one managed installation source rather than competing Pixi and Bun installs.
 - [x] All, none, and named-list selection behave predictably; unknown agent names fail clearly before installation.

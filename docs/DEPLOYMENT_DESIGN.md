@@ -159,8 +159,9 @@ from native execution.
   installer effects during tests. Existing home directories and system
   configuration are outside all test targets.
 - Run applicable Linux shell/tool checks locally and native platform checks in
-  CI. CI execution remains pending until those runners actually run; local
-  template checks do not stand in for it.
+  CI. Those runners have since executed for macOS, Windows and WSL2 x86-64;
+  local template checks still do not stand in for native execution, and WSL2
+  ARM64 is unscheduled.
 
 No design decision remains open. The next review covers the specification's
 test boundaries and the ticket breakdown before tracker publication.

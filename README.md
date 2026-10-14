@@ -184,7 +184,8 @@ metadata. Ordinary bootstrap never activates accounts or imports history.
 Agent conversations, credentials and trust state stay outside this collection.
 See [history setup and its native-shell limits](docs/SHARED_HISTORY.md) and
 [isolated Linux evidence](docs/verification/shared-history.md). Native
-macOS/WSL/Windows execution belongs to their platform tickets.
+macOS/WSL/Windows execution is recorded in their platform tickets, all of which
+have now run; WSL2 ARM64 is unscheduled.
 
 ## Toolchain: pixi global
 

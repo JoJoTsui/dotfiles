@@ -90,8 +90,8 @@ agent history hooks or command-output capture.
 [The Linux evidence](verification/shared-history.md) covers actual Nu/Bash/Zsh
 recording, recognized-secret exclusion, all four import formats, hidden setup
 input, two-device encrypted loopback sync, and operation after that endpoint
-stops. Native macOS/WSL/Windows execution remains with their platform tickets.
-The helper's Unix terminal masking is implemented; native Windows console
+stops. Native macOS/WSL/Windows execution is recorded in their platform tickets,
+which have now run. The helper's Unix terminal masking is implemented; native Windows console
 masking, native Nu import discovery and write isolation need ticket 11's
 verified adapter. WSL uses the Unix boundary.
 

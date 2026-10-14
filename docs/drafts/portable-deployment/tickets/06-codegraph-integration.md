@@ -10,7 +10,8 @@ index user repositories.
 **Blocked by:** 05 — Deploy portable instructions and skills to every agent.
 
 **Status:** Implemented and verified on isolated Linux x86-64. Native foreign
-execution remains pending tickets 09–11/13.
+execution has since passed for macOS, native Windows and WSL2 x86-64 through
+tickets 09–11; only WSL2 ARM64 is unscheduled.
 
 - [x] Claude Code, Codex, Kimi Code, and opencode receive validated native MCP configuration appropriate to their pinned versions.
 - [x] pi receives usable CodeGraph CLI instructions or a skill without assuming a core MCP client.
