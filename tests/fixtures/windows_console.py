@@ -198,9 +198,13 @@ def main():
                 process = subprocess.Popen([sys.executable, str(source / 'dot_local/lib/dotfiles/history.py'), action], env=env)
                 try:
                     if prompts is None:
-                        prompts = [('encryption key [blank', 'invalid-key'), ('please try again', None),
-                                   ('encryption key [blank', key), ('username:', username if name == 'joined' else 'unknown-user'),
-                                   ('password:', password if name == 'joined' else 'synthetic-wrong-password')]
+                        # Atuin 18.23 uses its legacy flow for a custom sync_address (Hub needs
+                        # api.atuin.sh/hub.atuin.sh), which asks for the username and password
+                        # before the encryption key; the rejected-key retry prompt follows it.
+                        prompts = [('username:', username if name == 'joined' else 'unknown-user'),
+                                   ('password:', password if name == 'joined' else 'synthetic-wrong-password'),
+                                   ('encryption key [blank', 'invalid-key'), ('please try again', None),
+                                   ('encryption key [blank', key)]
                     cursor = 0
                     for prompt, value in prompts:
                         phase = f'{name} console activation ({prompt})'
