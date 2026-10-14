@@ -28,7 +28,12 @@ together and is not counted as execution.
 | Console cancellation/TOTP browser flow | Public wrapper terminates/waits in cancellation and masks all console input; fixture targets normal and failed child restoration | Deferred; see the deferred-gates note below |
 
 The native rows above were verified by the GitHub-hosted Windows runner, not by
-this Linux session. The Linux PowerShell tool remains the official
+this Linux session. A separate `desktop` job also runs the native install with
+`--bundles desktop` and passed at commit `b64fedb` in run
+[38566605610](https://github.com/JoJoTsui/dotfiles/actions/runs/38566605610),
+covering the workstation role only. See
+[bundle evidence](../validation/bundles.md) for the shared optional-bundle
+result. The Linux PowerShell tool remains the official
 checksum-verified 7.6.6 archive; it establishes parsing and rendering only, not
 PowerShell 5.1 compatibility, Windows ACLs, reparse semantics, archive execution,
 native shim spawning or console behavior. The public boundary accepts foreign

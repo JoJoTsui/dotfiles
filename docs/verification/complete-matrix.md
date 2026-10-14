@@ -15,10 +15,11 @@ all writable state to a temporary directory under `/tmp`.
 | --- | --- | --- |
 | Local matrix | `python3 tests/verify_portable.py` | Fourteen profile/architecture/role cells, defaults, agent selection, all declared bundle support/rejection outcomes, source pin consistency, and deterministic acceptance tests. |
 | Network install and diagnostics | `python3 tests/verify_portable.py --network` | Isolated Linux common-tool install/reapply and CLI checks; all five Bun agent installs/diagnostics; actual Nushell/Bash/Zsh and synthetic history behavior; common and bundle dependency resolution for every declared target. |
-| Native macOS | [native-macos.yml](../../.github/workflows/native-macos.yml) | Intel and Apple silicon, workstation and remote-compute; native install and startup checks. |
-| Native Windows | [native-windows.yml](../../.github/workflows/native-windows.yml) | Windows x86-64, both roles; PowerShell, Nu/Git Bash, Windows paths, installers, clients, and history boundary. |
+| Native macOS | [native-macos.yml](../../.github/workflows/native-macos.yml) | Intel and Apple silicon, workstation and remote-compute; native install and startup checks. Passed in run 38524061897 at commit `81857d6`. |
+| Native Windows | [native-windows.yml](../../.github/workflows/native-windows.yml) | Windows x86-64, both roles; PowerShell, Nu/Git Bash, Windows paths, installers, clients, and history boundary. Passed in run 38524061998 at commit `81857d6`. |
 | Native WSL2 | [native-wsl.yml](../../.github/workflows/native-wsl.yml) | Windows 2025 disposable WSL2 x86-64, both roles; Linux execution and Windows interoperability. Passed in run 38524061914 at commit `81857d6`. |
 | Native WSL2 ARM64 | Not scheduled; the former opt-in self-hosted job was removed | Requires a Windows ARM64 runner labeled `self-hosted`, `Windows`, `ARM64` and `wsl2`, which is unavailable; no render or x86-64 result can replace it. |
+| Native optional bundles | A dedicated `desktop` job per native platform in the macOS and Windows workflows | Optional bundle selection needs its own slot because the default matrices install common defaults only. Passed at commit `b64fedb` for Apple silicon and Windows x86-64 workstations; see [bundle evidence](../validation/bundles.md). |
 
 The local verifier returns nonzero on a bad plan, unsupported bundle accepted,
 supported bundle rejected, package-catalog error, test failure, network

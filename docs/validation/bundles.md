@@ -43,11 +43,35 @@ pending-agent failure after those successful stages was kept distinct from
 full-bootstrap completion. Actual GPU telemetry and graphical workloads are
 not established by installing a package or running its version diagnostic.
 
-After merging the completed shell and agent adapters, the same isolated test
+After merging the completed shell and adapters, the same isolated test
 passed full bootstrap twice with `--agents none`, including default CodeGraph
 installation and managed shell preparation. Combined source/shell/agent/bundle
 discovery passed 34 checks, with six separately reported opt-in verification
 skips. This supplies actual Linux execution evidence for the combined slice.
+
+## Native bundle execution
+
+The default native runners install common defaults only, so optional bundle
+selection had its own dedicated slot added rather than doubling the matrices. A
+`desktop` job runs per native platform, passing `--bundles desktop` into
+`bootstrap` and checking that the selection reaches the native plan and that
+each matching exposure resolves to a managed file inside the temporary device
+home.
+
+On 2026-10-14 at commit `b64fedb` both slots passed:
+
+- **macOS** (Apple silicon, workstation): run
+  [38566605510](https://github.com/JoJoTsui/dotfiles/actions/runs/38566605510).
+  `firefox --version` returned `Mozilla Firefox 157.0.1`.
+- **Windows** (x86-64, workstation): run
+  [38566605610](https://github.com/JoJoTsui/dotfiles/actions/runs/38566605610).
+
+The exposed `zed` command accepted `--help` (`The Zed CLI binary.`) but refused
+`--version` on a session-less runner. A graphical session is a host prerequisite
+that `bundles.tsv` declares never to be provisioned implicitly, so the checks
+accept the first harmless diagnostic a command runs and record which one it
+was; a command that accepts neither still fails. The Intel macOS, remote-compute,
+WSL and ARM cells are not claimed by these slots.
 
 ## Repeatable checks
 
@@ -98,9 +122,10 @@ from the combined full-bootstrap result above.
 - Developer: glibc 2.28 or newer; kernel/container permissions can limit
   bubblewrap. Cloud accounts, project SDKs, Rust toolchains, Lark services,
   Headroom's optional local service, and reference datasets are set up on use.
-- Native macOS/Windows/ARM and actual WSL execution remain the separate native
-  profile acceptance work. Neither solver success nor Linux rendering counts
-  as those runtimes passing.
+- Native macOS/Windows bundle execution has passed for `desktop` as recorded
+  above; a graphical session and compatible graphics remain host prerequisites
+  this deployment never provisions, and actual WSL, ARM and GUI telemetry checks
+  stay separate from a solver result or a package install.
 
 Primary pin and constraint inputs were the published package records, including
 [Bioconda tgv](https://api.anaconda.org/package/bioconda/tgv),

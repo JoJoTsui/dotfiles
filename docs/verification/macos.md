@@ -45,6 +45,11 @@ four architecture/role render combinations, corrected actual Nu REPL startup,
 symlink guards, and native-verifier refusal on Linux. YAML parsing, Bash syntax,
 Python compilation and ShellCheck error checks passed. Native CI runs
 `tests/native_macos.py` per architecture/role and uploads only a result report.
+An additional `desktop` job runs the same gate with `--bundles desktop` and
+passed at commit `b64fedb` in run
+[38566605510](https://github.com/JoJoTsui/dotfiles/actions/runs/38566605510),
+covering Apple silicon workstation only; the Intel and role cells are not
+claimed by it.
 Foreign execution fails with `native_execution: false` and `status: unavailable`
 rather than a pass.
 
