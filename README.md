@@ -60,7 +60,11 @@ presets and component selections fail before writing files.
 Legacy `--class t9k` / `DOTFILES_CLASS=t9k` maps to Linux remote compute;
 `linux` and `win` map to their workstation profiles. Remote compute targets
 receive `~/.vscode-server` settings. The current host uses the documented
-`linux-remote-compute` preset and remains outside deployment validation.
+`linux-remote-compute` preset and remains outside deployment validation. Its
+pre-chezmoi symlink layout is maintained explicitly by the ignored
+`deployment/legacy/link-home.sh` utility; see
+[legacy home links](docs/LEGACY_HOME_LINKS.md). Ordinary bootstrap never runs
+that utility and never converts a copy-mode home to symlinks.
 
 WSL uses the Unix bootstrap and all three shells with Linux home/tool paths.
 Read [WSL deployment](docs/WSL_DEPLOYMENT.md) for native Windows interoperability
@@ -87,7 +91,7 @@ never enter git):
 .chezmoi.toml.tmpl          # profile data, copy mode, secrets from env
 .chezmoiignore              # bookkeeping + non-$HOME payloads never applied
 bootstrap.sh                # one-shot new-host setup (see above)
-deployment/                 # pure profile resolution and installer adapters
+deployment/                 # profile resolution/installers; legacy relinker
 tests/test_deployment.py    # public boundary checks in disposable homes
 tests/verify_portable.py    # fourteen-cell local and opt-in network matrix
 .chezmoidata.toml           # canonical shared shell defaults and PATH priority
