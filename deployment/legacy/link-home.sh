@@ -7,7 +7,20 @@
 # .chezmoiignore) so bootstrap and source application cannot run it.
 set -euo pipefail
 
-SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
+SCRIPT_FILE=${BASH_SOURCE[0]}
+LINK_DEPTH=0
+while [ -L "$SCRIPT_FILE" ]; do
+    [ "$LINK_DEPTH" -lt 40 ] ||
+        { printf 'link-home: too many symlinks resolving %s\n' "$SCRIPT_FILE" >&2; exit 1; }
+    LINK_DEPTH=$((LINK_DEPTH + 1))
+    LINK_DIR=$(CDPATH='' cd -- "$(dirname -- "$SCRIPT_FILE")" && pwd -P) || exit 1
+    SCRIPT_FILE=$(readlink "$SCRIPT_FILE") || exit 1
+    case "$SCRIPT_FILE" in
+        /*) ;;
+        *) SCRIPT_FILE="$LINK_DIR/$SCRIPT_FILE" ;;
+    esac
+done
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$SCRIPT_FILE")" && pwd -P) || exit 1
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd -P) || exit 1
 MANIFEST="$SCRIPT_DIR/home-links.tsv"
 DEFAULT_SOURCE=$(dirname -- "$REPO_ROOT")

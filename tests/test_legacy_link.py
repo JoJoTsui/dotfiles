@@ -212,6 +212,30 @@ class LegacyLinkTests(unittest.TestCase):
         self.assertIn("selected source path(s) missing", strict.stderr)
         self.assertFalse((self.home / ".bashrc").exists())
 
+    def test_symlink_invocation_still_finds_the_manifest(self):
+        self.make_sources([("config", ".bashrc")])
+        alias = self.root / "link-home"
+        alias.symlink_to(os.path.relpath(SCRIPT, self.root))
+        result = subprocess.run(
+            [
+                "bash", str(alias),
+                "--source", str(self.source),
+                "--home", str(self.home),
+                "--groups", "config",
+            ],
+            cwd=self.root,
+            env=self.env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / ".bashrc").is_symlink())
+        self.assertEqual(
+            os.readlink(self.home / ".bashrc"),
+            str(self.source / ".bashrc"),
+        )
+
     def test_help_and_list_do_not_require_a_target_home(self):
         help_result = subprocess.run(
             ["bash", str(SCRIPT), "--help"],

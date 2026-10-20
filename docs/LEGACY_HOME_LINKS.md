@@ -37,8 +37,10 @@ bash deployment/legacy/link-home.sh --source /srv/legacy --home /home/example
 bash deployment/legacy/link-home.sh --list
 ```
 
-The default source is the parent of this checkout. The default home is
-`$HOME`. Both must exist and resolve to different directories.
+A legacy host can expose the utility through a convenience symlink such as
+`~/link-home`; the script resolves its own symlink chain before locating the
+manifest. The default source is the parent of this checkout. The default home
+is `$HOME`. Both must exist and resolve to different directories.
 
 ## Safety model
 
