@@ -49,14 +49,22 @@ role they intend to use.
 
 ## Choose optional tools and agents
 
-All five supported coding agents, CodeGraph, and the common toolchain install
-by default. A selection controls new installation and does not uninstall an
-agent that is already present:
+All seven supported coding agents (six Bun-managed plus native Qoder),
+CodeGraph, and the common toolchain install by default. A selection controls
+new installation and does not uninstall an agent that is already present:
 
 ```sh
 bash bootstrap.sh --agents all
-bash bootstrap.sh --agents codex,kimi
+bash bootstrap.sh --agents codex,kimi,qoder
 bash bootstrap.sh --agents none
+```
+
+The managed wrapper exposes the same operations plus pin refresh and status:
+
+```sh
+dotfiles-agents install all
+dotfiles-agents update all
+dotfiles-agents status
 ```
 
 The optional `bio`, `gpu`, `desktop`, and `developer` bundles are off by
@@ -132,8 +140,8 @@ python3 tests/verify_portable.py
 ```
 
 To additionally install the pinned Linux common tools, install and diagnose all
-five Bun-managed agents, run shell/history checks, and resolve every common and
-declared bundle target with Pixi, opt in to the network layer:
+seven agents (including native Qoder), run shell/history checks, and resolve
+every common and declared bundle target with Pixi, opt in to the network layer:
 
 ```sh
 python3 tests/verify_portable.py --network --report /tmp/dotfiles-verification.json
@@ -146,8 +154,9 @@ macOS, Windows, and WSL workflows run on native runners. A Linux render or
 foreign package resolution is not a substitute for native execution. See
 [the full matrix and evidence map](verification/complete-matrix.md).
 
-Version updates are proposal-driven. Review exact upstream versions and
-checksums, then use the explicit refresh and verification workflow:
+Version updates are proposal-driven. `dotfiles-agents update SELECTION` performs
+the selected transaction; to review or run it manually, use the explicit
+refresh and verification workflow:
 
 ```sh
 python3 deployment/update_versions.py check

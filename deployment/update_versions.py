@@ -95,6 +95,26 @@ def agent_rows(root: Path) -> dict[str, dict[str, str]]:
     return result
 
 
+def native_agent_rows(root: Path) -> dict[str, dict[str, str]]:
+    result = {}
+    for row in rows(root / "deployment/agents/native.tsv", 5):
+        name, version, commands, platforms, manifest = row[:5]
+        if name in result:
+            raise VersionError(f"duplicate native agent catalog entry: {name}")
+        if not VERSION_RE.fullmatch(version):
+            raise VersionError(f"invalid native agent version for {name}")
+        if not commands or any(not re.fullmatch(r"[A-Za-z0-9._-]+", item) for item in commands.split(",")):
+            raise VersionError(f"invalid native agent commands for {name}")
+        allowed_platforms = {"all", "unix", "windows", "linux", "macos", "wsl"}
+        if not platforms or set(platforms.split(",")) - allowed_platforms:
+            raise VersionError(f"invalid native agent platforms for {name}")
+        if not manifest.startswith("https://"):
+            raise VersionError(f"native agent {name} manifest must use HTTPS")
+        result[name] = {"version": version, "commands": commands,
+                        "platforms": platforms, "manifest": manifest}
+    return result
+
+
 def parse_bun_lock(path: Path) -> dict[str, Any]:
     # Bun's text lock is JSON with trailing commas.
     source = re.sub(r",(?=\s*[}\]])", "", path.read_text(encoding="utf-8"))
@@ -168,8 +188,12 @@ def check(root: Path) -> dict[str, int]:
     common = common_versions(root)
     bundles = bundle_versions(root)
     agents = agent_rows(root)
+    native_agents = native_agent_rows(root)
     if not agents:
         raise VersionError("agent catalog is empty")
+    overlap = set(agents) & set(native_agents)
+    if overlap:
+        raise VersionError(f"agent names appear in both catalogs: {', '.join(sorted(overlap))}")
     node_pin = common.get("nodejs")
     if node_pin is None:
         raise VersionError("common catalog is missing the Node runtime pin")
@@ -181,8 +205,14 @@ def check(root: Path) -> dict[str, int]:
             package_json = json.loads((directory / "package.json").read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as error:
             raise VersionError(f"cannot read {name} package.json: {error}") from error
-        if package_json.get("dependencies") != {agent["package"]: agent["version"]}:
+        dependencies = package_json.get("dependencies")
+        if not isinstance(dependencies, dict) or dependencies.get(agent["package"]) != agent["version"]:
             raise VersionError(f"{name} catalog and package.json pins disagree")
+        for dependency, version in dependencies.items():
+            if dependency == agent["package"]:
+                continue
+            if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
+                raise VersionError(f"{name} has an unpinned direct dependency: {dependency}")
         lock = parse_bun_lock(directory / "bun.lock")
         workspace = lock.get("workspaces", {}).get("")
         if not isinstance(workspace, dict) or workspace.get("dependencies") != package_json["dependencies"]:
@@ -191,6 +221,14 @@ def check(root: Path) -> dict[str, int]:
         expected = f"{agent['package']}@{agent['version']}"
         if not isinstance(locked_package, list) or not locked_package or locked_package[0] != expected:
             raise VersionError(f"{name} bun.lock package entry does not resolve to {expected}")
+        for dependency, version in dependencies.items():
+            if dependency == agent["package"]:
+                continue
+            locked_dependency = lock["packages"].get(dependency)
+            expected_dependency = f"{dependency}@{version}"
+            if (not isinstance(locked_dependency, list) or not locked_dependency
+                    or locked_dependency[0] != expected_dependency):
+                raise VersionError(f"{name} bun.lock {dependency} does not resolve to {expected_dependency}")
         if package_json.get("trustedDependencies", []) != lock.get("trustedDependencies", []):
             raise VersionError(f"{name} trusted lifecycle dependencies differ from bun.lock")
 
@@ -230,6 +268,7 @@ def check(root: Path) -> dict[str, int]:
         "bundleToolRows": len(rows(root / "deployment/bundle-tools.tsv", 6)),
         "bundlePins": len(bundles),
         "agents": len(agents),
+        "nativeAgents": len(native_agents),
         "windowsAssets": len(assets),
     }
 
@@ -360,6 +399,62 @@ def npm_metadata(package: str, version: str) -> dict[str, Any]:
     return metadata
 
 
+def _fetch_json(url: str, context: str) -> dict[str, Any]:
+    try:
+        with urlopen(url, timeout=30) as response:
+            payload = response.read()
+    except HTTPError as error:
+        if error.code == 429 or error.code >= 500:
+            raise VersionError(f"registry unavailable (HTTP {error.code}) for {context}") from error
+        raise VersionError(f"registry returned HTTP {error.code} for {context}") from error
+    except URLError as error:
+        raise VersionError(f"registry unavailable for {context} ({type(error.reason).__name__})") from error
+    except TimeoutError as error:
+        raise VersionError(f"registry timed out for {context}") from error
+    try:
+        parsed = json.loads(payload)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise VersionError(f"registry returned invalid metadata for {context}") from error
+    if not isinstance(parsed, dict):
+        raise VersionError(f"registry returned a non-object for {context}")
+    return parsed
+
+
+def npm_latest(package: str) -> str:
+    metadata = _fetch_json(f"https://registry.npmjs.org/{quote(package, safe='@')}/latest",
+                           f"{package}@latest")
+    version = metadata.get("version")
+    if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
+        raise VersionError(f"npm registry returned an invalid latest version for {package}")
+    return version
+
+
+def native_metadata(manifest_base: str, version: str) -> dict[str, Any]:
+    manifest = _fetch_json(f"{manifest_base}/{quote(version, safe='')}/manifest.json",
+                           f"native agent {version}")
+    if manifest.get("latest") != version:
+        raise VersionError(f"native manifest did not advertise the requested version {version}")
+    files = manifest.get("files")
+    if not isinstance(files, list) or not files:
+        raise VersionError(f"native manifest for {version} has no release files")
+    for item in files:
+        if not isinstance(item, dict):
+            raise VersionError(f"native manifest for {version} has an invalid release entry")
+        if not isinstance(item.get("url"), str) or not item["url"].startswith("https://"):
+            raise VersionError(f"native manifest for {version} requires HTTPS release URLs")
+        if not isinstance(item.get("sha256"), str) or not SHA256_RE.fullmatch(item["sha256"]):
+            raise VersionError(f"native manifest for {version} requires SHA-256 digests")
+    return manifest
+
+
+def native_latest(manifest_base: str) -> str:
+    manifest = _fetch_json(f"{manifest_base}/manifest.json", "native agent latest")
+    version = manifest.get("latest")
+    if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
+        raise VersionError("native manifest returned an invalid latest version")
+    return version
+
+
 def validate_node_engine(metadata: dict[str, Any], node_pin: str, name: str, version: str) -> None:
     engines = metadata.get("engines", {})
     if not isinstance(engines, dict):
@@ -443,6 +538,7 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
     if current_bun_pin is None:
         raise VersionError("cannot find the current Bun pin")
     original_agents = agent_rows(root)
+    original_native = native_agent_rows(root)
 
     with tempfile.TemporaryDirectory(prefix="dotfiles-version-candidate-") as temporary:
         stage = Path(temporary)
@@ -467,32 +563,56 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
         assets_path.write_text(json.dumps(assets, indent=2) + "\n", encoding="utf-8")
 
         changed_agents: set[str] = set()
+        changed_native: dict[str, str] = {}
         for name, version in proposal.get("agents", {}).items():
-            if name not in original_agents:
+            if name in original_agents:
+                package = original_agents[name]["package"]
+                package_path = staged_deployment / "agents" / name / "package.json"
+                package_json = json.loads(package_path.read_text(encoding="utf-8"))
+                package_json["dependencies"][package] = version
+                package_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
+                catalog_path = staged_deployment / "agents/catalog.tsv"
+                catalog_lines = catalog_path.read_text(encoding="utf-8").splitlines(keepends=True)
+                updated_lines = []
+                seen = False
+                for line in catalog_lines:
+                    fields = line.rstrip("\r\n").split("|")
+                    if fields and fields[0] == name:
+                        if seen:
+                            raise VersionError(f"duplicate agent catalog entry: {name}")
+                        fields[2] = version
+                        ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+                        line = "|".join(fields) + ending
+                        seen = True
+                    updated_lines.append(line)
+                if not seen:
+                    raise VersionError(f"missing agent catalog entry: {name}")
+                catalog_path.write_text("".join(updated_lines), encoding="utf-8")
+                changed_agents.add(name)
+            elif name in original_native:
+                native_path = staged_deployment / "agents/native.tsv"
+                native_lines = native_path.read_text(encoding="utf-8").splitlines(keepends=True)
+                updated_lines = []
+                seen = False
+                for line in native_lines:
+                    if line.lstrip().startswith("#") or not line.strip():
+                        updated_lines.append(line)
+                        continue
+                    fields = line.rstrip("\r\n").split("|")
+                    if fields and fields[0] == name:
+                        if seen:
+                            raise VersionError(f"duplicate native agent catalog entry: {name}")
+                        fields[1] = version
+                        ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+                        line = "|".join(fields) + ending
+                        seen = True
+                    updated_lines.append(line)
+                if not seen:
+                    raise VersionError(f"missing native agent catalog entry: {name}")
+                native_path.write_text("".join(updated_lines), encoding="utf-8")
+                changed_native[name] = version
+            else:
                 raise VersionError(f"unknown agent in proposal: {name}")
-            package = original_agents[name]["package"]
-            package_path = staged_deployment / "agents" / name / "package.json"
-            package_json = json.loads(package_path.read_text(encoding="utf-8"))
-            package_json["dependencies"][package] = version
-            package_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
-            catalog_path = staged_deployment / "agents/catalog.tsv"
-            catalog_lines = catalog_path.read_text(encoding="utf-8").splitlines(keepends=True)
-            updated_lines = []
-            seen = False
-            for line in catalog_lines:
-                fields = line.rstrip("\r\n").split("|")
-                if fields and fields[0] == name:
-                    if seen:
-                        raise VersionError(f"duplicate agent catalog entry: {name}")
-                    fields[2] = version
-                    ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
-                    line = "|".join(fields) + ending
-                    seen = True
-                updated_lines.append(line)
-            if not seen:
-                raise VersionError(f"missing agent catalog entry: {name}")
-            catalog_path.write_text("".join(updated_lines), encoding="utf-8")
-            changed_agents.add(name)
 
         # Validate the release metadata's Node engine before generating locks.
         candidate_node = common_versions(stage).get("nodejs")
@@ -503,6 +623,8 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
             version = proposal["agents"][name]
             metadata = npm_metadata(package, version)
             validate_node_engine(metadata, candidate_node, name, version)
+        for name, version in changed_native.items():
+            native_metadata(original_native[name]["manifest"], version)
 
         _regenerate_bun_locks(stage, changed_agents, bun, current_bun_pin)
         check(stage)
@@ -529,6 +651,43 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
                 if os.path.exists(temporary_file):
                     os.unlink(temporary_file)
         return changed
+
+
+def selected_agents(root: Path, selection: str) -> list[str]:
+    agents = agent_rows(root)
+    native = native_agent_rows(root)
+    aliases = {"kimi-code": "kimi", "claude-code": "claude", "minimax-code": "minimax"}
+    ordered = list(agents) + list(native)
+    if selection == "all":
+        return ordered
+    if selection == "none":
+        return []
+    if not selection or selection.startswith(",") or selection.endswith(",") or ",," in selection:
+        raise VersionError("invalid agent selection: use all, none, or a comma-separated named list")
+    requested = []
+    for item in selection.split(","):
+        canonical = aliases.get(item, item)
+        if canonical not in ordered:
+            raise VersionError(f"unknown agent: {item} (choose {', '.join(ordered)})")
+        if canonical not in requested:
+            requested.append(canonical)
+    return [name for name in ordered if name in requested]
+
+
+def propose_agents(root: Path, selection: str) -> dict[str, dict[str, str]]:
+    agents = agent_rows(root)
+    native = native_agent_rows(root)
+    updates: dict[str, str] = {}
+    for name in selected_agents(root, selection):
+        if name in agents:
+            latest = npm_latest(agents[name]["package"])
+            current = agents[name]["version"]
+        else:
+            latest = native_latest(native[name]["manifest"])
+            current = native[name]["version"]
+        if latest != current:
+            updates[name] = latest
+    return {"agents": updates}
 
 
 def verify_bun_locks(root: Path, bun: Path) -> None:
@@ -571,7 +730,8 @@ def run_schema_tests(root: Path) -> None:
     environment = {key: value for key, value in os.environ.items()
                    if not key.startswith(("DOTFILES_", "XDG_", "BUN_", "PIXI_", "NPM_", "ATUIN_",
                                           "CARGO_", "RUSTUP_", "UV_", "PIP_", "KIMI_", "PI_",
-                                          "OPENCODE_", "CODEX_", "CLAUDE_"))
+                                          "OPENCODE_", "CODEX_", "CLAUDE_", "MINIMAX_", "MAVIS_",
+                                          "QODER_"))
                    and key not in ("GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL",
                                    "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN", "NODE_OPTIONS", "ENV", "BASH_ENV")}
     with tempfile.TemporaryDirectory(prefix="dotfiles-version-schema-") as temporary:
@@ -589,9 +749,11 @@ def run_schema_tests(root: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "refresh", "verify"))
+    parser.add_argument("command", choices=("check", "refresh", "verify", "propose-agents"))
     parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
     parser.add_argument("--proposal", type=Path, help="reviewed JSON pin proposal (refresh only)")
+    parser.add_argument("--selection", default="all", help="agent selection for propose-agents")
+    parser.add_argument("--output", type=Path, help="proposal JSON destination (propose-agents only)")
     parser.add_argument("--bun", type=Path, help="absolute path to the currently pinned Bun binary")
     parser.add_argument("--pixi", type=Path, help="absolute path to the currently pinned Pixi binary")
     parser.add_argument("--resolve", action="store_true", help="also resolve all common and supported bundle targets")
@@ -607,6 +769,7 @@ def main(argv: list[str] | None = None) -> int:
                 ("bundleToolRows", "bundle-tool rows"),
                 ("bundlePins", "distinct bundle package pins"),
                 ("agents", "agents"),
+                ("nativeAgents", "native agents"),
                 ("windowsAssets", "Windows exceptions"),
             )
             print("; ".join(f"{counts[key]} {label}" for key, label in labels))
@@ -619,6 +782,18 @@ def main(argv: list[str] | None = None) -> int:
             for path in changed:
                 print(path.as_posix())
             print("Run deployment/update_versions.py verify before applying this version set.")
+        elif arguments.command == "propose-agents":
+            if not arguments.output:
+                raise VersionError("propose-agents requires --output FILE")
+            proposal = propose_agents(root, arguments.selection)
+            arguments.output.parent.mkdir(parents=True, exist_ok=True)
+            arguments.output.write_text(json.dumps(proposal, indent=2) + "\n", encoding="utf-8")
+            if proposal["agents"]:
+                print(f"resolved {len(proposal['agents'])} agent update(s):")
+                for name, version in proposal["agents"].items():
+                    print(f"  {name} {version}")
+            else:
+                print("selected agent pins are current")
         else:
             check(root)
             if not arguments.bun:

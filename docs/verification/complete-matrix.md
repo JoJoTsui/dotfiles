@@ -14,7 +14,7 @@ all writable state to a temporary directory under `/tmp`.
 | Layer | Command or runner | What it establishes |
 | --- | --- | --- |
 | Local matrix | `python3 tests/verify_portable.py` | Fourteen profile/architecture/role cells, defaults, agent selection, all declared bundle support/rejection outcomes, source pin consistency, and deterministic acceptance tests. |
-| Network install and diagnostics | `python3 tests/verify_portable.py --network` | Isolated Linux common-tool install/reapply and CLI checks; all five Bun agent installs/diagnostics; actual Nushell/Bash/Zsh and synthetic history behavior; common and bundle dependency resolution for every declared target. |
+| Network install and diagnostics | `python3 tests/verify_portable.py --network` | Isolated Linux common-tool install/reapply and CLI checks; all selected Bun-managed agents plus native Qoder installed/diagnosed; actual Nushell/Bash/Zsh and synthetic history behavior; common and bundle dependency resolution for every declared target. |
 | Native macOS | [native-macos.yml](../../.github/workflows/native-macos.yml) | Intel and Apple silicon, workstation and remote-compute; native install and startup checks. Passed in run 38524061897 at commit `81857d6`. |
 | Native Windows | [native-windows.yml](../../.github/workflows/native-windows.yml) | Windows x86-64, both roles; PowerShell, Nu/Git Bash, Windows paths, installers, clients, and history boundary. Passed in run 38524061998 at commit `81857d6`. |
 | Native WSL2 | [native-wsl.yml](../../.github/workflows/native-wsl.yml) | Windows 2025 disposable WSL2 x86-64, both roles; Linux execution and Windows interoperability. Passed in run 38524061914 at commit `81857d6`. |
@@ -45,7 +45,7 @@ fail explicitly without creating their target home.
 | 4 | RTK installed and exposed through Pixi | Common tool catalog and isolated CLI ownership checks; Windows exception/plan checks run in its native suite. |
 | 5 | Pixi installed by default | Default plan and manager install diagnostics. |
 | 6 | uv installed by default with the TUNA pip mirror | Common install verifies uv and pip settings; all shell adapters assert the shared values. |
-| 7 | Bun default and all five agents installed through Bun with selection | Default/named/none plan checks and `test_agents.py` isolated installation/diagnostics; frozen lock checks run through the updater verifier. |
+| 7 | Bun default and six Bun agents plus native Qoder installed with selection | Default/named/none plan checks and `test_agents.py` isolated installation/diagnostics; frozen lock and native manifest checks run through the updater verifier. |
 | 8 | Deploy `AGENTS.md`, `CLAUDE.md`, and skills by default | `test_agent_payload.py` and the recorded actual-client discovery checks in [agent-payload evidence](agent-payload.md). |
 | 9 | Shared command history deployed by default | `test_history_behavior.py` and `test_portable_history_import.py` use synthetic commands, fixtures, and loopback sync; platform-native adapters remain separately tested. |
 | 10 | CodeGraph and agent settings installed by default | Default plan, `test_codegraph.py`, and [CodeGraph evidence](codegraph.md); project indexing remains an explicit fixture action. |
@@ -88,6 +88,11 @@ run 38524061897 passed all four architecture/role cells, native Windows run
 38524061914 passed both x86-64 roles. WSL2 ARM64 did not run and is not
 scheduled; no render or x86-64 result stands in for it. Those native results are
 recorded per platform in the notes linked above rather than re-derived here.
+
+MiniMax Code and native Qoder were added after those runs. Their Bun/native
+installation contracts are covered by the local tests and an isolated Linux
+install, but the native macOS, Windows, and WSL evidence above predates them and
+must be rerun before those additions are called natively verified.
 
 Previous isolated Linux evidence is recorded in the common-tool, agent payload,
 CodeGraph, and shared-history verification notes linked above. Native macOS,

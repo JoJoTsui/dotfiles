@@ -37,9 +37,11 @@ download is SHA-256 verified before extraction or execution. Rustup installs its
 manager with no default compiler toolchain. Windows build SDKs and graphical
 session prerequisites remain explicit, on-use dependencies.
 
-All five agents and CodeGraph use the same manifests and frozen Bun locks as
-Unix. Their projects live under `.bun/managed`; existing global Bun and Pixi
-registries survive. Omitted agents remain installed. Native command launchers
+The six Bun-managed agents and CodeGraph use the same manifests and frozen Bun
+locks as Unix. Qoder uses its pinned native Windows release manifest with the
+same SHA-256 verification and managed launchers. Their projects live under
+`.bun/managed`; existing global Bun and Pixi registries survive. Omitted agents
+remain installed. Native command launchers
 use managed Node; CodeGraph MCP registrations spawn `node.exe` plus the pinned
 `npm-shim.js` directly because a `.cmd` launcher is not universally executable
 by a client's stdio subprocess implementation. Bootstrap creates no index.

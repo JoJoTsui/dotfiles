@@ -73,14 +73,22 @@ function Get-Selection {
 function Get-Agents {
     $selection = Get-Input 'DOTFILES_AGENTS' 'all'
     if ($script:EntryParameters.ContainsKey('Agents')) { $selection = $Agents }
-    if ($selection -eq 'all') { return @('kimi', 'pi', 'opencode', 'claude', 'codex') }
+    $catalog = @()
+    foreach ($row in (Read-Catalog 'deployment/agents/catalog.tsv')) {
+        if ($row.columns[0] -ne 'codegraph') { $catalog += [string]$row.columns[0] }
+    }
+    foreach ($row in (Read-Catalog 'deployment/agents/native.tsv')) { $catalog += [string]$row.columns[0] }
+    if ($selection -eq 'all') { return $catalog }
     if ($selection -eq 'none') { return @() }
     if (-not $selection -or $selection -match '(^,|,$|,,)') { Stop-Deployment 'invalid agent selection' }
-    $requested = @($selection.Split(',') | ForEach-Object { $_ -replace '^kimi-code$', 'kimi' -replace '^claude-code$', 'claude' })
-    foreach ($name in $requested) {
-        if ($name -notin @('kimi', 'pi', 'opencode', 'claude', 'codex')) { Stop-Deployment 'unknown agent; choose kimi, pi, opencode, claude, codex' }
+    $aliases = @{ 'kimi-code' = 'kimi'; 'claude-code' = 'claude'; 'minimax-code' = 'minimax' }
+    $requested = @()
+    foreach ($name in $selection.Split(',')) {
+        $canonical = if ($aliases.ContainsKey($name)) { $aliases[$name] } else { $name }
+        if ($canonical -notin $catalog) { Stop-Deployment "unknown agent; choose $($catalog -join ', ')" }
+        if ($canonical -notin $requested) { $requested += $canonical }
     }
-    return @('kimi', 'pi', 'opencode', 'claude', 'codex' | Where-Object { $_ -in $requested })
+    return @($catalog | Where-Object { $_ -in $requested })
 }
 function Get-Bundles {
     $selection = Get-Input 'DOTFILES_BUNDLES' 'none'
@@ -161,7 +169,13 @@ try {
     foreach ($row in (Read-Catalog 'deployment/agents/catalog.tsv')) {
         if ($row.columns[0] -eq 'codegraph' -or $row.columns[0] -in $selectedAgents) {
             $tools += $row.columns[3].Split(',')
-            $agentPackages += [ordered]@{ name = $row.columns[0]; package = $row.columns[1]; version = $row.columns[2]; manager = 'bun'; minimumNode = $row.columns[4]; lock = "deployment/agents/$($row.columns[0])/bun.lock" }
+            $agentPackages += [ordered]@{ name = $row.columns[0]; package = $row.columns[1]; version = $row.columns[2]; manager = 'bun'; commands = @($row.columns[3].Split(',')); minimumNode = $row.columns[4]; lock = "deployment/agents/$($row.columns[0])/bun.lock" }
+        }
+    }
+    foreach ($row in (Read-Catalog 'deployment/agents/native.tsv')) {
+        if ($row.columns[0] -in $selectedAgents) {
+            $tools += $row.columns[2].Split(',')
+            $agentPackages += [ordered]@{ name = $row.columns[0]; package = $null; version = $row.columns[1]; manager = 'native'; commands = @($row.columns[2].Split(',')); manifest = $row.columns[4] }
         }
     }
     $actions = @('install-managers', 'apply-source', 'install-common', 'install-agents', 'prepare-shell')

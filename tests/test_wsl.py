@@ -77,7 +77,7 @@ class WSLDeploymentTests(unittest.TestCase):
         self.assertEqual(plan["roots"]["config"], str(self.home / ".config"))
         self.assertTrue({"nu", "bash", "zsh", "bun", "node", "atuin", "rtk", "zoxide",
                          "tspin", "codegraph"}.issubset(plan["tools"]))
-        self.assertEqual(plan["agents"], ["kimi", "pi", "opencode", "claude", "codex"])
+        self.assertEqual(plan["agents"], ["kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder"])
         self.assertFalse(plan["settings"]["systemChanges"])
         self.assertFalse(plan["settings"]["loginShellChanges"])
         overridden = self.deploy("--plan", "--platform", "linux", "--role", "remote-compute",

@@ -1,0 +1,151 @@
+#Requires -Version 5.1
+# Install or update selected coding agents through the public bootstrap.
+param(
+    [Parameter(Position = 0)][string]$Command = 'help',
+    [Parameter(Position = 1)][string]$Selection = 'all'
+)
+$ErrorActionPreference = 'Stop'
+$Source = if ($env:DOTFILES_SOURCE) { $env:DOTFILES_SOURCE } else { '{{ .chezmoi.sourceDir }}' }
+$Bootstrap = Join-Path $Source 'bootstrap.ps1'
+$VersionTool = Join-Path $Source 'deployment/update_versions.py'
+$Python = if ($env:DOTFILES_PYTHON) { $env:DOTFILES_PYTHON } else { Join-Path $HOME '.pixi/bin/python.exe' }
+$Bun = if ($env:DOTFILES_BUN_BIN) { $env:DOTFILES_BUN_BIN } else { Join-Path $HOME '.pixi/bin/bun.exe' }
+
+function Show-Usage {
+    @'
+Usage: dotfiles-agents.ps1 <command> [selection]
+
+Commands:
+  install [selection]  Apply source and install selected agents
+  update  [selection]  Resolve current pins, refresh locks, then reinstall
+  status  [selection]  Show pinned and installed versions
+
+selection: all (default), none, or a comma-separated list such as
+           qoder,minimax,kimi. Aliases kimi-code, claude-code, and
+           minimax-code are accepted.
+
+Set DOTFILES_SOURCE when the source checkout is not at the recorded path.
+'@
+}
+
+function Assert-Source {
+    if (-not [IO.File]::Exists($Bootstrap) -or -not [IO.File]::Exists($VersionTool)) {
+        [Console]::Error.WriteLine("dotfiles-agents: source tree not found at $Source")
+        [Console]::Error.WriteLine('Set DOTFILES_SOURCE to the dotfiles checkout and retry.')
+        exit 1
+    }
+}
+
+function Resolve-Python {
+    if (-not [IO.File]::Exists($Python)) {
+        $found = Get-Command python -ErrorAction SilentlyContinue
+        if (-not $found) {
+            [Console]::Error.WriteLine('dotfiles-agents: Python is required for pin resolution')
+            exit 1
+        }
+        return $found.Source
+    }
+    return $Python
+}
+
+function Invoke-Bootstrap([string]$Selector) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $Bootstrap -Source $Source -AgentsOnly -Agents $Selector
+    exit $LASTEXITCODE
+}
+
+function Install-Agents {
+    Assert-Source
+    Invoke-Bootstrap $Selection
+}
+
+function Update-Agents {
+    Assert-Source
+    $resolvedPython = Resolve-Python
+    if (-not [IO.File]::Exists($Bun)) {
+        [Console]::Error.WriteLine("dotfiles-agents: pinned Bun not found at $Bun")
+        exit 1
+    }
+    $proposalDirectory = Join-Path ([IO.Path]::GetTempPath()) ('dotfiles-agents-' + [Guid]::NewGuid().ToString('N'))
+    [IO.Directory]::CreateDirectory($proposalDirectory) | Out-Null
+    $proposal = Join-Path $proposalDirectory 'proposal.json'
+    try {
+        & $resolvedPython $VersionTool propose-agents --root $Source --selection $Selection --output $proposal
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        $pending = @((Get-Content -LiteralPath $proposal -Raw | ConvertFrom-Json).agents.PSObject.Properties)
+        if ($pending.Count -gt 0) {
+            & $resolvedPython $VersionTool refresh --root $Source --proposal $proposal --bun $Bun
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        } else {
+            Write-Output 'dotfiles-agents: selected pins are current; reinstalling without pin changes'
+        }
+    } finally {
+        Remove-Item -LiteralPath $proposalDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Invoke-Bootstrap $Selection
+}
+
+function Get-AgentCatalog {
+    $rows = @()
+    $catalogs = @(
+        @{ File = 'catalog.tsv'; Header = @('name', 'package', 'version', 'commands', 'minimumNode', 'trusted') },
+        @{ File = 'native.tsv'; Header = @('name', 'version', 'commands', 'platforms', 'manifest') }
+    )
+    foreach ($catalog in $catalogs) {
+        $path = Join-Path $Source ('deployment/agents/' + $catalog.File)
+        foreach ($line in [IO.File]::ReadAllLines($path)) {
+            if (-not $line -or $line.StartsWith('#')) { continue }
+            $fields = $line.Split('|')
+            $row = [ordered]@{}
+            for ($index = 0; $index -lt $catalog.Header.Count; $index++) {
+                $row[$catalog.Header[$index]] = $fields[$index]
+            }
+            $rows += [pscustomobject]$row
+        }
+    }
+    return $rows
+}
+
+function Select-Agents {
+    param($Rows)
+    $aliases = @{ 'kimi-code' = 'kimi'; 'claude-code' = 'claude'; 'minimax-code' = 'minimax' }
+    if ($Selection -eq 'all') { return @($Rows) }
+    if ($Selection -eq 'none') { return @() }
+    if (-not $Selection -or $Selection -match '(^,|,$|,,)') {
+        [Console]::Error.WriteLine('dotfiles-agents: invalid agent selection')
+        exit 1
+    }
+    $requested = @()
+    foreach ($item in $Selection.Split(',')) {
+        $canonical = if ($aliases.ContainsKey($item)) { $aliases[$item] } else { $item }
+        if ($canonical -notin @($Rows.name)) {
+            [Console]::Error.WriteLine("dotfiles-agents: unknown agent: $item")
+            exit 1
+        }
+        if ($canonical -notin $requested) { $requested += $canonical }
+    }
+    return @($Rows | Where-Object { $_.name -in $requested })
+}
+
+function Show-Status {
+    Assert-Source
+    $rows = Select-Agents (Get-AgentCatalog)
+    '{0,-10} {1,-12} {2,-16} {3}' -f 'NAME', 'PIN', 'COMMAND', 'STATE'
+    foreach ($row in $rows) {
+        $command = $row.commands.Split(',')[0]
+        $state = 'not installed'
+        $resolved = Get-Command $command -ErrorAction SilentlyContinue
+        if ($resolved) {
+            $output = (& $resolved.Source --version 2>&1 | Select-Object -First 1) -join ''
+            $state = if ($output -match [regex]::Escape($row.version)) { 'installed' } else { "mismatch ($output)" }
+        }
+        '{0,-10} {1,-12} {2,-16} {3}' -f $row.name, $row.version, $command, $state
+    }
+}
+
+switch ($Command.ToLowerInvariant()) {
+    'install' { Install-Agents }
+    'update' { Update-Agents }
+    'status' { Show-Status }
+    { $_ -in @('-h', '--help', 'help') } { Show-Usage }
+    default { Show-Usage; exit 2 }
+}

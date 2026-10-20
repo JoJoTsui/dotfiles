@@ -1,0 +1,9 @@
+{
+  "name": "dotfiles-managed-minimax",
+  "private": true,
+  "dependencies": {
+    "@minimax-ai/code": "0.6.12",
+    "better-sqlite3": "12.11.1"
+  },
+  "trustedDependencies": ["better-sqlite3"]
+}

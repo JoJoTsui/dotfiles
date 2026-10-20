@@ -16,7 +16,8 @@ From a source checkout:
 
 Darwin and its architecture are detected automatically. Explicit platform,
 architecture, and profile flags also support foreign planning/rendering. Both
-roles install all five agents and CodeGraph by default. Optional bundles retain
+roles install all seven agents (six Bun-managed plus native Qoder) and CodeGraph
+by default. Optional bundles retain
 their target restrictions; the desktop bundle needs macOS 14.2 or newer. The
 [common package evidence](verification/common-tools.md) records macOS solves
 and the global-Pixi lock limitation.

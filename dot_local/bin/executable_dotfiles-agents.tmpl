@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Install or update the selected coding agents through the public bootstrap.
+# The working source tree remains authoritative; this wrapper never edits pins
+# without the proposal transaction in deployment/update_versions.py.
+set -euo pipefail
+
+SOURCE=${DOTFILES_SOURCE:-"{{ .chezmoi.sourceDir }}"}
+PYTHON=${DOTFILES_PYTHON:-python3}
+BOOTSTRAP="$SOURCE/bootstrap.sh"
+
+usage() {
+    cat <<'EOF'
+Usage: dotfiles-agents <command> [selection]
+
+Commands:
+  install [selection]  Apply source and install selected agents
+  update  [selection]  Resolve current pins, refresh locks, then reinstall
+  status  [selection]  Show pinned and installed versions
+
+selection: all (default), none, or a comma-separated list such as
+           qoder,minimax,kimi. Aliases kimi-code, claude-code, and
+           minimax-code are accepted.
+
+Set DOTFILES_SOURCE when the source checkout is not at the recorded path.
+EOF
+}
+
+need_source() {
+    if [ ! -f "$BOOTSTRAP" ] || [ ! -f "$SOURCE/deployment/update_versions.py" ]; then
+        printf 'dotfiles-agents: source tree not found at %s\n' "$SOURCE" >&2
+        printf 'Set DOTFILES_SOURCE to the dotfiles checkout and retry.\n' >&2
+        exit 1
+    fi
+}
+
+selection_arg() {
+    if [ "$#" -gt 0 ] && [ -n "$1" ]; then printf '%s' "$1"; else printf 'all'; fi
+}
+
+install_agents() {
+    local selection
+    need_source
+    selection=$(selection_arg "$@")
+    exec bash "$BOOTSTRAP" --source "$SOURCE" --agents-only --agents "$selection"
+}
+
+update_agents() {
+    local selection bun proposal_dir proposal
+    need_source
+    selection=$(selection_arg "$@")
+    bun=${DOTFILES_BUN_BIN:-$HOME/.pixi/bin/bun}
+    command -v "$PYTHON" >/dev/null 2>&1 ||
+        { printf 'dotfiles-agents: %s is required for pin resolution\n' "$PYTHON" >&2; exit 1; }
+    [ -x "$bun" ] || { printf 'dotfiles-agents: pinned Bun not found at %s\n' "$bun" >&2; exit 1; }
+    proposal_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-agents.XXXXXX")
+    proposal="$proposal_dir/proposal.json"
+    trap 'rm -rf "$proposal_dir"' EXIT
+    "$PYTHON" "$SOURCE/deployment/update_versions.py" propose-agents \
+        --root "$SOURCE" --selection "$selection" --output "$proposal"
+    if "$PYTHON" -c 'import json, sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["agents"] else 1)' "$proposal"; then
+        "$PYTHON" "$SOURCE/deployment/update_versions.py" refresh \
+            --root "$SOURCE" --proposal "$proposal" --bun "$bun"
+    else
+        printf 'dotfiles-agents: selected pins are current; reinstalling without pin changes\n'
+    fi
+    rm -rf "$proposal_dir"
+    trap - EXIT
+    exec bash "$BOOTSTRAP" --source "$SOURCE" --agents-only --agents "$selection"
+}
+
+status_agents() {
+    local selection name pin command output state
+    need_source
+    selection=$(selection_arg "$@")
+    printf '%-10s %-12s %-16s %s\n' NAME PIN COMMAND STATE
+    (
+        cd "$SOURCE"
+        "$PYTHON" - "$selection" <<'PY'
+import sys
+from pathlib import Path
+from deployment.update_versions import agent_rows, native_agent_rows, selected_agents
+
+root = Path.cwd()
+agents = agent_rows(root)
+native = native_agent_rows(root)
+for name in selected_agents(root, sys.argv[1]):
+    entry = agents.get(name) or native[name]
+    command = entry["commands"].split(",")[0]
+    print(f"{name}\t{entry['version']}\t{command}")
+PY
+    ) | while IFS=$'\t' read -r name pin command; do
+        if command -v "$command" >/dev/null 2>&1; then
+            output=$("$command" --version 2>&1 | head -n1 || true)
+            case "$output" in
+                *"$pin"*) state=installed ;;
+                *) state="mismatch (${output:-no version output})" ;;
+            esac
+        else
+            state='not installed'
+        fi
+        printf '%-10s %-12s %-16s %s\n' "$name" "$pin" "$command" "$state"
+    done
+}
+
+case "${1:-}" in
+    install) shift; install_agents "$@" ;;
+    update) shift; update_agents "$@" ;;
+    status) shift; status_agents "$@" ;;
+    -h|--help|help) usage ;;
+    *) usage >&2; exit 2 ;;
+esac

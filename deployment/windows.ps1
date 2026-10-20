@@ -46,7 +46,7 @@ function Assert-OwnedState {
         if ($attributes -band [IO.FileAttributes]::ReparsePoint) { Stop-Deployment 'TargetHome parent is a symlink or reparse point' }
         $ancestor = [IO.Path]::GetDirectoryName($ancestor)
     }
-    foreach ($relative in @('.local', '.local/bin', '.local/lib', '.local/share', '.local/state', '.local/run', '.config', '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml', '.bun', '.bun/bin', '.bun/managed', '.bun/install/global', '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin', '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi', '.pi/agent')) {
+    foreach ($relative in @('.local', '.local/bin', '.local/lib', '.local/share', '.local/state', '.local/run', '.config', '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml', '.bun', '.bun/bin', '.bun/managed', '.bun/install/global', '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin', '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi', '.pi/agent', '.qoder', '.minimax', '.minimax-code', '.minimax-code-install-logs')) {
         Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ([string]$relative))
     }
     foreach ($name in @('meta.db', 'history.db', 'records.db', 'key', 'session', 'host_id')) { Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ".local/share/atuin/$name") }
@@ -83,6 +83,7 @@ function Set-EnvironmentRoots {
         _ZO_DATA_DIR = Join-Path $roots.data 'zoxide'
         CODEX_HOME = Join-Path $TargetHome '.codex'; KIMI_CODE_HOME = Join-Path $TargetHome '.kimi-code'; PI_CODING_AGENT_DIR = Join-Path $TargetHome '.pi/agent'
         OPENCODE_CONFIG_DIR = Join-Path $roots.config 'opencode'; OPENCODE_CONFIG = Join-Path $roots.config 'opencode/opencode.jsonc'
+        MINIMAX_DATA_DIR = Join-Path $TargetHome '.minimax'; QODER_CONFIG_DIR = Join-Path $TargetHome '.qoder'
         KIMI_SHELL_PATH = Join-Path $roots.data 'dotfiles/git-bash/bin/bash.exe'
         CLAUDE_CODE_GIT_BASH_PATH = Join-Path $roots.data 'dotfiles/git-bash/bin/bash.exe'
         TEMP = Join-Path $roots.cache 'tmp'; TMP = Join-Path $roots.cache 'tmp'; TMPDIR = Join-Path $roots.cache 'tmp'
@@ -90,7 +91,7 @@ function Set-EnvironmentRoots {
     }
     if ($selectedBundles.Count) { $DeviceEnvironment.DOTFILES_BUNDLES = $selectedBundles -join ',' }
     foreach ($name in $DeviceEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $DeviceEnvironment[$name], 'Process') }
-    foreach ($name in @('DOTFILES_CLASS', 'DOTFILES_PROFILE', 'CLAUDE_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT', 'OPENCODE_CLI_CONFIG_CONTENT', 'ATUIN_OTEL')) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
+    foreach ($name in @('DOTFILES_CLASS', 'DOTFILES_PROFILE', 'CLAUDE_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT', 'OPENCODE_CLI_CONFIG_CONTENT', 'ATUIN_OTEL', 'MAVIS_DATA_DIR', 'QODER_HOME', 'QODER_USER_CONFIG_DIR')) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
     $env:PATH = ((Join-Path $roots.bun 'bin'), (Join-Path $TargetHome '.local/bin'), (Join-Path $roots.pixi 'bin'), (Join-Path $roots.cargo 'bin'), (Join-Path $roots.data 'dotfiles/git-bash/bin')) -join [IO.Path]::PathSeparator
     $env:PATH += [IO.Path]::PathSeparator + $script:InitialPath
 }
@@ -389,6 +390,76 @@ function Install-Common {
         }
     }
 }
+function Install-Qoder([string]$Version, [string]$ManifestBase) {
+    $root = Join-Path $TargetHome '.qoder'
+    $cli = Join-Path $root "bin/qodercli/qodercli-$Version.exe"
+    $dispatcher = Join-Path $root 'entry/qoder.exe'
+    if (-not [IO.File]::Exists($cli)) {
+        $script:Step = 'install-agents.qoder.manifest'
+        $manifestUrl = "$ManifestBase/$Version/manifest.json"
+        if ($manifestUrl -notmatch '^https://') { Stop-Deployment 'Qoder manifest must use HTTPS' }
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $manifest = Invoke-RestMethod -Uri $manifestUrl -UseBasicParsing
+        if ("$($manifest.latest)" -ne $Version) { Stop-Deployment "Qoder manifest did not advertise the pinned version $Version" }
+        $build = [Environment]::OSVersion.Version.Build
+        $candidates = @($manifest.files | Where-Object { $_.os -eq 'windows' -and $_.arch -in @('amd64', 'x64') })
+        $file = $candidates | Where-Object {
+            $_.variant -ne 'legacy' -and $_.runtime -ne 'node-sea' -and
+            (-not $_.min_windows_build -or $build -ge [int]$_.min_windows_build) -and
+            (-not $_.max_windows_build -or $build -le [int]$_.max_windows_build)
+        } | Select-Object -First 1
+        if (-not $file) { $file = $candidates | Select-Object -First 1 }
+        if (-not $file) { Stop-Deployment 'Qoder has no Windows x64 release for the pinned version' }
+        if ("$($file.url)" -notmatch '^https://' -or "$($file.sha256)" -notmatch '^[a-f0-9]{64}$') {
+            Stop-Deployment 'Qoder manifest requires HTTPS and a pinned SHA-256'
+        }
+        $scratch = Get-Scratch 'qoder'
+        try {
+            $script:Step = 'install-agents.qoder.download'
+            $archive = Join-Path $scratch 'qodercli.zip'
+            Invoke-WebRequest -UseBasicParsing -Uri $file.url -OutFile $archive -TimeoutSec 300
+            $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $file.sha256) { Stop-Deployment 'Qoder SHA-256 mismatch; payload was not executed' }
+            $script:Step = 'install-agents.qoder.extract'
+            $extracted = Join-Path $scratch 'payload'
+            Expand-VerifiedZip $archive $extracted
+            $binary = Join-Path $extracted 'qodercli.exe'
+            if (-not [IO.File]::Exists($binary)) { Stop-Deployment 'Qoder archive did not contain qodercli.exe' }
+            $script:Step = 'install-agents.qoder.install'
+            Invoke-Tool $binary @('install', '--force', '--skip-path') -Quiet | Out-Null
+        } finally {
+            Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (-not [IO.File]::Exists($cli)) { Stop-Deployment "Qoder installation did not place $cli" }
+    }
+    foreach ($relative in @('.local/bin', '.bun/bin')) {
+        Assert-SafePath (Join-Path $TargetHome $relative)
+        [IO.Directory]::CreateDirectory((Join-Path $TargetHome $relative)) | Out-Null
+    }
+    $entry = @(
+        $dispatcher,
+        (Join-Path $root 'entry/qoder.cmd'),
+        (Join-Path $root 'entry/qoder')
+    ) | Where-Object { [IO.File]::Exists($_) } | Select-Object -First 1
+    if (-not $entry) { $entry = $cli }
+    foreach ($definition in @(@{ Name = 'qodercli'; Target = $cli }, @{ Name = 'qoder'; Target = $entry })) {
+        $name = $definition.Name; $targetPath = $definition.Target
+        foreach ($relative in @('.local/bin', '.bun/bin')) {
+            $launcher = Join-Path $TargetHome "$relative/$name.cmd"
+            Write-Utf8 $launcher ("@echo off`r`n" + '"' + $targetPath + '" %*' + "`r`nexit /b %errorlevel%`r`n")
+            $singleQuote = [string][char]39; $doubleQuote = [string][char]34
+            $posixPath = $targetPath.Replace('\', '/')
+            $quoted = $singleQuote + $posixPath.Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
+            $posix = '#!/bin/sh' + "`n" + 'exec ' + $quoted + ' "$@"' + "`n"
+            Write-Utf8 (Join-Path $TargetHome "$relative/$name") $posix
+        }
+    }
+    $script:Step = 'install-agents.qoder.diagnostic'
+    $diagnostic = Invoke-Tool $cli @('--version') -Quiet
+    [Console]::Out.Write($diagnostic)
+    if (-not $diagnostic.Contains($Version)) { Stop-Deployment 'qoder diagnostic did not report its pinned version' }
+}
+
 function Install-Agents {
     $script:Step = 'install-agents.runtime'
     $bun = Get-Input 'DOTFILES_BUN_BIN' (Join-Path $roots.bun 'bin/bun.exe')
@@ -451,6 +522,12 @@ function Install-Agents {
             if (-not $diagnostic.Contains($row.columns[2])) { Stop-Deployment "$name diagnostic did not report its pinned version" }
             [Console]::Out.Write($diagnostic)
         }
+    }
+    foreach ($row in (Read-Catalog 'deployment/agents/native.tsv')) {
+        $name = $row.columns[0]
+        if ($name -notin $selectedAgents) { continue }
+        if ($name -eq 'qoder') { Install-Qoder $row.columns[1] $row.columns[4] }
+        else { Stop-Deployment "unsupported native agent: $name" }
     }
 }
 function Prepare-Shell {

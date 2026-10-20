@@ -9,3 +9,5 @@ block|AGENTS.md|.claude/CLAUDE.md
 block|AGENTS.md|.kimi-code/AGENTS.md
 block|AGENTS.md|.pi/agent/AGENTS.md
 block|AGENTS.md|.config/opencode/AGENTS.md
+block|AGENTS.md|.minimax/AGENTS.md
+block|AGENTS.md|.qoder/AGENTS.md

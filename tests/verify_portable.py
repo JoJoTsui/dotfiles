@@ -30,7 +30,7 @@ MATRIX = (
     ("windows", "x86_64"),
 )
 ROLES = ("workstation", "remote-compute")
-AGENTS = ("kimi", "pi", "opencode", "claude", "codex")
+AGENTS = ("kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder")
 COMMON_TOOLS = {
     "pixi", "uv", "uvx", "bun", "bunx", "node", "nu", "rtk", "atuin",
     "zoxide", "tspin", "less", "python", "pip", "codegraph",
@@ -132,8 +132,13 @@ def matrix_plan(root: Path, platform: str, arch: str, role: str,
             f"agent packages do not match selection on {platform}-{arch}-{role}: {sorted(packages)}")
     require(set(AGENTS) <= set(selected_agents) if not selection else True,
             f"default agent selection is incomplete on {platform}-{arch}-{role}")
-    require(all(item.get("manager") == "bun" for item in packages.values()),
-            "an agent or CodeGraph package is not assigned to Bun")
+    require(all(item.get("manager") in ("bun", "native") for item in packages.values()),
+            "an agent or CodeGraph package has an unknown installation manager")
+    require(packages["codegraph"]["manager"] == "bun", "CodeGraph is not assigned to Bun")
+    if "qoder" in selected_agents:
+        require(packages["qoder"]["manager"] == "native", "Qoder is not assigned to its native installer")
+    else:
+        require("qoder" not in packages, "Qoder leaked into an unselected plan")
     require(not plan.get("bundles"), "optional bundles must be absent from the default plan")
     return plan
 
@@ -259,7 +264,7 @@ def verify_network(report: dict[str, Any]) -> None:
             DOTFILES_TEST_BUN=str(tool_home / ".pixi/envs/bun/bin/bun"),
             DOTFILES_TEST_NODE=str(tool_home / ".pixi/envs/nodejs/bin/node"),
         )
-        run_suite("all five Bun-managed agent installations and harmless diagnostics",
+        run_suite("all selected Bun-managed agents, native Qoder, and harmless diagnostics",
                   pattern="test_agents.py", environment=agent_environment,
                   report=report, timeout=3600)
         report["network"]["codingAgents"] = "passed"

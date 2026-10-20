@@ -19,9 +19,10 @@ interactive launchers prefer Nu; explicit Bash/Zsh commands and agent scripts
 retain their suitable shell. Shared PATH entries precede the existing PATH, so
 WSL's Windows command discovery remains available when provided by the session.
 
-Common tools, all five Bun-managed agents, CodeGraph settings, instructions and
-skills deploy by default. Both TUNA Python configurations, zoxide, Tailspin
-`logs`, and Atuin hooks follow the Unix adapters. History initially reports
+Common tools, all seven supported agents (six Bun-managed plus native Qoder),
+CodeGraph settings, instructions and skills deploy by default. Both TUNA Python
+configurations, zoxide, Tailspin `logs`, and Atuin hooks follow the Unix
+adapters. History initially reports
 pending activation; use `dotfiles-history first-device` or `join` deliberately.
 Indexing remains an explicit project action. Deployment uses user files and
 does not import a distro, enable a Windows feature, change account login shells,

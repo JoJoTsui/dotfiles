@@ -17,8 +17,9 @@ and validation targets.
 4. Install and expose RTK through Pixi.
 5. Install Pixi by default.
 6. Install uv by default and configure the TUNA PyPI mirror for uv and pip.
-7. Install Bun by default and use it to install all five coding agents by
-   default: Kimi Code, pi, opencode, Claude Code, and Codex. Allow agent selection.
+7. Install Bun by default and use it to install the Bun-managed coding agents
+   by default: Kimi Code, pi, opencode, Claude Code, Codex, and MiniMax Code.
+   Install Qoder from its pinned native release manifest. Allow agent selection.
 8. Deploy global agent instructions and skills by default.
 9. Deploy shared shell history integration by default across devices.
 10. Install CodeGraph by default and configure coding-agent integration.
@@ -51,7 +52,8 @@ and validation targets.
 - Device setup offers a one-time import of existing local history as an explicit
   choice and retains Atuin's built-in secret filtering. Import must select each
   available shell's importer; `atuin import auto` does not import all shells.
-- The common defaults include the requested tools and all five agents.
+- The common defaults include the requested tools and all seven supported
+  agents.
   Bioinformatics, GPU, and desktop packages become selectable tool bundles.
 - The current host's global instructions and portable skill library are the
   starting point for a repo-owned payload, with agent-specific discovery
@@ -62,14 +64,15 @@ and validation targets.
 - Tailspin is exposed as `tspin` and through a consistent `logs` command in all
   available managed shells. Its pager dependency must also be installed.
 - Package versions are pinned, lockfiles are used where supported, and updates
-  are explicit operations followed by the profile checks. Bun manages coding
-  agent packages; Pixi supplies the compatible Node runtime.
+  are explicit operations followed by the profile checks. Bun manages the
+  Bun-based agent packages; Qoder installs from its pinned native release
+  manifest. Pixi supplies the compatible Node runtime.
 
 ## Deployment contract
 
 The implementation will provide platform, role, agent, and bundle selectors.
-Agent selection supports all, none, or a named list, with all five agents as the
-default. This controls installation; shared instructions and skills are deployed
+Agent selection supports all, none, or a named list, with all seven supported
+agents as the default. This controls installation; shared instructions and skills are deployed
 by default. An installer selection does not remove an existing installation.
 Specialist bundles are opt-in, declare supported targets, and produce a clear
 error when requested for an unsupported target.

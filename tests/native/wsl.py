@@ -193,9 +193,8 @@ def main():
                     # is checked through Pixi above, separately from CLI output.
                     commands[exposed] = None if binary in ("npm", "npx", "fzf") else package["dependencies"][dependency].removeprefix("==")
             for package in plan["agentPackages"]:
-                commands[package["name"]] = package["version"]
-                if package["name"] == "opencode" and "opencode2" in plan["tools"]:
-                    commands["opencode2"] = package["version"]
+                for command in package["commands"]:
+                    commands[command] = package["version"]
             for exposed, version in commands.items():
                 location = run(["/bin/sh", "-c", f"command -v {exposed}"], env=managed).stdout.strip()
                 require(location.startswith(str(home) + "/"), f"{exposed} is outside the managed home")
@@ -270,15 +269,17 @@ def main():
         record = run([home / ".pixi/bin/atuin", "history", "start", "--", "printf native-wsl-preserved-history"],
                      env=history_environment).stdout.strip()
         run([home / ".pixi/bin/atuin", "history", "end", "--exit", "0", record], env=history_environment)
-        launchers = {name: (home / ".bun/bin" / name).read_bytes()
-                     for name in ("kimi", "pi", "opencode", "claude", "codex")}
+        launchers = {relative: (home / relative).read_bytes()
+                     for relative in (".bun/bin/kimi", ".bun/bin/pi", ".bun/bin/opencode",
+                                      ".bun/bin/claude", ".bun/bin/codex", ".bun/bin/mcode",
+                                      ".local/bin/qoder", ".local/bin/qodercli")}
 
         def reapplication():
             run([*command, "--agents", "none"], timeout=2400)
             require(auth.read_bytes() == auth_before, "Reapplication replaced host-local authentication")
             require(bun_registry.read_bytes() == original_bun_registry, "Reapplication replaced the Bun global registry")
-            for name, before in launchers.items():
-                require((home / ".bun/bin" / name).read_bytes() == before, "Agent opt-out changed an existing launcher")
+            for relative, before in launchers.items():
+                require((home / relative).read_bytes() == before, "Agent opt-out changed an existing launcher")
             preserved_history = run([home / ".pixi/bin/atuin", "search", "--cmd-only",
                                      "native-wsl-preserved-history"], env=history_environment).stdout
             require("native-wsl-preserved-history" in preserved_history, "Reapplication lost local command history")

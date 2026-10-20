@@ -146,8 +146,17 @@ def check_pinned_tools(home, plan, report):
         diagnostic = run(arguments, env=env, cwd=home)
         versions[command] = (diagnostic.stdout + diagnostic.stderr).strip().splitlines()[0]
     for package in plan["agentPackages"]:
-        commands = [package["name"]] + (["opencode2"] if package["name"] == "opencode" else [])
-        for command in commands:
+        if package["manager"] == "native":
+            locations = [(home / ".local/bin" / command, command) for command in package["commands"]]
+            for location, command in locations:
+                require(location.is_file() and not location.is_symlink(),
+                        f"owned native launcher: {command}")
+                result = run([str(location), "--version"], env=env, cwd=home)
+                require(package["version"] in result.stdout + result.stderr,
+                        f"pinned native agent version: {command}")
+                versions[command] = (result.stdout + result.stderr).strip().splitlines()[0]
+            continue
+        for command in package["commands"]:
             location = home / ".bun/bin" / command
             require(location.is_file() and not location.is_symlink(), f"owned Bun launcher: {command}")
             require(location.read_bytes() == (home / ".local/bin" / command).read_bytes(), f"owned agent copy: {command}")

@@ -59,8 +59,9 @@ python3 deployment/update_versions.py verify \
   --bun /absolute/path/to/candidate-pinned/bun
 ```
 
-This checks npm Node-engine compatibility, validates all six frozen Bun locks
-without installing packages, and runs the agent, CodeGraph configuration, and
+This checks npm Node-engine compatibility, validates all seven frozen Bun locks
+without installing packages, validates the native Qoder release manifest pin,
+and runs the agent, CodeGraph configuration, and
 Windows adapter contract suites in disposable homes. If the isolated package
 cache or registry is unavailable, report that layer as pending and retry when
 network access is available.
@@ -100,7 +101,8 @@ Commit the reviewed version set only after the required checks pass. New hosts
 then deploy that committed set through ordinary bootstrap.
 
 The agent refresh and verification commands use Bun's lock-only and frozen
-lock workflows; Bun documents these modes in its
+lock workflows for Bun packages; native agents are refreshed from their
+versioned release manifest and SHA-256 digest. Bun documents these modes in its
 [lockfile guide](https://bun.sh/docs/pm/lockfile) and
 [install reference](https://bun.sh/docs/pm/cli/install). Pixi global has no
 committed lockfile in this repository. Its catalog pins direct packages
@@ -126,3 +128,8 @@ execution has since passed their runners — runs 38524061897, 38524061998 and
 real proposal, repeat all layers above, review the complete diff, run the
 disposable-home install, and commit the accepted pin set before deploying it to
 a new host.
+
+MiniMax Code and native Qoder were added after that snapshot. The current
+catalog check reports seven Bun entries and one native agent; the network and
+native layers above must be rerun before treating those two additions as
+verified on each platform.

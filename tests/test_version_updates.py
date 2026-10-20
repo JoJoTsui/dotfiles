@@ -12,7 +12,9 @@ from deployment.update_versions import (
     agent_rows,
     check,
     common_versions,
+    native_agent_rows,
     node_satisfies,
+    propose_agents,
     refresh,
 )
 
@@ -34,7 +36,8 @@ class VersionUpdateTests(unittest.TestCase):
 
     def test_current_version_sources_are_consistent(self):
         counts = check(SOURCE)
-        self.assertEqual(counts["agents"], 6)
+        self.assertEqual(counts["agents"], 7)
+        self.assertEqual(counts["nativeAgents"], 1)
         self.assertGreater(counts["commonPins"], 20)
         self.assertGreater(counts["bundlePins"], 50)
         self.assertEqual(counts["windowsAssets"], 8)
@@ -86,7 +89,34 @@ class VersionUpdateTests(unittest.TestCase):
         self.assertIn(Path(f"deployment/agents/{name}/package.json"), changed)
         self.assertIn(Path(f"deployment/agents/{name}/bun.lock"), changed)
         self.assertEqual(agent_rows(self.root)[name]["version"], "99.1.0")
-        self.assertEqual(check(self.root)["agents"], 6)
+        self.assertEqual(check(self.root)["agents"], 7)
+
+    def test_native_agent_refresh_rewrites_only_the_pin_and_validates_the_release(self):
+        name = "qoder"
+        manifest = native_agent_rows(self.root)[name]["manifest"]
+        with patch("deployment.update_versions.native_metadata", return_value={"latest": "99.1.0"}) as metadata:
+            candidate = self.proposal({"agents": {name: "99.1.0"}})
+            changed = refresh(self.root, candidate, Path("unused"))
+            self.assertEqual(refresh(self.root, candidate, Path("unused")), [])
+        self.assertIn(Path("deployment/agents/native.tsv"), changed)
+        metadata.assert_called_with(manifest, "99.1.0")
+        self.assertEqual(native_agent_rows(self.root)[name]["version"], "99.1.0")
+        self.assertFalse((self.root / "deployment/agents/qoder").exists())
+
+    def test_propose_agents_reports_only_changed_pins(self):
+        def latest(package):
+            if package == "@moonshot-ai/kimi-code":
+                return "99.0.0"
+            return next(item["version"] for item in agent_rows(self.root).values()
+                        if item["package"] == package)
+
+        with patch("deployment.update_versions.npm_latest", side_effect=latest), \
+                patch("deployment.update_versions.native_latest", return_value="99.0.0"):
+            proposal = propose_agents(self.root, "kimi,qoder")
+        self.assertEqual(proposal, {"agents": {"kimi": "99.0.0", "qoder": "99.0.0"}})
+        with patch("deployment.update_versions.npm_latest", return_value="1.0.0"), \
+                patch("deployment.update_versions.native_latest", return_value="1.0.0"):
+            self.assertEqual(propose_agents(self.root, "none"), {"agents": {}})
 
     def test_windows_manager_refresh_keeps_exception_and_bootstrap_pins_in_sync(self):
         proposal = self.proposal({

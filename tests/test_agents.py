@@ -6,7 +6,7 @@ import subprocess
 import shutil
 import tempfile
 import unittest
-from pins import agent_pins, common_pin
+from pins import agent_pins, common_pin, native_agent_pins
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -33,20 +33,26 @@ class AgentTests(unittest.TestCase):
         result = self.deploy("--plan")
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
-        self.assertEqual(plan["agents"], ["kimi", "pi", "opencode", "claude", "codex"])
+        self.assertEqual(plan["agents"], ["kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder"])
         selected = {item["name"]: item for item in plan["agentPackages"]}
         self.assertEqual(selected["codex"]["package"], "@openai/codex")
         self.assertEqual(selected["codex"]["version"], agent_pins()["codex"]["version"])
         self.assertEqual(selected["kimi"]["package"], "@moonshot-ai/kimi-code")
         self.assertEqual(selected["opencode"]["package"], "@opencode/cli")
         self.assertEqual(selected["opencode"]["version"], agent_pins()["opencode"]["version"])
+        self.assertEqual(selected["minimax"]["package"], "@minimax-ai/code")
+        self.assertEqual(selected["minimax"]["version"], agent_pins()["minimax"]["version"])
+        self.assertEqual(selected["qoder"]["manager"], "native")
+        self.assertEqual(selected["qoder"]["version"], native_agent_pins()["qoder"]["version"])
         self.assertEqual(selected["codegraph"]["version"], agent_pins()["codegraph"]["version"])
-        self.assertEqual(len(selected), 6)
+        self.assertEqual(len(selected), 8)
         self.assertFalse(self.home.exists())
 
     def test_none_and_named_agents_keep_codegraph_and_reject_unknown_names(self):
         for selector, expected in (("none", []), ("codex,kimi-code,codex", ["kimi", "codex"]),
-                                   ("claude-code,pi", ["pi", "claude"]), ("all", ["kimi", "pi", "opencode", "claude", "codex"])):
+                                   ("claude-code,pi", ["pi", "claude"]),
+                                   ("minimax-code,qoder", ["minimax", "qoder"]),
+                                   ("all", ["kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder"])):
             with self.subTest(selector=selector):
                 result = self.deploy("--plan", "--agents", selector)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -54,6 +60,10 @@ class AgentTests(unittest.TestCase):
                 self.assertEqual(plan["agents"], expected)
                 self.assertEqual({item["name"] for item in plan["agentPackages"]}, set(expected) | {"codegraph"})
                 self.assertIn("codegraph", plan["tools"])
+                if "qoder" in expected:
+                    self.assertIn("qodercli", plan["tools"])
+                else:
+                    self.assertNotIn("qodercli", plan["tools"])
         for selector in ("unknown", "all,codex", "none,pi", "codex,", ",pi", "pi,,codex", ""):
             with self.subTest(invalid=selector):
                 result = self.deploy("--agents", selector)
@@ -156,7 +166,8 @@ class AgentInstallTests(unittest.TestCase):
                            XDG_DATA_HOME=str(home / ".local/share"), XDG_STATE_HOME=str(home / ".local/state"),
                            XDG_CACHE_HOME=str(home / ".cache"), BUN_INSTALL=str(home / ".bun"),
                            CODEX_HOME=str(home / ".codex"), CLAUDE_CONFIG_DIR=str(home / ".claude"))
-        expected = {name: item["version"] for name, item in agent_pins().items()}
+        expected = {name: (item["version"], item["commands"].split(",")[0])
+                    for name, item in agent_pins().items()}
         previous = None
         for attempt, selector in enumerate((None, "none", "codex", "all"), 1):
             selected_command = command if selector is None else [*command, "--agents", selector]
@@ -165,19 +176,27 @@ class AgentInstallTests(unittest.TestCase):
             (home / f"agents-{attempt}.log").write_text(result.stdout + result.stderr)
             self.assertEqual(result.returncode, 0, result.stderr[-7000:])
             self.assertIn("applied agent files and selected packages", result.stdout)
-            for tool, version in expected.items():
-                with self.subTest(attempt=attempt, command=tool):
-                    launcher = home / f".bun/bin/{tool}"
+            for tool, (version, command_name) in expected.items():
+                with self.subTest(attempt=attempt, command=command_name):
+                    launcher = home / f".bun/bin/{command_name}"
                     self.assertTrue(launcher.is_file())
                     self.assertFalse(launcher.is_symlink())
-                    self.assertEqual((home / f".local/bin/{tool}").read_bytes(), launcher.read_bytes())
+                    self.assertEqual((home / f".local/bin/{command_name}").read_bytes(), launcher.read_bytes())
                     diagnostic = subprocess.run([str(launcher), "--version"], cwd=home,
                                                 env=diagnostics, capture_output=True, text=True, timeout=60)
                     self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
                     self.assertIn(version, diagnostic.stdout + diagnostic.stderr)
+            qoder = native_agent_pins()["qoder"]
+            if selector in (None, "all"):
+                self.assertTrue((home / ".local/bin/qodercli").is_file())
+                diagnostic = subprocess.run([str(home / ".local/bin/qodercli"), "--version"], cwd=home,
+                                            env=diagnostics, capture_output=True, text=True, timeout=60)
+                self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
+                self.assertIn(qoder["version"], diagnostic.stdout + diagnostic.stderr)
             self.assertEqual(registry.read_text(), original_registry)
             self.assertEqual(subprocess.check_output([str(extra)], env=diagnostics, text=True).strip(), "device-extra-1")
-            current = {tool: (home / f".bun/bin/{tool}").read_bytes() for tool in expected}
+            current = {tool: (home / f".bun/bin/{command_name}").read_bytes()
+                       for tool, (_, command_name) in expected.items()}
             if previous:
                 self.assertEqual(current, previous)
             previous = current

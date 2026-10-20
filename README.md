@@ -2,7 +2,8 @@
 
 Chezmoi-managed dotfiles for Linux, macOS, WSL, and native Windows: shells,
 prompt, Git/Python toolchains, Pixi-managed CLI tools, and coding-agent
-configuration (Claude Code, Codex, kimi-code, pi, opencode, herdr).
+configuration (Claude Code, Codex, kimi-code, pi, opencode, MiniMax Code,
+Qoder, herdr).
 
 The repo is the **source state**; `chezmoi` applies it to a host in **copy
 mode** (plain files, no symlinks — config watchers in VS Code and Claude Code
@@ -41,8 +42,8 @@ Bash; WSL supplies the full trio. See [Windows deployment](docs/WINDOWS_DEPLOYME
 for native paths, pinned exceptions and pending runner evidence.
 
 Common tools, shared Nushell-first shell behavior, encrypted history setup, all
-five Bun-managed agents, portable instructions/skills, and selectable specialist
-bundles are implemented. Use `--apply-only` for configuration validation, or
+seven supported agents (six Bun-managed plus native Qoder), portable
+instructions/skills, and selectable specialist bundles are implemented. Use `--apply-only` for configuration validation, or
 `--agents-only` when a host already has the pinned Bun/Node toolchain. Follow
 the [new-host setup guide](docs/NEW_HOST_SETUP.md) for selection, activation,
 verification, and explicit updates.
@@ -105,7 +106,8 @@ dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
                             # rerere, lfs filters, gh credential helper
 dot_condarc                 # TUNA mirrors, nvidia/pytorch/conda-forge/bioconda channels
 deployment/common-tools.tsv  # exact common requirements and command exposures
-deployment/agents/           # exact per-client package manifests + bun.lock
+deployment/agents/           # Bun catalog, per-client manifests + bun.lock,
+                             # native release pins (native.tsv)
 deployment/client-settings/  # default configs and preservation/CodeGraph catalog
 deployment/inventory/        # preserved optional/specialist inventory
 dot_config/
@@ -235,15 +237,21 @@ bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 | **kimi-code** | merged `~/.kimi-code/config.toml`, `tui.toml`, owned `mcp.json` entry | `credentials/`, `oauth/`, sessions | key default from `KIMI_API_KEY`; `kimi login` per host; CodeGraph stdio enabled |
 | **pi** | `~/.pi/agent/settings.json`, `models-store.json` (MiniMax M2.7/M3 catalog) | `auth.json` (MiniMax key), `sessions/`, `trust.json` | minimal terminal harness; `pi auth login` per host |
 | **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; built-in Headroom provider, optional Headroom MCP disabled; remote profile ignores update events |
+| **MiniMax Code** | merged `~/.minimax/AGENTS.md` | runtime state under `~/.minimax`; vendor installer releases under `~/.minimax-code` and install logs | frozen Bun project exposing `mcode`; instructions deployed, skill discovery not declared |
+| **Qoder** | merged `~/.qoder/AGENTS.md` | login/session under `~/.qoder` | native release pin with manifest SHA-256 verification; `qoder` and `qodercli` launchers |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
-All five clients install through Bun by default. `--agents none` or
-`--agents codex,kimi` controls installation without removing omitted clients;
+All seven clients install by default: six through fresh Bun projects and Qoder
+from its pinned native release manifest. `--agents none` or
+`--agents codex,qoder` controls installation without removing omitted clients;
 CodeGraph remains a default independent of selection. Each exact manifest and
 frozen Bun lock installs into `~/.bun/managed/<name>` and exposes real launchers
-under `~/.bun/bin` and `~/.local/bin` using managed Node. The existing global
-Bun registry remains intact. Legacy clients and optional integrations remain
-documented under `deployment/inventory`. See [agent installation](docs/AGENT_INSTALLATION.md)
+under `~/.bun/bin` and `~/.local/bin` using managed Node. Qoder's verified
+archive installs under `~/.qoder` with managed `qoder`/`qodercli` launchers. The
+existing global Bun registry remains intact. `dotfiles-agents install|update|
+status` wraps selection, pin refresh, lock regeneration, reinstallation, and
+version reporting. Legacy clients and optional integrations remain documented
+under `deployment/inventory`. See [agent installation](docs/AGENT_INSTALLATION.md)
 for versions, lifecycle trust, update policy, and isolated diagnostic checks.
 Runtime configs merge through the public bootstrap, retaining existing settings
 and authentication. [Client settings](docs/AGENT_SETTINGS.md) describes ownership,

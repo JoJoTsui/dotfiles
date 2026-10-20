@@ -27,6 +27,16 @@ def agent_pins():
     return result
 
 
+def native_agent_pins():
+    result = {}
+    for line in (SOURCE / "deployment/agents/native.tsv").read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#"):
+            name, version, commands, platforms, manifest = line.split("|")[:5]
+            result[name] = {"version": version, "commands": commands,
+                            "platforms": platforms, "manifest": manifest}
+    return result
+
+
 def windows_assets():
     assets = json.loads((SOURCE / "deployment/windows-assets.json").read_text(encoding="utf-8"))
     return {asset["name"]: asset for asset in assets}

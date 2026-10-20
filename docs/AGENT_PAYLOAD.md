@@ -40,6 +40,14 @@ dependencies use the skill's own setup instructions on first use.
 | Kimi Code | `~/.kimi-code/AGENTS.md` and generic `~/.agents/AGENTS.md` | `~/.agents/skills` | ACP initialize/new session command catalog |
 | Pi | `~/.pi/agent/AGENTS.md` | `~/.agents/skills` | public SDK resource loader |
 | OpenCode V2 | `~/.config/opencode/AGENTS.md` | `~/.agents/skills` | loopback `GET /api/skill` |
+| MiniMax Code | `~/.minimax/AGENTS.md` | instruction-only adapter | client-native discovery not yet recorded |
+| Qoder | `~/.qoder/AGENTS.md` | instruction-only adapter | client-native discovery not yet recorded |
+
+MiniMax Code reads global memory from `<data-dir>/AGENTS.md` (default
+`~/.minimax`); Qoder reads global memory from `~/.qoder/AGENTS.md`. These two
+adapters deploy instructions only. Shared skills remain available to them
+through `~/.agents/skills` when the client discovers that path, but this repo
+does not claim or test a skill-discovery interface for either client yet.
 
 These locations follow [Claude skill discovery](https://code.claude.com/docs/en/skills),
 [Codex skills](https://developers.openai.com/codex/skills),

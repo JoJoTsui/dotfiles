@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from pins import agent_pins, common_pin, windows_assets
+from pins import agent_pins, common_pin, native_agent_pins, windows_assets
 
 SOURCE = Path(__file__).resolve().parents[1]
 POWERSHELL = os.environ.get("DOTFILES_TEST_POWERSHELL") or shutil.which("pwsh") or shutil.which("powershell")
@@ -100,7 +100,7 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertEqual(plan["settings"]["secondaryShells"], ["git-bash"])
         self.assertFalse(plan["settings"]["systemChanges"])
         self.assertFalse(plan["settings"]["loginShellChanges"])
-        for tool in ("pixi", "bun", "atuin", "rtk", "nu", "uv", "zoxide", "tspin", "hx", "jq", "kimi", "pi", "opencode", "claude", "codex", "codegraph"):
+        for tool in ("pixi", "bun", "atuin", "rtk", "nu", "uv", "zoxide", "tspin", "hx", "jq", "kimi", "pi", "opencode", "claude", "codex", "mcode", "qoder", "qodercli", "codegraph"):
             self.assertIn(tool, plan["tools"])
         packages = {item["environment"]: item for item in plan["packages"]}
         self.assertEqual(packages["rtk-cli"]["dependencies"], {"rtk-cli": "==" + common_pin("rtk-cli")})
@@ -346,6 +346,9 @@ class WindowsNativeInstallTests(unittest.TestCase):
                     'opencode': (agent_pins()['opencode']['version'], '.bun/bin/opencode.cmd'),
                     'claude': (agent_pins()['claude']['version'], '.bun/bin/claude.cmd'),
                     'codex': (agent_pins()['codex']['version'], '.bun/bin/codex.cmd'),
+                    'minimax': (agent_pins()['minimax']['version'], '.bun/bin/mcode.cmd'),
+                    'qoder': (native_agent_pins()['qoder']['version'], '.local/bin/qoder.cmd'),
+                    'qodercli': (native_agent_pins()['qoder']['version'], '.local/bin/qodercli.cmd'),
                     'codegraph': (agent_pins()['codegraph']['version'], '.bun/bin/codegraph.cmd')}
         for name, (pin, relative) in commands.items():
             with self.subTest(command=name):
@@ -372,10 +375,11 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertEqual(values[1:], ['hx', 'managed'])
         # Actual shell discovery must exercise the launchers used in each
         # managed shell, including Git Bash's bare companion scripts.
-        pins = [pin for name, (pin, _) in commands.items() if name in ('kimi', 'pi', 'opencode', 'claude', 'codex', 'codegraph')]
+        pins = [pin for name, (pin, _) in commands.items() if name in ('kimi', 'pi', 'opencode', 'claude', 'codex', 'minimax', 'qoder', 'qodercli', 'codegraph')]
         nu_versions = subprocess.run([str(self.home / '.pixi/bin/nu.exe'), '-e',
                                       'print ([(^kimi --version) (^pi --version) (^opencode --version) '
-                                      '(^claude --version) (^codex --version) (^codegraph --version)] | to json --raw); exit'],
+                                      '(^claude --version) (^codex --version) (^mcode --version) '
+                                      '(^qodercli --version) (^codegraph --version)] | to json --raw); exit'],
                                      env=ordinary, capture_output=True, text=True, timeout=120)
         self.assertEqual(nu_versions.returncode, 0, nu_versions.stderr)
         for pin in pins:
@@ -402,7 +406,7 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertEqual(Path(bash.stdout.splitlines()[-1]), self.home / '.local/share/atuin/history.db')
         bash_versions = subprocess.run([environment['KIMI_SHELL_PATH'], '--noprofile', '-c',
                                         'set -e; . "$HOME/.env_core"; command -v bunx; kimi --version; pi --version; opencode --version; '
-                                        'claude --version; codex --version; codegraph --version'],
+                                        'claude --version; codex --version; mcode --version; qodercli --version; codegraph --version'],
                                        env=environment, capture_output=True, text=True, timeout=120)
         self.assertEqual(bash_versions.returncode, 0, bash_versions.stderr)
         for pin in pins:

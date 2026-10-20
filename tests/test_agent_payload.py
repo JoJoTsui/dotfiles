@@ -181,7 +181,8 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertTrue((shared / "clinical-trials-database/scripts/clinical_trials_api.py").stat().st_mode & 0o111)
         self.assertFalse(any(p.is_symlink() for directory in (shared, claude) for p in directory.rglob("*")))
         for relative in (".agents/AGENTS.md", ".codex/AGENTS.md", ".claude/CLAUDE.md",
-                         ".kimi-code/AGENTS.md", ".pi/agent/AGENTS.md", ".config/opencode/AGENTS.md"):
+                         ".kimi-code/AGENTS.md", ".pi/agent/AGENTS.md", ".config/opencode/AGENTS.md",
+                         ".minimax/AGENTS.md", ".qoder/AGENTS.md"):
             instructions = (self.home / relative).read_text()
             self.assertIn("## Completion", instructions)
             self.assertIn("## CodeGraph", instructions)

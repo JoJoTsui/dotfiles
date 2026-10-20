@@ -1,10 +1,12 @@
-# Bun-managed coding agents
+# Coding agent installation
 
-Ordinary bootstrap installs Kimi Code, pi, OpenCode, Claude Code, and Codex.
-`--agents all`, `--agents none`, or a comma-separated list selects which client
-executables to install. Names are `kimi`, `pi`, `opencode`, `claude`, and
-`codex`; `kimi-code` and `claude-code` are accepted aliases. Repeated names
-are deduplicated in catalog order. Flags override `DOTFILES_AGENTS`.
+Ordinary bootstrap installs Kimi Code, pi, OpenCode, Claude Code, Codex, and
+MiniMax Code through frozen Bun projects, plus Qoder from a pinned native
+release manifest. `--agents all`, `--agents none`, or a comma-separated list
+selects which client executables to install. Names are `kimi`, `pi`,
+`opencode`, `claude`, `codex`, `minimax`, and `qoder`; `kimi-code`,
+`claude-code`, and `minimax-code` are accepted aliases. Repeated names are
+deduplicated in catalog order. Flags override `DOTFILES_AGENTS`.
 Unknown/empty/mixed all-or-none selections fail before writing files.
 
 CodeGraph is always selected, including with `--agents none`. Installation
@@ -17,8 +19,23 @@ Instruction/skill adapters deploy by default through the public bootstrap; see
 bash bootstrap.sh --agents codex,kimi --plan
 bash bootstrap.sh --agents none
 # Install/update selected clients with an already available toolchain.
-bash bootstrap.sh --agents-only --agents claude,codex
+bash bootstrap.sh --agents-only --agents claude,codex,qoder
 ```
+
+The managed `dotfiles-agents` command wraps the same boundary:
+
+```bash
+dotfiles-agents install all          # apply source, install selected agents
+dotfiles-agents update claude,codex  # resolve pins, refresh locks, reinstall
+dotfiles-agents status               # compare pinned and installed versions
+```
+
+`install` runs `bootstrap.sh --agents-only` (or `bootstrap.ps1` on native
+Windows). `update` asks `deployment/update_versions.py propose-agents` for the
+selected upstream versions, rewrites pins and regenerates Bun locks only when a
+proposal exists, and then reinstalls through the same boundary. Vendor
+self-updaters are not invoked. The working checkout remains the source of
+truth, so the refreshed manifests and locks can be reviewed and committed.
 
 `--agents-only` applies the working source and installs selected packages. It
 skips common installation and shell preparation and requires pinned Bun/Node
@@ -30,8 +47,9 @@ state/config roots still follow the designated `--home`.
 
 ## Ownership, versions, and lifecycle scripts
 
-The portable catalog is `deployment/agents/catalog.tsv`. Each package has its
-own exact `package.json` and real text `bun.lock`. A project under
+The portable Bun catalog is `deployment/agents/catalog.tsv`; native packages
+are declared separately in `deployment/agents/native.tsv`. Each Bun package has
+its own exact `package.json` and real text `bun.lock`. A project under
 `~/.bun/managed/<name>` installs with `bun install --frozen-lockfile`; an absent
 lock is an error. Separate projects allow arbitrary selections while keeping
 each manifest consistent with its lock. Locks contain upstream integrity
@@ -47,6 +65,8 @@ mechanism; a filtered monolithic manifest is not used.
 | opencode | `@opencode/cli` 2.0.27 | `opencode`, `opencode2` |
 | claude | `@anthropic-ai/claude-code` 2.1.296 | `claude` |
 | codex | `@openai/codex` 0.162.1 | `codex` |
+| minimax | `@minimax-ai/code` 0.6.12 | `mcode` |
+| qoder (native) | release manifest pin 1.1.74 | `qoder`, `qodercli` |
 | independent default | `@colbymchenry/codegraph` 1.6.2 | `codegraph` |
 
 Only Bun owns desired Codex installation; Pixi does not declare Codex.
@@ -55,7 +75,18 @@ inventories remain under `deployment/inventory`. Source application and project
 installation preserve the device's unrelated global Bun registry and tools.
 Real executable launchers under `~/.bun/bin` and `~/.local/bin` point to the
 same project, preserve package-relative native resources, and prepend managed
-Node/Bun paths. Omitted launchers are unchanged.
+Node/Bun paths. Qoder launchers point at its versioned native binary and its
+entry-point wrapper. Omitted launchers are unchanged.
+
+Qoder is not executed from the vendor install script. The installer reads
+`<manifest-base>/<version>/manifest.json`, requires that it advertises the
+pinned version, selects the declared host archive, requires an HTTPS URL and a
+64-character SHA-256 digest, downloads and verifies the archive, extracts
+`qodercli`, and runs `qodercli install --force --skip-path`. The upstream
+self-contained binary owns versioned placement under `~/.qoder`; dotfiles owns
+only the launchers and the pin. Linux x64 falls back to the manifest's
+baseline archive when the CPU lacks the required Bun feature flags. macOS
+reports Apple silicon under Rosetta so the native archive is selected.
 
 The common toolchain supplies Bun 1.3.11 and Node 24.21.0. Bootstrap checks both
 exact versions and catalog minimum Node versions, then executes each selected
@@ -63,13 +94,17 @@ CLI's `--version`. A failing install or diagnostic returns its nonzero status
 and package step. Pin changes require compatible manifests, locks, engines,
 and runtime diagnostics; a package-manager exit alone is not acceptance.
 
-The deliberate lifecycle trust list contains Kimi Code, Claude Code, and
-OpenCode. It does not enable broad `--trust` or arbitrary dependency scripts.
-Kimi's optional `node-pty` is not trusted for Linux source compilation by
-default. In shipped 2.1.1 `dist/main.mjs`, `BashTool` acquires only the process
-capability and calls `HostProcessService`, which uses Node's
-`child_process.spawn`; the sole `node-pty` import belongs to
-`HostTerminalService.spawn` (lines 175629, 175662, 176725–176747 of the exact
+The deliberate lifecycle trust list contains Kimi Code, Claude Code, OpenCode,
+and `better-sqlite3` (a direct MiniMax Code dependency). It does not enable
+broad `--trust` or arbitrary dependency scripts. MiniMax Code's own postinstall
+is a native-install verifier and remains untrusted; the managed project pins
+`better-sqlite3` directly so Bun builds its binding against the managed Node
+runtime before `mcode` starts. Kimi's optional `node-pty` is not trusted for
+Linux source compilation by default. In shipped 2.1.1
+`dist/main.mjs`, `BashTool` acquires only the process capability and calls
+`HostProcessService`, which uses Node's `child_process.spawn`; the sole
+`node-pty` import belongs to `HostTerminalService.spawn` (lines 175629,
+175662, 176725–176747 of the exact
 [published package](https://registry.npmjs.org/@moonshot-ai/kimi-code/-/kimi-code-2.1.1.tgz)).
 Terminal CLI/shell tools therefore do not require that optional binding.
 The optional browser terminal's Linux PTY needs separately provisioned native
@@ -101,7 +136,9 @@ the client's underlying watcher is disabled.
 
 OpenCode uses `update: "disable"`, Kimi uses `[upgrade].auto_install = false`,
 Claude sets `DISABLE_AUTOUPDATER=1`, and Codex disables its startup update
-check. These are documented controls: [OpenCode config](https://dev.opencode.ai/v2/docs/config/),
+check. MiniMax Code and Qoder are pinned by the managed installer; `update`
+reinstalls the selected managed version instead of delegating to a vendor
+self-updater. These are documented controls: [OpenCode config](https://dev.opencode.ai/v2/docs/config/),
 [Kimi TUI preferences](https://moonshotai.github.io/kimi-code/en/configuration/config-files.html#tui-toml),
 [Claude environment variables](https://code.claude.com/docs/en/env-vars), and
 [Codex configuration](https://learn.chatgpt.com/docs/config-file/config-reference).
@@ -114,9 +151,9 @@ replace managed package pins through this installer.
 Deterministic public tests cover all/none/named selection, package failure
 propagation, working-source application, and preserved global registries.
 The explicit network test installs into a disposable Linux x86-64 home,
-executes all six real CLIs, and repeats selections without deleting clients.
-`DOTFILES_TEST_KIMI` and `DOTFILES_TEST_OPENCODE` enable actual pinned config
-checks in ordinary test discovery.
+executes all seven real CLI selections, and repeats selections without deleting
+clients. `DOTFILES_TEST_KIMI` and `DOTFILES_TEST_OPENCODE` enable actual pinned
+config checks in ordinary test discovery.
 
 ```bash
 DOTFILES_TEST_AGENT_INSTALL=1 \

@@ -58,7 +58,7 @@ Usage: bash bootstrap.sh [options]
   --class NAME              Legacy alias: t9k, linux, win
   --arch NAME               x86_64, aarch64 (amd64/arm64 aliases accepted)
   --bundles LIST            none (default), or comma-separated bio,gpu,desktop,developer
-  --agents SELECTION        all (default), none, or kimi,pi,opencode,claude,codex
+  --agents SELECTION        all (default), none, or kimi,pi,opencode,claude,codex,minimax,qoder
   --system-config           Add managed Bash defaults to the system Bash rc
   --login-shell             Set this account's login shell to the managed Nu launcher
   --apply-only              Apply files with chezmoi; skip tool/agent installers
@@ -164,7 +164,7 @@ fi
 # Refuse pre-existing state directory symlinks before mkdir or installers can
 # follow them. This check covers every parent used during state preparation.
 [ ! -L "$DEPLOY_HOME" ] || fail "target home is a symlink: $DEPLOY_HOME"
-for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config .config/chezmoi .config/dotfiles .config/opencode .cache .cache/tmp .pixi .pixi/bin .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml .bun .bun/bin .bun/managed .bun/install .bun/install/global .cargo .cargo/bin .rustup .codex .claude .kimi-code .pi .pi/agent; do
+for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config .config/chezmoi .config/dotfiles .config/opencode .cache .cache/tmp .pixi .pixi/bin .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml .bun .bun/bin .bun/managed .bun/install .bun/install/global .cargo .cargo/bin .rustup .codex .claude .kimi-code .pi .pi/agent .qoder .minimax .minimax-code .minimax-code-install-logs; do
     [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target state root is a symlink: $DEPLOY_HOME/$relative"
 done
 DEPLOY_STEP=apply-source.agent-payload
@@ -199,6 +199,8 @@ unset CLAUDE_CONFIG_DIR
 export KIMI_CODE_HOME="$HOME/.kimi-code" PI_CODING_AGENT_DIR="$HOME/.pi/agent"
 export OPENCODE_CONFIG_DIR="$HOME/.config/opencode" OPENCODE_CONFIG="$HOME/.config/opencode/opencode.jsonc"
 unset OPENCODE_CONFIG_CONTENT OPENCODE_CLI_CONFIG_CONTENT
+export MINIMAX_DATA_DIR="$HOME/.minimax" QODER_CONFIG_DIR="$HOME/.qoder"
+unset MAVIS_DATA_DIR QODER_HOME QODER_USER_CONFIG_DIR
 export HISTFILE="$HOME/.bash_history" TMPDIR="$HOME/.cache/tmp"
 export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$CARGO_HOME/bin:$PATH"
 export DOTFILES_PLATFORM="$DEPLOY_PLATFORM" DOTFILES_ROLE="$DEPLOY_ROLE" DOTFILES_ARCH="$DEPLOY_ARCH"
