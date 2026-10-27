@@ -1,10 +1,13 @@
 # format|default source relative to client-settings|target relative to designated home|policy
-json|claude-mcp.json|.claude.json|claude-mcp
+json|claude-mcp.json|.claude.json|codegraph-mcp
 json|claude-settings.json.tmpl|.claude/settings.json|claude-settings
 toml|codex.toml|.codex/config.toml|codex
 toml|kimi.toml.tmpl|.kimi-code/config.toml|kimi
 toml|kimi-tui.toml|.kimi-code/tui.toml|kimi-tui
-json|kimi-mcp.json|.kimi-code/mcp.json|kimi-mcp
+json|mcp-codegraph.json|.kimi-code/mcp.json|codegraph-mcp
+json|mcp-codegraph.json|.pi/agent/mcp.json|codegraph-mcp
+json|mcp-codegraph.json|.minimax/mcp.json|codegraph-mcp
+json|mcp-codegraph.json|.qoder/settings.json|codegraph-mcp
 jsonc|opencode.jsonc.tmpl|.config/opencode/opencode.jsonc|opencode
 json|pi-settings.json.tmpl|.pi/agent/settings.json|pi-settings
 json|pi-models-store.json|.pi/agent/models-store.json|pi-models-store

@@ -17,18 +17,21 @@ validate_client_settings() {
 }
 
 deploy_client_settings() {
-    local format source target policy stage trace_policy
+    local format source target policy stage key trace_policy
     validate_client_settings
     stage=$(mktemp -d "$TMPDIR/client-settings.XXXXXX")
     # Render the entire batch before changing a client's files. Invalid existing
     # JSONC/TOML propagates a named failure while all client settings stay intact.
     while IFS=$'|\r' read -r format source target policy; do
         case "$format" in ''|\#*) continue ;; esac
+        # One policy may own several targets; the staged file key follows the
+        # target so a shared policy cannot overwrite an earlier render.
+        key=$(printf '%s' "$target" | tr '/.' '__')
         export DOTFILES_SETTINGS_FORMAT="$format" DOTFILES_SETTINGS_POLICY="$policy"
         export DOTFILES_SETTINGS_SOURCE="$DEPLOY_SOURCE/deployment/client-settings/$source"
         export DOTFILES_SETTINGS_TARGET="$HOME/$target"
         export DOTFILES_SETTINGS_BASELINE="$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
-        if ! DOTFILES_SETTINGS_OUTPUT=config "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$policy.config" 2> "$stage/parser.log"; then
+        if ! DOTFILES_SETTINGS_OUTPUT=config "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$key.config" 2> "$stage/parser.log"; then
             if [ "${DOTFILES_TEST_TRACE_CLIENT_SETTINGS:-}" = 1 ]; then
                 printf 'dotfiles: client settings shell policy (test-only): <%s>\n' "${DOTFILES_SETTINGS_POLICY-<unset>}" >&2
                 printf '%s\n' '{{ env "DOTFILES_SETTINGS_POLICY" }}' > "$stage/policy.tmpl"
@@ -44,17 +47,18 @@ deploy_client_settings() {
             rm -rf "$stage"
             fail "cannot merge client config ($format): $target; check its syntax"
         fi
-        if ! DOTFILES_SETTINGS_OUTPUT=baseline "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$policy.baseline" 2> "$stage/parser.log"; then
+        if ! DOTFILES_SETTINGS_OUTPUT=baseline "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$key.baseline" 2> "$stage/parser.log"; then
             rm -rf "$stage"
             fail "cannot prepare client config baseline ($format): $target"
         fi
     done < "$DEPLOY_SOURCE/deployment/client-settings/targets.tsv"
     while IFS=$'|\r' read -r format source target policy; do
         case "$format" in ''|\#*) continue ;; esac
+        key=$(printf '%s' "$target" | tr '/.' '__')
         mkdir -p "$(dirname "$HOME/$target")" "$XDG_STATE_HOME/dotfiles/client-settings"
-        chmod 600 "$stage/$policy.config" "$stage/$policy.baseline"
-        mv "$stage/$policy.config" "$HOME/$target"
-        mv "$stage/$policy.baseline" "$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
+        chmod 600 "$stage/$key.config" "$stage/$key.baseline"
+        mv "$stage/$key.config" "$HOME/$target"
+        mv "$stage/$key.baseline" "$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
     done < "$DEPLOY_SOURCE/deployment/client-settings/targets.tsv"
     rm -rf "$stage"
     unset DOTFILES_SETTINGS_FORMAT DOTFILES_SETTINGS_POLICY DOTFILES_SETTINGS_SOURCE DOTFILES_SETTINGS_TARGET DOTFILES_SETTINGS_BASELINE

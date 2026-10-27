@@ -175,22 +175,25 @@ function Merge-ClientSettings {
             $env:DOTFILES_SETTINGS_SOURCE = Join-Path $Source "deployment/client-settings/$($row.columns[1])"
             $env:DOTFILES_SETTINGS_TARGET = Join-Path $TargetHome $row.columns[2]
             $env:DOTFILES_SETTINGS_BASELINE = Join-Path $roots.state "dotfiles/client-settings/$($row.columns[3]).json"
+            # A policy can own several targets; key the staged file by target.
+            $key = $row.columns[2] -replace '[/.]', '_'
             foreach ($kind in @('config', 'baseline')) {
                 $env:DOTFILES_SETTINGS_OUTPUT = $kind
                 try {
                     $text = Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('execute-template', '--file', (Join-Path $Source 'deployment/client-settings/merge.tmpl'))) -Quiet
                 } catch { Stop-Deployment "cannot merge client config ($($row.columns[0])): $($row.columns[2]); check its syntax" }
-                Write-Utf8 (Join-Path $stage "$($row.columns[3]).$kind") $text
-                Set-Private (Join-Path $stage "$($row.columns[3]).$kind")
+                Write-Utf8 (Join-Path $stage "$key.$kind") $text
+                Set-Private (Join-Path $stage "$key.$kind")
             }
         }
         foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
             $destination = Join-Path $TargetHome $row.columns[2]
             $baseline = Join-Path $roots.state "dotfiles/client-settings/$($row.columns[3]).json"
+            $key = $row.columns[2] -replace '[/.]', '_'
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($baseline)) | Out-Null
-            Move-Item -LiteralPath (Join-Path $stage "$($row.columns[3]).config") -Destination $destination -Force
-            Move-Item -LiteralPath (Join-Path $stage "$($row.columns[3]).baseline") -Destination $baseline -Force
+            Move-Item -LiteralPath (Join-Path $stage "$key.config") -Destination $destination -Force
+            Move-Item -LiteralPath (Join-Path $stage "$key.baseline") -Destination $baseline -Force
             Set-Private $destination; Set-Private $baseline
         }
     } finally {

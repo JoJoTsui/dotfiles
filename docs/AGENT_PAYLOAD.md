@@ -38,16 +38,19 @@ dependencies use the skill's own setup instructions on first use.
 | Codex | `~/.codex/AGENTS.md` | `~/.agents/skills` | `codex debug prompt-input` |
 | Claude Code | `~/.claude/CLAUDE.md` | real-file `~/.claude/skills` adapter | SDK initialize command catalog |
 | Kimi Code | `~/.kimi-code/AGENTS.md` and generic `~/.agents/AGENTS.md` | `~/.agents/skills` | ACP initialize/new session command catalog |
-| Pi | `~/.pi/agent/AGENTS.md` | `~/.agents/skills` | public SDK resource loader |
-| OpenCode V2 | `~/.config/opencode/AGENTS.md` | `~/.agents/skills` | loopback `GET /api/skill` |
-| MiniMax Code | `~/.minimax/AGENTS.md` | instruction-only adapter | client-native discovery not yet recorded |
-| Qoder | `~/.qoder/AGENTS.md` | instruction-only adapter | client-native discovery not yet recorded |
+| Pi | `~/.pi/agent/AGENTS.md` | `~/.agents/skills` via `settings.skills` | public SDK resource loader |
+| OpenCode V2 | `~/.config/opencode/AGENTS.md` | `~/.agents/skills` via `skills` | loopback `GET /api/skill` |
+| MiniMax Code | `~/.minimax/AGENTS.md` | real-file `~/.minimax/skills` adapter | client-native discovery not yet recorded |
+| Qoder | `~/.qoder/AGENTS.md` | `~/.agents/skills` | `qoder skills list` |
 
 MiniMax Code reads global memory from `<data-dir>/AGENTS.md` (default
-`~/.minimax`); Qoder reads global memory from `~/.qoder/AGENTS.md`. These two
-adapters deploy instructions only. Shared skills remain available to them
-through `~/.agents/skills` when the client discovers that path, but this repo
-does not claim or test a skill-discovery interface for either client yet.
+`~/.minimax`) and skills only from `<data-dir>/skills`, so it needs a real-file
+copy of the shared library. Qoder reads `~/.qoder/AGENTS.md` and discovers
+`~/.agents/skills` directly; `qoder skills list` reports the shared paths for a
+deployed home, so it needs no skill adapter. Both clients keep their own skill
+directories and plugin payloads client-owned, and both receive the shared
+instruction block and the managed CodeGraph entry documented in
+[client settings](AGENT_SETTINGS.md).
 
 These locations follow [Claude skill discovery](https://code.claude.com/docs/en/skills),
 [Codex skills](https://developers.openai.com/codex/skills),

@@ -8,8 +8,9 @@ OpenCode V2 receives the target home's absolute skill path in its managed
 config so isolated deployments do not fall back to the host account's home.
 
 Claude Code and Kimi expose a `Skill` tool; OpenCode exposes its own skill
-mechanism. Codex and Pi can read a skill's instructions with their file or shell
-tools. Tool names, slash command syntax, delegation, and approval tools depend on
+mechanism. Qoder lists the shared library with `qoder skills list`; MiniMax Code
+reads only its own `skills` directory, which receives a real-file copy. Codex
+and Pi can read a skill's instructions with their file or shell tools. Tool names, slash command syntax, delegation, and approval tools depend on
 the client. Use an available equivalent only when it preserves the requested
 workflow; report a required unavailable capability.
 

@@ -1,6 +1,7 @@
 # kind|source relative to agent-payload|destination relative to designated home
 tree|skills|.agents/skills
 tree|skills|.claude/skills
+tree|skills|.minimax/skills
 file|RTK.md|.agents/RTK.md
 file|CLIENTS.md|.agents/CLIENTS.md
 block|AGENTS.md|.agents/AGENTS.md

@@ -69,7 +69,10 @@ class CodeGraphTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         claude = json.loads((self.home / ".claude.json").read_text())
         kimi = json.loads((self.home / ".kimi-code/mcp.json").read_text())
-        for config in (claude, kimi):
+        pi_mcp = json.loads((self.home / ".pi/agent/mcp.json").read_text())
+        minimax = json.loads((self.home / ".minimax/mcp.json").read_text())
+        qoder = json.loads((self.home / ".qoder/settings.json").read_text())
+        for config in (claude, kimi, pi_mcp, minimax, qoder):
             server = config["mcpServers"]["codegraph"]
             self.assertEqual(server["command"], "codegraph")
             self.assertEqual(server["args"], ["serve", "--mcp"])
@@ -102,6 +105,8 @@ class CodeGraphTests(unittest.TestCase):
             ".config/opencode/opencode.jsonc": '{// a device comment\n"theme":"device-theme","skills":["./device-skills"],"providers":{"device":{"settings":{"apiKey":"synthetic-device-token"}}},"mcp":{"servers":{"device":{"type":"local","command":["device-mcp"]}}}}',
             ".pi/agent/settings.json": '{"theme":"device-theme","skills":["./device-skills"],"enableInstallTelemetry":false,"deviceSetting":false}',
             ".pi/agent/models-store.json": '{"device":{"models":[{"id":"custom-model"}]}}',
+            ".qoder/settings.json": '{"model":{"name":"device-model"},"mcpServers":{"device":{"command":"device-mcp"}}}',
+            ".minimax/mcp.json": '{"mcpServers":{"device":{"command":"device-mcp","env":{"SYNTHETIC_TOKEN":"keep"}}}}',
             ".codex/auth.json": '{"synthetic-only":"untouched"}\n',
             ".pi/agent/auth.json": '{"synthetic-only":"untouched"}\n',
         }
@@ -137,6 +142,12 @@ class CodeGraphTests(unittest.TestCase):
         self.assertEqual(json.loads((self.home / ".pi/agent/settings.json").read_text())["skills"],
                          ["./device-skills", str(self.home / ".agents/skills")])
         self.assertEqual(json.loads((self.home / ".pi/agent/models-store.json").read_text())["device"], {"models": [{"id": "custom-model"}]})
+        qoder = json.loads((self.home / ".qoder/settings.json").read_text())
+        self.assertEqual(qoder["model"], {"name": "device-model"})
+        self.assertEqual(qoder["mcpServers"]["device"]["command"], "device-mcp")
+        self.assertEqual(qoder["mcpServers"]["codegraph"]["command"], "codegraph")
+        self.assertEqual(json.loads((self.home / ".minimax/mcp.json").read_text())["mcpServers"]["device"]["env"],
+                         {"SYNTHETIC_TOKEN": "keep"})
         for relative in (".codex/auth.json", ".pi/agent/auth.json"):
             self.assertEqual((self.home / relative).read_text(), original[relative])
 

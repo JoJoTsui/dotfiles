@@ -8,7 +8,7 @@ settings before the merge. The renderer uses the already-required Chezmoi;
 apply-only does not require Python, Node, Bun, or an installed agent.
 
 `targets.tsv` declares format, source, target relative to the designated home,
-and ownership policy. `policies.json` names the enforced fields: the four owned
+and ownership policy. `policies.json` names the enforced fields: the seven owned
 CodeGraph server entries and the clients' disabled self-updaters. Other defaults
 fill missing fields. Existing device values, including false values, custom
 providers, hooks, MCP servers, project trust, and authentication survive.
@@ -34,7 +34,9 @@ Separate credential, trust, session, plugin, and cache files stay client-owned.
 | Codex 0.164.0 | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
 | Kimi 2.3.3 | `~/.kimi-code/mcp.json`, `mcpServers.codegraph` | inferred stdio |
 | OpenCode 2.2.0 | `~/.config/opencode/opencode.jsonc`, `mcp.servers.codegraph` | local, enabled, `codemode: false` |
-| Pi 1.4.0 | global `AGENTS.md` from the shared payload | `codegraph explore "<question>"` |
+| Pi 1.4.0 | `~/.pi/agent/mcp.json`, `mcpServers.codegraph` | stdio, user scope |
+| MiniMax Code 0.7.0 | `~/.minimax/mcp.json`, `mcpServers.codegraph` | inferred stdio |
+| Qoder 1.1.80 | `~/.qoder/settings.json`, `mcpServers.codegraph` | user scope stdio |
 
 Every MCP entry launches managed `codegraph serve --mcp`, with no credentials,
 downloads through `npx`/`bunx`, or project-specific path. OpenCode's shape is
@@ -42,7 +44,10 @@ verified against its [pinned MCP schema](https://github.com/anomalyco/opencode/b
 and [MCP container](https://github.com/anomalyco/opencode/blob/v2.2.0/packages/schema/src/config/mcp.ts),
 then its actual loader and connected status. Kimi's location and transport
 follow its [MCP configuration](https://moonshotai.github.io/kimi-code/en/customization/mcp.html)
-and the installed 2.3.3 loader.
+and the installed 2.3.3 loader. Pi reads user servers from
+`~/.pi/agent/mcp.json`. Qoder writes user scope into `~/.qoder/settings.json`
+and MiniMax Code reads its user file at `<data-dir>/mcp.json`; both use the same
+`mcpServers` object shape, taken from each client's own user-scope reader.
 
 Claude's normal discovery puts settings in `~/.claude/settings.json` and user
 MCP/auth fields in `~/.claude.json`. In the pinned release,

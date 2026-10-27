@@ -50,7 +50,7 @@
 {{- $node := joinPath (env "PIXI_HOME") "bin" "node.exe" -}}
 {{- $shim := joinPath (env "HOME") ".bun" "managed" "codegraph" "node_modules" "@colbymchenry" "codegraph" "npm-shim.js" -}}
 {{- $policy := env "DOTFILES_SETTINGS_POLICY" -}}
-{{- if has $policy (list "claude-mcp" "kimi-mcp") -}}
+{{- if eq $policy "codegraph-mcp" -}}
 {{- $_ := setValueAtPath (list "mcpServers" "codegraph" "command") $node $desired -}}
 {{- $_ := setValueAtPath (list "mcpServers" "codegraph" "args") (list $shim "serve" "--mcp") $desired -}}
 {{- else if eq $policy "codex" -}}
