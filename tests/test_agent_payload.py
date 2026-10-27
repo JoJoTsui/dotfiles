@@ -62,7 +62,11 @@ class AgentPayloadTests(unittest.TestCase):
 
     def diagnostic_env(self):
         codegraph = os.environ.get("DOTFILES_TEST_CODEGRAPH")
-        path = f"{Path(codegraph).parent}{os.pathsep}{os.defpath}" if codegraph else os.defpath
+        node = os.environ.get("DOTFILES_TEST_NODE")
+        # Bun launchers resolve `node` from PATH; keep the managed runtime
+        # reachable without inheriting the host toolchain.
+        extra = [Path(value).parent for value in (codegraph, node) if value]
+        path = os.pathsep.join([*(str(item) for item in extra), os.defpath])
         environment = {"HOME": str(self.home), "PATH": path,
                 "XDG_CONFIG_HOME": str(self.home / ".config"),
                 "XDG_DATA_HOME": str(self.home / ".local/share"),

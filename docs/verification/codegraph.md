@@ -44,3 +44,10 @@ tickets' native runners; portable config syntax and Linux execution are not
 native proof, and only WSL2 ARM64 remains unscheduled for want of a runner. Ticket05 separately established Pi's global instruction and
 shared-library discovery; the CLI exploration here establishes the command
 those instructions use.
+
+Re-verified on 2026-10-27 against the advanced pins: Claude Code 2.1.311,
+Codex 0.164.0, Kimi 2.3.3, OpenCode 2.2.0, and Pi 1.4.0. Payload and setting
+tests passed with disposable homes, including Codex prompt discovery, Pi's
+resource loader, Kimi/Claude skill command advertisement, and OpenCode skill
+discovery. The OpenCode diagnostic now runs with `--standalone` because 2.2.0
+starts its managed service for `debug config`.

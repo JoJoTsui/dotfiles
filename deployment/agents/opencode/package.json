@@ -1,6 +1,10 @@
 {
   "name": "dotfiles-managed-opencode",
   "private": true,
-  "dependencies": { "@opencode/cli": "2.0.27" },
-  "trustedDependencies": ["@opencode/cli"]
+  "dependencies": {
+    "@opencode/cli": "2.2.0"
+  },
+  "trustedDependencies": [
+    "@opencode/cli"
+  ]
 }

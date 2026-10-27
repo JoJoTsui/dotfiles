@@ -1,6 +1,10 @@
 {
   "name": "dotfiles-managed-claude",
   "private": true,
-  "dependencies": { "@anthropic-ai/claude-code": "2.1.296" },
-  "trustedDependencies": ["@anthropic-ai/claude-code"]
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.311"
+  },
+  "trustedDependencies": [
+    "@anthropic-ai/claude-code"
+  ]
 }

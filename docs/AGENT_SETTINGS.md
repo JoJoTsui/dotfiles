@@ -30,19 +30,19 @@ Separate credential, trust, session, plugin, and cache files stay client-owned.
 
 | Client | Managed CodeGraph location | Integration |
 | --- | --- | --- |
-| Claude 2.1.296 | `~/.claude.json`, `mcpServers.codegraph` | stdio, `alwaysLoad: true` |
-| Codex 0.162.1 | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
-| Kimi 2.1.1 | `~/.kimi-code/mcp.json`, `mcpServers.codegraph` | inferred stdio |
-| OpenCode 2.0.27 | `~/.config/opencode/opencode.jsonc`, `mcp.servers.codegraph` | local, enabled, `codemode: false` |
-| Pi 1.2.0 | global `AGENTS.md` from the shared payload | `codegraph explore "<question>"` |
+| Claude 2.1.311 | `~/.claude.json`, `mcpServers.codegraph` | stdio, `alwaysLoad: true` |
+| Codex 0.164.0 | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
+| Kimi 2.3.3 | `~/.kimi-code/mcp.json`, `mcpServers.codegraph` | inferred stdio |
+| OpenCode 2.2.0 | `~/.config/opencode/opencode.jsonc`, `mcp.servers.codegraph` | local, enabled, `codemode: false` |
+| Pi 1.4.0 | global `AGENTS.md` from the shared payload | `codegraph explore "<question>"` |
 
 Every MCP entry launches managed `codegraph serve --mcp`, with no credentials,
 downloads through `npx`/`bunx`, or project-specific path. OpenCode's shape is
-verified against its [pinned MCP schema](https://github.com/anomalyco/opencode/blob/v2.0.27/packages/schema/src/mcp.ts)
-and [MCP container](https://github.com/anomalyco/opencode/blob/v2.0.27/packages/schema/src/config/mcp.ts),
+verified against its [pinned MCP schema](https://github.com/anomalyco/opencode/blob/v2.2.0/packages/schema/src/mcp.ts)
+and [MCP container](https://github.com/anomalyco/opencode/blob/v2.2.0/packages/schema/src/config/mcp.ts),
 then its actual loader and connected status. Kimi's location and transport
 follow its [MCP configuration](https://moonshotai.github.io/kimi-code/en/customization/mcp.html)
-and the installed 2.1.1 loader.
+and the installed 2.3.3 loader.
 
 Claude's normal discovery puts settings in `~/.claude/settings.json` and user
 MCP/auth fields in `~/.claude.json`. In the pinned release,

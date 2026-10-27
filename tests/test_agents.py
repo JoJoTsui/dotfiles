@@ -108,7 +108,9 @@ class AgentTests(unittest.TestCase):
                           "XDG_DATA_HOME": str(self.home / ".local/share"),
                           "XDG_STATE_HOME": str(self.home / ".local/state"),
                           "XDG_CACHE_HOME": str(self.home / ".cache")}
-        diagnostic = subprocess.run([opencode, "debug", "config"], cwd=self.home,
+        # 2.2.0 starts the managed service for `debug config`; standalone keeps
+        # the diagnostic off a host service that may already hold the port.
+        diagnostic = subprocess.run([opencode, "debug", "config", "--standalone"], cwd=self.home,
                                     env=diagnostic_env, capture_output=True, text=True, timeout=60)
         self.assertEqual(diagnostic.returncode, 0, diagnostic.stdout + diagnostic.stderr)
         sources = json.loads(diagnostic.stdout)
@@ -125,7 +127,9 @@ class AgentTests(unittest.TestCase):
             self.skipTest("requires the actual pinned Kimi and chezmoi binaries")
         result = self.deploy("--apply-only", env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
         self.assertEqual(result.returncode, 0, result.stderr)
-        env = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "KIMI_CODE_HOME": str(self.home / ".kimi-code")}
+        node = os.environ.get("DOTFILES_TEST_NODE")
+        path = "/usr/bin:/bin" + (os.pathsep + os.path.dirname(node) if node else "")
+        env = {"HOME": str(self.home), "PATH": path, "KIMI_CODE_HOME": str(self.home / ".kimi-code")}
         for subcommand, path in (("config", ".kimi-code/config.toml"), ("tui", ".kimi-code/tui.toml")):
             diagnostic = subprocess.run([kimi, "doctor", subcommand, str(self.home / path)],
                                         cwd=self.home, env=env, capture_output=True, text=True, timeout=60)

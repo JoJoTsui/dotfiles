@@ -60,13 +60,13 @@ mechanism; a filtered monolithic manifest is not used.
 
 | Selection | Exact package | CLI |
 | --- | --- | --- |
-| kimi | `@moonshot-ai/kimi-code` 2.1.1 | `kimi` |
-| pi | `@earendil-works/pi-coding-agent` 1.2.0 | `pi` |
-| opencode | `@opencode/cli` 2.0.27 | `opencode`, `opencode2` |
-| claude | `@anthropic-ai/claude-code` 2.1.296 | `claude` |
-| codex | `@openai/codex` 0.162.1 | `codex` |
-| minimax | `@minimax-ai/code` 0.6.12 | `mcode` |
-| qoder (native) | release manifest pin 1.1.74 | `qoder`, `qodercli` |
+| kimi | `@moonshot-ai/kimi-code` 2.3.3 | `kimi` |
+| pi | `@earendil-works/pi-coding-agent` 1.4.0 | `pi` |
+| opencode | `@opencode/cli` 2.2.0 | `opencode`, `opencode2` |
+| claude | `@anthropic-ai/claude-code` 2.1.311 | `claude` |
+| codex | `@openai/codex` 0.164.0 | `codex` |
+| minimax | `@minimax-ai/code` 0.7.0 | `mcode` |
+| qoder (native) | release manifest pin 1.1.80 | `qoder`, `qodercli` |
 | independent default | `@colbymchenry/codegraph` 1.6.2 | `codegraph` |
 
 Only Bun owns desired Codex installation; Pixi does not declare Codex.
@@ -116,9 +116,9 @@ legacy global-shim takeover does not probe or rename host tools.
 ## Pinned client configuration
 
 OpenCode 2 uses `providers`, `settings`, `package`, and nested `mcp.servers`.
-The template was verified by 2.0.27's actual `opencode debug config` loader.
-The exact [config schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.0.27/packages/schema/src/config.ts)
-and [MCP schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.0.27/packages/schema/src/config/mcp.ts)
+The template was verified by 2.2.0's actual `opencode debug config` loader.
+The exact [config schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.2.0/packages/schema/src/config.ts)
+and [MCP schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.2.0/packages/schema/src/config/mcp.ts)
 are authoritative; the unversioned public schema still described V1 at
 implementation time. `codemode: false` preserves direct CodeGraph tools;
 the default integration is enabled through the [settings merge](AGENT_SETTINGS.md).
@@ -128,7 +128,7 @@ download. Its MCP remains disabled until that optional service is provisioned.
 The historical Serena download command is preserved in the ignored inventory,
 outside active configuration.
 
-The exact [watcher schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.0.27/packages/schema/src/config/watcher.ts)
+The exact [watcher schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.2.0/packages/schema/src/config/watcher.ts)
 supports ignore patterns only. The old `watcher.enabled` had no effect;
 remote compute profiles ignore all project update events (`**`), while
 workstations ignore noisy directories. This filters events; it does not claim

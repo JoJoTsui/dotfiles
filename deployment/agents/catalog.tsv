@@ -1,8 +1,8 @@
 # name|package|exact version|commands|minimum Node|trusted lifecycle dependencies
-kimi|@moonshot-ai/kimi-code|2.1.1|kimi|22.19.0|@moonshot-ai/kimi-code
-pi|@earendil-works/pi-coding-agent|1.2.0|pi|22.19.0|
-opencode|@opencode/cli|2.0.27|opencode,opencode2|22.0.0|@opencode/cli
-claude|@anthropic-ai/claude-code|2.1.296|claude|22.0.0|@anthropic-ai/claude-code
-codex|@openai/codex|0.162.1|codex|16.0.0|
-minimax|@minimax-ai/code|0.6.12|mcode|22.19.0|better-sqlite3
+kimi|@moonshot-ai/kimi-code|2.3.3|kimi|22.19.0|@moonshot-ai/kimi-code
+pi|@earendil-works/pi-coding-agent|1.4.0|pi|22.19.0|
+opencode|@opencode/cli|2.2.0|opencode,opencode2|22.0.0|@opencode/cli
+claude|@anthropic-ai/claude-code|2.1.311|claude|22.0.0|@anthropic-ai/claude-code
+codex|@openai/codex|0.164.0|codex|16.0.0|
+minimax|@minimax-ai/code|0.7.0|mcode|22.19.0|better-sqlite3
 codegraph|@colbymchenry/codegraph|1.6.2|codegraph|24.0.0|
