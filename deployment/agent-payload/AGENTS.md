@@ -39,6 +39,14 @@ Choose context and verification proportional to the change, while honoring
 project requirements. Read supporting documents when their subject applies.
 Once relevant checks pass, finish unless new evidence warrants more work.
 
+## Scope discipline
+
+A hypothetical race, a speculative security edge case, or a future requirement
+is not a reason to add complexity on your own. Before implementing a guard for a
+case that is unlikely or purely guessed, state what could go wrong, how likely it
+is, and what the extra complexity costs. Get the user's agreement first. Do not
+widen the task for theoretical robustness without that decision.
+
 ## CLI tools
 
 Prefer these managed tools for their tasks instead of `grep`, `find`, `sed`,
@@ -233,6 +241,29 @@ SSH. Choose another transport only when the task needs something it cannot do.
   to a session from outside.
 - Two agents still collide in one checkout. Give each a worktree or clone,
   whichever the transport offers.
+
+## Worktree hygiene
+
+A worktree is temporary. Finish every task by removing the worktree it used,
+including its branch and any dedicated build directory.
+
+1. Land the work: merge into `main` when that is the task's outcome.
+2. If it must not merge, commit every uncommitted change to the worktree branch,
+   tag the branch `archive/<worktree-name>`, then remove the worktree and delete
+   the local branch.
+
+   ```bash
+   git worktree remove <path>
+   git branch -D <branch>
+   git worktree prune
+   ```
+
+3. Delete the dedicated build directory created for that worktree, such as a
+   per-worktree `CARGO_TARGET_DIR`.
+4. The session that spawned a subagent owns cleanup for its worktree, including
+   `.claude/worktrees/agent-*`, `.codex/worktrees/*`, and similar paths.
+5. Keep a worktree only when the user must decide or conflicts are unresolved.
+   Name its path and the reason in the final response. Never leave one silently.
 
 ## Context and cache discipline
 

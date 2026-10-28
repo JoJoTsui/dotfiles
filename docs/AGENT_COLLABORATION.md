@@ -48,7 +48,8 @@ returns status. Other transports exist for the cases it cannot cover:
 | `ssh host '<cmd>'` | work lives on another machine | host-local credentials and PATH |
 
 All of them keep the same contract: one bounded brief, depth one, no credential
-forwarding, verify the output, one worktree per concurrent agent. Herdr's
+forwarding, verify the output, one worktree per concurrent agent, and cleanup of
+every worktree the task created (merge, or archive-tag then remove). Herdr's
 command set is in [herdr](HERDR.md); tmux needs no more than `new-session`,
 `send-keys`, and `capture-pane`.
 
