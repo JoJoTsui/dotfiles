@@ -41,13 +41,35 @@ Once relevant checks pass, finish unless new evidence warrants more work.
 
 ## CLI tools
 
-Prefer available tools for their matching tasks: `rg` for search, `rg --files`
-or `fd` for discovery, `sd` for mechanical replacements, a patch tool for code
-edits, `uv` for Python environments and dependencies, `jq` for JSON,
-`bat --paging=never` for readable output, and `eza` for directory listings.
-Use `fzf --filter` for automated fuzzy selection; reserve interactive `fzf` for
-a human-facing terminal. Recheck tool availability on each device and use a
-portable alternative when required.
+Prefer these managed tools for their tasks instead of `grep`, `find`, `sed`,
+`cat`, and `ls`:
+
+| Task | Command |
+| --- | --- |
+| Search text | `rg -n 'pattern' path`, `rg -F` for literals |
+| List files | `rg --files` or `fd . path` |
+| Filter by type | `fd -e py . src`, `fd -t f -H` |
+| Literal replace | `sd -s 'old' 'new' file` |
+| Read a file | `bat --paging=never -l yaml file` |
+| List a directory | `eza --git --icons=never -la` |
+| JSON | `jq -r`, `jq -e`, `jq -c` |
+| YAML | `yq -r '.a.b'`, `yq -i` |
+| Python | `uv run`, `uvx`, `uv add` |
+| GitHub | `gh pr view`, `gh run list`, `gh ... --json` |
+| Fuzzy pick | `fzf --filter`; interactive `fzf` only for a human |
+| Sessions | `zellij` or `herdr` when the task needs panes |
+
+Rules:
+
+1. Use the patch tool for code and instruction edits; `sd` is for mechanical
+   replacements, not structured changes.
+2. Filtered output is a summary. Use the native command when exact source,
+   complete diagnostics, or machine-readable output matters.
+3. Managed CLIs live in `~/.pixi/bin`. If a client's bundled copy misbehaves
+   (a crashing `rg`, for example), call the managed binary explicitly or prepend
+   that directory to `PATH` for the command.
+4. Recheck availability on each device and use a portable fallback when a tool
+   is missing.
 
 ## RTK
 
