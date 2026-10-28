@@ -1,7 +1,7 @@
 # Canonical desired-tool inventory shared by planning and source rendering.
 # shellcheck disable=SC2034 # Sourced adapter contract.
-PIXI_VERSION=0.81.0
-RUSTUP_VERSION=1.29.1
+PIXI_VERSION=0.83.0
+RUSTUP_VERSION=1.29.2
 DEPLOY_TOOLS=(pixi chezmoi rustup)
 if [ "$DEPLOY_PLATFORM" = windows ]; then
     # Required bootstrap exceptions; installed by the native adapter.

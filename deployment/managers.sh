@@ -1,6 +1,6 @@
 # Verified upstream bootstrap exceptions. Never execute an unverified download.
 # shellcheck disable=SC2034 # Sourced adapter contract.
-CHEZMOI_VERSION=2.73.0
+CHEZMOI_VERSION=2.73.3
 
 verify_sha256() {
     local file=$1 expected=$2 actual

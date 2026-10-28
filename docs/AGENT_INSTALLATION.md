@@ -88,7 +88,7 @@ only the launchers and the pin. Linux x64 falls back to the manifest's
 baseline archive when the CPU lacks the required Bun feature flags. macOS
 reports Apple silicon under Rosetta so the native archive is selected.
 
-The common toolchain supplies Bun 1.4.4 and Node 24.21.0. Bootstrap checks both
+The common toolchain supplies Bun 1.4.2 and Node 26.12.1. Bootstrap checks both
 exact versions and catalog minimum Node versions, then executes each selected
 CLI's `--version`. A failing install or diagnostic returns its nonzero status
 and package step. Pin changes require compatible manifests, locks, engines,
