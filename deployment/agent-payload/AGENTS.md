@@ -117,20 +117,31 @@ Rules:
 Provider prompt caches reward stable prefixes and append-only history. Keep
 these rules while working:
 
-1. Keep the system prompt, tool set, and shared instructions identical for a
-   session. Change model or tool configuration between sessions, not mid-task.
-2. Put stable context first and volatile data (paths, timestamps, command
-   output) last, so later turns reuse the cached prefix.
-3. Append rather than rewrite. Do not re-summarize or reformat earlier context
-   unless the client compacts it.
-4. Keep tool output small: filter with the wrappers from `~/.agents/RTK.md`, read
+1. Keep the system prompt, shared instructions, and tool definitions
+   byte-identical for a session. Change model, tools, or effort between
+   sessions. A timestamp or reordered tool list in the prefix defeats caching.
+2. Order by stability: tools and instructions first, project rules next, then
+   session context, then messages. Put paths, timestamps, and command output
+   late.
+3. Append rather than rewrite. Do not re-summarize, reorder, or delete earlier
+   turns; summarization resets the prefix. Mid-session changes belong in a new
+   message, not an edited system prompt.
+4. Restrict tools with the client's allowlist or `tool_choice` instead of
+   changing the tool catalog. Adding or removing a definition invalidates the
+   whole cached prefix.
+5. Keep tool output small: filter with the wrappers from `~/.agents/RTK.md`, read
    ranges or symbols instead of whole files, and never paste a full log when the
    decisive line is enough.
-5. Batch related reads and edits. Interleaving edits with full-file reads forces
+6. Batch related reads and edits. Interleaving edits with full-file reads forces
    repeated tokens and breaks locality.
-6. Reuse a warm session for related follow-ups; start a new session for an
-   unrelated task or a different working tree. Long idle gaps can outlive a
-   provider cache.
-7. Delegate with a short brief, not the transcript. Parallel agents share the
-   same prefix cache only when they start from the same instructions and differ
-   late in the prompt.
+7. Reuse a warm session for related follow-ups; start a new session for an
+   unrelated task or a different working tree. Provider caches expire after
+   minutes to about an hour of inactivity.
+8. Delegation is a fresh prefix per child. Send a short brief with paths and the
+   expected result, never the parent transcript. Warm the shared prefix once
+   before starting parallel helpers.
+9. Cacheable prompts have a minimum size (roughly 1k tokens on several
+   providers). Do not contort a short task to reach it, and do not pay cache
+   writes for one-off work.
+10. Measure before optimizing: cache writes cost more than normal input, so track
+    usage instead of assuming a hit.

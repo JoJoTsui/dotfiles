@@ -44,9 +44,17 @@ skill. Client built-ins, plugins, credentials, trust records, sessions, and
 caches remain outside the owned source.
 
 The common instructions use portable command discovery, a pointer to owned
-`~/.agents/RTK.md`, conditional CodeGraph guidance, and a cross-agent delegation
-contract with verified one-shot commands for Codex, Kimi, Pi, OpenCode, Qoder,
-and MiniMax Code. Their client capability
+`~/.agents/RTK.md`, conditional CodeGraph and Graphify guidance, a cross-agent
+delegation contract with verified one-shot commands for Codex, Kimi, Pi,
+OpenCode, Qoder, and MiniMax Code, and the cache-discipline rules recorded in
+[caching and context budget](AGENT_CACHING.md).
+
+CodeGraph is the primary code-query path: its MCP entry is registered for every
+client. Graphify is optional and per repository. Provision it with
+`uv tool install "graphifyy[mcp]"`, install its skill with
+`graphify install --platform agents` (it writes `~/.agents/skills/graphify`),
+and register `graphify-mcp <absolute graph path>` per project when its MCP tools
+are wanted. Do not run both indexes for the same question. Their client capability
 reference is `~/.agents/CLIENTS.md`. Account integrations and scientific
 dependencies use the skill's own setup instructions on first use.
 
