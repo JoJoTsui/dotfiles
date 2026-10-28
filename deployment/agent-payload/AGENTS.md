@@ -1,56 +1,55 @@
 <!-- CODEGRAPH_START -->
 ## CodeGraph
 
-When a repository has a `.codegraph/` directory or a `graphify-out/graph.json`
-file, query that graph before any text search. Use CodeGraph when both exist. Ask the available `codegraph_explore` MCP tool about a symbol,
-file, or call path, or run `codegraph explore "<question>"`. If the MCP tool is
-deferred, discover it through the client's tool search. The CLI is also usable
-from clients with a shell tool.
+When a repository has `.codegraph/` or `graphify-out/graph.json`, query that
+graph before text search. Prefer CodeGraph when both exist: its MCP tool
+`codegraph_explore`, or `codegraph explore "<question>"`, answers symbol, file,
+and call-path questions. Use Graphify (`graphify query`, `graphify path`,
+`graphify explain`) when only its graph exists, and refresh it with
+`graphify update .` after edits. Graphify's MCP server takes an absolute graph
+path, so register it per project.
 
-When there is no index, use ordinary code search. Create an index only when the
-user requests it.
-
-## Graphify
-
-Graphify is an optional code knowledge graph built per repository
-(`graphify-out/graph.json`). Use it when the repository has a graph and the
-question is about concepts, cross-file paths, or architecture that a symbol
-index answers poorly. Query with `graphify query "<question>"`,
-`graphify path "<a>" "<b>"`, or `graphify explain "<symbol>"`; refresh it with
-`graphify update .` after edits. Graphify's mirrored MCP server takes an
-absolute graph path, so register it per project, not in the shared user
-configuration.
-
-Pick one primary query path per repository. Prefer CodeGraph when `.codegraph/`
-exists, because its MCP tools are already registered for every client. Prefer
-Graphify when only `graphify-out/graph.json` exists. Do not index and query both
-for the same question, and do not create either index unless the user asks.
+Never create an index unless the user asks. Without an index, use bounded text
+search. Do not query both graphs for the same question.
 <!-- CODEGRAPH_END -->
 
 ## Completion
 
-For implementation requests, continue through the requested behavior, relevant
-verification, and fixes for failures caused by the change. Resolve routine
-implementation choices within scope. Ask when a missing decision materially
-changes the outcome or further progress requires new authority; report what
+Continue an implementation through the requested behavior, verification, and
+fixes for failures it caused. Resolve routine choices in scope. Ask when a
+missing decision changes the outcome or needs new authority, and report what
 remains blocked.
 
-Choose context and verification proportional to the change, while honoring
-project requirements. Read supporting documents when their subject applies.
-Once relevant checks pass, finish unless new evidence warrants more work.
+Choose verification proportional to the change. Report the checks you ran and
+the ones you skipped; never present an unrun check as passed. Create a local
+commit only when the user or project asks for one, follow the project's message
+convention, and never push without an explicit request for that task.
 
 ## Scope discipline
 
-A hypothetical race, a speculative security edge case, or a future requirement
-is not a reason to add complexity on your own. Before implementing a guard for a
-case that is unlikely or purely guessed, state what could go wrong, how likely it
-is, and what the extra complexity costs. Get the user's agreement first. Do not
-widen the task for theoretical robustness without that decision.
+Do not add complexity for a speculative race, hypothetical security edge case,
+or future requirement. State the concrete failure, its likelihood, and the
+complexity cost, then get agreement before implementing.
+
+Validate untrusted input once at the boundary that owns it, then pass typed
+values inward; do not revalidate invariants a schema or constructor guarantees.
+Inline single-use logic; extract a helper only for reuse, a genuinely complex
+boundary, or a name that clarifies the caller.
+
+## Reading and language
+
+Follow the user's language; keep identifiers, commands, and existing terms
+verbatim. Read the section that matches the task instead of the whole docs tree:
+pick one to three relevant documents, then the target directory's README, local
+AGENTS.md, and adjacent tests. A project's AGENTS.md and the user's explicit
+instruction override this file.
+
+Keep this file short. Put detail in the owning document and link it here rather
+than duplicating the text.
 
 ## CLI tools
 
-Prefer these managed tools for their tasks instead of `grep`, `find`, `sed`,
-`cat`, and `ls`:
+Prefer these managed tools over `grep`, `find`, `sed`, `cat`, and `ls`:
 
 | Task | Command |
 | --- | --- |
@@ -60,12 +59,10 @@ Prefer these managed tools for their tasks instead of `grep`, `find`, `sed`,
 | Literal replace | `sd -s 'old' 'new' file` |
 | Read a file | `bat --paging=never -l yaml file` |
 | List a directory | `eza --git --icons=never -la` |
-| JSON | `jq -r`, `jq -e`, `jq -c` |
-| YAML | `yq -r '.a.b'`, `yq -i` |
+| JSON / YAML | `jq -r`, `jq -e`; `yq -r '.a.b'`, `yq -i` |
 | Python | `uv run`, `uvx`, `uv add` |
 | GitHub | `gh pr view`, `gh run list`, `gh ... --json` |
 | Fuzzy pick | `fzf --filter`; interactive `fzf` only for a human |
-| Sessions | `zellij` or `herdr` when the task needs panes |
 
 Rules:
 
@@ -73,45 +70,32 @@ Rules:
    replacements, not structured changes.
 2. Filtered output is a summary. Use the native command when exact source,
    complete diagnostics, or machine-readable output matters.
-3. Managed CLIs live in `~/.pixi/bin`. If a client's bundled copy misbehaves
-   (a crashing `rg`, for example), call the managed binary explicitly or prepend
-   that directory to `PATH` for the command.
-4. Bound text search with `timeout`. Scope the path and use `-g` globs; on
-   shared mounts avoid scanning `/t9k`, `--no-ignore`, and whole-home searches.
-   A timeout means narrow the query or use a code index, not retry wider.
-5. Recheck availability on each device and use a portable fallback when a tool
-   is missing.
+3. Managed CLIs live in `~/.pixi/bin`. If a client's bundled copy misbehaves (a
+   crashing `rg`, for example), call the managed binary explicitly or prepend
+   that directory to `PATH`.
+4. Bound text search with `timeout`, scope the path, and use `-g` globs. On
+   shared mounts avoid `/t9k`, `$HOME`, and `--no-ignore`. A timeout means
+   narrow the query or use an index, not retry wider.
+5. Recheck availability per device and use a portable fallback when a tool is
+   missing.
 
 ## Resource limits
 
-Before a build, test matrix, parallel job, or large download, measure the budget.
-`nproc` reports host CPUs inside Docker; the cgroup quota can be lower.
+Measure before builds, test matrices, parallel jobs, or large downloads. `nproc`
+reports host CPUs inside Docker while the cgroup quota may be lower.
 
-- Container: `[ -f /.dockerenv ] || [ -f /run/.containerenv ] || grep -qaE 'docker|kubepods|containerd' /proc/1/cgroup`
-- CPUs, cgroup v2: `cat /sys/fs/cgroup/cpu.max` gives `quota period`; v1:
-  `cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us /sys/fs/cgroup/cpu/cpu.cfs_period_us`.
-  Effective CPUs are `min(nproc, quota/period)` when quota is not `max`.
-- Memory, cgroup v2: `cat /sys/fs/cgroup/memory.max`; v1:
-  `cat /sys/fs/cgroup/memory/memory.limit_in_bytes`. Prefer the cgroup limit over
-  `MemAvailable`, which can describe the host. On a physical host use
-  `awk '/MemAvailable/{print $2}' /proc/meminfo` or `vm_stat` on macOS.
-- Throttling: `cat /sys/fs/cgroup/cpu.stat` (`nr_throttled`, `throttled_usec`)
-  and `/proc/pressure/cpu`. If throttled, lower parallelism instead of retrying.
-- Physical host: use `nproc` or `sysctl -n hw.ncpu` plus available memory, and
-  leave headroom for the desktop.
+- Container: `/.dockerenv`, `/run/.containerenv`, or `docker|kubepods|containerd`
+  in `/proc/1/cgroup`.
+- CPU: `cpu.max` on cgroup v2, or `cpu.cfs_quota_us`/`cpu.cfs_period_us` on v1;
+  effective CPUs are `min(nproc, quota/period)` when quota is not `max`.
+- Memory: `memory.max` (v2) or `memory.limit_in_bytes` (v1); prefer it over host
+  `MemAvailable`. Physical hosts use `MemAvailable` or `vm_stat`.
+- Throttling: `cpu.stat` and `/proc/pressure/*`; back off when throttled.
 
-Rules:
-
-1. Cap every parallel tool: `MAKEFLAGS=-jN`, `cargo -j N`, `pytest -n N`,
-   `PIXI_JOBS=N`, `OMP_NUM_THREADS=N`. Use the effective CPU count minus one.
-2. Size memory-heavy steps against the smaller of the cgroup limit and
-   available memory; set `NODE_OPTIONS=--max-old-space-size=<MB>` for Node work.
-3. Check `df -h .` before large builds or downloads; a full container layer
-   fails the task and the host.
-4. With an unknown limit, start at half the detected budget and measure. Never
-   run unbounded `-j`, recursive parallel shells, or a full-filesystem scan.
-5. Throttling or an OOM kill means reduce and rerun; do not replay the same
-   shape.
+Cap parallel tools (`MAKEFLAGS=-jN`, `cargo -j N`, `pytest -n N`, `PIXI_JOBS=N`,
+`OMP_NUM_THREADS=N`) at effective CPUs minus one, size Node work with
+`NODE_OPTIONS=--max-old-space-size`, and check `df -h .` before large writes.
+Unknown limit: start at half. Throttling or an OOM kill means reduce, not retry.
 
 ## Shared hosts and remote jobs
 
@@ -119,21 +103,17 @@ On t9k-style shared hosts, Docker or Kubernetes pods, and SSH runners, `$HOME`
 can be fresh and the shell is non-login: dotfiles, `PATH`, and wrappers are not
 there. Link the managed tree instead of copying files.
 
-- Local execution: the operator shell already sources `.env_core`, so
-  `~/.local/bin` and `~/.pixi/bin` are on `PATH`. Use it as-is.
-- Remote execution: pass the environment explicitly over `ssh`, then bootstrap
-  the runner. Link `~/.local`, `~/.pixi`, `~/.cargo`, `~/.rustup`, and
-  `.env_core` from the operator tree, source `.env_core` or the project's
-  `env.sh`, and prepend the managed bin directory. A project script such as
-  `tools/link_remote_environment.sh` is the reference pattern: keep the source
-  overridable, skip entries that already exist, and never replace a home file.
-- Never rely on interactive state: no aliases, no login shell, no inherited
-  `PATH`, and `~` does not expand inside a double-quoted `ssh` command. Pass
-  absolute paths and quote them.
-- Create scratch on the execution host, keep inputs read-only, and propagate
-  the remote exit status.
-- The execution host may be a container. Apply the resource budget there, not on
-  the submit host.
+- Local execution already sources `.env_core`, so `~/.local/bin` and
+  `~/.pixi/bin` are on `PATH`.
+- Remote execution: pass the environment explicitly over `ssh`, link `.local`,
+  `.pixi`, `.cargo`, `.rustup`, and `.env_core` from the operator tree, then
+  source `.env_core` or the project's `env.sh`. A project script such as
+  `tools/link_remote_environment.sh` is the reference: keep the source
+  overridable, skip existing entries, and never replace a home file.
+- No aliases, no login shell, no inherited `PATH`; `~` does not expand inside a
+  double-quoted `ssh` command. Pass absolute, quoted paths.
+- Create scratch on the execution host, keep inputs read-only, and propagate the
+  remote exit status.
 
 ## RTK
 
@@ -143,23 +123,21 @@ compact output. Use unfiltered output when exact source or diagnostics matter.
 ## Skills
 
 Use the client's native skill mechanism. When a skill mentions a `Skill` tool
-that the client does not expose, read its `SKILL.md` using the client's file or
-shell tool and follow the instructions. Resolve relative references from the
-skill's directory and preserve explicit-invocation requirements. Skills marked
+the client does not expose, read its `SKILL.md` with the client's file or shell
+tool and follow it. Resolve relative references from the skill's directory and
+preserve explicit-invocation requirements. Skills marked
 `disable-model-invocation: true` are for explicit user requests.
 
 On first use, check the skill's own prerequisites. Set up specialist tools and
 account-backed services for that invocation; deployed instructions alone do not
-activate them. Read `~/.agents/CLIENTS.md` when a client's discovery or tool
-capabilities affect a skill workflow.
+activate them. Read `~/.agents/CLIENTS.md` when discovery or capability
+differences affect a skill workflow.
 
 ## Cross-agent delegation
 
-Several coding agents can share one machine. Prefer the agent whose model or
-tooling fits the task, and treat this file as their shared contract. Any client
-may start another client for a bounded task.
-
-Verified non-interactive invocations, run from the repository root:
+Several clients can share one machine. Prefer the one whose model or tooling
+fits, and treat this file as their contract. Any client may start another for a
+bounded task.
 
 | Agent | Command |
 | --- | --- |
@@ -170,87 +148,49 @@ Verified non-interactive invocations, run from the repository root:
 | Qoder | `qoder -p -m DeepSeek-Flash "<task>"` |
 | MiniMax Code | `mcode exec --model minimax/MiniMax-M3.1-Flash "<task>"` |
 
-Codex needs the host proxy route on networks where its provider is unreachable
-directly; `with-proxy` sets the proxy variables for one command. It is a managed
-launcher on this tree. Other clients work without it here.
-
-Free defaults are `opencode/deepseek-v4.1-flash-free`,
-`minimax-cn/MiniMax-M3.1-Flash` for Pi, `minimax/MiniMax-M3.1-Flash` for
-MiniMax Code, and `DeepSeek-Flash` for Qoder. Model IDs move: confirm with
-`opencode models`, `pi --list-models`, or `qoder --list-models` before relying
-on one. Codex and Kimi resolve models from their own configuration or aliases,
-so pass a model only when you know the configured name.
+Codex needs the host proxy route where its provider is unreachable directly;
+`with-proxy` is a managed launcher. Free defaults are
+`opencode/deepseek-v4.1-flash-free`, `minimax-cn/MiniMax-M3.1-Flash` for Pi,
+`minimax/MiniMax-M3.1-Flash` for MiniMax Code, and `DeepSeek-Flash` for Qoder.
+Model IDs move: confirm with `opencode models`, `pi --list-models`, or
+`qoder --list-models`. Codex and Kimi resolve models from their own
+configuration, so pass one only when you know its name.
 
 Rules:
 
-1. Delegate only when context is genuinely separable: independent research
-   paths, components with a clean interface, or blackbox verification. Keep
-   implementation and its tests with the agent that holds the context. Do not
-   split sequential phases of one feature by role.
-2. Skip delegation for a small single-step task. Every call pays a round trip
-   and a re-briefing.
-3. Delegate one bounded task per call: exact paths, expected output, and how to
-   recognize success.
-4. Start read-only for analysis and review. Allow writes only when you will read
-   the resulting diff yourself.
-5. Keep depth at one. A delegated agent must not start another agent unless the
-   task explicitly asks for a second opinion.
-6. Never pass credentials, tokens, `.env` values, or private keys to a child
-   agent. It shares the filesystem, so scope it to repository paths.
-7. Treat child output as evidence, not truth. Check files, diffs, and gate
-   results before reporting completion.
-8. Set a timeout and capture the exit status. A nonzero exit is a failure. If a
-   client cannot reach its provider, that is an environment failure: fall back
-   to an agent whose provider is healthy instead of retrying blindly.
-9. Use Codex or Kimi as the orchestrator and Pi, OpenCode, Qoder, or MiniMax
-   Code as workers when a free model is sufficient. Prefer skills and tool
-   search for progressive disclosure before adding a permanent specialist.
-10. Do not run two agents on the same working tree at once unless each has its
-    own isolated worktree.
-11. Pass a compact brief with paths and the expected result. Do not paste the
-    parent transcript; a child builds its own prompt cache from the shared
-    instructions and its first turn.
+1. Delegate only when context is separable: parallel research, clean-interface
+   components, or blackbox verification. Keep implementation and its tests with
+   the agent holding the context; never split sequential phases by role.
+2. Skip delegation for a small single-step task; every call pays a round trip.
+3. Give one bounded task per call with exact paths, expected output, and success
+   criteria. Prefer a compact brief over the parent transcript.
+4. Start read-only. Allow writes only when you will read the resulting diff.
+5. Keep depth at one; a child must not start another agent unless asked.
+6. Never pass credentials, tokens, `.env` values, or private keys.
+7. Treat child output as evidence: check files, diffs, and gates before
+   reporting completion.
+8. Set a timeout and capture the exit status. A provider failure is an
+   environment failure; fall back to a healthy client instead of retrying.
+9. Prefer skills and tool search for progressive disclosure before adding a
+   permanent specialist.
 
-### Transports
+Transports beyond the one-shot table:
 
-The one-shot table above is the default: synchronous, headless, and usable over
-SSH. Choose another transport only when the task needs something it cannot do.
-
-- Parallel from one shell: background each worker, keep its log, and collect the
-  exit status.
-
-  ```bash
-  pi -p --model minimax-cn/MiniMax-M3.1-Flash "task" >task.log 2>&1 &
-  pid=$!
-  wait "$pid"; status=$?
-  ```
-
-- Persistent or interactive panes: use tmux or zellij, one session per task.
-
-  ```bash
-  tmux new-session -d -s review -c "$PWD"
-  tmux send-keys -t review '<client command>' Enter
-  tmux capture-pane -p -t review
-  tmux kill-session -t review
-  ```
-
-- Remote host: `ssh host '<client command>'`; credentials stay host-local. Use
-  the same one-shot form on the other side.
-- Already inside Herdr (`HERDR_ENV=1`): use its worktree and agent commands.
-  Run `herdr --skill` in the pane for the current syntax; do not start or attach
-  to a session from outside.
-- Two agents still collide in one checkout. Give each a worktree or clone,
-  whichever the transport offers.
+- Background from one shell: `cmd >task.log 2>&1 & pid=$!; wait "$pid"`.
+- Persistent panes: `tmux new-session -d -s review -c "$PWD"`, then `send-keys`
+  and `capture-pane`.
+- Remote host: `ssh host '<client command>'`; credentials stay host-local.
+- Inside Herdr (`HERDR_ENV=1`): use its worktree and agent commands; run
+  `herdr --skill` for syntax and do not attach from outside.
 
 ## Worktree hygiene
 
-A worktree is temporary. Finish every task by removing the worktree it used,
-including its branch and any dedicated build directory.
+A worktree is temporary. Finish every task by removing the worktree, its branch,
+and any dedicated build directory.
 
-1. Land the work: merge into `main` when that is the task's outcome.
-2. If it must not merge, commit every uncommitted change to the worktree branch,
-   tag the branch `archive/<worktree-name>`, then remove the worktree and delete
-   the local branch.
+1. Merge into `main` when that is the task's outcome.
+2. Otherwise commit every change to the worktree branch, tag it
+   `archive/<worktree-name>`, then remove the worktree and delete the branch.
 
    ```bash
    git worktree remove <path>
@@ -258,43 +198,27 @@ including its branch and any dedicated build directory.
    git worktree prune
    ```
 
-3. Delete the dedicated build directory created for that worktree, such as a
-   per-worktree `CARGO_TARGET_DIR`.
-4. The session that spawned a subagent owns cleanup for its worktree, including
-   `.claude/worktrees/agent-*`, `.codex/worktrees/*`, and similar paths.
-5. Keep a worktree only when the user must decide or conflicts are unresolved.
-   Name its path and the reason in the final response. Never leave one silently.
+3. Delete the per-worktree build directory, such as `CARGO_TARGET_DIR`.
+4. The session that spawned a subagent cleans up its worktree, including
+   `.claude/worktrees/agent-*` and `.codex/worktrees/*`.
+5. Keep one only for a pending user decision or unresolved conflict; name its
+   path and reason in the final response. Never leave one silently.
 
 ## Context and cache discipline
 
-Provider prompt caches reward stable prefixes and append-only history. Keep
-these rules while working:
+Provider prompt caches match an exact prefix, so keep it stable:
 
-1. Keep the system prompt, shared instructions, and tool definitions
-   byte-identical for a session. Change model, tools, or effort between
-   sessions. A timestamp or reordered tool list in the prefix defeats caching.
-2. Order by stability: tools and instructions first, project rules next, then
-   session context, then messages. Put paths, timestamps, and command output
-   late.
-3. Append rather than rewrite. Do not re-summarize, reorder, or delete earlier
-   turns; summarization resets the prefix. Mid-session changes belong in a new
-   message, not an edited system prompt.
-4. Restrict tools with the client's allowlist or `tool_choice` instead of
-   changing the tool catalog. Adding or removing a definition invalidates the
-   whole cached prefix.
-5. Keep tool output small: filter with the wrappers from `~/.agents/RTK.md`, read
-   ranges or symbols instead of whole files, and never paste a full log when the
-   decisive line is enough.
-6. Batch related reads and edits. Interleaving edits with full-file reads forces
-   repeated tokens and breaks locality.
-7. Reuse a warm session for related follow-ups; start a new session for an
-   unrelated task or a different working tree. Provider caches expire after
-   minutes to about an hour of inactivity.
-8. Delegation is a fresh prefix per child. Send a short brief with paths and the
-   expected result, never the parent transcript. Warm the shared prefix once
-   before starting parallel helpers.
-9. Cacheable prompts have a minimum size (roughly 1k tokens on several
-   providers). Do not contort a short task to reach it, and do not pay cache
-   writes for one-off work.
-10. Measure before optimizing: cache writes cost more than normal input, so track
-    usage instead of assuming a hit.
+1. Keep system prompt, instructions, and tool definitions byte-identical for a
+   session; change model, tools, or effort between sessions.
+2. Order by stability: tools and instructions, project rules, session context,
+   then messages. Put paths, timestamps, and command output late.
+3. Append rather than rewrite; do not re-summarize, reorder, or delete earlier
+   turns. Mid-session changes belong in a new message.
+4. Restrict tools with allowlists or `tool_choice` instead of editing the tool
+   catalog; a changed definition invalidates the prefix.
+5. Keep output small: filter, read ranges or symbols, and never paste a full log
+   when the decisive line is enough.
+6. Batch related reads and edits.
+7. Reuse a warm session for follow-ups; start a new one for unrelated work.
+8. Cacheable prompts have a minimum size, around 1k tokens on several providers.
+9. Measure before optimizing; cache writes cost more than normal input.
