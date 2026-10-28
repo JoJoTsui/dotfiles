@@ -103,7 +103,7 @@ an explicit project decision; bootstrap does not index user repositories.
 Common instruction content and RTK guidance have one source with portable
 client references, replacing the current host-specific paths.
 
-The imported library contains 105 skills and 847 files (about 8.12 MiB), with no
+The imported library contains 127 skills and 899 files (about 8.30 MiB), with no
 internal symlinks. Canonical sources are the legacy parent tree's
 `.agents/skills`, `.codex/AGENTS.md`, `.claude/CLAUDE.md`, and `.codex/RTK.md`.
 The shorter Claude instruction file contributes its CodeGraph rule to the

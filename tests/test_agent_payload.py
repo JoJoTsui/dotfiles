@@ -176,8 +176,8 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         shared = self.home / ".agents/skills"
         claude = self.home / ".claude/skills"
-        self.assertEqual(len(list(shared.glob("*/SKILL.md"))), 105)
-        self.assertEqual(len([p for p in shared.rglob("*") if p.is_file()]), 847)
+        self.assertEqual(len(list(shared.glob("*/SKILL.md"))), 127)
+        self.assertEqual(len([p for p in shared.rglob("*") if p.is_file()]), 899)
         self.assertEqual(len([p for p in shared.rglob("*") if p.is_file() and p.stat().st_mode & 0o111]), 9)
         self.assertEqual((shared / "tdd/SKILL.md").read_bytes(), (claude / "tdd/SKILL.md").read_bytes())
         self.assertIn("disable-model-invocation: true", (shared / "implement-spec/SKILL.md").read_text())
@@ -427,7 +427,7 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
         self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
         data = json.loads(diagnostic.stdout)
         expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
-        self.assertEqual((data["count"], data["explicit"]), (len(expected), 24),
+        self.assertEqual((data["count"], data["explicit"]), (len(expected), 26),
                          f"root_count={data['rootCount']}; home_matches={data['homeMatches']}; "
                          f"os_home_matches_target={data['osHomeMatchesTarget']}; "
                          f"skill_paths={data['skillPaths']}; agent_dir_matches_target={data['agentDirMatchesTarget']}; "

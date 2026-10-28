@@ -18,8 +18,10 @@ before writing. Raw payloads live under ignored `deployment/`, so a helper named
 not execute helpers. The native Windows boundary must consume the same catalog;
 its implementation and native checks are tracked separately.
 
-The approved snapshot contains 105 skill directories, 847 files, and 8,508,971
-bytes: 838 regular resources and nine executable helpers. Their bytes and
+The approved snapshot contains 127 skill directories, 899 files, and 8,700,053
+bytes: 890 regular resources and nine executable helpers. It includes the
+caveman voice/orchestration family and the shared review/delegation skills the
+device actually uses. Their bytes and
 permissions are preserved. The shared `scienceskillscommon` sibling package,
 references, inline dependency metadata, and 24 explicit-only skills remain
 intact. Client built-ins, plugins, credentials, trust records, sessions, and
@@ -29,7 +31,9 @@ snapshot's existing Markdown whitespace. Application code keeps normal
 whitespace checks.
 
 The common instructions use portable command discovery, a pointer to owned
-`~/.agents/RTK.md`, and conditional CodeGraph guidance. Their client capability
+`~/.agents/RTK.md`, conditional CodeGraph guidance, and a cross-agent delegation
+contract with verified one-shot commands for Codex, Kimi, Pi, OpenCode, Qoder,
+and MiniMax Code. Their client capability
 reference is `~/.agents/CLIENTS.md`. Account integrations and scientific
 dependencies use the skill's own setup instructions on first use.
 
