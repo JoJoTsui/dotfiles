@@ -32,8 +32,25 @@ Findings that shaped the rules (checked 2026-10-28):
   to a healthy client rather than retrying blindly.
 
 Operational commands and the free-model defaults live in the shared instructions.
-This note records why they look the way they do. Herdr adds the optional
-multi-pane layer: [herdr](HERDR.md).
+This note records why they look the way they do.
+
+## Transports
+
+The one-shot CLI is the default because it needs no session, works over SSH, and
+returns status. Other transports exist for the cases it cannot cover:
+
+| transport | use when | cost |
+| --- | --- | --- |
+| one-shot CLI | bounded task, CI, remote host | none beyond the client |
+| background job (`&`, `wait`) | several bounded tasks from one shell | log files, exit-status collection |
+| tmux / zellij | client must stay interactive or a human watches | a session to clean up |
+| Herdr | already inside it; pane and agent state are useful | guarded by `HERDR_ENV=1` |
+| `ssh host '<cmd>'` | work lives on another machine | host-local credentials and PATH |
+
+All of them keep the same contract: one bounded brief, depth one, no credential
+forwarding, verify the output, one worktree per concurrent agent. Herdr's
+command set is in [herdr](HERDR.md); tmux needs no more than `new-session`,
+`send-keys`, and `capture-pane`.
 
 Sources:
 

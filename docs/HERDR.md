@@ -1,9 +1,10 @@
 # Herdr
 
 Herdr is a terminal workspace manager for coding agents: persistent sessions,
-workspaces, panes, and recognized agent state over a socket API. It is optional
-and self-managed; this repository documents the collaboration contract, not an
-installed pin.
+workspaces, panes, and recognized agent state over a socket API. It is one
+transport among several; the one-shot CLI is the default, and tmux or zellij
+cover most interactive needs without a socket API. Herdr is optional and
+self-managed.
 
 ## Install and update
 
