@@ -7,7 +7,7 @@ file|CLIENTS.md|.agents/CLIENTS.md
 block|AGENTS.md|.agents/AGENTS.md
 block|AGENTS.md|.codex/AGENTS.md
 block|AGENTS.md|.claude/CLAUDE.md
-block|AGENTS.md|.kimi-code/AGENTS.md
+retire|AGENTS.md|.kimi-code/AGENTS.md
 block|AGENTS.md|.pi/agent/AGENTS.md
 block|AGENTS.md|.config/opencode/AGENTS.md
 block|AGENTS.md|.minimax/AGENTS.md

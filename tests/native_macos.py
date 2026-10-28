@@ -68,7 +68,7 @@ def managed_snapshot(home):
     # than timestamps in unrelated runtime client logs or session caches.
     for relative in (".env_core", ".claude/settings.json", ".claude.json", ".bash_history",
                      ".codex/config.toml", ".codex/auth.json", ".codex/AGENTS.md",
-                     ".kimi-code/config.toml", ".kimi-code/tui.toml", ".kimi-code/mcp.json", ".kimi-code/AGENTS.md",
+                     ".kimi-code/config.toml", ".kimi-code/tui.toml", ".kimi-code/mcp.json",
                      ".pi/agent/settings.json", ".pi/agent/models-store.json", ".pi/agent/AGENTS.md",
                      ".agents/AGENTS.md", ".claude/CLAUDE.md",
                      ".bun/install/global/package.json", ".local/share/atuin/device-sentinel"):

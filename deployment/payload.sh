@@ -38,10 +38,14 @@ validate_agent_payload() {
     local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target value origin
     [ ! -L "$payload/targets.tsv" ] || fail 'agent payload catalog is a symlink'
     while IFS=$'|\r' read -r kind source target; do
-        case "$kind" in ''|\#*) continue ;; tree|file|block) ;; *) fail "unknown agent payload kind: $kind" ;; esac
+        case "$kind" in ''|\#*) continue ;; tree|file|block|retire) ;; *) fail "unknown agent payload kind: $kind" ;; esac
         for value in "$source" "$target"; do
             case "$value" in ''|/*|..|../*|*/../*|*/..) fail "agent payload catalog path must be relative: $value" ;; esac
         done
+        if [ "$kind" = retire ]; then
+            payload_safe_destination "$DEPLOY_HOME/$target"
+            continue
+        fi
         # Skill bytes come from the fetch stage, which runs after the early
         # pre-flight; defer their existence check to deployment time.
         if [ "$source" = skills ] && [ -z "${PAYLOAD_SKILLS_DIR:-}" ]; then
@@ -88,6 +92,39 @@ payload_instruction() {
     chmod 644 "$target"
 }
 
+# Retire an owned instruction block from a target that is no longer a managed
+# destination, preserving device text and removing the file when nothing else
+# remains. Idempotent: a target without the markers is left alone.
+payload_retire_block() {
+    local target=$1 existing prefix suffix remaining result
+    local start='<!-- DOTFILES_AGENT_START -->' end='<!-- DOTFILES_AGENT_END -->'
+    [ -f "$target" ] || return 0
+    existing=$(cat "$target"; printf '.')
+    existing=${existing%.}
+    case "$existing" in
+        *"$start"*)
+            prefix=${existing%%"$start"*}
+            remaining=${existing#*"$start"}
+            case "$remaining" in *"$start"*) fail "duplicate managed instruction marker: $target" ;; esac
+            case "$remaining" in *"$end"*) ;; *) fail "unfinished managed instruction block: $target" ;; esac
+            suffix=${remaining#*"$end"}
+            case "$suffix" in *"$end"*) fail "duplicate managed instruction marker: $target" ;; esac
+            ;;
+        *)
+            case "$existing" in *"$end"*) fail "unfinished managed instruction block: $target" ;; esac
+            return 0
+            ;;
+    esac
+    # The deploy step inserted one newline between device text and the block.
+    case "$prefix" in *$'\n') prefix=${prefix%$'\n'} ;; esac
+    case "$suffix" in $'\n'*) suffix=${suffix#$'\n'} ;; esac
+    result="${prefix}${suffix}"
+    case "$result" in
+        *[![:space:]]*) printf '%s' "$result" > "$target"; chmod 644 "$target" ;;
+        *) rm -f "$target" ;;
+    esac
+}
+
 deploy_agent_payload() {
     local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target origin
     validate_agent_payload
@@ -105,6 +142,7 @@ deploy_agent_payload() {
                 cp -p "$origin" "$HOME/$target"
                 ;;
             block) payload_instruction "$HOME/$target" "$payload/$source" ;;
+            retire) payload_retire_block "$HOME/$target" ;;
         esac
     done < "$payload/targets.tsv"
 }

@@ -94,7 +94,7 @@ Authentication and real history import are separate setup actions.
 | --- | --- | --- | --- |
 | Claude Code | `~/.claude/CLAUDE.md` | `~/.claude/skills/` adapter | Native MCP; register while preserving host-local configuration |
 | Codex | `~/.codex/AGENTS.md` | `~/.agents/skills/` | Native MCP in managed config |
-| Kimi Code | `~/.kimi-code/AGENTS.md` | shared `~/.agents/skills/` | Native MCP in `~/.kimi-code/mcp.json` |
+| Kimi Code | `~/.agents/AGENTS.md` | shared `~/.agents/skills/` | Native MCP in `~/.kimi-code/mcp.json` |
 | pi | `~/.pi/agent/AGENTS.md` | shared `~/.agents/skills/` | CLI instructions/skill; core has no MCP client |
 | opencode | `~/.config/opencode/AGENTS.md` | shared `~/.agents/skills/` | Native MCP; schema verified against its pinned version |
 

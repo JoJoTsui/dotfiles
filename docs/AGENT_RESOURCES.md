@@ -16,6 +16,7 @@ if [ -r /sys/fs/cgroup/cpu.max ]; then
 elif [ -r /sys/fs/cgroup/cpu/cpu.cfs_quota_us ]; then
     quota=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us)
     period=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us)
+    [ "$quota" -le 0 ] 2>/dev/null && quota=max
 else
     quota=max; period=0
 fi
@@ -51,8 +52,9 @@ the cgroup value.
 
 ## Signals and checks
 
-- Container: `/.dockerenv`, `/run/.containerenv`, or `docker|kubepods|containerd`
-  in `/proc/1/cgroup`.
+- Container: `/.dockerenv`, `/run/.containerenv`, `KUBERNETES_SERVICE_HOST`, or
+  `docker|kubepods|containerd` in `/proc/1/cgroup`. A cgroup-v2 pod may show only
+  `0::/`.
 - CPU throttling: `/sys/fs/cgroup/cpu.stat` (`nr_throttled`, `throttled_usec`),
   or `/sys/fs/cgroup/cpu/cpu.stat` on v1.
 - Contention: `/proc/pressure/cpu`, `/proc/pressure/memory`, `/proc/pressure/io`.
@@ -66,9 +68,11 @@ the cgroup value.
 | make | `MAKEFLAGS=-j$N` |
 | cargo | `cargo -j $N` |
 | pytest | `pytest -n $N` |
-| pixi | `PIXI_JOBS=$N` |
-| OpenMP | `OMP_NUM_THREADS=$N` |
+| pixi | `--concurrent-solves N`, `--concurrent-downloads N` on the operation |
+| OpenMP / BLAS | `OMP_NUM_THREADS=N`, `OPENBLAS_NUM_THREADS=N`, `MKL_NUM_THREADS=N` |
 | Node | `NODE_OPTIONS=--max-old-space-size=<MB>` |
 
-Use `effective_cpus - 1` for `N` and half the budget when the limit is unknown.
-A throttled or OOM-killed run is evidence to reduce, not to retry unchanged.
+Use `max(1, usable - 1)` for `N`, where `usable` is the smallest of the scheduler
+or task grant, the cgroup quota, and `nproc`. Use half the budget when the limit
+is unknown. A throttled or OOM-killed run is evidence to reduce, not to retry
+unchanged.

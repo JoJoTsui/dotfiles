@@ -5,19 +5,20 @@ task. The rules follow current provider guidance rather than a role playbook.
 
 Findings that shaped the rules (checked 2026-10-28):
 
-- **Context-centric decomposition wins.** Anthropic reports that splitting one
-  feature by role - planner, implementer, tester, reviewer - spends more tokens
-  on coordination than on work, because every handoff loses context. Split only
-  where context can truly be isolated: parallel research, components with a
-  clean interface, or a verifier that needs nothing but test commands.
+- **Context-centric decomposition is the safer default.** Anthropic reports a
+  large token multiplier for multi-agent research and warns that every handoff
+  loses context; it does not publish a coordination-versus-work split. Splitting
+  one feature by role is a design judgment, not a measured rule. Split where
+  context can truly be isolated: parallel research, components with a clean
+  interface, or a verifier that needs nothing but test commands.
 - **Delegation has a fixed cost.** Every call is a round trip plus a re-briefing.
   A small single-step task is cheaper and more accurate in the current agent.
-- **A child sees none of the parent conversation.** Each brief must carry paths,
-  constraints, and the report shape. This is also why a short brief beats a pasted
-  transcript: the child starts its own prompt cache.
-- **Depth is one.** Provider orchestration layers enforce one level of
-  delegation; nested fan-out multiplies cost and coordination without adding
-  context.
+- **Do not assume the child sees the parent conversation.** Some clients inherit
+  context and some start fresh, but none guarantees inheritance. Each brief must
+  carry paths, constraints, and the report shape.
+- **Depth is one by policy.** This contract sets that limit. Clients may support
+  configured deeper nesting, so state the restriction in the brief and use client
+  flags that restrict sub-agents where available.
 - **Sequential phases stay together.** Planning, implementation, and testing of
   the same feature share too much state to split.
 - **Progressive disclosure beats permanent specialists.** Skills and tool search

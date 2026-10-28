@@ -1,25 +1,25 @@
 # Agent caching and context budget
 
-The installed clients all rebuild the full request on every turn, so the provider
-matches an exact prefix. Facts checked 2026-10-28:
+The installed clients rebuild the request on every turn, and caching generally
+matches a prefix. Details differ by provider and model, so treat the following as
+ranges and verify against current documentation:
 
-- Claude, OpenAI, Gemini, and DeepSeek match prefixes. Claude places tools,
-  then system, then messages, and a change at one level invalidates that level
-  and everything after it. OpenAI caches implicitly from 1,024 tokens on current
-  models and offers explicit breakpoints on newer ones. DeepSeek caches on disk
-  on a best-effort basis.
-- Minimum cacheable sizes differ: 512 to 4,096 tokens on Claude models, 1,024
-  tokens on current OpenAI models. Below the minimum nothing is cached.
-- Cache writes cost about 1.25x normal input; reads are much cheaper. A prefix
-  that changes every request costs more than no caching at all.
-- Entries stay reusable for at least 30 minutes after the last write or read on
-  OpenAI; Claude exposes five-minute and one-hour breakpoints.
-- Harnesses converged on the same rule: static content first, volatile content
-  last, and append-only history. A timestamp in the system prompt or a reordered
-  tool list destroys reuse for every later turn.
+- Claude, OpenAI, Gemini, and DeepSeek expose prefix caching. Claude places
+  tools, then system, then messages; a change at one level invalidates that level
+  and everything after it. DeepSeek caches on disk best-effort.
+- Minimum cacheable sizes, retention windows, and write prices are model-specific.
+  OpenAI documents different retention and write pricing across model
+  generations, including longer retention options on newer models and no write
+  surcharge on some older ones. Claude exposes multiple breakpoint lifetimes.
+  There is no universal minimum, retention period, or multiplier.
+- Static content first and volatile content last remains good practice, but
+  request ordering, tool selection, and cache breakpoints are mostly harness
+  controls, not actions a coding agent can take mid-task.
+- Client compaction can rewrite history. Treat it as allowed; continue from the
+  summary instead of replaying context.
 
-The shared instructions carry the operational rules. This note records the
-evidence so a future edit does not reintroduce a moving prefix.
+The shared instructions carry only the actionable rules (bounded output,
+batching, warm-session reuse). This note records evidence, not policy.
 
 Sources:
 

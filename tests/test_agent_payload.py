@@ -189,14 +189,22 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertTrue((shared / "scienceskillscommon/pyproject.toml").is_file())
         self.assertTrue((shared / "clinical-trials-database/scripts/clinical_trials_api.py").stat().st_mode & 0o111)
         self.assertFalse(any(p.is_symlink() for directory in (shared, claude) for p in directory.rglob("*")))
+        self.assertFalse((self.home / ".kimi-code/AGENTS.md").exists(),
+                         "the retired Kimi brand file must not be recreated")
         for relative in (".agents/AGENTS.md", ".codex/AGENTS.md", ".claude/CLAUDE.md",
-                         ".kimi-code/AGENTS.md", ".pi/agent/AGENTS.md", ".config/opencode/AGENTS.md",
+                         ".pi/agent/AGENTS.md", ".config/opencode/AGENTS.md",
                          ".minimax/AGENTS.md", ".qoder/AGENTS.md"):
             instructions = (self.home / relative).read_text()
             self.assertIn("## Completion", instructions)
             self.assertIn("## CodeGraph", instructions)
             self.assertIn("~/.agents/RTK.md", instructions)
             self.assertNotIn("/t9k/", instructions)
+            self.assertIn("Desired conflict policy", instructions)
+            self.assertIn("Safety and authority", instructions)
+            self.assertIn("Clean up only worktrees", instructions)
+            self.assertIn("max(1, usable - 1)", instructions)
+            self.assertNotIn("commit every change", instructions)
+            self.assertNotIn("PIXI_JOBS", instructions)
         self.assertNotIn("/t9k/", (self.home / ".agents/RTK.md").read_text())
         self.assertFalse((self.home / ".codegraph").exists())
         self.assertFalse((self.home / ".codex/auth.json").exists())
@@ -233,6 +241,29 @@ class AgentPayloadTests(unittest.TestCase):
         before.pop(Path(".config/chezmoi/chezmoistate.boltdb"), None)
         after.pop(Path(".config/chezmoi/chezmoistate.boltdb"), None)
         self.assertEqual(before, after)
+
+    def test_retired_kimi_block_is_removed_preserving_device_text(self):
+        path = self.home / ".kimi-code/AGENTS.md"
+        path.parent.mkdir(parents=True)
+        path.write_text("# Device Kimi rules\n\n"
+                        "<!-- DOTFILES_AGENT_START -->\nold managed body\n"
+                        "<!-- DOTFILES_AGENT_END -->\n\nkeep this device line\n")
+        first = self.deploy()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        text = path.read_text()
+        self.assertNotIn("old managed body", text)
+        self.assertNotIn("DOTFILES_AGENT_START", text)
+        self.assertIn("# Device Kimi rules", text)
+        self.assertIn("keep this device line", text)
+        second = self.deploy()
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(path.read_text(), text)
+
+        empty = self.home / ".kimi-code/AGENTS.md"
+        empty.write_text("<!-- DOTFILES_AGENT_START -->\nonly ours\n<!-- DOTFILES_AGENT_END -->\n")
+        third = self.deploy()
+        self.assertEqual(third.returncode, 0, third.stderr)
+        self.assertFalse(empty.exists(), "an empty retired file must be removed")
 
     def test_payload_refuses_nested_destination_symlinks_before_copying(self):
         outside = self.root / "outside"

@@ -12,6 +12,9 @@ operations:
 - `file`: replace the owned regular file.
 - `block`: replace the `DOTFILES_AGENT_START` / `DOTFILES_AGENT_END` instruction
   block, preserving surrounding device text. A first deployment appends the block.
+- `retire`: remove a previously owned instruction block from a target that is no
+  longer managed, preserving device text and deleting the file when nothing else
+  remains. It is idempotent and runs on every deployment.
 
 Bootstrap validates source and destination paths, including nested symlinks,
 before writing. Raw payloads live under ignored `deployment/`, so a helper named
@@ -66,7 +69,7 @@ dependencies use the skill's own setup instructions on first use.
 | --- | --- | --- | --- |
 | Codex | `~/.codex/AGENTS.md` | `~/.agents/skills` | `codex debug prompt-input` |
 | Claude Code | `~/.claude/CLAUDE.md` | real-file `~/.claude/skills` adapter | SDK initialize command catalog |
-| Kimi Code | `~/.kimi-code/AGENTS.md` and generic `~/.agents/AGENTS.md` | `~/.agents/skills` | ACP initialize/new session command catalog |
+| Kimi Code | `~/.agents/AGENTS.md` (single copy; the retired `~/.kimi-code/AGENTS.md` block is removed on upgrade) | `~/.agents/skills` | ACP initialize/new session command catalog |
 | Pi | `~/.pi/agent/AGENTS.md` | `~/.agents/skills` via `settings.skills` | public SDK resource loader |
 | OpenCode V2 | `~/.config/opencode/AGENTS.md` | `~/.agents/skills` via `skills` | loopback `GET /api/skill` |
 | MiniMax Code | `~/.minimax/AGENTS.md` | real-file `~/.minimax/skills` adapter | client-native discovery not yet recorded |
