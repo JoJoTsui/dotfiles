@@ -77,12 +77,16 @@ Verified non-interactive invocations, run from the repository root:
 
 | Agent | Command |
 | --- | --- |
-| Codex | `codex exec -C . "<task>"` |
+| Codex | `with-proxy codex exec -C . "<task>"` |
 | Kimi | `kimi -p "<task>"` |
 | Pi | `pi -p --model minimax-cn/MiniMax-M3.1-Flash "<task>"` |
 | OpenCode | `opencode run --standalone --model opencode/deepseek-v4.1-flash-free "<task>"` |
 | Qoder | `qoder -p -m DeepSeek-Flash "<task>"` |
 | MiniMax Code | `mcode exec --model minimax/MiniMax-M3.1-Flash "<task>"` |
+
+Codex needs the host proxy route on networks where its provider is unreachable
+directly; `with-proxy` sets the proxy variables for one command. It is a managed
+launcher on this tree. Other clients work without it here.
 
 Free defaults are `opencode/deepseek-v4.1-flash-free`,
 `minimax-cn/MiniMax-M3.1-Flash` for Pi, `minimax/MiniMax-M3.1-Flash` for

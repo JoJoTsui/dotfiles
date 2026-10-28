@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# with-proxy — wrap a command with proxy env vars set, then exec it.
+#
+# Default usage is direct. Opt in to the proxy per invocation:
+#   with-proxy curl -fsSL https://blocked.example.com/file.tar.gz
+#   with-proxy codex --model gpt-4
+#   with-proxy aria2c --all-proxy="$PROXY_HTTP" https://example.com/big.iso
+#
+# Works in any shell, subshell, CI step, or script — it is a real executable
+# in $PATH, not a shell alias.
+#
+# Upper and lowercase spellings are always set together, so a command cannot
+# inherit one spelling from its parent and read the other.
+#
+# NO_PROXY is set to the local list rather than inherited: an inherited bypass
+# list could send a public destination around the proxy route.
+#
+# Env knobs (set these in your shell rc if 7890 is wrong on this host):
+#   PROXY_HTTP   default http://127.0.0.1:7890
+#   PROXY_SOCKS  default socks5h://127.0.0.1:7890
+#   PROXY_NO     default localhost,127.0.0.1,::1
+
+set -euo pipefail
+
+PROXY_HTTP=${PROXY_HTTP:-http://127.0.0.1:7890}
+PROXY_SOCKS=${PROXY_SOCKS:-socks5h://127.0.0.1:7890}
+PROXY_NO=${PROXY_NO:-localhost,127.0.0.1,::1}
+
+if [[ $# -eq 0 ]]; then
+    echo "usage: with-proxy command [args...]" >&2
+    exit 64
+fi
+
+export HTTP_PROXY="$PROXY_HTTP"
+export HTTPS_PROXY="$PROXY_HTTP"
+export http_proxy="$PROXY_HTTP"
+export https_proxy="$PROXY_HTTP"
+export ALL_PROXY="$PROXY_SOCKS"
+export all_proxy="$PROXY_SOCKS"
+export NO_PROXY="$PROXY_NO"
+export no_proxy="$PROXY_NO"
+export PROXY="$PROXY_HTTP"
+
+exec -- "$@"

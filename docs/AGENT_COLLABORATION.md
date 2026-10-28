@@ -27,7 +27,9 @@ Findings that shaped the rules (checked 2026-10-28):
   so restrict them by path and treat their output as evidence. Two agents on one
   working tree collide unless each has a worktree.
 - **Provider health is part of the contract.** A client whose provider cannot be
-  reached fails at invocation. Fall back to a healthy client rather than retrying.
+  reached fails at invocation. Codex on this network needs the local proxy:
+  `with-proxy codex exec ...` succeeds where the direct call times out. Fall back
+  to a healthy client rather than retrying blindly.
 
 Operational commands and the free-model defaults live in the shared instructions.
 This note records why they look the way they do.
