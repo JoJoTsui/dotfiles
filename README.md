@@ -84,6 +84,7 @@ never enter git):
 | `glmBaseUrl` | `GLM_BASE_URL` | `https://open.bigmodel.cn/api/anthropic` |
 | `glmToken` | `GLM_API_TOKEN` | `REPLACE_ME` |
 | `kimiApiKey` | `KIMI_API_KEY` | `REPLACE_ME` |
+| `mihomoSubscriptionUrl` | `MIHOMO_SUBSCRIPTION_URL` | `REPLACE_ME` |
 
 ## Layout (chezmoi source state)
 

@@ -30,6 +30,10 @@ with `--platform` and `--role`. Linux, WSL, and macOS support x86-64 and ARM64;
 native Windows currently supports x86-64 only. WSL runs the Unix bootstrap
 inside the distribution and provides Nushell, Bash, and Zsh.
 
+Headless hosts that need the loopback proxy can add `--proxy` to a full
+deployment. Set `MIHOMO_SUBSCRIPTION_URL` first; the action installs the pinned
+Mihomo release and refreshes the profile. See [headless proxy](PROXY.md).
+
 For native Windows, run PowerShell 5.1 or newer from the checkout:
 
 ```powershell

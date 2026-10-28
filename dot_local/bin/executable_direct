@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# direct — wrap a command with proxy env vars unset, then exec it.
+#
+# Use when you've inherited proxy env vars (sourced proxy-env.sh, or a CI
+# runner exports them) but want one command to bypass:
+#   direct curl https://internal.example.com/health
+#   direct codex --model deepseek-chat
+#
+# Counterpart to with-proxy. Same universality: real executable in $PATH.
+
+set -euo pipefail
+
+if [[ $# -eq 0 ]]; then
+    echo "usage: direct command [args...]" >&2
+    exit 64
+fi
+
+unset HTTP_PROXY HTTPS_PROXY
+unset http_proxy https_proxy
+unset ALL_PROXY all_proxy
+unset FTP_PROXY ftp_proxy
+unset NO_PROXY no_proxy
+unset PROXY
+
+exec -- "$@"

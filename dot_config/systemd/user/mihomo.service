@@ -1,0 +1,16 @@
+[Unit]
+Description=Mihomo loopback proxy (127.0.0.1:7890)
+Documentation=file:%h/.local/share/dotfiles/proxy/scripts/run-mihomo-supervised.sh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HOME=%h
+Environment=PATH=%h/.local/bin:%h/.pixi/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/share/dotfiles/proxy/scripts/run-mihomo-supervised.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

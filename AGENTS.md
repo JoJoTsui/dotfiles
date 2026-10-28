@@ -127,6 +127,12 @@ explains every changed pair.
   produces regular discovery files plus managed instruction blocks while
   preserving unrelated device content. Read `docs/AGENT_PAYLOAD.md` before
   changing global instructions, skills, or their copy adapters.
+- **Proxy provisioning is opt-in and pinned**: `deployment/proxy/mihomo.tsv`
+  owns the release URL and SHA-256 per architecture; `bootstrap.sh --proxy`
+  installs and refreshes the profile, and the managed tree under
+  `dot_local/share/dotfiles/proxy/` owns routing and supervision. The
+  subscription URL is template data (`MIHOMO_SUBSCRIPTION_URL`), never git.
+  Read `docs/PROXY.md` before changing either side.
 - **Client settings merge through bootstrap**: defaults under ignored
   `deployment/client-settings/` merge into runtime paths excluded from Chezmoi.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,

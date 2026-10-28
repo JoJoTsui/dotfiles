@@ -34,6 +34,7 @@
 {{- $glmToken := env "GLM_API_TOKEN" | default "REPLACE_ME" -}}
 {{- $kimiKey := env "KIMI_API_KEY" | default "REPLACE_ME" -}}
 {{- $bundles := env "DOTFILES_BUNDLES" | default "none" -}}
+{{- $mihomoSubscription := env "MIHOMO_SUBSCRIPTION_URL" | default "REPLACE_ME" -}}
 {{- $selectedBundles := list -}}
 {{- if ne $bundles "none" -}}
 {{- range splitList "," $bundles -}}
@@ -65,3 +66,4 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     glmToken = {{ $glmToken | quote }}
     kimiApiKey = {{ $kimiKey | quote }}
     bundles = {{ $selectedBundles | toJson }}
+    mihomoSubscriptionUrl = {{ $mihomoSubscription | quote }}
