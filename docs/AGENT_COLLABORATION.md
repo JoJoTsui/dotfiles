@@ -32,7 +32,8 @@ Findings that shaped the rules (checked 2026-10-28):
   to a healthy client rather than retrying blindly.
 
 Operational commands and the free-model defaults live in the shared instructions.
-This note records why they look the way they do.
+This note records why they look the way they do. Herdr adds the optional
+multi-pane layer: [herdr](HERDR.md).
 
 Sources:
 

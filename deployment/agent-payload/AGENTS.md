@@ -125,6 +125,32 @@ Rules:
     parent transcript; a child builds its own prompt cache from the shared
     instructions and its first turn.
 
+### Herdr
+
+When `HERDR_ENV=1` and `herdr` is installed, you are already inside a Herdr
+session. Use it to coordinate panes for multi-agent work: it keeps pane and
+agent state, and it can give each task its own worktree. Do not launch or attach
+to a Herdr session from outside unless the user asks for it.
+
+```bash
+herdr worktree create --cwd . --branch task/<name>
+herdr pane split --current --direction right
+herdr agent start reviewer --kind pi --pane <pane-id>
+herdr agent prompt reviewer "Review the diff in this worktree; report findings."
+herdr agent wait reviewer --until idle --timeout 600000
+herdr agent read reviewer
+herdr agent list
+```
+
+- `herdr agent start` needs an existing idle shell pane and accepts the client
+  kinds Herdr recognizes (`pi`, `claude`, `codex`, `kimi`, `opencode`,
+  `qodercli`, and others). MiniMax Code has no agent kind: run `mcode` as a pane
+  command and use pane commands.
+- Wait on state with `herdr agent wait`; do not poll with sleeps. Read output
+  with `herdr agent read` instead of guessing from titles.
+- Outside Herdr (`HERDR_ENV` unset), do not inspect or control a session. Use the
+  one-shot commands above instead.
+
 ## Context and cache discipline
 
 Provider prompt caches reward stable prefixes and append-only history. Keep
