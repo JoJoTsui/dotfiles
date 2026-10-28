@@ -15,6 +15,7 @@ import base64
 import unittest
 from fixtures.processes import stop_client
 from fixtures.shell_env import managed_shell_environment
+from fixtures.skills import write_skill_library
 from pins import agent_pins
 
 try:
@@ -34,8 +35,10 @@ class CodeGraphTests(unittest.TestCase):
         self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not self.chezmoi:
             self.skipTest("actual config apply requires chezmoi")
+        self.skills = write_skill_library(self.root / "skills-fixture")
         self.env = {"HOME": str(self.root / "original"), "PATH": "/usr/bin:/bin",
-                    "DOTFILES_CHEZMOI_BIN": self.chezmoi}
+                    "DOTFILES_CHEZMOI_BIN": self.chezmoi,
+                    "DOTFILES_SKILLS_DIR": str(self.skills)}
 
     def deploy(self, *arguments):
         return subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"),
@@ -156,13 +159,13 @@ class CodeGraphTests(unittest.TestCase):
         path = self.home / ".config/opencode/opencode.jsonc"
         config = json.loads(path.read_text())
         self.assertEqual(config["watcher"]["ignore"], ["node_modules/**", "dist/**", ".git/**"])
-        config["providers"]["device"] = {"settings": {"apiKey": "synthetic-device-token"}}
+        config["mcp"]["servers"]["device"] = {"type": "local", "command": ["device-mcp"]}
         path.write_text(json.dumps(config))
         result = self.deploy("--role", "remote-compute")
         self.assertEqual(result.returncode, 0, result.stderr)
         config = json.loads(path.read_text())
         self.assertEqual(config["watcher"]["ignore"], ["**"])
-        self.assertEqual(config["providers"]["device"]["settings"]["apiKey"], "synthetic-device-token")
+        self.assertEqual(config["mcp"]["servers"]["device"]["command"], ["device-mcp"])
         config["watcher"]["ignore"] = ["device/**"]
         path.write_text(json.dumps(config))
         self.assertEqual(self.deploy("--role", "workstation").returncode, 0)

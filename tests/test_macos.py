@@ -25,7 +25,8 @@ class MacOSProfileTests(unittest.TestCase):
         self.home = self.root / "device with spaces"
         self.original = self.root / "original"
         self.original.mkdir()
-        self.env = {"HOME": str(self.original), "PATH": "/usr/bin:/bin"}
+        self.env = {"HOME": str(self.original), "PATH": "/usr/bin:/bin",
+                    "DOTFILES_SKILLS_DIR": str(SOURCE / "tests/fixtures/skill-library")}
         self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
 
     def deploy(self, *arguments):

@@ -29,7 +29,8 @@ class ShellBehaviorTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-shell-")
         self.addCleanup(self.temporary.cleanup)
         self.home = Path(self.temporary.name) / "device"
-        self.env = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color"}
+        self.env = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color",
+                    "DOTFILES_SKILLS_DIR": str(SOURCE / "tests/fixtures/skill-library")}
         self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         self.tool_home = Path(os.environ["DOTFILES_TEST_TOOL_HOME"]) if os.environ.get("DOTFILES_TEST_TOOL_HOME") else None
         if not self.chezmoi or not self.tool_home:

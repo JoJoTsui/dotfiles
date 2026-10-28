@@ -26,6 +26,7 @@ class DeploymentTests(unittest.TestCase):
                 "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN", "NODE_OPTIONS", "ENV", "BASH_ENV",
             ):
                 self.env.pop(name)
+        self.env["DOTFILES_SKILLS_DIR"] = str(SOURCE / "tests/fixtures/skill-library")
         self.env["HOME"] = str(self.original_home)
         # Guard the network/account/system boundary even while a red test runs
         # against an older bootstrap that does not understand --plan.

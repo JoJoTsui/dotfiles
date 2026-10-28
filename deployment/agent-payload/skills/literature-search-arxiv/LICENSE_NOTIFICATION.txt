@@ -1,5 +1,0 @@
-Notification recorded: 2026-09-01 Asia/Shanghai
-
-The user was notified to review the arXiv API Terms of Use at
-https://info.arxiv.org/help/api/index.html and to check the license attached to
-each retrieved paper before reuse or redistribution.

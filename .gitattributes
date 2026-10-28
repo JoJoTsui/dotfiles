@@ -9,6 +9,6 @@
 dot_* text eol=lf
 dot_local/bin/executable_* text eol=lf
 
-# Preserve the approved skill snapshot, including intentional Markdown spacing
-# and Unix helper line endings, across client and platform checkouts.
-deployment/agent-payload/skills/** -text -whitespace
+# Preserve skill fixtures, including Markdown spacing and Unix helper line
+# endings, across client and platform checkouts.
+tests/fixtures/skill-library/** -text -whitespace

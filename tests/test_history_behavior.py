@@ -51,6 +51,7 @@ class HistoryBehaviorTests(unittest.TestCase):
             self.shells[name] = str(binary)
             (self.home / ".pixi/bin" / name).symlink_to(binary)
         self.env = {
+            "DOTFILES_SKILLS_DIR": str(SOURCE / "tests/fixtures/skill-library"),
             "HOME": str(self.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color",
             "XDG_CONFIG_HOME": str(self.home / ".config"),
             "XDG_DATA_HOME": str(self.home / ".local/share"),

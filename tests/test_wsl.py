@@ -18,7 +18,8 @@ class WSLDeploymentTests(unittest.TestCase):
         self.home = self.root / "linux-home"
         self.environment = {"HOME": str(self.home), "PATH": "/usr/bin:/bin",
                             "USERPROFILE": r"C:\Users\WindowsDevice",
-                            "APPDATA": r"C:\Users\WindowsDevice\AppData\Roaming"}
+                            "APPDATA": r"C:\Users\WindowsDevice\AppData\Roaming",
+                            "DOTFILES_SKILLS_DIR": str(SOURCE / "tests/fixtures/skill-library")}
         self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
 
     def deploy(self, *arguments, source=SOURCE, environment=None):
@@ -46,7 +47,7 @@ class WSLDeploymentTests(unittest.TestCase):
                      "dot_local/bin/executable_nu-login",
                      "dot_config/nushell/config.nu",
                      "tests/native/wsl.ps1",
-                     "deployment/agent-payload/skills/tdd/SKILL.md"):
+                     "tests/fixtures/skill-library/tdd/SKILL.md"):
             destination = repository / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(SOURCE / name, destination)
@@ -61,7 +62,7 @@ class WSLDeploymentTests(unittest.TestCase):
                        check=True, capture_output=True)
         for name in ("bootstrap.sh", "dot_profile", "dot_local/bin/executable_nu-login",
                      "dot_config/nushell/config.nu", "tests/native/wsl.ps1",
-                     "deployment/agent-payload/skills/tdd/SKILL.md"):
+                     "tests/fixtures/skill-library/tdd/SKILL.md"):
             with self.subTest(file=name):
                 self.assertEqual((checkout / name).read_bytes(), (SOURCE / name).read_bytes(),
                                  "Unix entry points and the raw library must survive a Windows checkout")

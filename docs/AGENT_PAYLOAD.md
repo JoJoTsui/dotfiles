@@ -1,11 +1,12 @@
 # Portable agent instructions and skills
 
 Ordinary bootstrap and `--apply-only` deploy this payload regardless of agent
-installation selection. Use the public bootstrap for raw skill resources,
-merged instructions, and [merged client settings](AGENT_SETTINGS.md).
+installation selection. Use the public bootstrap for instructions, fetched
+skill resources, and [merged client settings](AGENT_SETTINGS.md).
 
-`deployment/agent-payload` is the sole owned source. Its `targets.tsv` declares
-each relative source and destination, with three operations:
+Instructions and the copy adapters live under `deployment/agent-payload`; their
+`targets.tsv` declares each relative source and destination, with three
+operations:
 
 - `tree`: copy regular resources and their permissions, preserving unrelated files.
 - `file`: replace the owned regular file.
@@ -18,17 +19,29 @@ before writing. Raw payloads live under ignored `deployment/`, so a helper named
 not execute helpers. The native Windows boundary must consume the same catalog;
 its implementation and native checks are tracked separately.
 
-The approved snapshot contains 127 skill directories, 899 files, and 8,700,053
-bytes: 890 regular resources and nine executable helpers. It includes the
-caveman voice/orchestration family and the shared review/delegation skills the
-device actually uses. Their bytes and
-permissions are preserved. The shared `scienceskillscommon` sibling package,
-references, inline dependency metadata, and 24 explicit-only skills remain
-intact. Client built-ins, plugins, credentials, trust records, sessions, and
-caches are outside the owned source.
-Git attributes retain the imported bytes and line endings, including the
-snapshot's existing Markdown whitespace. Application code keeps normal
-whitespace checks.
+Skill bytes are not vendored. `deployment/skills.tsv` is the owned catalog and
+names each upstream source, its kind, and its path:
+
+```text
+name|kind|source|ref|path
+tdd|git|https://github.com/mattpocock/skills|main|skills/engineering/tdd
+lark-im|tarball|https://open.feishu.cn/.../lark-im.tar.gz||
+```
+
+Bootstrap fetches the catalog into a staging tree, then the `skills` payload
+rows copy that tree to `~/.agents/skills` and the adapters. Fetching is
+best-effort fresh: a successful refresh is reused for
+`DOTFILES_SKILLS_MAX_AGE` seconds (default six hours), `DOTFILES_SKILLS_REFRESH=1`
+forces it, and `0` reuses the cache. Git sources are shallow clones under the
+XDG cache; tarballs are conditional downloads. The resolved commits and cached
+archives are recorded in `~/.local/state/dotfiles/skills.lock.tsv`.
+`DOTFILES_SKILLS_DIR` bypasses fetching for hermetic tests and air-gapped hosts.
+
+Archives are rejected when they contain absolute paths, parent traversal, or
+symlinks. Copying still executes nothing. A catalog row that the upstream
+project no longer ships fails the apply by name instead of silently dropping a
+skill. Client built-ins, plugins, credentials, trust records, sessions, and
+caches remain outside the owned source.
 
 The common instructions use portable command discovery, a pointer to owned
 `~/.agents/RTK.md`, conditional CodeGraph guidance, and a cross-agent delegation

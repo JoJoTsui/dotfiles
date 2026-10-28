@@ -26,6 +26,7 @@ class BundleTests(unittest.TestCase):
                 "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN", "NODE_OPTIONS", "ENV", "BASH_ENV",
             ):
                 self.environment.pop(name)
+        self.environment["DOTFILES_SKILLS_DIR"] = str(SOURCE / "tests/fixtures/skill-library")
         self.environment.update(HOME=str(self.root / "original"))
         guards = self.root / "guards"
         guards.mkdir()

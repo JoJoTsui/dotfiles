@@ -26,20 +26,34 @@ payload_validate_tree() {
     fi
 }
 
+payload_source_path() {
+    if [ "$1" = skills ] && [ -n "${PAYLOAD_SKILLS_DIR:-}" ]; then
+        printf '%s' "$PAYLOAD_SKILLS_DIR"
+    else
+        printf '%s' "$DEPLOY_SOURCE/deployment/agent-payload/$1"
+    fi
+}
+
 validate_agent_payload() {
-    local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target value
+    local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target value origin
     [ ! -L "$payload/targets.tsv" ] || fail 'agent payload catalog is a symlink'
     while IFS=$'|\r' read -r kind source target; do
         case "$kind" in ''|\#*) continue ;; tree|file|block) ;; *) fail "unknown agent payload kind: $kind" ;; esac
         for value in "$source" "$target"; do
             case "$value" in ''|/*|..|../*|*/../*|*/..) fail "agent payload catalog path must be relative: $value" ;; esac
         done
-        if [ "$kind" = tree ]; then
-            [ -d "$payload/$source" ] || fail "agent payload tree is missing: $source"
-        else
-            [ -f "$payload/$source" ] || fail "agent payload file is missing: $source"
+        # Skill bytes come from the fetch stage, which runs after the early
+        # pre-flight; defer their existence check to deployment time.
+        if [ "$source" = skills ] && [ -z "${PAYLOAD_SKILLS_DIR:-}" ]; then
+            continue
         fi
-        payload_validate_tree "$payload/$source" "$DEPLOY_HOME/$target"
+        origin=$(payload_source_path "$source")
+        if [ "$kind" = tree ]; then
+            [ -d "$origin" ] || fail "agent payload tree is missing: $source"
+        else
+            [ -f "$origin" ] || fail "agent payload file is missing: $source"
+        fi
+        payload_validate_tree "$origin" "$DEPLOY_HOME/$target"
     done < "$payload/targets.tsv"
 }
 
@@ -75,18 +89,20 @@ payload_instruction() {
 }
 
 deploy_agent_payload() {
-    local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target
+    local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target origin
     validate_agent_payload
     while IFS=$'|\r' read -r kind source target; do
         case "$kind" in
             ''|\#*) continue ;;
             tree)
                 mkdir -p "$HOME/$target"
-                cp -Rp "$payload/$source/." "$HOME/$target/"
+                origin=$(payload_source_path "$source")
+                cp -Rp "$origin/." "$HOME/$target/"
                 ;;
             file)
                 mkdir -p "$HOME/${target%/*}"
-                cp -p "$payload/$source" "$HOME/$target"
+                origin=$(payload_source_path "$source")
+                cp -p "$origin" "$HOME/$target"
                 ;;
             block) payload_instruction "$HOME/$target" "$payload/$source" ;;
         esac

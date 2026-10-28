@@ -115,16 +115,18 @@ explains every changed pair.
 - Not applied to `$HOME` (ignored): `system/`, `clash/`, `docs/`, `deployment/`,
   `tests/`. Ordinary bootstrap has no system or account login-shell action.
 - **Legacy home symlinks are explicit and opt-in**:
-  `deployment/legacy/link-home.sh` and its ignored `home-links.tsv` manifest
+  `deployment/legacy/link-home.sh` and its `home-links.tsv` manifest
   maintain the pre-chezmoi T9K tree. Bootstrap never runs them; managed homes
   stay in copy mode. The utility validates before writing, backs up replaced
   targets, and requires `--system` for `/etc` changes. Read
   `docs/LEGACY_HOME_LINKS.md` before adding state roots to the manifest.
-- **Agent payloads use the public bootstrap copier**: raw skills under ignored
-  `deployment/agent-payload/` retain filenames and permissions without executing
-  helpers. Its catalog produces regular discovery files and managed instruction
-  blocks while preserving unrelated device content. Read `docs/AGENT_PAYLOAD.md`
-  before changing global instructions, skills, or their copy adapters.
+- **Agent payloads use the public bootstrap copier**: instructions and adapters
+  live under `deployment/agent-payload/`; skill bytes are fetched from the
+  upstream catalog in `deployment/skills.tsv` and never vendored. Copying
+  preserves filenames and permissions without executing helpers, and applying
+  produces regular discovery files plus managed instruction blocks while
+  preserving unrelated device content. Read `docs/AGENT_PAYLOAD.md` before
+  changing global instructions, skills, or their copy adapters.
 - **Client settings merge through bootstrap**: defaults under ignored
   `deployment/client-settings/` merge into runtime paths excluded from Chezmoi.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,

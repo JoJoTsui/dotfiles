@@ -156,10 +156,88 @@ function Copy-InstructionBlock([string]$From, [string]$To) {
     }
     Write-Utf8 $To $text
 }
+function Test-SkillArchive([string]$Archive) {
+    $entries = & tar -tzf $Archive
+    if ($LASTEXITCODE -ne 0) { return $false }
+    foreach ($entry in $entries) {
+        if ($entry -match '^(/|\.\.(/|$))' -or $entry -match '(^|/)\.\.(/|$)') { return $false }
+    }
+    $modes = & tar -tvzf $Archive
+    foreach ($mode in $modes) { if ($mode.Substring(0, 1) -eq 'l') { return $false } }
+    return $true
+}
+function Import-SkillLibrary {
+    $script:Step = 'apply-source.skills'
+    if ($env:DOTFILES_SKILLS_DIR) {
+        if (-not (Test-Path -LiteralPath $env:DOTFILES_SKILLS_DIR -PathType Container)) { Stop-Deployment 'DOTFILES_SKILLS_DIR is not a directory' }
+        $script:SkillLibrary = $env:DOTFILES_SKILLS_DIR
+        return
+    }
+    $stage = Join-Path $env:TEMP ('skills-' + [Guid]::NewGuid().ToString('N'))
+    $cache = Join-Path $roots.cache 'dotfiles/skills'
+    [IO.Directory]::CreateDirectory($stage) | Out-Null
+    [IO.Directory]::CreateDirectory((Join-Path $cache 'git')) | Out-Null
+    [IO.Directory]::CreateDirectory((Join-Path $cache 'tarballs')) | Out-Null
+    $marker = Join-Path $cache '.refreshed'
+    $refresh = $true
+    if ($env:DOTFILES_SKILLS_REFRESH -eq '0') { $refresh = $false }
+    elseif ($env:DOTFILES_SKILLS_REFRESH -ne '1' -and (Test-Path -LiteralPath $marker)) {
+        $maxAge = '21600'; if ($env:DOTFILES_SKILLS_MAX_AGE) { $maxAge = $env:DOTFILES_SKILLS_MAX_AGE }
+        $age = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int64](Get-Content -LiteralPath $marker -Raw)
+        $refresh = $age -ge [int64]$maxAge
+    }
+    $lockRows = @('# name|kind|source|resolved')
+    foreach ($row in (Read-Catalog 'deployment/skills.tsv')) {
+        $name = $row.columns[0]; $kind = $row.columns[1]; $sourceUrl = $row.columns[2]
+        $ref = $row.columns[3]; $path = $row.columns[4]; if (-not $path) { $path = '' }
+        if (-not $name -or $name.StartsWith('#')) { continue }
+        if ($kind -eq 'git') {
+            $slug = $sourceUrl -replace '^[A-Za-z][A-Za-z0-9+.-]*://', '' -replace '/+$', '' -replace '[^A-Za-z0-9._-]', '_'
+            $repo = Join-Path $cache "git/$slug"
+            if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
+                Invoke-Tool git @('clone', '--quiet', '--no-checkout', '--depth', '1', '--branch', $ref, $sourceUrl, $repo) -Quiet | Out-Null
+            } elseif ($refresh) {
+                & git -C $repo fetch --quiet --depth 1 origin $ref 2>$null | Out-Null
+            }
+            $resolved = (& git -C $repo rev-parse FETCH_HEAD 2>$null)
+            if (-not $resolved) { $resolved = (& git -C $repo rev-parse HEAD 2>$null) }
+            if (-not $resolved) { Stop-Deployment "cannot resolve skill source: $name" }
+            $archive = Join-Path $stage "$name.tar"
+            $depth = ($path -split '/').Count
+            & git -C $repo archive --output=$archive $resolved $path 2>$null
+            if ($LASTEXITCODE -ne 0) { Stop-Deployment "cannot read skill $name from $sourceUrl" }
+            $destination = Join-Path $stage $name
+            [IO.Directory]::CreateDirectory($destination) | Out-Null
+            & tar -xf $archive -C $destination --strip-components=$depth
+            if ($LASTEXITCODE -ne 0) { Stop-Deployment "cannot extract skill $name" }
+            Remove-Item -LiteralPath $archive -Force
+            if (-not (Test-Path -LiteralPath (Join-Path $destination 'SKILL.md'))) { Stop-Deployment "skill $name has no SKILL.md" }
+            $lockRows += "$name|git|$sourceUrl|$resolved"
+        } elseif ($kind -eq 'tarball') {
+            $slug = $sourceUrl -replace '^[A-Za-z][A-Za-z0-9+.-]*://', '' -replace '/+$', '' -replace '[^A-Za-z0-9._-]', '_'
+            $cached = Join-Path $cache "tarballs/$slug.tgz"
+            if ($refresh -or -not (Test-Path -LiteralPath $cached)) {
+                try { Invoke-WebRequest -Uri $sourceUrl -OutFile $cached -UseBasicParsing -TimeoutSec 90 }
+                catch { if (-not (Test-Path -LiteralPath $cached)) { Stop-Deployment "cannot download skill $name" } }
+            }
+            if (-not (Test-SkillArchive $cached)) { Stop-Deployment "unsafe skill archive: $name" }
+            $destination = Join-Path $stage $name
+            [IO.Directory]::CreateDirectory($destination) | Out-Null
+            & tar -xzf $cached -C $destination
+            if (-not (Test-Path -LiteralPath (Join-Path $destination 'SKILL.md'))) { Stop-Deployment "skill $name has no SKILL.md" }
+            $lockRows += "$name|tarball|$sourceUrl|cached"
+        } else { Stop-Deployment "unknown skill kind: $kind" }
+    }
+    Set-Content -LiteralPath $marker -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    [IO.Directory]::CreateDirectory((Join-Path $roots.state 'dotfiles')) | Out-Null
+    Set-Content -LiteralPath (Join-Path $roots.state 'dotfiles/skills.lock.tsv') -Value ($lockRows -join "`n")
+    $script:SkillLibrary = $stage
+}
 function Copy-AgentPayload {
     $script:Step = 'apply-source.agent-payload'
     foreach ($row in (Read-Catalog 'deployment/agent-payload/targets.tsv')) {
         $from = Join-Path $Source "deployment/agent-payload/$($row.columns[1])"; $to = Join-Path $TargetHome $row.columns[2]
+        if ($row.columns[1] -eq 'skills' -and $script:SkillLibrary) { $from = $script:SkillLibrary }
         if ($row.columns[0] -eq 'block') { Copy-InstructionBlock $from $to }
         elseif ($row.columns[0] -in @('file', 'tree')) { Copy-RegularTree $from $to }
         else { Stop-Deployment 'unknown agent payload kind' }
@@ -231,6 +309,7 @@ function Apply-Source {
     $script:ChezmoiArguments = @('--source', $Source, '--destination', $TargetHome, '--config', (Join-Path $roots.config 'chezmoi/chezmoi.toml'), '--cache', (Join-Path $roots.cache 'chezmoi'), '--persistent-state', (Join-Path $roots.config 'chezmoi/chezmoistate.boltdb'), '--no-tty', '--force')
     Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('init', '--data=false')) -Quiet | Out-Null
     Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('apply')) -Quiet | Out-Null
+    Import-SkillLibrary
     Copy-AgentPayload
     Merge-ClientSettings
     Copy-NativeConfiguration

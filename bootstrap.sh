@@ -167,6 +167,8 @@ fi
 for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config .config/chezmoi .config/dotfiles .config/opencode .cache .cache/tmp .pixi .pixi/bin .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml .bun .bun/bin .bun/managed .bun/install .bun/install/global .cargo .cargo/bin .rustup .codex .claude .kimi-code .pi .pi/agent .qoder .minimax .minimax-code .minimax-code-install-logs; do
     [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target state root is a symlink: $DEPLOY_HOME/$relative"
 done
+DEPLOY_STEP=apply-source.skills
+validate_skill_catalog
 DEPLOY_STEP=apply-source.agent-payload
 validate_agent_payload
 DEPLOY_STEP=apply-source.client-settings
@@ -216,7 +218,10 @@ run_step install-managers install_managers
 DEPLOY_STEP=apply-source
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
+run_step apply-source.skills prepare_skill_library
+trap 'cleanup_skill_library' EXIT
 run_step apply-source.agent-payload deploy_agent_payload
+cleanup_skill_library
 run_step apply-source.client-settings deploy_client_settings
 run_step apply-source.macos-discovery deploy_macos_config
 if "$DEPLOY_AGENTS_ONLY"; then

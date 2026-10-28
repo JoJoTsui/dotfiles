@@ -15,6 +15,7 @@ import errno
 from collections import Counter
 from urllib.parse import unquote, urlencode, urlparse
 from fixtures.processes import stop_client
+from fixtures.skills import write_skill_library
 from fixtures.shell_env import managed_shell_environment
 
 try:
@@ -37,8 +38,10 @@ class AgentPayloadTests(unittest.TestCase):
         self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not self.chezmoi:
             self.skipTest("actual payload apply requires chezmoi")
+        self.skills_fixture = write_skill_library(self.root / "skills-fixture")
         self.env = {"HOME": str(self.root / "original"), "PATH": "/usr/bin:/bin",
-                    "DOTFILES_CHEZMOI_BIN": self.chezmoi}
+                    "DOTFILES_CHEZMOI_BIN": self.chezmoi,
+                    "DOTFILES_SKILLS_DIR": str(self.skills_fixture)}
 
     def cleanup_temporary_home(self):
         deadline = time.monotonic() + 5
@@ -176,9 +179,11 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         shared = self.home / ".agents/skills"
         claude = self.home / ".claude/skills"
-        self.assertEqual(len(list(shared.glob("*/SKILL.md"))), 127)
-        self.assertEqual(len([p for p in shared.rglob("*") if p.is_file()]), 899)
-        self.assertEqual(len([p for p in shared.rglob("*") if p.is_file() and p.stat().st_mode & 0o111]), 9)
+        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
+        self.assertEqual({path.parent.name for path in shared.glob("*/SKILL.md")}, expected)
+        self.assertEqual(len([p for p in shared.rglob("*") if p.is_file()]),
+                         len([p for p in self.skills_fixture.rglob("*") if p.is_file()]))
+        self.assertEqual(len([p for p in shared.rglob("*") if p.is_file() and p.stat().st_mode & 0o111]), 1)
         self.assertEqual((shared / "tdd/SKILL.md").read_bytes(), (claude / "tdd/SKILL.md").read_bytes())
         self.assertIn("disable-model-invocation: true", (shared / "implement-spec/SKILL.md").read_text())
         self.assertTrue((shared / "scienceskillscommon/pyproject.toml").is_file())
@@ -234,7 +239,7 @@ class AgentPayloadTests(unittest.TestCase):
         outside.mkdir()
         sentinel = outside / "untouched"
         sentinel.write_text("another device\n")
-        for relative in (".agents", ".agents/skills/interpro-database/scripts",
+        for relative in (".agents", ".agents/skills/tdd/resources",
                          ".claude/skills/tdd/SKILL.md", ".codex/AGENTS.md"):
             with self.subTest(relative=relative):
                 self.home = self.root / relative.replace("/", "-").replace(".", "")
@@ -307,7 +312,7 @@ class AgentPayloadTests(unittest.TestCase):
                 self.assertIn("implement-spec", skills)
                 self.assertFalse(skills["implement-spec"]["autoinvoke"])
                 managed = [skill for skill in data if self.skill_path_is_in_home(skill["path"])]
-                expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
+                expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
                 path_kinds = Counter(self.skill_path_kind(skill["path"]) for skill in data)
                 path_scopes = Counter(self.skill_path_scope(skill["path"]) for skill in data)
                 self.assertEqual({skill["id"] for skill in managed}, expected,
@@ -342,7 +347,7 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertIn("<!-- DOTFILES_AGENT_START -->", text)
         self.assertIn("- tdd:", text)
         self.assertIn("- clinical-trials-database:", text)
-        self.assertNotIn("- implement-spec:", text)
+        self.assertIn("are for explicit user requests", text)
 
     def test_pinned_pi_resource_loader_reads_the_full_library_and_global_instructions(self):
         module = os.environ.get("DOTFILES_TEST_PI_MODULE")
@@ -426,8 +431,8 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
                                     text=True, timeout=30)
         self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
         data = json.loads(diagnostic.stdout)
-        expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
-        self.assertEqual((data["count"], data["explicit"]), (len(expected), 26),
+        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
+        self.assertEqual((data["count"], data["explicit"]), (len(expected), 1),
                          f"root_count={data['rootCount']}; home_matches={data['homeMatches']}; "
                          f"os_home_matches_target={data['osHomeMatchesTarget']}; "
                          f"skill_paths={data['skillPaths']}; agent_dir_matches_target={data['agentDirMatchesTarget']}; "
@@ -442,8 +447,8 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
     def test_skill_resource_names_are_copied_verbatim_without_hook_execution(self):
         source = self.root / "source"
         shutil.copytree(SOURCE, source, ignore=shutil.ignore_patterns(".git", "__pycache__"))
-        resources = source / "deployment/agent-payload/skills/tdd/resources"
-        resources.mkdir()
+        resources = self.skills_fixture / "tdd/resources"
+        resources.mkdir(parents=True, exist_ok=True)
         hook = resources / "run_once_payload.sh"
         hook.write_text('#!/bin/sh\nprintf executed > "$HOME/PAYLOAD_EXECUTED"\n')
         hook.chmod(0o755)
@@ -513,7 +518,7 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
                                     break
                             self.assertIn("skill:tdd", names)
                             self.assertIn("skill:implement-spec", names)
-                        expected = {path.parent.name for path in (SOURCE / "deployment/agent-payload/skills").glob("*/SKILL.md")}
+                        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
                         advertised = {name.removeprefix("skill:") for name in names}
                         self.assertTrue(expected.issubset(advertised), expected - advertised)
                     finally:
