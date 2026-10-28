@@ -46,8 +46,9 @@ caches remain outside the owned source.
 The common instructions use portable command discovery, a pointer to owned
 `~/.agents/RTK.md`, conditional CodeGraph and Graphify guidance, a cross-agent
 delegation contract with verified one-shot commands for Codex, Kimi, Pi,
-OpenCode, Qoder, and MiniMax Code, and the cache-discipline rules recorded in
-[caching and context budget](AGENT_CACHING.md).
+OpenCode, Qoder, and MiniMax Code, the collaboration rules recorded in
+[cross-agent collaboration](AGENT_COLLABORATION.md), and the cache-discipline
+rules recorded in [caching and context budget](AGENT_CACHING.md).
 
 CodeGraph is the primary code-query path: its MCP entry is registered for every
 client. Graphify is optional and per repository. Provision it with

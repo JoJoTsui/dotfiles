@@ -39,7 +39,12 @@ bash deployment/legacy/link-home.sh --list
 
 A legacy host can expose the utility through a convenience symlink such as
 `~/link-home`; the script resolves its own symlink chain before locating the
-manifest. The default source is the parent of this checkout. The default home
+manifest.
+
+The manifest names entries relative to the live tree; the directory must already
+exist there. A manifest entry whose source is absent is skipped, and `--strict`
+turns that into a failure. To adopt a home-only root such as `.caveman` or
+`.lark-cli`, move or copy it into the live tree first, then run the relinker. The default source is the parent of this checkout. The default home
 is `$HOME`. Both must exist and resolve to different directories.
 
 ## Safety model

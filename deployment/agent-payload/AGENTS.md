@@ -93,24 +93,33 @@ so pass a model only when you know the configured name.
 
 Rules:
 
-1. Delegate one bounded task per call: exact paths, expected output, and how to
+1. Delegate only when context is genuinely separable: independent research
+   paths, components with a clean interface, or blackbox verification. Keep
+   implementation and its tests with the agent that holds the context. Do not
+   split sequential phases of one feature by role.
+2. Skip delegation for a small single-step task. Every call pays a round trip
+   and a re-briefing.
+3. Delegate one bounded task per call: exact paths, expected output, and how to
    recognize success.
-2. Start read-only for analysis and review. Allow writes only when you will read
+4. Start read-only for analysis and review. Allow writes only when you will read
    the resulting diff yourself.
-3. Keep depth at one. A delegated agent must not start another agent unless the
+5. Keep depth at one. A delegated agent must not start another agent unless the
    task explicitly asks for a second opinion.
-4. Never pass credentials, tokens, `.env` values, or private keys to a child
+6. Never pass credentials, tokens, `.env` values, or private keys to a child
    agent. It shares the filesystem, so scope it to repository paths.
-5. Treat child output as evidence, not truth. Check files, diffs, and gate
+7. Treat child output as evidence, not truth. Check files, diffs, and gate
    results before reporting completion.
-6. Set a timeout and capture the exit status. A nonzero exit is a failure.
-7. Use Codex or Kimi as the orchestrator and Pi, OpenCode, Qoder, or MiniMax
-   Code as workers when a free model is sufficient.
-8. Do not run two agents on the same working tree at once unless each has its
-   own isolated worktree.
-9. Pass a compact brief with paths and the expected result. Do not paste the
-   parent transcript; a child builds its own prompt cache from the shared
-   instructions and its first turn.
+8. Set a timeout and capture the exit status. A nonzero exit is a failure. If a
+   client cannot reach its provider, that is an environment failure: fall back
+   to an agent whose provider is healthy instead of retrying blindly.
+9. Use Codex or Kimi as the orchestrator and Pi, OpenCode, Qoder, or MiniMax
+   Code as workers when a free model is sufficient. Prefer skills and tool
+   search for progressive disclosure before adding a permanent specialist.
+10. Do not run two agents on the same working tree at once unless each has its
+    own isolated worktree.
+11. Pass a compact brief with paths and the expected result. Do not paste the
+    parent transcript; a child builds its own prompt cache from the shared
+    instructions and its first turn.
 
 ## Context and cache discipline
 
