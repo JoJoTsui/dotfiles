@@ -68,7 +68,10 @@ Rules:
 3. Managed CLIs live in `~/.pixi/bin`. If a client's bundled copy misbehaves
    (a crashing `rg`, for example), call the managed binary explicitly or prepend
    that directory to `PATH` for the command.
-4. Recheck availability on each device and use a portable fallback when a tool
+4. Bound text search with `timeout`. Scope the path and use `-g` globs; on
+   shared mounts avoid scanning `/t9k`, `--no-ignore`, and whole-home searches.
+   A timeout means narrow the query or use a code index, not retry wider.
+5. Recheck availability on each device and use a portable fallback when a tool
    is missing.
 
 ## Resource limits
@@ -101,6 +104,28 @@ Rules:
    run unbounded `-j`, recursive parallel shells, or a full-filesystem scan.
 5. Throttling or an OOM kill means reduce and rerun; do not replay the same
    shape.
+
+## Shared hosts and remote jobs
+
+On t9k-style shared hosts, Docker or Kubernetes pods, and SSH runners, `$HOME`
+can be fresh and the shell is non-login: dotfiles, `PATH`, and wrappers are not
+there. Link the managed tree instead of copying files.
+
+- Local execution: the operator shell already sources `.env_core`, so
+  `~/.local/bin` and `~/.pixi/bin` are on `PATH`. Use it as-is.
+- Remote execution: pass the environment explicitly over `ssh`, then bootstrap
+  the runner. Link `~/.local`, `~/.pixi`, `~/.cargo`, `~/.rustup`, and
+  `.env_core` from the operator tree, source `.env_core` or the project's
+  `env.sh`, and prepend the managed bin directory. A project script such as
+  `tools/link_remote_environment.sh` is the reference pattern: keep the source
+  overridable, skip entries that already exist, and never replace a home file.
+- Never rely on interactive state: no aliases, no login shell, no inherited
+  `PATH`, and `~` does not expand inside a double-quoted `ssh` command. Pass
+  absolute paths and quote them.
+- Create scratch on the execution host, keep inputs read-only, and propagate
+  the remote exit status.
+- The execution host may be a container. Apply the resource budget there, not on
+  the submit host.
 
 ## RTK
 
