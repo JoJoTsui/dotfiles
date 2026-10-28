@@ -109,9 +109,10 @@ explains every changed pair.
   + `path add … uniq`** — standalone `nu` (spawned without bash) must still
   resolve compatibility variables while `micromamba.nu` invokes managed
   `MAMBA_EXE`, never a legacy tool tree.
-- **JSONC files**: `dot_config/opencode/opencode.jsonc`,
-  `dot_vscode-server/…/settings.json.tmpl`, `docs/vscode-win-settings.jsonc`
-  — validate as JSON-with-comments, not shell (historical `.sh` naming retired).
+- **JSONC files**: `deployment/client-settings/opencode.jsonc.tmpl` (merged by
+  bootstrap), `dot_vscode-server/data/Machine/settings.json.tmpl`,
+  `docs/vscode-win-settings.jsonc` — validate as JSON-with-comments, not shell
+  (historical `.sh` naming retired).
 - Not applied to `$HOME` (ignored): `system/`, `clash/`, `docs/`, `deployment/`,
   `tests/`. Ordinary bootstrap has no system or account login-shell action.
 - **Legacy home symlinks are explicit and opt-in**:
