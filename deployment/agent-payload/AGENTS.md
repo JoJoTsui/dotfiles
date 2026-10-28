@@ -71,6 +71,37 @@ Rules:
 4. Recheck availability on each device and use a portable fallback when a tool
    is missing.
 
+## Resource limits
+
+Before a build, test matrix, parallel job, or large download, measure the budget.
+`nproc` reports host CPUs inside Docker; the cgroup quota can be lower.
+
+- Container: `[ -f /.dockerenv ] || [ -f /run/.containerenv ] || grep -qaE 'docker|kubepods|containerd' /proc/1/cgroup`
+- CPUs, cgroup v2: `cat /sys/fs/cgroup/cpu.max` gives `quota period`; v1:
+  `cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us /sys/fs/cgroup/cpu/cpu.cfs_period_us`.
+  Effective CPUs are `min(nproc, quota/period)` when quota is not `max`.
+- Memory, cgroup v2: `cat /sys/fs/cgroup/memory.max`; v1:
+  `cat /sys/fs/cgroup/memory/memory.limit_in_bytes`. Prefer the cgroup limit over
+  `MemAvailable`, which can describe the host. On a physical host use
+  `awk '/MemAvailable/{print $2}' /proc/meminfo` or `vm_stat` on macOS.
+- Throttling: `cat /sys/fs/cgroup/cpu.stat` (`nr_throttled`, `throttled_usec`)
+  and `/proc/pressure/cpu`. If throttled, lower parallelism instead of retrying.
+- Physical host: use `nproc` or `sysctl -n hw.ncpu` plus available memory, and
+  leave headroom for the desktop.
+
+Rules:
+
+1. Cap every parallel tool: `MAKEFLAGS=-jN`, `cargo -j N`, `pytest -n N`,
+   `PIXI_JOBS=N`, `OMP_NUM_THREADS=N`. Use the effective CPU count minus one.
+2. Size memory-heavy steps against the smaller of the cgroup limit and
+   available memory; set `NODE_OPTIONS=--max-old-space-size=<MB>` for Node work.
+3. Check `df -h .` before large builds or downloads; a full container layer
+   fails the task and the host.
+4. With an unknown limit, start at half the detected budget and measure. Never
+   run unbounded `-j`, recursive parallel shells, or a full-filesystem scan.
+5. Throttling or an OOM kill means reduce and rerun; do not replay the same
+   shape.
+
 ## RTK
 
 For shell work, read `~/.agents/RTK.md` and use its supported wrappers for
