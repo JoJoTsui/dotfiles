@@ -21,9 +21,7 @@ missing decision changes the outcome or needs new authority, and report what
 remains blocked.
 
 Choose verification proportional to the change. Report the checks you ran and
-the ones you skipped; never present an unrun check as passed. Create a local
-commit only when the user or project asks for one, follow the project's message
-convention, and never push without an explicit request for that task.
+the ones you skipped; never present an unrun check as passed.
 
 ## Scope discipline
 
@@ -33,19 +31,35 @@ complexity cost, then get agreement before implementing.
 
 Validate untrusted input once at the boundary that owns it, then pass typed
 values inward; do not revalidate invariants a schema or constructor guarantees.
-Inline single-use logic; extract a helper only for reuse, a genuinely complex
-boundary, or a name that clarifies the caller.
+Inline single-use values and logic; extract a helper only for reuse, a genuinely
+complex boundary, or a name that clarifies the caller.
 
 ## Reading and language
 
 Follow the user's language; keep identifiers, commands, and existing terms
 verbatim. Read the section that matches the task instead of the whole docs tree:
 pick one to three relevant documents, then the target directory's README, local
-AGENTS.md, and adjacent tests. A project's AGENTS.md and the user's explicit
-instruction override this file.
+AGENTS.md, and adjacent tests. This is a user-level defaults file: the client's
+system instructions and a project's AGENTS.md take precedence, and the user's
+explicit instruction overrides it. Apply these rules only where they do not
+conflict.
 
 Keep this file short. Put detail in the owning document and link it here rather
 than duplicating the text.
+
+## Scientific and personal work
+
+- Treat inputs as read-only. Keep generated artifacts, indexes, caches, and large
+  data outside the tracked tree unless the project says otherwise.
+- When a data format, schema, or public behavior changes, update the
+  implementation, its spec or docs, and its tests in the same task.
+- Synchronize lockfiles with dependency changes.
+- Prefer real fixtures over mocks for pipelines, and test behavior rather than a
+  copy of the implementation.
+- Comment non-obvious constraints: units, assumptions, coordinate systems, and
+  why a bound exists, not what the next line does.
+- For any reported result, keep the command, input paths, parameters, and tool
+  versions needed to reproduce it.
 
 ## CLI tools
 
