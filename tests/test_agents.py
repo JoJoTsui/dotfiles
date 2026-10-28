@@ -20,7 +20,8 @@ class AgentTests(unittest.TestCase):
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith(("DOTFILES_", "XDG_", "BUN_", "PIXI_", "UV_", "NPM_", "ATUIN_", "CARGO_", "RUSTUP_", "KIMI_", "PI_", "OPENCODE_", "CODEX_", "CLAUDE_"))
                     and key not in ("GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL", "NODE_OPTIONS", "ENV", "BASH_ENV", "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN")}
-        self.env.update(HOME=str(self.root / "original"), PATH="/usr/bin:/bin")
+        self.env.update(HOME=str(self.root / "original"), PATH="/usr/bin:/bin",
+                        DOTFILES_SKILLS_DIR=str(SOURCE / "tests/fixtures/skill-library"))
 
     def deploy(self, *arguments, env=None):
         return subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"),
@@ -116,7 +117,8 @@ class AgentTests(unittest.TestCase):
         sources = json.loads(diagnostic.stdout)
         configs = [item["info"] for item in sources if item["type"] == "document"]
         self.assertTrue(any(config.get("update") == "disable" for config in configs), diagnostic.stdout)
-        self.assertTrue(any(config.get("providers", {}).get("headroom", {}).get("settings", {}).get("baseURL") == "http://127.0.0.1:8787/v1" for config in configs))
+        self.assertFalse(any("headroom" in config.get("providers", {}) or "headroom" in config.get("mcp", {}).get("servers", {}) for config in configs),
+                         "Headroom is removed; neither its provider nor its MCP server may render")
         self.assertTrue(any(config.get("skills") == [str(self.home / ".agents/skills")] for config in configs),
                         "OpenCode config does not register the target home skill library")
 

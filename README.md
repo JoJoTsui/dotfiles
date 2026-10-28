@@ -240,7 +240,7 @@ bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 | **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
 | **kimi-code** | merged `~/.kimi-code/config.toml`, `tui.toml`, owned `mcp.json` entry | `credentials/`, `oauth/`, sessions | key default from `KIMI_API_KEY`; `kimi login` per host; CodeGraph stdio enabled |
 | **pi** | `~/.pi/agent/settings.json`, `models-store.json` (MiniMax M2.7/M3 catalog) | `auth.json` (MiniMax key), `sessions/`, `trust.json` | minimal terminal harness; `pi auth login` per host |
-| **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; built-in Headroom provider, optional Headroom MCP disabled; remote profile ignores update events |
+| **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; CodeGraph MCP, no proxy providers; remote profile ignores update events |
 | **MiniMax Code** | merged `~/.minimax/AGENTS.md` | runtime state under `~/.minimax`; vendor installer releases under `~/.minimax-code` and install logs | frozen Bun project exposing `mcode`; instructions deployed, skill discovery not declared |
 | **Qoder** | merged `~/.qoder/AGENTS.md` | login/session under `~/.qoder` | native release pin with manifest SHA-256 verification; `qoder` and `qodercli` launchers |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
@@ -265,7 +265,7 @@ Common pattern: **config in git, credentials on the host** — auth flows run
 per host (`claude` login / env token, `codex login`, `kimi login`,
 `pi auth login`).
 
-Shared instructions and the portable 105-skill library deploy by default,
+Shared instructions and the fetched skill library deploy by default,
 including with `--agents none` and `--apply-only`. One owned source produces
 regular shared files and Claude's discovery adapter. Managed instruction blocks
 preserve device-specific text; unrelated skills and built-ins remain intact.

@@ -122,11 +122,8 @@ and [MCP schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.2.0/pac
 are authoritative; the unversioned public schema still described V1 at
 implementation time. `codemode: false` preserves direct CodeGraph tools;
 the default integration is enabled through the [settings merge](AGENT_SETTINGS.md).
-Headroom uses the client's built-in
-`@opencode/ai/providers/openai-compatible` adapter, avoiding a dynamic SDK
-download. Its MCP remains disabled until that optional service is provisioned.
-The historical Serena download command is preserved in the ignored inventory,
-outside active configuration.
+The historical Serena and Headroom download commands are preserved in the
+ignored inventory, outside active configuration.
 
 The exact [watcher schema](https://raw.githubusercontent.com/anomalyco/opencode/v2.2.0/packages/schema/src/config/watcher.ts)
 supports ignore patterns only. The old `watcher.enabled` had no effect;

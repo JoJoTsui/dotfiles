@@ -9,6 +9,22 @@ from clients with a shell tool.
 
 When there is no index, use ordinary code search. Create an index only when the
 user requests it.
+
+## Graphify
+
+Graphify is an optional code knowledge graph built per repository
+(`graphify-out/graph.json`). Use it when the repository has a graph and the
+question is about concepts, cross-file paths, or architecture that a symbol
+index answers poorly. Query with `graphify query "<question>"`,
+`graphify path "<a>" "<b>"`, or `graphify explain "<symbol>"`; refresh it with
+`graphify update .` after edits. Graphify's mirrored MCP server takes an
+absolute graph path, so register it per project, not in the shared user
+configuration.
+
+Pick one primary query path per repository. Prefer CodeGraph when `.codegraph/`
+exists, because its MCP tools are already registered for every client. Prefer
+Graphify when only `graphify-out/graph.json` exists. Do not index and query both
+for the same question, and do not create either index unless the user asks.
 <!-- CODEGRAPH_END -->
 
 ## Completion
@@ -92,3 +108,29 @@ Rules:
    Code as workers when a free model is sufficient.
 8. Do not run two agents on the same working tree at once unless each has its
    own isolated worktree.
+9. Pass a compact brief with paths and the expected result. Do not paste the
+   parent transcript; a child builds its own prompt cache from the shared
+   instructions and its first turn.
+
+## Context and cache discipline
+
+Provider prompt caches reward stable prefixes and append-only history. Keep
+these rules while working:
+
+1. Keep the system prompt, tool set, and shared instructions identical for a
+   session. Change model or tool configuration between sessions, not mid-task.
+2. Put stable context first and volatile data (paths, timestamps, command
+   output) last, so later turns reuse the cached prefix.
+3. Append rather than rewrite. Do not re-summarize or reformat earlier context
+   unless the client compacts it.
+4. Keep tool output small: filter with the wrappers from `~/.agents/RTK.md`, read
+   ranges or symbols instead of whole files, and never paste a full log when the
+   decisive line is enough.
+5. Batch related reads and edits. Interleaving edits with full-file reads forces
+   repeated tokens and breaks locality.
+6. Reuse a warm session for related follow-ups; start a new session for an
+   unrelated task or a different working tree. Long idle gaps can outlive a
+   provider cache.
+7. Delegate with a short brief, not the transcript. Parallel agents share the
+   same prefix cache only when they start from the same instructions and differ
+   late in the prompt.
