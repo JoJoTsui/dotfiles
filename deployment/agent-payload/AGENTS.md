@@ -1,8 +1,8 @@
 <!-- CODEGRAPH_START -->
 ## CodeGraph
 
-When a repository has a `.codegraph/` directory, use CodeGraph before searching
-or reading code. Ask the available `codegraph_explore` MCP tool about a symbol,
+When a repository has a `.codegraph/` directory or a `graphify-out/graph.json`
+file, query that graph before any text search. Use CodeGraph when both exist. Ask the available `codegraph_explore` MCP tool about a symbol,
 file, or call path, or run `codegraph explore "<question>"`. If the MCP tool is
 deferred, discover it through the client's tool search. The CLI is also usable
 from clients with a shell tool.
@@ -46,7 +46,7 @@ Prefer these managed tools for their tasks instead of `grep`, `find`, `sed`,
 
 | Task | Command |
 | --- | --- |
-| Search text | `rg -n 'pattern' path`, `rg -F` for literals |
+| Search text | `timeout 15s rg -n 'pattern' path`, `rg -F` for literals |
 | List files | `rg --files` or `fd . path` |
 | Filter by type | `fd -e py . src`, `fd -t f -H` |
 | Literal replace | `sd -s 'old' 'new' file` |

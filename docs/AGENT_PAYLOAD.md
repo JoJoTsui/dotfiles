@@ -49,7 +49,8 @@ delegation contract with verified one-shot commands for Codex, Kimi, Pi,
 OpenCode, Qoder, and MiniMax Code, the collaboration rules recorded in
 [cross-agent collaboration](AGENT_COLLABORATION.md), the optional
 [Herdr](HERDR.md) multi-pane workflow, the [resource-budget](AGENT_RESOURCES.md)
-rules, and the cache-discipline rules recorded in
+rules, the [shared-host and remote-job](AGENT_REMOTE_JOBS.md) pattern with
+bounded search, and the cache-discipline rules recorded in
 [caching and context budget](AGENT_CACHING.md).
 
 CodeGraph is the primary code-query path: its MCP entry is registered for every
