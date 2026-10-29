@@ -9,6 +9,16 @@ proxy, and inherited legacy-tool environment. The network layer preserves only
 the proxy/certificate variables needed to reach package sources and confines
 all writable state to a temporary directory under `/tmp`.
 
+The Linux configuration workflow runs `--require-runtime` with Python 3.11+,
+Chezmoi, Nushell, Micromamba, and PowerShell. That mode rejects missing
+prerequisites and skipped core configuration/activation checks. Explicit
+`DOTFILES_TEST_*` executable paths survive environment scrubbing as read-only
+tools; runtime state still belongs to disposable homes. Real source applies,
+PowerShell payload migration, regional mirrors, device hooks, and skill pins
+run in this gate. Full Linux installation and resolution use its separate
+opt-in network job. Historical counts below describe their recorded commits;
+the current catalog adds `developer-portable` and its target checks.
+
 ## Result layers
 
 | Layer | Command or runner | What it establishes |

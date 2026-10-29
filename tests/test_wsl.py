@@ -148,7 +148,8 @@ class WSLDeploymentTests(unittest.TestCase):
         for role in ("workstation", "remote-compute"):
             with self.subTest(role=role):
                 self.home = self.root / role
-                environment = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color"}
+                environment = {"HOME": str(self.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color",
+                               "DOTFILES_SKILLS_DIR": str(SOURCE / "tests/fixtures/skill-library")}
                 result = self.deploy("--home", str(self.home), "--profile", f"wsl-{role}", "--apply-only",
                                      environment=dict(environment, DOTFILES_CHEZMOI_BIN=self.chezmoi))
                 self.assertEqual(result.returncode, 0, result.stderr)

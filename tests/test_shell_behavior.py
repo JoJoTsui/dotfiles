@@ -56,6 +56,9 @@ class ShellBehaviorTests(unittest.TestCase):
         launcher = self.home / ".pixi/bin/pixi"
         launcher.write_text('#!/bin/sh\nexec "' + str(pixi) + '" "$@"\n')
         launcher.chmod(0o755)
+        self.bash_version = subprocess.check_output(
+            [self.binaries['bash'], '--noprofile', '--norc', '-c', 'printf "%s" "$BASH_VERSION"'],
+            env=self.env, text=True, timeout=10)
 
     def deploy(self, role=None, *, overrides=None):
         role = role or os.environ.get("DOTFILES_TEST_ROLE", "workstation")
@@ -182,7 +185,7 @@ class ShellBehaviorTests(unittest.TestCase):
                                         env=dict(self.env, **overrides), cwd=self.home,
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertRegex(result.stdout, r"^SECONDARY-5\.2")
+                self.assertEqual(result.stdout.strip(), 'SECONDARY-' + self.bash_version)
 
     def terminal(self, arguments, command, *, overrides=None):
         primary, secondary = pty.openpty()
@@ -227,7 +230,7 @@ class ShellBehaviorTests(unittest.TestCase):
         self.assertIn("PREFERRED-NU", output)
         for overrides in ({"CLAUDECODE": "1"}, {"DOTFILES_SECONDARY_SHELL": "1"}):
             output = self.terminal([launcher], 'printf "SECONDARY-%s\\n" "$BASH_VERSION"; exit\n', overrides=overrides)
-            self.assertRegex(output, r"SECONDARY-5\.2")
+            self.assertIn('SECONDARY-' + self.bash_version, output)
 
     def test_logs_uses_the_default_less_pager(self):
         self.deploy()

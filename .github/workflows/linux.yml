@@ -1,0 +1,73 @@
+name: Linux configuration checks
+on:
+  push:
+    branches: [main, 'integration/**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: Run the separate full installation and package-resolution checks
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  configuration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Provision isolated test prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$RUNNER_TEMP/dotfiles-test-tools"
+          export TMPDIR="$HOME/tmp" PIXI_HOME="$HOME/.pixi" XDG_CACHE_HOME="$HOME/.cache"
+          mkdir -p "$TMPDIR" "$HOME/.local/bin"
+          fail() { echo "$*" >&2; exit 1; }
+          DEPLOY_PLATFORM=linux DEPLOY_ARCH=x86_64
+          source deployment/common.sh
+          source deployment/managers.sh
+          install_chezmoi
+          install_pixi
+          nu_pin=$(awk -F'|' '$1 == "nushell" { print $2 }' deployment/common-tools.tsv)
+          mamba_pin=$(awk -F'|' '$1 == "micromamba" { print $2 }' deployment/common-tools.tsv)
+          "$DEPLOY_PIXI" global install --environment nushell --expose nu "$nu_pin"
+          "$DEPLOY_PIXI" global install --environment micromamba --expose micromamba "$mamba_pin"
+          {
+            echo "DOTFILES_TEST_CHEZMOI=$DEPLOY_CHEZMOI"
+            echo "DOTFILES_TEST_NU=$PIXI_HOME/bin/nu"
+            echo "DOTFILES_TEST_MAMBA=$PIXI_HOME/bin/micromamba"
+            echo "DOTFILES_TEST_POWERSHELL=$(command -v pwsh)"
+          } >> "$GITHUB_ENV"
+      - name: Verify plans, real simulated applies, and shell settings
+        run: python tests/verify_portable.py --require-runtime --report '${{ runner.temp }}/configuration.json'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: linux-configuration
+          path: ${{ runner.temp }}/configuration.json
+          if-no-files-found: error
+  network:
+    if: github.event_name == 'workflow_dispatch' && inputs.network
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - run: python tests/verify_portable.py --network --report '${{ runner.temp }}/network.json'
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: linux-network
+          path: ${{ runner.temp }}/network.json
+          if-no-files-found: error

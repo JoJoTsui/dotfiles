@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -61,6 +62,12 @@ def clean_environment(root: Path, *, network: bool = False) -> dict[str, str]:
         "CI": "1",
     }
     (root / "tmp").mkdir(parents=True, exist_ok=True)
+    # Explicit borrowed executables are read-only prerequisites, not inherited
+    # host state. Keep their paths while all runtime writes use disposable roots.
+    for name in ("DOTFILES_TEST_CHEZMOI", "DOTFILES_TEST_NU", "DOTFILES_TEST_MAMBA",
+                 "DOTFILES_TEST_POWERSHELL", "DOTFILES_TEST_PWSH", "DOTFILES_TEST_TOOL_HOME"):
+        if os.environ.get(name):
+            environment[name] = str(Path(os.environ[name]).resolve())
     if network:
         for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "SSL_CERT_FILE", "SSL_CERT_DIR"):
             if os.environ.get(name):
@@ -197,7 +204,7 @@ def verify_local_matrix(root: Path) -> dict[str, int]:
 
 
 def run_suite(label: str, *, pattern: str | None = None, environment: dict[str, str],
-              report: dict[str, Any], timeout: int = 2400) -> None:
+              report: dict[str, Any], timeout: int = 2400, require_runtime: bool = False) -> None:
     command = [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"]
     if pattern:
         command.extend(("-p", pattern))
@@ -206,9 +213,21 @@ def run_suite(label: str, *, pattern: str | None = None, environment: dict[str, 
     print(output, end="" if output.endswith("\n") else "\n")
     report.setdefault("commands", []).append({"name": label, "exitCode": result.returncode})
     require(result.returncode == 0, f"{label} failed (exit {result.returncode})")
+    if require_runtime:
+        required = ('test_portable_config.', 'test_skills.')
+        require(not any('skipped ' in line and any(module in line for module in required)
+                        for line in output.splitlines()), "a required runtime check was skipped")
 
 
-def verify_local(report: dict[str, Any]) -> None:
+def verify_local(report: dict[str, Any], *, require_runtime: bool = False) -> None:
+    if require_runtime:
+        require(sys.version_info >= (3, 11), "required runtime checks need Python 3.11 or newer")
+        for variable, command in (("DOTFILES_TEST_CHEZMOI", "chezmoi"), ("DOTFILES_TEST_NU", "nu"),
+                                  ("DOTFILES_TEST_MAMBA", "micromamba"), ("DOTFILES_TEST_POWERSHELL", "pwsh")):
+            executable = os.environ.get(variable) or shutil.which(command)
+            require(bool(executable) and Path(executable).is_file(), f"required prerequisite missing: {variable}")
+            os.environ[variable] = str(Path(executable).resolve())
+        os.environ["DOTFILES_TEST_PWSH"] = os.environ["DOTFILES_TEST_POWERSHELL"]
     with tempfile.TemporaryDirectory(prefix="dotfiles-verify-local-") as temporary:
         root = Path(temporary)
         environment = clean_environment(root / "control")
@@ -220,7 +239,11 @@ def verify_local(report: dict[str, Any]) -> None:
         print(update.stdout + update.stderr, end="" if (update.stdout + update.stderr).endswith("\n") else "\n")
         require(update.returncode == 0, "version catalog consistency check failed")
         report["local"]["versionCatalog"] = "passed"
-        run_suite("deterministic unittest suite", environment=environment, report=report)
+        skill_pins = invoke([sys.executable, "deployment/update_skills.py", "check"], environment=environment)
+        print(skill_pins.stdout + skill_pins.stderr)
+        require(skill_pins.returncode == 0, "skill catalog pins are inconsistent")
+        report["local"]["skillPins"] = "passed"
+        run_suite("deterministic unittest suite", environment=environment, report=report, require_runtime=require_runtime)
         report["local"]["testSuite"] = "passed"
     report["native"] = {
         "status": "pending native CI",
@@ -299,11 +322,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--network", action="store_true",
                         help="also run isolated Linux installs, shell/history diagnostics, and all-target package resolution")
+    parser.add_argument("--require-runtime", action="store_true",
+                        help="require Python 3.11+, Chezmoi, Nu, Micromamba and PowerShell; fail if core runtime checks skip")
     parser.add_argument("--report", type=Path, help="write a JSON summary to this path")
     arguments = parser.parse_args()
     report: dict[str, Any] = {"schemaVersion": 1, "source": str(SOURCE), "layers": {}}
     try:
-        verify_local(report)
+        verify_local(report, require_runtime=arguments.require_runtime)
         report["layers"]["local"] = "passed"
         if arguments.network:
             verify_network(report)
