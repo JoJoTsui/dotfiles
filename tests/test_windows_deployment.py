@@ -126,6 +126,71 @@ Remove-InstructionBlock $target
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(target.read_text() if target.exists() else None, expected)
 
+    def test_shell_preparation_rejects_autoload_symlinks_before_creating_directories(self):
+        linked = self.home / '.local/share/nushell'
+        linked.parent.mkdir(parents=True)
+        try:
+            linked.symlink_to(self.original, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        script = self.root / 'prepare-shell-symlink.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{ data = (Join-Path $TargetHome '.local/share') }
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+Prepare-Shell
+''')
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE),
+                                         DOTFILES_TEST_TARGET_HOME=str(self.home)),
+                                capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('symlink or reparse', result.stderr)
+        self.assert_original_profile_unchanged()
+
+    def test_native_autoload_symlink_preserves_canonical_startup(self):
+        canonical = self.home / '.local/share/nushell/vendor/autoload/starship.nu'
+        canonical.parent.mkdir(parents=True)
+        canonical.write_text('# existing working prompt\n')
+        linked = self.home / 'AppData/Roaming/nushell/vendor'
+        linked.parent.mkdir(parents=True)
+        try:
+            linked.symlink_to(self.original, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        stage = self.home / '.cache/tmp/shell-stage'
+        stage.mkdir(parents=True)
+        script = self.root / 'prepare-native-symlink.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{
+    data = (Join-Path $TargetHome '.local/share')
+    config = (Join-Path $TargetHome '.config')
+    pixi = (Join-Path $TargetHome '.pixi')
+    appData = (Join-Path $TargetHome 'AppData/Roaming')
+}
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+$script:Pixi = 'controlled-pixi'
+function Get-Scratch([string]$Name) { return $env:DOTFILES_TEST_STAGE }
+function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet) {
+    if ($Arguments.Count -and $Arguments[0].EndsWith('completions.py')) {
+        [IO.File]::WriteAllText((Join-Path $env:DOTFILES_TEST_STAGE 'nu-scripts.nu'), '# prepared completions')
+    }
+    return '# validated generated resource'
+}
+Prepare-Shell
+''')
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE),
+                                         DOTFILES_TEST_TARGET_HOME=str(self.home), DOTFILES_TEST_STAGE=str(stage)),
+                                check=False, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('symlink or reparse', result.stderr)
+        self.assertEqual(canonical.read_text(), '# existing working prompt\n')
+        self.assert_original_profile_unchanged()
+
     def test_requested_tool_failure_output_is_reported(self):
         command = self.root / ("diagnostic.cmd" if os.name == 'nt' else "diagnostic.sh")
         command.write_text("@echo off\r\necho synthetic version failure 1>&2\r\nexit /b 7\r\n" if os.name == 'nt'

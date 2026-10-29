@@ -40,6 +40,7 @@ class ShellBehaviorTests(unittest.TestCase):
             "bash": "bash", "zsh": "zsh", "nu": "nushell", "zoxide": "zoxide",
             "tspin": "tailspin", "less": "less", "rtk": "rtk-cli", "micromamba": "micromamba",
             "starship": "starship", "direnv": "direnv", "fzf": "fzf", "vivid": "vivid",
+            "python": "python",
         }.items():
             binary = self.tool_home / ".pixi/envs" / environment / "bin" / command
             if not binary.is_file():
@@ -256,14 +257,58 @@ class ShellBehaviorTests(unittest.TestCase):
             # Vendor autoload is an interactive boundary; normal -c execution
             # intentionally omits it in Nu. Start without explicit config flags
             # to verify ordinary Linux discovery and the actual autoload path.
-            output = self.terminal([self.binaries["nu"]], 'print $"PREPARED-($env.STARSHIP_SHELL?)"; print $"COMPLETIONS-((scope commands | where name == "pixi" | length))"; exit\n')
+            output = self.terminal([self.binaries["nu"]], 'print $"PREPARED-($env.STARSHIP_SHELL?)"; print $"COMPLETIONS-((scope commands | where name == "pixi" | length))"; print $"FZF-(($env.config.keybindings | where name in [fzf_files fzf_dirs] | length))"; exit\n')
             self.assertIn("PREPARED-nu", output)
             self.assertIn("COMPLETIONS-1", output)
+            self.assertIn("FZF-2", output)
             artifacts = {path.name: path.read_bytes() for path in (self.home / ".local/share/nushell/vendor/autoload").glob("*.nu")}
             if before is not None:
                 self.assertEqual(artifacts, before)
             before = artifacts
         self.assertFalse((self.home / ".config/nushell/nu_scripts").exists())
+
+    def test_fzf_widgets_preserve_history_binding_and_device_environment(self):
+        self.deploy()
+        prepared = subprocess.run([str(self.home / '.local/bin/dotfiles-shell-prepare')],
+                                  env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        artifact = self.home / '.local/share/nushell/vendor/autoload/fzf.nu'
+        self.assertTrue(artifact.is_file() and not artifact.is_symlink())
+        for setting in (None, 'device-history-command'):
+            with self.subTest(setting=setting):
+                overrides = {} if setting is None else {'FZF_CTRL_R_COMMAND': setting}
+                script = '''$env.config.keybindings ++= [{
+name: atuin, modifier: control, keycode: char_r, mode: [emacs],
+event: {send: executehostcommand, cmd: "null"}
+}]
+let previous_history = ($env.config.keybindings | where {|binding| $binding.modifier == "control" and $binding.keycode == "char_r" } | get name)
+source ''' + json.dumps(str(artifact)) + '\nsource ' + json.dumps(str(artifact)) + '''
+{widgets: ($env.config.keybindings | where name in [fzf_files fzf_dirs fzf_history] | get name),
+ before: $previous_history,
+ history: ($env.config.keybindings | where {|binding| $binding.modifier == "control" and $binding.keycode == "char_r" } | get name),
+ setting: ($env.FZF_CTRL_R_COMMAND? | default "absent")} | to json --raw'''
+                result = self.shell('nu', script, overrides=overrides)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                values = json.loads(result.stdout)
+                self.assertEqual(sorted(values['widgets']), ['fzf_dirs', 'fzf_files'])
+                self.assertEqual(values['history'], values['before'])
+                self.assertIn('atuin', values['history'])
+                self.assertEqual(values['setting'], setting or 'absent')
+
+    def test_invalid_fzf_resource_preserves_every_working_startup_artifact(self):
+        self.deploy()
+        command = [str(self.home / '.local/bin/dotfiles-shell-prepare')]
+        result = subprocess.run(command, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        directory = self.home / '.local/share/nushell/vendor/autoload'
+        before = {path.name: path.read_bytes() for path in directory.glob('*.nu')}
+        fzf = self.home / '.pixi/bin/fzf'
+        fzf.unlink()  # Replace the fixture link, never its borrowed executable.
+        fzf.write_text('#!/bin/sh\nprintf "def broken [\\n"\n')
+        fzf.chmod(0o755)
+        result = subprocess.run(command, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual({path.name: path.read_bytes() for path in directory.glob('*.nu')}, before)
 
     def test_invalid_generated_resource_preserves_the_last_working_startup(self):
         self.deploy()

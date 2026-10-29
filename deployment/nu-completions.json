@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "revision": "02cb1a2bfb8f7b6977af6914dbe44f450d6f9df2",
+  "url": "https://codeload.github.com/nushell/nu_scripts/tar.gz/02cb1a2bfb8f7b6977af6914dbe44f450d6f9df2",
+  "sha256": "2ec67f021dd948c1f3f5afb2331cb1447bb40d6a740d29243012d53cfd595fcb",
+  "modules": [
+    {
+      "command": "git",
+      "path": "custom-completions/git/git-completions.nu",
+      "sha256": "8495c84c6afe70d2efdbec42c7527607047c1208ec287a151ece2100f74eebb7"
+    },
+    {
+      "command": "gh",
+      "path": "custom-completions/gh/gh-completions.nu",
+      "sha256": "943a584fbfcd0c199a1425246128e33f4b099c96eb330c9238f3122efd13387c"
+    },
+    {
+      "command": "rg",
+      "path": "custom-completions/rg/rg-completions.nu",
+      "sha256": "c7ffbc9fdb05443f23cd78f9e9634892560cd59e27845fdd9cf98263d26316c3"
+    },
+    {
+      "command": "bat",
+      "path": "custom-completions/bat/bat-completions.nu",
+      "sha256": "eed3c5f1e8c25021844cd331ff8ae054b4158527d72bd235636da734a0e0756e"
+    },
+    {
+      "command": "eza",
+      "path": "custom-completions/eza/eza-completions.nu",
+      "sha256": "e723eaaee865641d1fcb7d04f799e075e6990db3324ad5dcedfa8af5fa989f9d"
+    },
+    {
+      "command": "zellij",
+      "path": "custom-completions/zellij/zellij-completions.nu",
+      "sha256": "e146a138c6de0fbbc858292823ba8b269414233c4e09d3939a4a87976f93164d"
+    }
+  ]
+}

@@ -693,6 +693,7 @@ function Install-Agents {
 function Prepare-Shell {
     $script:Step = 'prepare-shell'
     $autoload = Join-Path $roots.data 'nushell/vendor/autoload'
+    Assert-SafePath $autoload
     [IO.Directory]::CreateDirectory($autoload) | Out-Null
     $stage = Get-Scratch 'shell'
     $nu = Join-Path $roots.pixi 'bin/nu.exe'
@@ -700,21 +701,34 @@ function Prepare-Shell {
         $hooks = [ordered]@{
             'starship.nu' = @((Join-Path $roots.pixi 'bin/starship.exe'), 'init', 'nu')
             'pixi-completions.nu' = @($script:Pixi, 'completion', '--shell', 'nushell')
+            'fzf.nu' = @((Join-Path $roots.pixi 'bin/fzf.exe'), '--nushell')
             'atuin.nu' = @((Join-Path $roots.pixi 'bin/atuin.exe'), 'init', 'nu')
         }
         foreach ($filename in $hooks.Keys) {
             $command = $hooks[$filename]
             $text = Invoke-Tool $command[0] $command[1..($command.Count - 1)] -Quiet
+            if ($filename -eq 'fzf.nu') {
+                # The upstream history switch is evaluated when Nu loads the
+                # generated script. Keep Atuin's Ctrl-R and device env values.
+                $prefix = 'let __dotfiles_fzf_history_command = ($env | get -o FZF_CTRL_R_COMMAND)' + "`n" + '$env.FZF_CTRL_R_COMMAND = ""'
+                $suffix = 'if $__dotfiles_fzf_history_command == null { hide-env FZF_CTRL_R_COMMAND } else { $env.FZF_CTRL_R_COMMAND = $__dotfiles_fzf_history_command }'
+                $text = $prefix + "`n" + $text + "`n" + $suffix + "`n"
+            }
             Write-Utf8 (Join-Path $stage $filename) $text
             Invoke-Tool $nu @('--config', (Join-Path $stage $filename), '--env-config', (Join-Path $roots.config 'nushell/env.nu'), '-c', 'null') -Quiet | Out-Null
         }
         Invoke-Tool $nu @('--config', (Join-Path $roots.config 'nushell/config.nu'), '--env-config', (Join-Path $roots.config 'nushell/env.nu'), '-c', 'null') -Quiet | Out-Null
-        foreach ($filename in $hooks.Keys) { Assert-SafePath (Join-Path $autoload $filename) }
-        foreach ($filename in $hooks.Keys) { Copy-RegularTree (Join-Path $stage $filename) (Join-Path $autoload $filename) }
+        Invoke-Tool (Join-Path $roots.pixi 'bin/python.exe') @((Join-Path $TargetHome '.local/lib/dotfiles/completions.py'), '--nu', $nu, '--autoload-dir', $stage) -Quiet | Out-Null
+        $preparedFiles = @($hooks.Keys) + @('nu-scripts.nu')
+        foreach ($filename in $preparedFiles) {
+            Assert-SafePath (Join-Path $autoload $filename)
+            Assert-SafePath (Join-Path $roots.appData "nushell/vendor/autoload/$filename")
+        }
+        foreach ($filename in $preparedFiles) { Copy-RegularTree (Join-Path $stage $filename) (Join-Path $autoload $filename) }
         # Default Windows Nu resolves its user data fallback before env.nu.
         # These owned real files support ordinary deployment to a native home;
         # isolated launchers establish XDG roots before starting Nu.
-        foreach ($filename in $hooks.Keys) { Copy-RegularTree (Join-Path $stage $filename) (Join-Path $roots.appData "nushell/vendor/autoload/$filename") }
+        foreach ($filename in $preparedFiles) { Copy-RegularTree (Join-Path $stage $filename) (Join-Path $roots.appData "nushell/vendor/autoload/$filename") }
         Invoke-Tool (Join-Path $roots.pixi 'bin/python.exe') @((Join-Path $TargetHome '.local/lib/dotfiles/history.py'), 'check') -Quiet | Out-Null
         $status = Invoke-Tool (Join-Path $roots.pixi 'bin/python.exe') @((Join-Path $TargetHome '.local/lib/dotfiles/history.py'), 'status') -Quiet
         [Console]::Out.Write($status)

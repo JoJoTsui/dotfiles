@@ -73,15 +73,46 @@ starting from a deliberately minimal environment, or inherit the parent shell's
 managed environment. Standalone Nu inherits the process umask because it has no
 POSIX umask builtin.
 
-Nu config uses adjacent owned resources, including the pinned zoxide adapter;
-no startup clone or external `nu_scripts` checkout is required. Missing tools
-are guarded during `--apply-only` startup. After package installation,
-`dotfiles-shell-prepare` generates Starship/Pixi resources under
-`XDG_DATA_HOME/nushell/vendor/autoload`, validates them before replacement,
-and rejects symlinked artifact/state directories. Bootstrap calls this command
-in its required shell preparation stage. Generated resources and device state
-are not imported into git. Nu vendor autoload is interactive: ordinary `-c`
-execution omits it. See [Nu configuration](https://www.nushell.sh/book/configuration.html).
+## Nushell completions and fuzzy finding
+
+Nu config uses adjacent owned resources, including the pinned zoxide adapter.
+Standalone startup works before package installation. After packages exist,
+`dotfiles-shell-prepare` generates native Starship/Pixi/fzf resources and
+prepares command completions under
+`XDG_DATA_HOME/nushell/vendor/autoload`. New resources are validated before
+replacement, and symlinked startup state is rejected. Startup reads prepared
+files; fetching and generation belong to bootstrap, never shell startup.
+
+`deployment/nu-completions.json` pins the `nu_scripts` revision, each module's
+SHA-256, and an optional offline archive checksum. It maps allowlisted command
+names to completion modules. Its rendered
+configuration is `~/.config/dotfiles/nu-completions.json`. The preparer intersects
+that allowlist with desired common/selected-bundle exposures and actual managed
+executables. It copies only matching module resources, leaving unrelated
+upstream scripts outside the deployed home. Native completion generators take
+precedence over community modules: uv and selected Just installations use
+their own Nu generators. Normal preparation downloads only selected community
+module files and caches their verified bytes; a changed selection replaces the
+owned loader. Native output and community imports share the same validation
+and publication boundary.
+
+For an air-gapped preparation, supply `DOTFILES_NU_SCRIPTS_ARCHIVE` with a local
+copy of the pinned archive; checksum verification still applies. Updating the
+revision or allowlist requires reviewing the upstream changes, updating the
+checksum, and validating the selected modules against the pinned Nu version.
+An empty installed selection needs no download. `--apply-only` deploys the
+configuration and helper without provisioning completion resources.
+
+fzf supplies file/directory picking in Bash, Zsh, and Nu. Its Nu adapter leaves
+Ctrl-R to Atuin, preserving the configured shared-history search. eza remains
+the managed directory-listing alternative. Skim and lsd are retained only in
+the historical inventory; omitting their active catalog entries preserves
+existing device installations.
+
+Nu vendor autoload is interactive: ordinary `-c` execution omits it. macOS and
+native Windows receive regular discovery copies of the same prepared loaders.
+Generated resources and device state are not imported into git. See
+[Nu configuration](https://www.nushell.sh/book/configuration.html).
 
 History preparation follows shell preparation. `dotfiles-history-prepare`
 generates and validates the pinned Atuin Nu resource in that same vendor

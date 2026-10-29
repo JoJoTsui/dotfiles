@@ -167,7 +167,7 @@ class MacOSProfileTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         prefix = Path(tool_home)
         tools = {"nu": "nushell", "starship": "starship", "zoxide": "zoxide",
-                 "atuin": "atuin", "python": "python", "vivid": "vivid"}
+                 "atuin": "atuin", "python": "python", "vivid": "vivid", "fzf": "fzf"}
         for command, environment in tools.items():
             binary = prefix / ".pixi/envs" / environment / "bin" / command
             self.assertTrue(binary.is_file(), str(binary))
