@@ -5,7 +5,7 @@ installation selection. Use the public bootstrap for instructions, fetched
 skill resources, and [merged client settings](AGENT_SETTINGS.md).
 
 Instructions and the copy adapters live under `deployment/agent-payload`; their
-`targets.tsv` declares each relative source and destination, with three
+`targets.tsv` declares each relative source and destination, with four
 operations:
 
 - `tree`: copy regular resources and their permissions, preserving unrelated files.

@@ -57,7 +57,18 @@ function Assert-OwnedState {
     }
     foreach ($row in (Read-Catalog 'deployment/agent-payload/targets.tsv')) {
         Assert-Relative $row.columns[1]; Assert-Relative $row.columns[2]
-        Assert-CopyTree (Join-Path $Source "deployment/agent-payload/$($row.columns[1])") (Join-Path -Path $TargetHome -ChildPath ([string]$row.columns[2]))
+        $destination = Join-Path -Path $TargetHome -ChildPath ([string]$row.columns[2])
+        if ($row.columns[0] -notin @('tree', 'file', 'block', 'retire')) { Stop-Deployment 'unknown agent payload kind' }
+        Assert-SafePath $destination
+        if ($row.columns[0] -eq 'retire') { continue }
+        if ($row.columns[1] -eq 'skills') {
+            # Skills are fetched after preflight. An explicit offline library
+            # can be checked now; fetched trees are checked before copying.
+            if ($env:DOTFILES_SKILLS_DIR) { Assert-CopyTree $env:DOTFILES_SKILLS_DIR $destination }
+            elseif ([IO.Directory]::Exists($destination)) { Assert-InstallerDirectory $destination }
+            continue
+        }
+        Assert-CopyTree (Join-Path $Source "deployment/agent-payload/$($row.columns[1])") $destination
     }
     foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
         foreach ($part in $row.columns) { Assert-Relative $part }
@@ -156,6 +167,27 @@ function Copy-InstructionBlock([string]$From, [string]$To) {
     }
     Write-Utf8 $To $text
 }
+function Remove-InstructionBlock([string]$To) {
+    Assert-SafePath $To
+    if (-not [IO.File]::Exists($To)) { return }
+    $existing = [IO.File]::ReadAllText($To)
+    $start = '<!-- DOTFILES_AGENT_START -->'; $end = '<!-- DOTFILES_AGENT_END -->'
+    $starts = ([regex]::Matches($existing, [regex]::Escape($start))).Count
+    $ends = ([regex]::Matches($existing, [regex]::Escape($end))).Count
+    if ($starts -gt 1 -or $ends -gt 1 -or $starts -ne $ends) { Stop-Deployment 'duplicate or unfinished managed instruction markers' }
+    if (-not $starts) { return }
+    $begin = $existing.IndexOf($start); $finish = $existing.IndexOf($end)
+    if ($finish -lt $begin) { Stop-Deployment 'unfinished managed instruction markers' }
+    $prefix = $existing.Substring(0, $begin)
+    if ($prefix.EndsWith("`n")) {
+        $prefix = $prefix.Substring(0, $prefix.Length - 1)
+        if ($prefix.EndsWith("`r")) { $prefix = $prefix.Substring(0, $prefix.Length - 1) }
+    }
+    $suffix = $existing.Substring($finish + $end.Length) -replace '^\r?\n', ''
+    $text = $prefix + $suffix
+    if ([string]::IsNullOrWhiteSpace($text)) { Remove-Item -LiteralPath $To }
+    else { Write-Utf8 $To $text }
+}
 function Test-SkillArchive([string]$Archive) {
     $entries = & tar -tzf $Archive
     if ($LASTEXITCODE -ne 0) { return $false }
@@ -239,6 +271,7 @@ function Copy-AgentPayload {
         $from = Join-Path $Source "deployment/agent-payload/$($row.columns[1])"; $to = Join-Path $TargetHome $row.columns[2]
         if ($row.columns[1] -eq 'skills' -and $script:SkillLibrary) { $from = $script:SkillLibrary }
         if ($row.columns[0] -eq 'block') { Copy-InstructionBlock $from $to }
+        elseif ($row.columns[0] -eq 'retire') { Remove-InstructionBlock $to }
         elseif ($row.columns[0] -in @('file', 'tree')) { Copy-RegularTree $from $to }
         else { Stop-Deployment 'unknown agent payload kind' }
     }

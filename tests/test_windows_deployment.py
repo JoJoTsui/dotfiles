@@ -35,7 +35,8 @@ class WindowsBoundaryTests(unittest.TestCase):
         # write into either the target home or the protected profile.
         runtime = self.root / 'powershell-runtime'
         self.env.update(HOME=str(runtime), USERPROFILE=str(runtime),
-                        APPDATA=str(runtime / "roaming"), LOCALAPPDATA=str(runtime / "local"))
+                        APPDATA=str(runtime / "roaming"), LOCALAPPDATA=str(runtime / "local"),
+                        DOTFILES_SKILLS_DIR=str(SOURCE / "tests/fixtures/skill-library"))
         # PowerShell records noninteractive startup data by script path. Warm
         # the actual deployment entrypoint in plan mode; a separate no-op
         # script leaves bootstrap.ps1's first-run cache in the protected tree.
@@ -74,9 +75,62 @@ $asset | ConvertTo-Json -Compress
         self.assertTrue(asset["url"].startswith("https://"))
         self.assertRegex(asset["sha256"], r"^[a-f0-9]{64}$")
 
+    def test_payload_preflight_defers_unfetched_skills_without_creating_home(self):
+        script = self.root / 'payload-preflight.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{ appData = (Join-Path $TargetHome 'AppData/Roaming') }
+$exceptions = @()
+function Read-Catalog([string]$Relative) {
+    foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source $Relative))) {
+        if ($line -and -not $line.StartsWith('#')) { @{ columns = $line.Split('|') } }
+    }
+}
+. (Join-Path $Source 'deployment/windows.ps1')
+$env:DOTFILES_SKILLS_DIR = $null
+Assert-OwnedState
+if (Test-Path -LiteralPath $TargetHome) { throw 'preflight created the target home' }
+''')
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE),
+                                         DOTFILES_TEST_TARGET_HOME=str(self.home)),
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_retirement_preserves_device_content_and_rejects_malformed_markers(self):
+        script = self.root / 'retire.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+$target = Join-Path $TargetHome 'rules.md'
+Remove-InstructionBlock $target
+''')
+        self.home.mkdir()
+        target = self.home / 'rules.md'
+        start = '<!-- DOTFILES_AGENT_START -->'
+        end = '<!-- DOTFILES_AGENT_END -->'
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(self.home))
+        for content, expected in [(f'local\n\n{start}\nold\n{end}\n', 'local\n'),
+                                  (f'{start}\nold\n{end}\n', None), ('local\n', 'local\n'),
+                                  (f'{start}\nunfinished', 'unchanged')]:
+            target.write_text(content)
+            result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                    env=environment, capture_output=True, text=True, timeout=30)
+            if expected == 'unchanged':
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(target.read_text(), content)
+            else:
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(target.read_text() if target.exists() else None, expected)
+
     def test_requested_tool_failure_output_is_reported(self):
-        command = self.root / "diagnostic.cmd"
-        command.write_text("@echo off\r\necho synthetic version failure 1>&2\r\nexit /b 7\r\n")
+        command = self.root / ("diagnostic.cmd" if os.name == 'nt' else "diagnostic.sh")
+        command.write_text("@echo off\r\necho synthetic version failure 1>&2\r\nexit /b 7\r\n" if os.name == 'nt'
+                           else '#!/bin/sh\necho synthetic version failure >&2\nexit 7\n')
+        command.chmod(0o755)
         script = self.root / "invoke-tool.ps1"
         script.write_text(r'''function Stop-Deployment([string]$Message) { throw $Message }
 $TargetHome = $env:DOTFILES_TEST_TARGET_HOME
@@ -111,6 +165,7 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertFalse(self.home.exists())
         self.assert_original_profile_unchanged()
 
+
     def test_apply_only_copies_native_discovery_and_preserves_device_content(self):
         chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
         if not chezmoi:
@@ -125,6 +180,9 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         instructions = self.home / '.codex/AGENTS.md'
         instructions.parent.mkdir()
         instructions.write_text('device instructions stay\n')
+        retired = self.home / '.kimi-code/AGENTS.md'
+        retired.parent.mkdir()
+        retired.write_text('device kimi instructions\n\n<!-- DOTFILES_AGENT_START -->\nold managed text\n<!-- DOTFILES_AGENT_END -->\n')
         custom_skill = self.home / '.agents/skills/device-only/SKILL.md'
         custom_skill.parent.mkdir(parents=True)
         custom_skill.write_text('custom skill\n')
@@ -151,6 +209,7 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
             self.assertTrue(json.loads(settings.read_text())['deviceOnly'])
             self.assertEqual(json.loads(settings.read_text())['env']['ANTHROPIC_AUTH_TOKEN'], environment['GLM_API_TOKEN'])
             self.assertIn('device instructions stay', instructions.read_text())
+            self.assertEqual(retired.read_text(), 'device kimi instructions\n')
             self.assertEqual(custom_skill.read_text(), 'custom skill\n')
             self.assertEqual(auth.read_text(), '{"synthetic":"device-auth"}\n')
             self.assertEqual(history.read_bytes(), b'synthetic-existing-history')
