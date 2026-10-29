@@ -165,6 +165,15 @@ Startup needs no external completion checkout. Bootstrap generates and validates
 Nu prompt/completion artifacts after installation. See
 [shared shell settings](docs/SHARED_SHELL_SETTINGS.md) for guards and test evidence.
 
+fzf is the common fuzzy finder across Nu, Bash, and Zsh; Atuin retains Ctrl-R.
+Community Nu completions are pinned and allowlisted, then filtered to declared
+and installed managed commands during preparation. eza is the maintained
+directory lister. The optional unified utilities use explicit
+`coreutils <command>` calls; system utility names keep their existing meaning.
+Sheldon remains unnecessary for the directly managed shell hooks. System
+package-source switching through LinuxMirrors remains an explicit host
+administration task, separate from user-level mirror selection and bootstrap.
+
 ## Shared command history
 
 Atuin hooks are enabled for interactive Nushell, Bash, and Zsh after ordinary

@@ -87,7 +87,8 @@ assuming identical enforcement.
 
 ## CLI tools
 
-Prefer these managed tools over `grep`, `find`, `sed`, `cat`, and `ls`:
+Prefer these managed tools when available; common defaults and selected bundles
+determine availability. Preserve the target shell's semantics in scripts.
 
 | Task | Command |
 | --- | --- |
@@ -95,12 +96,13 @@ Prefer these managed tools over `grep`, `find`, `sed`, `cat`, and `ls`:
 | List files | `rg --files` or `fd . path` |
 | Filter by type | `fd -e py . src`, `fd -t f -H` |
 | Literal replace | `sd -s 'old' 'new' file` |
-| Read a file | `bat --paging=never -l yaml file` |
+| Read a file | `bat --paging=never --style=plain --color=never file` |
 | List a directory | `eza --git --icons=never -la` |
 | JSON / YAML | `jq -r`, `jq -e`; `yq -r '.a.b'`, `yq -i` |
+| Structured data in Nu | `open data.json`, `get`, `where`, `select`, `to json` |
 | Python | `uv run`, `uvx`, `uv add` |
 | GitHub | `gh pr view`, `gh run list`, `gh ... --json` |
-| Fuzzy pick | `fzf --filter`; interactive `fzf` only for a human |
+| Fuzzy pick | `fzf --filter` |
 
 Rules:
 
@@ -118,6 +120,13 @@ Rules:
    A timeout means narrow the query, not retry wider.
 5. Recheck availability per device and use a portable fallback when a tool is
    missing.
+6. In Nu, retain structured values through native pipelines; use `^command`
+   when an external CLI is required. Keep system utility names unchanged and
+   invoke optional unified utilities explicitly as `coreutils <command>`.
+7. Use batch output for agent work. Reserve Yazi, jless, and interactive fuzzy
+   menus for human terminal workflows.
+8. Use ShellCheck/shfmt for applicable shell files, existing `justfile` recipes
+   for project tasks, and hyperfine for bounded performance comparisons.
 
 ## Resource limits
 

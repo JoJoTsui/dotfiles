@@ -139,6 +139,13 @@ explains every changed pair.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,
   ownership, or preservation. Index creation stays an explicit project action.
 
+## CLI tools
+
+Follow the task mappings and shell-specific rules in
+[`deployment/agent-payload/AGENTS.md` → CLI tools](deployment/agent-payload/AGENTS.md#cli-tools).
+Check the common/selected bundle catalogs and actual command availability;
+retain POSIX/Bash 3.2 compatibility where this deployment boundary requires it.
+
 ## Known rough edges
 
 - Nu's vendor autoload runs for interactive sessions and is omitted by ordinary
