@@ -21,10 +21,14 @@ requests fail before state creation rather than dropping unsupported members.
 | `bio` | 14 former Bioconda tool environments, curl, and `fetchChromSizes` | Linux/WSL x86-64 and ARM64 |
 | `gpu` | NVTOP | Linux/WSL x86-64 and ARM64 |
 | `desktop` | Zed and Firefox | Linux/WSL x86-64, macOS Intel/Apple silicon, native Windows x86-64 |
-| `developer` | All 60 retained developer environments, including fnm, Zellij, Herdr, sd, ShellCheck, and shfmt | Linux/WSL x86-64 |
+| `developer-portable` | sd, just, hyperfine, lazygit, yq, and xh | Linux/WSL x86-64 and ARM64, macOS Intel/Apple silicon, native Windows x86-64 |
+| `developer` | Remaining 54 developer environments, including fnm, Zellij, Herdr, ShellCheck, and shfmt | Linux/WSL x86-64 |
 
-The whole developer inventory has a narrower target intersection than many of
-its individual tools. Both roles have the same bundle selection rules. No
+The Linux-specific developer inventory has a narrower target intersection.
+Select `--bundles developer,developer-portable` for the former complete Linux
+developer inventory, or `--bundles developer-portable` on another supported
+platform. This split does not uninstall previously deployed tools. Both roles
+have the same bundle selection rules. No
 bundle is selected by default. Use `--bundles bio,gpu` or `DOTFILES_BUNDLES`;
 explicit CLI selection overrides the environment, and `none` selects none.
 

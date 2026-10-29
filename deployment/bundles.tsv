@@ -3,3 +3,4 @@ bio|linux-x86_64,linux-aarch64,wsl-x86_64,wsl-aarch64|Reference datasets and aut
 gpu|linux-x86_64,linux-aarch64,wsl-x86_64,wsl-aarch64|Compatible visible GPU and driver telemetry interface; WSL uses the Windows host driver. No driver or capability changes.
 desktop|linux-x86_64,wsl-x86_64,macos-x86_64,macos-aarch64,windows-x86_64|Graphical session and compatible graphics; macOS 14.2 or newer; WSLg or an explicitly configured display for WSL.
 developer|linux-x86_64,wsl-x86_64|glibc 2.28 or newer; project SDKs and cloud accounts are configured on use. Kernel namespace restrictions can limit bubblewrap.
+developer-portable|linux-x86_64,linux-aarch64,wsl-x86_64,wsl-aarch64,macos-x86_64,macos-aarch64,windows-x86_64|Portable developer CLIs; service credentials remain device-local.

@@ -52,7 +52,7 @@ class BundleInstallTests(unittest.TestCase):
         if not registry.exists():
             registry.parent.mkdir(parents=True)
             registry.write_text('version = 1\n[envs.device-extra]\nchannels = ["conda-forge"]\ndependencies = { zoxide = "==0.10.0" }\nexposed = { device-zoxide = "zoxide" }\n')
-        selection = os.environ.get("DOTFILES_TEST_BUNDLE_SELECTION", "bio,gpu,desktop,developer")
+        selection = os.environ.get("DOTFILES_TEST_BUNDLE_SELECTION", "bio,gpu,desktop,developer,developer-portable")
         command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--platform", "linux", "--arch", "x86_64"]
         help_result = subprocess.run(command + ["--help"], env=environment, capture_output=True, text=True)
         if "--agents" in help_result.stdout:
@@ -75,7 +75,8 @@ class BundleInstallTests(unittest.TestCase):
             diagnostics = {"bio": (("samtools", "--version"), ("seqkit", "version"), ("fetchChromSizes", "--help")),
                            "gpu": (("nvtop", "--version"),),
                            "desktop": (("firefox", "--version"), ("zed", "--version")),
-                           "developer": (("sd", "--version"), ("shellcheck", "--version"), ("herdr", "--version"), ("zellij", "--version"),
+                           "developer-portable": (("sd", "--version"), ("just", "--version"), ("xh", "--version")),
+                           "developer": (("shellcheck", "--version"), ("herdr", "--version"), ("zellij", "--version"),
                                          ("duckdb-python", "-c", "import duckdb; assert duckdb.sql('select 42').fetchone() == (42,)"))}
             for bundle in selected:
                 for tool, *arguments in diagnostics[bundle]:

@@ -36,7 +36,7 @@ jobs:
   # bundle selection needs its own native slot; the workstation role represents
   # it, and remote compute is not claimed by it.
   desktop:
-    name: windows bundle desktop
+    name: windows bundles desktop and developer-portable
     runs-on: windows-2025
     timeout-minutes: 45
     steps:
@@ -48,7 +48,7 @@ jobs:
           python-version: '3.13.16'
       - name: Native PowerShell and Windows bundle acceptance
         shell: powershell
-        run: ./tests/native/windows.ps1 -Role workstation -Bundles desktop -ReportDirectory "$env:RUNNER_TEMP/dotfiles-windows-reports"
+        run: ./tests/native/windows.ps1 -Role workstation -Bundles 'desktop,developer-portable' -ReportDirectory "$env:RUNNER_TEMP/dotfiles-windows-reports"
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

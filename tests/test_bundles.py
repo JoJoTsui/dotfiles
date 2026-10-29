@@ -78,7 +78,7 @@ class BundleTests(unittest.TestCase):
             self.skipTest("actual bundle application requires chezmoi")
         environment = dict(self.environment, DOTFILES_CHEZMOI_BIN=chezmoi)
         result = self.deploy("--apply-only", "--platform", "linux", "--arch", "x86_64",
-                             "--bundles", "bio,gpu,desktop,developer", environment=environment)
+                             "--bundles", "bio,gpu,desktop,developer,developer-portable", environment=environment)
         self.assertEqual(result.returncode, 0, result.stderr)
         desired = (self.home / ".config/dotfiles/pixi-bundles.toml").read_text()
         for tool in ("aardvark", "bcftools", "bedtools", "gdc-client", "htslib", "kmc", "mosdepth", "picard",
@@ -93,7 +93,7 @@ class BundleTests(unittest.TestCase):
             self.assertFalse(payload.is_symlink(), relative)
         self.assertTrue((self.home / ".local/bin/fetchChromSizes").stat().st_mode & 0o100)
         profile = json.loads((self.home / ".config/dotfiles/profile.json").read_text())
-        self.assertEqual(profile["bundles"], ["bio", "gpu", "desktop", "developer"])
+        self.assertEqual(profile["bundles"], ["bio", "gpu", "desktop", "developer", "developer-portable"])
 
     def test_selected_tools_merge_with_device_inventory_and_deselection_keeps_it(self):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")

@@ -58,7 +58,7 @@ Usage: bash bootstrap.sh [options]
   --profile NAME            <platform>-<role> preset, or t9k
   --class NAME              Legacy alias: t9k, linux, win
   --arch NAME               x86_64, aarch64 (amd64/arm64 aliases accepted)
-  --bundles LIST            none (default), or comma-separated bio,gpu,desktop,developer
+  --bundles LIST            none (default), or comma-separated bio,gpu,desktop,developer,developer-portable
   --agents SELECTION        all (default), none, or kimi,pi,opencode,claude,codex,minimax,qoder
   --system-config           Add managed Bash defaults to the system Bash rc
   --login-shell             Set this account's login shell to the managed Nu launcher

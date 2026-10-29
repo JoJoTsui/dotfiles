@@ -94,6 +94,12 @@ class PortableConfigTests(TemporaryDevice):
             for name, content in files.items():
                 self.assertEqual((local / name).read_text(), content)
 
+    def test_portable_bundle_renders_on_arm_without_linux_only_tools(self):
+        self.deploy(bundles='developer-portable', arch='aarch64')
+        desired = (self.home / '.config/dotfiles/pixi-bundles.toml').read_text()
+        for tool in ['sd', 'just', 'hyperfine', 'lazygit', 'go-yq', 'xh']:
+            self.assertIn(f'[envs."{tool}"]', desired)
+        self.assertNotIn('[envs."bubblewrap"]', desired)
 
 
 @unittest.skipUnless(NU and MAMBA, 'requires Nu and Micromamba')

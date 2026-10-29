@@ -71,11 +71,11 @@ dotfiles-agents update all
 dotfiles-agents status
 ```
 
-The optional `bio`, `gpu`, `desktop`, and `developer` bundles are off by
+The optional `bio`, `gpu`, `desktop`, `developer`, and `developer-portable` bundles are off by
 default. Select only bundles declared for the chosen platform and architecture:
 
 ```sh
-bash bootstrap.sh --bundles bio,developer
+bash bootstrap.sh --bundles bio,developer,developer-portable
 ```
 
 Unsupported bundle/platform combinations fail before deployment state is

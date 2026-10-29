@@ -40,7 +40,7 @@
 {{- $selectedBundles := list -}}
 {{- if ne $bundles "none" -}}
 {{- range splitList "," $bundles -}}
-{{- if not (has . (list "bio" "gpu" "desktop" "developer")) -}}{{- fail (printf "invalid bundle %q" .) -}}{{- end -}}
+{{- if not (has . (list "bio" "gpu" "desktop" "developer" "developer-portable")) -}}{{- fail (printf "invalid bundle %q" .) -}}{{- end -}}
 {{- $selectedBundles = append $selectedBundles . -}}
 {{- end -}}
 {{- end -}}

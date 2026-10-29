@@ -9,7 +9,7 @@ if [ "$bundle_selection" != none ]; then
     case "$bundle_selection" in ''|,*|*,|*,,*) fail 'bundle list contains an empty name' ;; esac
     bundle_saved_ifs=$IFS; IFS=,
     for bundle_name in $bundle_selection; do
-        case "$bundle_name" in bio|gpu|desktop|developer) ;; *) fail "invalid bundle '$bundle_name'; use none or bio,gpu,desktop,developer" ;; esac
+        case "$bundle_name" in bio|gpu|desktop|developer|developer-portable) ;; *) fail "invalid bundle '$bundle_name'; use none or bio,gpu,desktop,developer,developer-portable" ;; esac
         case ",$DEPLOY_BUNDLES_CSV," in *",$bundle_name,"*) continue ;; esac
         DEPLOY_BUNDLES+=("$bundle_name")
         DEPLOY_BUNDLES_CSV=${DEPLOY_BUNDLES_CSV:+$DEPLOY_BUNDLES_CSV,}$bundle_name

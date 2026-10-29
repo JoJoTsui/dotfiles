@@ -41,7 +41,10 @@ class BundleResolutionTests(unittest.TestCase):
                         "gpu": (("linux", "x86_64", "linux-64"), ("linux", "aarch64", "linux-aarch64")),
                         "desktop": (("linux", "x86_64", "linux-64"), ("macos", "x86_64", "osx-64"),
                                     ("macos", "aarch64", "osx-arm64"), ("windows", "x86_64", "win-64")),
-                        "developer": (("linux", "x86_64", "linux-64"),)}
+                        "developer": (("linux", "x86_64", "linux-64"),),
+                        "developer-portable": (("linux", "x86_64", "linux-64"), ("linux", "aarch64", "linux-aarch64"),
+                                               ("macos", "x86_64", "osx-64"), ("macos", "aarch64", "osx-arm64"),
+                                               ("windows", "x86_64", "win-64"))}
         for bundle, targets in declarations.items():
             for platform, architecture, subdir in targets:
                 plan = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--plan", "--home", str(home),

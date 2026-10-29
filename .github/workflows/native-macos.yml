@@ -58,7 +58,7 @@ jobs:
   # only, so bundle selection needs its own native slot; this covers Apple
   # silicon, and the Intel and role cells are not claimed by it.
   desktop:
-    name: macOS bundle desktop
+    name: macOS bundles desktop and developer-portable
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -75,7 +75,7 @@ jobs:
           python tests/native_macos.py
           --arch aarch64
           --role workstation
-          --bundles desktop
+          --bundles desktop,developer-portable
           --report '${{ runner.temp }}/reports/native-macos-desktop.json'
       - name: Upload verification report
         if: always()

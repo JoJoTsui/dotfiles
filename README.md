@@ -221,7 +221,8 @@ Select whole optional bundles explicitly:
 
 ```bash
 bash bootstrap.sh --profile linux-remote-compute --bundles bio,gpu --plan
-bash bootstrap.sh --profile linux-workstation --bundles developer
+bash bootstrap.sh --profile linux-workstation --bundles developer,developer-portable
+bash bootstrap.sh --profile macos-workstation --bundles developer-portable
 ```
 
 `--bundles none` is the default. Invalid names and unsupported whole-bundle
