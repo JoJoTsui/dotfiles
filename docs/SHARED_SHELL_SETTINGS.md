@@ -8,6 +8,29 @@ win, and repeated initialization leaves each managed directory present once.
 Legacy `JOEY`, `GIZMO`, `BIO_GIZMO`, `NUSHELL_PATH`, and `JSHELL` remain
 compatibility variables; their directories never enter managed PATH.
 
+## Device-local overrides
+
+These files are optional, unmanaged, and preserved on reapply:
+
+| File under `~/.config` | Loaded when |
+| --- | --- |
+| `dotfiles/env.local.sh` | Before shared POSIX defaults; keep POSIX-safe and idempotent |
+| `dotfiles/env.local.nu` | Before shared Nu defaults |
+| `dotfiles/bash.local.sh` | After interactive Bash hooks |
+| `dotfiles/zsh.local.zsh` | After interactive Zsh hooks |
+| `dotfiles/nu.local.nu` | After managed Nu commands, including ordinary `-c` startup |
+| `git/local.conf` | At the end of the managed Git configuration |
+
+For example, set `export EDITOR=vim` in `env.local.sh` and `$env.EDITOR = "vim"`
+in `env.local.nu`. Use the shell-specific config files for aliases/functions.
+Nu also supports its native user autoload directory for interactive resources.
+The local hooks use `~/.config/dotfiles` consistently across platforms, including
+native Windows. They are deliberately absent from the source tree.
+
+Git local settings can include `[includeIf "gitdir:~/work/"]` with a private
+identity file. Git ownership protection remains enabled; add specific
+`safe.directory` entries locally only for repositories whose owners you trust.
+
 PATH prefers Bun agent launchers, then local commands, Pixi exposures, and
 Cargo. The agent installer invokes pinned Bun explicitly; PATH preference
 does not authorize a retained device Bun binary to perform package installs.

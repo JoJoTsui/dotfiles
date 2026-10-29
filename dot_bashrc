@@ -21,3 +21,5 @@ if [ -z "${_dotfiles_atuin_loaded:-}" ] && command -v atuin >/dev/null 2>&1; the
     fi
     unset _dotfiles_atuin_setup
 fi
+
+[ ! -f "$HOME/.config/dotfiles/bash.local.sh" ] || . "$HOME/.config/dotfiles/bash.local.sh"

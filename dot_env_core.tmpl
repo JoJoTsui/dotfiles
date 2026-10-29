@@ -1,5 +1,9 @@
 # Shared POSIX environment, generated from .chezmoidata.toml.
 # Idempotent, and safe for dash, Bash 3.2 and Zsh.
+# Load device inputs before shared defaults; this file must also be POSIX-safe.
+if [ -f "$HOME/.config/dotfiles/env.local.sh" ]; then
+    . "$HOME/.config/dotfiles/env.local.sh"
+fi
 {{ if eq .platform "windows" -}}
 # Git Bash uses POSIX paths for its PATH but Windows-absolute roots for native
 # Rust/Python tools. Their filesystem parsers do not understand /c/... paths.

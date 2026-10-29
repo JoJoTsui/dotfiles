@@ -9,3 +9,7 @@ source zoxide.nu
 def --wrapped logs [...arguments: string] {
     if ($in | is-empty) { ^tspin ...$arguments } else { $in | ^tspin ...$arguments }
 }
+
+const local_config_path = ($nu.home-dir | path join .config dotfiles nu.local.nu)
+const local_config = if ($local_config_path | path exists) { $local_config_path } else { null }
+source $local_config

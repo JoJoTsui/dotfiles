@@ -1,0 +1,72 @@
+"""Runtime regressions for portable settings and bounded Nu activation."""
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+SOURCE = Path(__file__).resolve().parents[1]
+CHEZMOI = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+NU = os.environ.get('DOTFILES_TEST_NU') or shutil.which('nu')
+MAMBA = os.environ.get('DOTFILES_TEST_MAMBA') or shutil.which('micromamba')
+
+
+class TemporaryDevice(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix='dotfiles-config-')
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name) / 'device with spaces'
+        self.home.mkdir()
+        self.env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TERM': 'xterm-256color',
+                    'XDG_CONFIG_HOME': str(self.home / '.config'),
+                    'XDG_DATA_HOME': str(self.home / '.local/share'),
+                    'XDG_STATE_HOME': str(self.home / '.local/state'),
+                    'XDG_CACHE_HOME': str(self.home / '.cache'),
+                    'DOTFILES_SKILLS_DIR': str(SOURCE / 'tests/fixtures/skill-library')}
+
+    def nu(self, script, *, rendered=False):
+        flags = ['--config', str(self.home / '.config/nushell/config.nu'),
+                 '--env-config', str(self.home / '.config/nushell/env.nu')] if rendered else ['--no-config-file']
+        result = subprocess.run([NU, *flags, '-c', script], env=self.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+
+@unittest.skipUnless(CHEZMOI and NU and os.name == 'posix', 'requires Chezmoi and Nu on Unix')
+class PortableConfigTests(TemporaryDevice):
+    def deploy(self, mirror='tuna', bundles='none', arch='x86_64'):
+        result = subprocess.run(['/bin/bash', str(SOURCE / 'bootstrap.sh'), '--home', str(self.home),
+                                 '--class', 'linux', '--arch', arch, '--apply-only', '--bundles', bundles],
+                                env=dict(self.env, DOTFILES_CHEZMOI_BIN=CHEZMOI, DOTFILES_MIRROR=mirror),
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
+
+    def test_device_overrides_survive_reapply_and_git_keeps_ownership_checks(self):
+        local = self.home / '.config/dotfiles'
+        local.mkdir(parents=True)
+        files = {'env.local.sh': 'export EDITOR=device-posix\n',
+                 'env.local.nu': '$env.EDITOR = "device-nu"\n',
+                 'nu.local.nu': 'def device-value [] { "device-command" }\n',
+                 'bash.local.sh': 'alias device-command="echo device"\n',
+                 'zsh.local.zsh': 'alias device-command="echo device"\n'}
+        for name, content in files.items():
+            (local / name).write_text(content)
+        git = self.home / '.config/git/local.conf'
+        git.parent.mkdir()
+        git.write_text('[user]\nemail = device@example.invalid\n')
+        for _ in range(2):
+            self.deploy()
+            self.assertEqual(json.loads(self.nu('[$env.EDITOR (device-value)] | to json', rendered=True)),
+                             ['device-nu', 'device-command'])
+            posix = subprocess.check_output(['/bin/sh', '-c', '. "$HOME/.env_core"; printf "%s" "$EDITOR"'], env=self.env, text=True)
+            self.assertEqual(posix, 'device-posix')
+            identity = subprocess.check_output(['git', 'config', '--global', '--includes', 'user.email'], env=self.env, text=True).strip()
+            self.assertEqual(identity, 'device@example.invalid')
+            trusted = subprocess.run(['git', 'config', '--global', '--includes', '--get-all', 'safe.directory'], env=self.env, text=True, capture_output=True)
+            self.assertNotIn('*', trusted.stdout.splitlines())
+            for name, content in files.items():
+                self.assertEqual((local / name).read_text(), content)
