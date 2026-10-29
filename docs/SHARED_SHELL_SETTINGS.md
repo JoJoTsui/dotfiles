@@ -31,6 +31,19 @@ Git local settings can include `[includeIf "gitdir:~/work/"]` with a private
 identity file. Git ownership protection remains enabled; add specific
 `safe.directory` entries locally only for repositories whose owners you trust.
 
+## Micromamba in Nushell
+
+`activate <name>` applies package `etc/conda/env_vars.d/*.json` defaults and
+`conda-meta/state` environment variables, with state values taking precedence.
+It restores previous values and PATH on `deactivate`, and includes native
+Windows DLL/tool directories. It supports one active environment at a time.
+
+Nu cannot source Bash or cmd activation scripts. Environments containing
+`activate.d` or `deactivate.d` hooks are rejected before changing shell state.
+Use `micromamba run -n <name> <command>` or activate in Bash/Zsh for those
+environments. PATH overrides in environment metadata are also rejected; a
+partial activation is never reported as success.
+
 PATH prefers Bun agent launchers, then local commands, Pixi exposures, and
 Cargo. The agent installer invokes pinned Bun explicitly; PATH preference
 does not authorize a retained device Bun binary to perform package installs.

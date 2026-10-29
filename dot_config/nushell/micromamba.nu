@@ -33,6 +33,37 @@ def "nu-complete conda-envs" [] {
     get-conda-envs | columns
 }
 
+# Nu cannot source Bash/cmd activation hooks. Refuse those environments rather
+# than claiming activation succeeded; micromamba run supports their native hooks.
+def environment-variables [prefix: path] {
+    for hook in [activate.d deactivate.d] {
+        let directory = ($prefix | path join etc conda $hook)
+        if ($directory | path exists) and ((ls -a $directory | length) > 0) {
+            error make {msg: $"This environment needs ($hook) hooks. Use micromamba run -p '($prefix)' <command>, or activate it in Bash/Zsh."}
+        }
+    }
+    mut variables = {}
+    let packages = ($prefix | path join etc conda env_vars.d)
+    if ($packages | path exists) {
+        for file in (ls $packages | where name ends-with '.json' | sort-by name) {
+            $variables = ($variables | merge (open --raw $file.name | from json))
+        }
+    }
+    let state = ($prefix | path join conda-meta state)
+    if ($state | path exists) {
+        $variables = ($variables | merge (open --raw $state | from json | get -o env_vars | default {}))
+    }
+    for item in ($variables | transpose name value) {
+        if ($item.name !~ '^[A-Za-z_][A-Za-z0-9_]*$') or (($item.value | describe) != 'string') {
+            error make {msg: 'Conda environment variables must have valid names and string values'}
+        }
+        if $item.name in [PATH Path CONDA_OLD_PATH DOTFILES_CONDA_SAVED CONDA_CURR CONDA_PREFIX CONDA_DEFAULT_ENV CONDA_SHLVL CONDA_PROMPT_MODIFIER] {
+            error make {msg: $"Unsupported Conda environment override: ($item.name). Use micromamba run."}
+        }
+    }
+    $variables
+}
+
 # 2. Add Type Signature and Completions to activate
 export def --env activate [
     name: string@"nu-complete conda-envs"
@@ -51,6 +82,12 @@ export def --env activate [
     }
 
     let target_path = ($available_envs | get $name)
+    let variables = (environment-variables $target_path)
+    let names = ($variables | columns)
+    $env.DOTFILES_CONDA_SAVED = ({
+        values: ($env | select -o ...$names)
+        missing: ($names | where {|key| $key not-in $env })
+    } | to nuon)
     
     # SNAPSHOT: Save PATH
     $env.CONDA_OLD_PATH = $env.PATH
@@ -58,7 +95,12 @@ export def --env activate [
     # Detect OS
     let is_windows = ((sys host).name == "Windows")
     let bin_path = if $is_windows {
-        [$target_path, ($target_path | path join "Scripts")]
+        [$target_path,
+         ($target_path | path join Library mingw-w64 bin),
+         ($target_path | path join Library usr bin),
+         ($target_path | path join Library bin),
+         ($target_path | path join Scripts),
+         ($target_path | path join bin)]
     } else {
         [$target_path, ($target_path | path join "bin")]
     }
@@ -73,6 +115,9 @@ export def --env activate [
         CONDA_SHLVL: "1"
         CONDA_PROMPT_MODIFIER: $"($name)"
     }
+    for item in ($variables | transpose name value) {
+        if $item.value == '***unset***' { hide-env -i $item.name } else { load-env { $item.name: $item.value } }
+    }
 }
 
 
@@ -83,6 +128,13 @@ export def --env deactivate [] {
     if not $is_active {
         print "No Conda/Mamba environment is active."
         return
+    }
+
+    if ($env.DOTFILES_CONDA_SAVED? | is-not-empty) {
+        let saved = ($env.DOTFILES_CONDA_SAVED | from nuon)
+        for key in $saved.missing { hide-env -i $key }
+        load-env $saved.values
+        hide-env DOTFILES_CONDA_SAVED
     }
 
     # 1. Restore PATH

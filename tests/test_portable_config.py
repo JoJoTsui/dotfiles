@@ -70,3 +70,41 @@ class PortableConfigTests(TemporaryDevice):
             self.assertNotIn('*', trusted.stdout.splitlines())
             for name, content in files.items():
                 self.assertEqual((local / name).read_text(), content)
+
+
+
+@unittest.skipUnless(NU and MAMBA, 'requires Nu and Micromamba')
+class MicromambaActivationTests(TemporaryDevice):
+    def setUp(self):
+        super().setUp()
+        self.prefix = self.home / 'mamba/envs/demo'
+        (self.prefix / 'conda-meta').mkdir(parents=True)
+        (self.prefix / 'conda-meta/history').write_text('')
+        self.env.update(MAMBA_EXE=str(MAMBA), MAMBA_ROOT_PREFIX=str(self.home / 'mamba'))
+        self.module = 'use ' + json.dumps(str(SOURCE / 'dot_config/nushell/micromamba.nu')) + ' *; '
+
+    def test_metadata_activation_and_deactivation_restore_device_values(self):
+        (self.prefix / 'conda-meta/state').write_text(json.dumps({'env_vars': {
+            'PACKAGE_REQUIRED': 'line one\nquoted "value"', 'DEVICE_VALUE': 'environment', 'REMOVE_ME': '***unset***'}}))
+        package = self.prefix / 'etc/conda/env_vars.d'
+        package.mkdir(parents=True)
+        (package / 'package.json').write_text('{"PACKAGE_DEFAULT":"from-package"}')
+        actual = json.loads(self.nu(self.module + '''$env.DEVICE_VALUE = "device"; $env.REMOVE_ME = "original"
+let original = $env.PATH
+activate demo
+let active = [$env.PACKAGE_REQUIRED $env.PACKAGE_DEFAULT $env.DEVICE_VALUE ($env.REMOVE_ME? | default "missing") $env.CONDA_DEFAULT_ENV]
+deactivate
+{active: $active, restored: [$env.DEVICE_VALUE $env.REMOVE_ME ($env.PACKAGE_REQUIRED? | default "missing") ($env.PATH == $original)]} | to json'''))
+        self.assertEqual(actual['active'], ['line one\nquoted "value"', 'from-package', 'environment', 'missing', 'demo'])
+        self.assertEqual(actual['restored'], ['device', 'original', 'missing', True])
+
+    def test_hook_environment_refuses_partial_activation_without_changing_path(self):
+        hooks = self.prefix / 'etc/conda/activate.d'
+        hooks.mkdir(parents=True)
+        (hooks / 'required.sh').write_text('export PACKAGE_REQUIRED=hook\n')
+        actual = json.loads(self.nu(self.module + '''let original = $env.PATH
+let failure = try { activate demo; "unexpected success" } catch {|error| $error.msg }
+{error: $failure, unchanged: ($env.PATH == $original), active: ($env.CONDA_DEFAULT_ENV? | default "none")} | to json'''))
+        self.assertIn('micromamba run', actual['error'])
+        self.assertTrue(actual['unchanged'])
+        self.assertEqual(actual['active'], 'none')
