@@ -93,7 +93,12 @@ explicitly supply Pixi at its required pin for isolated boundary checks.
 The common installer uses `pixi exec` with the catalog's exact Python pin to
 run `deployment/merge_pixi.py` with common and selected-bundle desired manifests,
 then runs `pixi global sync`. Both desired manifests merge atomically. The merge keeps
-unrelated environments and extra dependency/exposure entries/channels. An
+unrelated environments and extra dependency/exposure entries/channels. When
+the namespaced uutils bundle entry is selected, it retires only the frozen
+formerly owned identity aliases in that environment and saves a private
+pre-migration registry backup. Custom aliases and unselected environments
+remain intact; see [inventory migration and rollback](../deployment/inventory/README.md).
+An
 exposure collision across environments fails before writing the registry.
 The source state never applies over Pixi or Bun runtime registries. Pixi global
 has no lockfile: exact direct versions leave build/transitive solver drift;

@@ -214,7 +214,7 @@ def run_suite(label: str, *, pattern: str | None = None, environment: dict[str, 
     report.setdefault("commands", []).append({"name": label, "exitCode": result.returncode})
     require(result.returncode == 0, f"{label} failed (exit {result.returncode})")
     if require_runtime:
-        required = ('test_portable_config.', 'test_skills.')
+        required = ('test_portable_config.', 'test_skills.', 'test_cli_catalog.')
         require(not any('skipped ' in line and any(module in line for module in required)
                         for line in output.splitlines()), "a required runtime check was skipped")
 

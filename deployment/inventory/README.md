@@ -6,8 +6,8 @@ installation source, Bun. `legacy-bun-package.json` preserves the prior client
 and Lark CLI inventory for its Bun migration. These files are historical input
 to the selectable inventory work, not manifests applied over a device registry.
 
-Common defaults are declared in `../common-tools.tsv`. All 77 remaining former
-Pixi environments belong to opt-in bundles in `../bundle-tools.tsv`, with exact
+Common defaults are declared in `../common-tools.tsv`. The retained optional
+Pixi environments belong to bundles in `../bundle-tools.tsv`, with exact
 pins, explicit exposed commands, channels, and row-level platform selectors.
 The catalog columns are `bundle|environment|specifications|exposures|channels|platforms`.
 Use `all` or comma-separated platform names in the final column; a tool may
@@ -22,10 +22,10 @@ requests fail before state creation rather than dropping unsupported members.
 | `gpu` | NVTOP | Linux/WSL x86-64 and ARM64 |
 | `desktop` | Zed and Firefox | Linux/WSL x86-64, macOS Intel/Apple silicon, native Windows x86-64 |
 | `developer-portable` | sd, just, hyperfine, lazygit, yq, and xh | Linux/WSL x86-64 and ARM64, macOS Intel/Apple silicon, native Windows x86-64 |
-| `developer` | Remaining 54 developer environments, including fnm, Zellij, Herdr, ShellCheck, and shfmt | Linux/WSL x86-64 |
+| `developer` | Remaining 52 developer environments, including fnm, Zellij, Herdr, ShellCheck, and shfmt | Linux/WSL x86-64 |
 
 The Linux-specific developer inventory has a narrower target intersection.
-Select `--bundles developer,developer-portable` for the former complete Linux
+Select `--bundles developer,developer-portable` for the maintained Linux
 developer inventory, or `--bundles developer-portable` on another supported
 platform. This split does not uninstall previously deployed tools. Both roles
 have the same bundle selection rules. No
@@ -36,8 +36,34 @@ Each tool retains an independent environment. This permits tgv's older HTSlib
 constraint to coexist with samtools/HTSlib 1.24 and keeps KMC's Python constraint
 independent of common Python. DuckDB's historical package provides its Python
 API, exposed as `duckdb-python`; it does not promise a nonexistent DuckDB CLI.
-The uutils library `libstdbuf.so` remains a package resource, not an exposed
-executable. Managed Node replaces automatic fnm initialization.
+Managed Node replaces automatic fnm initialization. Eza and fzf are the common
+directory lister and fuzzy finder; lsd and skim remain in the historical
+inventory rather than the active bundle. Existing device installations remain
+intact when those tools are omitted.
+
+## Explicit coreutils and migration
+
+The optional uutils environment exposes only its `coreutils` multicall command:
+use `coreutils ls`, `coreutils cp`, or another explicit subcommand. System
+utilities retain their ordinary names, and Nu's structured built-ins retain
+their normal behavior. The uutils library `libstdbuf.so` stays a package
+resource.
+
+For an existing developer installation, reapply with `--bundles developer`
+(or include it alongside other selected bundles) once. The registry merge
+retires only known former identity mappings such as `cp=cp` inside the
+`uutils-coreutils` environment. It preserves custom aliases, modified mappings,
+other environments, dependencies, and channels. Unselected environments are
+preserved; ordinary `--bundles none` does not perform this migration.
+
+Before the first alias migration, the merger saves the exact previous registry
+as `~/.pixi/manifests/pixi-global.toml.before-coreutils-namespacing.bak` with
+private permissions. Reapplication preserves that backup. Validation failures
+leave the registry untouched. For rollback, restore the backup and run
+`pixi global sync`, or reapply the previous source with its former alias map.
+Both rollback paths intentionally restore the old command replacements; the
+backup does not downgrade packages or remove device data. Keep it private and
+stop concurrent Pixi operations while restoring it.
 
 Herdr/Zellij settings deploy only with `developer`; the bio helper deploys only
 with `bio`. Linux/WSL desktop supplies Firefox's pinned GTK/X11/audio/D-Bus
