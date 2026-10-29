@@ -68,7 +68,9 @@ function Get-Selection {
     if ($Arch) { $architecture = $Arch }
     if ($architecture -in @('ARM64', 'arm64', 'aarch64')) { Stop-Deployment 'Windows ARM is outside the supported architecture matrix' }
     if ($architecture -notin @('AMD64', 'amd64', 'x86_64')) { Stop-Deployment 'unsupported architecture; native Windows requires x86_64' }
-    return [ordered]@{ platform = 'windows'; role = $selectedRole; arch = 'x86_64'; profile = "windows-$selectedRole" }
+    $mirror = Get-Input 'DOTFILES_MIRROR' 'tuna'
+    if ($mirror -notin @('tuna', 'upstream')) { Stop-Deployment 'invalid DOTFILES_MIRROR; use tuna or upstream' }
+    return [ordered]@{ platform = 'windows'; role = $selectedRole; arch = 'x86_64'; profile = "windows-$selectedRole"; mirror = $mirror }
 }
 function Get-Agents {
     $selection = Get-Input 'DOTFILES_AGENTS' 'all'
@@ -183,6 +185,7 @@ try {
     if ($AgentsOnly) { $actions = @('apply-source', 'install-agents') }
     $result = [ordered]@{
         platform = $selection.platform; role = $selection.role; arch = $selection.arch; profile = $selection.profile
+        mirror = $selection.mirror
         source = $Source; home = $TargetHome; roots = $roots; agents = $selectedAgents; bundles = $selectedBundles
         tools = @($tools | Select-Object -Unique); packages = $packages; bundlePackages = $bundlePackages; agentPackages = $agentPackages; actions = $actions; exceptions = $exceptions
         managers = [ordered]@{ pixi = ($exceptions | Where-Object { $_.name -eq 'pixi' }).version; chezmoi = ($exceptions | Where-Object { $_.name -eq 'chezmoi' }).version; rustup = ($exceptions | Where-Object { $_.name -eq 'rustup' }).version }

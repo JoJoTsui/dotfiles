@@ -1,12 +1,18 @@
 # Shared shell settings
 
-`.chezmoidata.toml` owns environment defaults, the TUNA Python endpoint and
+`.chezmoidata.toml` owns environment defaults, regional mirror endpoints and
 preference, POSIX umask, and managed PATH priority. Chezmoi renders the values
 into `.env_core` and `nushell/env.nu`; Bash and Zsh source `.env_core`, while
 standalone Nu loads its own guarded adapter. Existing nonempty device values
 win, and repeated initialization leaves each managed directory present once.
 Legacy `JOEY`, `GIZMO`, `BIO_GIZMO`, `NUSHELL_PATH`, and `JSHELL` remain
 compatibility variables; their directories never enter managed PATH.
+
+Set `DOTFILES_MIRROR=tuna` (default) or `DOTFILES_MIRROR=upstream` when running
+bootstrap. The selection is persisted in Chezmoi data and covers pip, uv,
+Cargo, Rustup, and Micromamba channels through one model. Environment overrides
+still win. Pixi catalogs explicitly use conda-forge/Bioconda and retain those
+sources; this switch does not rewrite pinned release or skill download URLs.
 
 ## Device-local overrides
 

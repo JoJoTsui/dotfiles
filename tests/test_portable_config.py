@@ -43,7 +43,30 @@ class PortableConfigTests(TemporaryDevice):
                                 capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_mirror_selection_matches_posix_nu_and_package_configs(self):
+        for mirror, python, rust in [('tuna', 'https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple',
+                                      'https://mirrors.tuna.tsinghua.edu.cn/rustup'),
+                                     ('upstream', 'https://pypi.org/simple', 'https://static.rust-lang.org')]:
+            self.deploy(mirror)
+            actual = json.loads(self.nu('[$env.PIP_INDEX_URL $env.UV_DEFAULT_INDEX $env.RUSTUP_DIST_SERVER] | to json', rendered=True))
+            self.assertEqual(actual, [python, python, rust])
+            posix = subprocess.check_output(['/bin/sh', '-c', '. "$HOME/.env_core"; printf "%s\\n" "$PIP_INDEX_URL" "$UV_DEFAULT_INDEX" "$RUSTUP_DIST_SERVER"'], env=self.env, text=True)
+            self.assertEqual(posix.splitlines(), actual)
+            for path in ['.config/uv/uv.toml', '.config/pip/pip.conf']:
+                self.assertIn(python, (self.home / path).read_text())
+            if mirror == 'upstream':
+                for path in ['.cargo/config.toml', '.condarc', '.env_core']:
+                    self.assertNotIn('tuna.tsinghua', (self.home / path).read_text())
 
+    def test_mirror_plans_expose_selection_and_invalid_input_fails_without_writes(self):
+        target = self.home / 'not-created'
+        command = ['/bin/bash', str(SOURCE / 'bootstrap.sh'), '--home', str(target), '--plan']
+        result = subprocess.run(command, env=dict(self.env, DOTFILES_MIRROR='upstream'), capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['mirror'], 'upstream')
+        result = subprocess.run(command, env=dict(self.env, DOTFILES_MIRROR='invalid'), capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(target.exists())
 
     def test_device_overrides_survive_reapply_and_git_keeps_ownership_checks(self):
         local = self.home / '.config/dotfiles'

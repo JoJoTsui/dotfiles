@@ -150,6 +150,7 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
         self.assertEqual(plan["profile"], "windows-remote-compute")
+        self.assertEqual(plan["mirror"], "tuna")
         self.assertEqual(plan["settings"]["primaryShell"], "nu")
         self.assertEqual(plan["settings"]["secondaryShells"], ["git-bash"])
         self.assertFalse(plan["settings"]["systemChanges"])
@@ -165,6 +166,14 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertFalse(self.home.exists())
         self.assert_original_profile_unchanged()
 
+    def test_mirror_selection_is_planned_and_invalid_values_fail_before_writes(self):
+        result = self.deploy('-Plan', env=dict(self.env, DOTFILES_MIRROR='upstream'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['mirror'], 'upstream')
+        result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_MIRROR='invalid'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('DOTFILES_MIRROR', result.stderr)
+        self.assertFalse(self.home.exists())
 
     def test_apply_only_copies_native_discovery_and_preserves_device_content(self):
         chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')

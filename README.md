@@ -81,6 +81,7 @@ never enter git):
 | `arch` | `DOTFILES_ARCH` | detected; x86_64/aarch64 |
 | `class` | `DOTFILES_CLASS` (legacy input) | compatibility metadata |
 | `proxyUrl` | `HTTP_PROXY_URL` | `http://127.0.0.1:7890` |
+| `mirror` | `DOTFILES_MIRROR` | `tuna`; select `upstream` outside the regional mirror setup |
 | `glmBaseUrl` | `GLM_BASE_URL` | `https://open.bigmodel.cn/api/anthropic` |
 | `glmToken` | `GLM_API_TOKEN` | `REPLACE_ME` |
 | `kimiApiKey` | `KIMI_API_KEY` | `REPLACE_ME` |
@@ -109,7 +110,7 @@ dot_local/bin/executable_bat-modules    # bat syntax/module installer (bash)
 dot_local/bin/executable_fetchChromSizes  # UCSC chrom.sizes fetcher (POSIX sh)
 dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
                             # rerere, lfs filters, gh credential helper
-dot_condarc                 # TUNA mirrors, nvidia/pytorch/conda-forge/bioconda channels
+dot_condarc.tmpl            # selected mirrors, nvidia/pytorch/conda-forge/bioconda channels
 deployment/common-tools.tsv  # exact common requirements and command exposures
 deployment/agents/           # Bun catalog, per-client manifests + bun.lock,
                              # native release pins (native.tsv)

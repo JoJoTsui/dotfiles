@@ -1,0 +1,12 @@
+changeps1: false
+channel_alias: {{ (index .mirrors .mirror).condaChannelAlias | quote }}
+channels:
+{{ range (index .mirrors .mirror).condaChannels }}  - {{ . | quote }}
+{{ end -}}
+channel_priority: flexible
+
+# network settings
+remote_connect_timeout_secs: 300
+remote_read_timeout_secs: 300
+remote_max_retries: 10
+remote_backoff_factor: 2

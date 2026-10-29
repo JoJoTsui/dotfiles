@@ -1,7 +1,6 @@
 # One shared value model. Adapters contain shell syntax, not copied defaults.
 [sharedShell]
 umask = "0022"
-pythonIndex = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 pythonPreference = "managed"
 defaults = [
   { name = "JOEY", base = "HOME", suffix = "joey" },
@@ -24,10 +23,10 @@ defaults = [
   { name = "MAMBA_ROOT_PREFIX", base = "XDG_DATA_HOME", suffix = "micromamba" },
   { name = "EDITOR", value = "hx" },
   { name = "UV_PYTHON_PREFERENCE", setting = "pythonPreference" },
-  { name = "PIP_INDEX_URL", setting = "pythonIndex" },
-  { name = "UV_DEFAULT_INDEX", setting = "pythonIndex" },
-  { name = "RUSTUP_UPDATE_ROOT", value = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup" },
-  { name = "RUSTUP_DIST_SERVER", value = "https://mirrors.tuna.tsinghua.edu.cn/rustup" },
+  { name = "PIP_INDEX_URL", mirror = "pythonIndex" },
+  { name = "UV_DEFAULT_INDEX", mirror = "pythonIndex" },
+  { name = "RUSTUP_UPDATE_ROOT", mirror = "rustupUpdateRoot" },
+  { name = "RUSTUP_DIST_SERVER", mirror = "rustupDistServer" },
   { name = "CHOKIDAR_USEPOLLING", value = "0", remote = "1" },
   { name = "LESSCHARSET", value = "utf-8" },
   { name = "PAGER", value = "less" },
@@ -50,3 +49,18 @@ paths = [
 windowsPaths = [
   { base = "XDG_DATA_HOME", suffix = "dotfiles/git-bash/bin" },
 ]
+
+[mirrors.tuna]
+pythonIndex = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
+cargoIndex = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
+rustupUpdateRoot = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"
+rustupDistServer = "https://mirrors.tuna.tsinghua.edu.cn/rustup"
+condaChannelAlias = "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud"
+condaChannels = ["https://conda.anaconda.org/nvidia/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/"]
+
+[mirrors.upstream]
+pythonIndex = "https://pypi.org/simple"
+rustupUpdateRoot = "https://static.rust-lang.org/rustup"
+rustupDistServer = "https://static.rust-lang.org"
+condaChannelAlias = "https://conda.anaconda.org"
+condaChannels = ["nvidia", "pytorch", "conda-forge", "bioconda", "https://repo.anaconda.com/pkgs/main/"]

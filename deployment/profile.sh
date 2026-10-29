@@ -78,6 +78,8 @@ resolve_profile() {
     esac
     [ "$DEPLOY_PLATFORM-$DEPLOY_ARCH" != windows-aarch64 ] || fail 'Windows ARM is outside the supported architecture matrix'
     DEPLOY_PROFILE="$DEPLOY_PLATFORM-$DEPLOY_ROLE"
+    DEPLOY_MIRROR=${DOTFILES_MIRROR:-tuna}
+    case "$DEPLOY_MIRROR" in tuna|upstream) ;; *) fail 'invalid DOTFILES_MIRROR; use tuna or upstream' ;; esac
     case "$DEPLOY_PROFILE" in
         linux-remote-compute) DEPLOY_CLASS=t9k ;;
         windows-*) DEPLOY_CLASS=win ;;

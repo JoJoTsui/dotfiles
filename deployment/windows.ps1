@@ -99,6 +99,7 @@ function Set-EnvironmentRoots {
         CLAUDE_CODE_GIT_BASH_PATH = Join-Path $roots.data 'dotfiles/git-bash/bin/bash.exe'
         TEMP = Join-Path $roots.cache 'tmp'; TMP = Join-Path $roots.cache 'tmp'; TMPDIR = Join-Path $roots.cache 'tmp'
         DOTFILES_PLATFORM = 'windows'; DOTFILES_ROLE = $selection.role; DOTFILES_ARCH = 'x86_64'; DOTFILES_BUNDLES = 'none'
+        DOTFILES_MIRROR = $selection.mirror
     }
     if ($selectedBundles.Count) { $DeviceEnvironment.DOTFILES_BUNDLES = $selectedBundles -join ',' }
     foreach ($name in $DeviceEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $DeviceEnvironment[$name], 'Process') }

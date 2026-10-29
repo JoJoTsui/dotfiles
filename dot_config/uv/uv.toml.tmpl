@@ -1,5 +1,5 @@
 python-preference = {{ .sharedShell.pythonPreference | quote }}
 
 [[index]]
-url = {{ .sharedShell.pythonIndex | quote }}
+url = {{ (index .mirrors .mirror).pythonIndex | quote }}
 default = true

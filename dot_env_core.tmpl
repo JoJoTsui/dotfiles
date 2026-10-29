@@ -23,6 +23,7 @@ fi
 {{- else }}
 {{- $value := get . "value" -}}
 {{- if (get . "setting") }}{{ $value = index $.sharedShell .setting }}{{ end -}}
+{{- if (get . "mirror") }}{{ $value = index (index $.mirrors $.mirror) .mirror }}{{ end -}}
 {{- if and (eq $.role "remote-compute") (get . "remote") }}{{ $value = .remote }}{{ end -}}
 {{- if and (eq $.platform "windows") (get . "windows") }}{{ $value = .windows }}{{ end }}
 {{ printf ": \"${%s:=%s}\"" .name $value }}

@@ -67,7 +67,8 @@ Usage: bash bootstrap.sh [options]
   --proxy                   Install Mihomo from the pinned release and refresh the profile
 
 Environment selectors: DOTFILES_PLATFORM, DOTFILES_ROLE, DOTFILES_PROFILE,
-DOTFILES_CLASS, DOTFILES_ARCH, DOTFILES_AGENTS, DOTFILES_BUNDLES, DOTFILES_PROXY.
+DOTFILES_CLASS, DOTFILES_ARCH, DOTFILES_AGENTS, DOTFILES_BUNDLES, DOTFILES_PROXY,
+DOTFILES_MIRROR (tuna or upstream).
 Explicit flags override environment selectors.
 Conflicting explicit preset/component flags are errors.
 Every state root is scoped to the target home. System Bash configuration and
@@ -134,6 +135,7 @@ if "$DEPLOY_PLAN"; then
     printf ',"role":'; json_string "$DEPLOY_ROLE"
     printf ',"arch":'; json_string "$DEPLOY_ARCH"
     printf ',"profile":'; json_string "$DEPLOY_PROFILE"
+    printf ',"mirror":'; json_string "$DEPLOY_MIRROR"
     printf ',"class":'; json_string "$DEPLOY_CLASS"
     printf ',"home":'; json_string "$DEPLOY_HOME"
     printf ',"source":'; json_string "$DEPLOY_SOURCE"
@@ -216,6 +218,7 @@ export HISTFILE="$HOME/.bash_history" TMPDIR="$HOME/.cache/tmp"
 export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$CARGO_HOME/bin:$PATH"
 export DOTFILES_PLATFORM="$DEPLOY_PLATFORM" DOTFILES_ROLE="$DEPLOY_ROLE" DOTFILES_ARCH="$DEPLOY_ARCH"
 export DOTFILES_BUNDLES="$DEPLOY_BUNDLES_CSV"
+export DOTFILES_MIRROR="$DEPLOY_MIRROR"
 unset DOTFILES_CLASS DOTFILES_PROFILE
 
 DEPLOY_STEP=prepare-state

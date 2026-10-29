@@ -1,0 +1,11 @@
+# DOTFILES_MIRROR=upstream retains Cargo's native crates.io source.
+{{ if ne .mirror "upstream" -}}
+[source.crates-io]
+replace-with = 'mirror'
+
+[source.mirror]
+registry = {{ (index .mirrors .mirror).cargoIndex | quote }}
+
+[registries.mirror]
+index = {{ (index .mirrors .mirror).cargoIndex | quote }}
+{{ end -}}

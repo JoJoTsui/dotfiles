@@ -1,2 +1,2 @@
 [global]
-index-url = {{ .sharedShell.pythonIndex }}
+index-url = {{ (index .mirrors .mirror).pythonIndex }}
