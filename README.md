@@ -294,7 +294,14 @@ DOTFILES_TEST_INSTALL=1 python3 -m unittest discover -s tests -p test_common_ins
 
 ## Maintenance
 
-Fold any host-side config change back into the source file, validate on the
+Optional [device-local hooks and mirrors](docs/SHARED_SHELL_SETTINGS.md) preserve
+machine preferences without changing managed files. Skill versions deploy from
+a [reviewed commit/checksum lock](docs/AGENT_PAYLOAD.md). The Linux CI workflow
+requires runtime prerequisites for core checks; network installation checks
+are a separate manual job. See [recovery](docs/RECOVERY.md) before deploying
+over an existing configured home.
+
+Fold any shared host-side config change back into the source file, validate on the
 simulated host, then commit with the `[tag]: message` convention (tags:
 `chore shell bash nu zsh claude agents codex devops direnv conda clash`) —
 full workflow, invariants and secret rules in [AGENTS.md](AGENTS.md).
