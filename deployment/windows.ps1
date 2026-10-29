@@ -218,21 +218,47 @@ function Import-SkillLibrary {
         $age = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int64](Get-Content -LiteralPath $marker -Raw)
         $refresh = $age -ge [int64]$maxAge
     }
+    $refreshSucceeded = $true
+    $pins = @{}
+    if (Test-Path -LiteralPath (Join-Path $Source 'deployment/skills.lock.tsv')) {
+        foreach ($entry in (Read-Catalog 'deployment/skills.lock.tsv')) {
+            if ($pins.ContainsKey($entry.columns[0])) { Stop-Deployment 'duplicate skill lock entry' }
+            $pins[$entry.columns[0]] = $entry.columns
+        }
+    }
     $lockRows = @('# name|kind|source|resolved')
     foreach ($row in (Read-Catalog 'deployment/skills.tsv')) {
         $name = $row.columns[0]; $kind = $row.columns[1]; $sourceUrl = $row.columns[2]
         $ref = $row.columns[3]; $path = $row.columns[4]; if (-not $path) { $path = '' }
         if (-not $name -or $name.StartsWith('#')) { continue }
+        $pin = ''
+        if ($pins.Count) {
+            $locked = $pins[$name]
+            if (-not $locked -or $locked[1] -ne $kind -or $locked[2] -ne $sourceUrl) { Stop-Deployment "skill lock source mismatch: $name" }
+            $pin = $locked[3]
+            if (($kind -eq 'git' -and $pin -cnotmatch '^[a-f0-9]{40}$') -or ($kind -eq 'tarball' -and $pin -cnotmatch '^[a-f0-9]{64}$')) { Stop-Deployment "invalid skill pin: $name" }
+        }
         if ($kind -eq 'git') {
             $slug = $sourceUrl -replace '^[A-Za-z][A-Za-z0-9+.-]*://', '' -replace '/+$', '' -replace '[^A-Za-z0-9._-]', '_'
             $repo = Join-Path $cache "git/$slug"
-            if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
+            if ($pin) {
+                if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
+                    Invoke-Tool git @('init', '--quiet', $repo) -Quiet | Out-Null
+                    Invoke-Tool git @('-C', $repo, 'remote', 'add', 'origin', $sourceUrl) -Quiet | Out-Null
+                }
+                & git -C $repo cat-file -e "$pin^{commit}" 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) { Invoke-Tool git @('-C', $repo, 'fetch', '--quiet', '--depth', '1', 'origin', $pin) -Quiet | Out-Null }
+                $resolved = $pin
+            } elseif (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
                 Invoke-Tool git @('clone', '--quiet', '--no-checkout', '--depth', '1', '--branch', $ref, $sourceUrl, $repo) -Quiet | Out-Null
             } elseif ($refresh) {
                 & git -C $repo fetch --quiet --depth 1 origin $ref 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) { $refreshSucceeded = $false }
             }
-            $resolved = (& git -C $repo rev-parse FETCH_HEAD 2>$null)
-            if (-not $resolved) { $resolved = (& git -C $repo rev-parse HEAD 2>$null) }
+            if (-not $pin) {
+                $resolved = (& git -C $repo rev-parse FETCH_HEAD 2>$null)
+                if (-not $resolved) { $resolved = (& git -C $repo rev-parse HEAD 2>$null) }
+            }
             if (-not $resolved) { Stop-Deployment "cannot resolve skill source: $name" }
             $archive = Join-Path $stage "$name.tar"
             $depth = ($path -split '/').Count
@@ -249,18 +275,36 @@ function Import-SkillLibrary {
             $slug = $sourceUrl -replace '^[A-Za-z][A-Za-z0-9+.-]*://', '' -replace '/+$', '' -replace '[^A-Za-z0-9._-]', '_'
             $cached = Join-Path $cache "tarballs/$slug.tgz"
             if ($refresh -or -not (Test-Path -LiteralPath $cached)) {
-                try { Invoke-WebRequest -Uri $sourceUrl -OutFile $cached -UseBasicParsing -TimeoutSec 90 }
-                catch { if (-not (Test-Path -LiteralPath $cached)) { Stop-Deployment "cannot download skill $name" } }
+                $download = "$cached.part"
+                try {
+                    Invoke-WebRequest -Uri $sourceUrl -OutFile $download -UseBasicParsing -TimeoutSec 90
+                }
+                catch {
+                    $refreshSucceeded = $false
+                    Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue
+                    if (-not (Test-Path -LiteralPath $cached)) { Stop-Deployment "cannot download skill $name" }
+                }
+                if (Test-Path -LiteralPath $download) {
+                    if ($pin -and (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -ne $pin) {
+                        Remove-Item -LiteralPath $download -Force
+                        Stop-Deployment "skill archive checksum mismatch: $name; review an explicit skill update"
+                    }
+                    Move-Item -LiteralPath $download -Destination $cached -Force
+                }
             }
+            $digest = (Get-FileHash -LiteralPath $cached -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($pin -and $digest -ne $pin) { Stop-Deployment "skill archive checksum mismatch: $name" }
             if (-not (Test-SkillArchive $cached)) { Stop-Deployment "unsafe skill archive: $name" }
             $destination = Join-Path $stage $name
             [IO.Directory]::CreateDirectory($destination) | Out-Null
             & tar -xzf $cached -C $destination
             if (-not (Test-Path -LiteralPath (Join-Path $destination 'SKILL.md'))) { Stop-Deployment "skill $name has no SKILL.md" }
-            $lockRows += "$name|tarball|$sourceUrl|cached"
+            $lockRows += "$name|tarball|$sourceUrl|$digest"
         } else { Stop-Deployment "unknown skill kind: $kind" }
     }
-    Set-Content -LiteralPath $marker -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    if ($refresh -and $refreshSucceeded) {
+        Set-Content -LiteralPath $marker -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    }
     [IO.Directory]::CreateDirectory((Join-Path $roots.state 'dotfiles')) | Out-Null
     Set-Content -LiteralPath (Join-Path $roots.state 'dotfiles/skills.lock.tsv') -Value ($lockRows -join "`n")
     $script:SkillLibrary = $stage

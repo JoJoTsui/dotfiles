@@ -31,13 +31,36 @@ tdd|git|https://github.com/mattpocock/skills|main|skills/engineering/tdd
 lark-im|tarball|https://open.feishu.cn/.../lark-im.tar.gz||
 ```
 
-Bootstrap fetches the catalog into a staging tree, then the `skills` payload
-rows copy that tree to `~/.agents/skills` and the adapters. Fetching is
-best-effort fresh: a successful refresh is reused for
+`deployment/skills.lock.tsv` pins Git commits and archive SHA-256 values.
+The initial lock records the existing isolated upstream cache, including every
+declared skill path; it does not claim to select the latest upstream release.
+Bootstrap fetches these reviewed bytes into a staging tree, then the `skills`
+payload rows copy that tree to `~/.agents/skills` and the adapters. Moving branch
+names in the catalog are discovery inputs for explicit updates, not deployment
+versions. Cached archives and newly downloaded archives must match the lock.
+
+Update explicitly, inspect the lock diff and changed upstream skills, then run
+the deployment checks before committing:
+
+```bash
+python3 deployment/update_skills.py refresh
+git diff -- deployment/skills.lock.tsv
+python3 deployment/update_skills.py check
+```
+
+Refresh validates upstream skill paths and archive structure before atomically
+replacing the lock. It does not deploy or execute skill helpers. A failed
+proposal leaves the old lock intact. Skill contents still require review;
+hashes establish which bytes deploy, not whether instructions are appropriate.
+
+A successful cache refresh is reused for
 `DOTFILES_SKILLS_MAX_AGE` seconds (default six hours), `DOTFILES_SKILLS_REFRESH=1`
 forces it, and `0` reuses the cache. Git sources are shallow clones under the
 XDG cache; tarballs are conditional downloads. The resolved commits and cached
-archives are recorded in `~/.local/state/dotfiles/skills.lock.tsv`.
+archive hashes are recorded in `~/.local/state/dotfiles/skills.lock.tsv`.
+Reusing the cache or falling back after a failed fetch does not reset its age.
+An upstream archive that changes at the same URL fails checksum verification;
+review an explicit update rather than silently accepting it.
 `DOTFILES_SKILLS_DIR` bypasses fetching for hermetic tests and air-gapped hosts.
 
 Archives are rejected when they contain absolute paths, parent traversal, or

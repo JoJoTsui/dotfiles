@@ -1,6 +1,6 @@
 # Skill library provisioning: the repository owns the catalog, not skill bytes.
-# Every catalog row names an upstream source, so a deployment fetches the current
-# release into a staging tree and the agent payload copies it from there.
+# Every catalog row names an upstream source; the reviewed lock selects bytes
+# fetched into staging before the agent payload copies them to discovery paths.
 # Bash 3.2-compatible.
 
 skill_refresh_check() {
@@ -24,6 +24,34 @@ skills_cache_root() {
         printf '%s' "$DOTFILES_SKILLS_CACHE"
     else
         printf '%s' "$XDG_CACHE_HOME/dotfiles/skills"
+    fi
+}
+
+skill_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
+skill_pin_for() {
+    local name=$1 kind=$2 source=$3 entry entry_kind entry_source revision
+    local lock=${DOTFILES_SKILLS_LOCK:-$DEPLOY_SOURCE/deployment/skills.lock.tsv}
+    SKILL_PIN=''
+    [ -f "$lock" ] || return 0
+    [ ! -L "$lock" ] || fail 'skill lock is a symlink'
+    while IFS=$'|\r' read -r entry entry_kind entry_source revision; do
+        [ "$entry" = "$name" ] || continue
+        [ "$entry_kind" = "$kind" ] && [ "$entry_source" = "$source" ] || fail "skill lock source mismatch: $name"
+        [ -z "$SKILL_PIN" ] || fail "duplicate skill lock entry: $name"
+        SKILL_PIN=$revision
+    done < "$lock"
+    case "$SKILL_PIN" in ''|*[!a-f0-9]*) fail "invalid or missing skill pin: $name" ;; esac
+    if [ "$kind" = git ]; then
+        [ "${#SKILL_PIN}" = 40 ] || fail "invalid git skill pin: $name"
+    else
+        [ "${#SKILL_PIN}" = 64 ] || fail "invalid archive skill pin: $name"
     fi
 }
 
@@ -80,12 +108,23 @@ skill_fetch_git() {
     local slug repo resolved depth
     slug=$(skill_slug "$source")
     repo="$cache/git/$slug"
-    if [ ! -d "$repo/.git" ]; then
+    if [ -n "$SKILL_PIN" ]; then
+        if [ ! -d "$repo/.git" ]; then
+            git init --quiet "$repo" || return 1
+            git -C "$repo" remote add origin "$source" || return 1
+        fi
+        if ! git -C "$repo" cat-file -e "$SKILL_PIN^{commit}" 2>/dev/null; then
+            git -C "$repo" fetch --quiet --depth 1 origin "$SKILL_PIN" || return 1
+        fi
+        resolved=$SKILL_PIN
+    elif [ ! -d "$repo/.git" ]; then
         git clone --quiet --no-checkout --depth 1 --branch "$ref" "$source" "$repo" >/dev/null 2>&1 || return 1
     elif [ "$SKILL_REFRESH" = 1 ]; then
-        git -C "$repo" fetch --quiet --depth 1 origin "$ref" >/dev/null 2>&1 || true
+        git -C "$repo" fetch --quiet --depth 1 origin "$ref" >/dev/null 2>&1 || SKILL_REFRESH_OK=0
     fi
-    resolved=$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null) || resolved=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || return 1
+    if [ -z "$SKILL_PIN" ]; then
+        resolved=$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null) || resolved=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || return 1
+    fi
     depth=$(printf '%s' "$path" | awk -F/ '{print NF}')
     mkdir -p "$destination/$name"
     git -C "$repo" archive "$resolved" "$path" 2>/dev/null | tar -x -C "$destination/$name" --strip-components="$depth" 2>/dev/null || return 1
@@ -100,20 +139,26 @@ skill_fetch_tarball() {
     archive="$cache/tarballs/$slug.tgz"
     mkdir -p "$cache/tarballs"
     temporary="$archive.part.$$"
-    if [ "$SKILL_REFRESH" = 1 ]; then
+    if [ "$SKILL_REFRESH" = 1 ] || [ ! -s "$archive" ]; then
         # Conditional download keeps repeat applies cheap and offline-safe.
         if ! curl -fsSL --connect-timeout 5 --max-time 90 -z "$archive" -o "$temporary" "$source" >/dev/null 2>&1; then
+            SKILL_REFRESH_OK=0
             rm -f "$temporary"
             [ -s "$archive" ] || return 1
         fi
         if [ -s "$temporary" ]; then
+            if [ -n "$SKILL_PIN" ] && [ "$(skill_sha256 "$temporary")" != "$SKILL_PIN" ]; then
+                rm -f "$temporary"
+                fail "skill archive checksum mismatch: $name; review an explicit skill update"
+            fi
             mv "$temporary" "$archive"
         fi
     fi
     [ -s "$archive" ] || return 1
+    [ -z "$SKILL_PIN" ] || [ "$(skill_sha256 "$archive")" = "$SKILL_PIN" ] || fail "skill archive checksum mismatch: $name"
     skill_archive_is_safe "$archive" || return 1
     skill_extract_archive "$archive" "$destination/$name" || return 1
-    printf '%s|tarball|%s|cached\n' "$name" "$source" >> "$index"
+    printf '%s|tarball|%s|%s\n' "$name" "$source" "$(skill_sha256 "$archive")" >> "$index"
 }
 
 # Fetch (or reuse) the catalog into PAYLOAD_SKILLS_DIR. A caller-supplied
@@ -134,9 +179,11 @@ prepare_skill_library() {
     rm -rf "$root" "$index"
     mkdir -p "$root" "$cache/git" "$cache/tarballs"
     skill_refresh_check
+    SKILL_REFRESH_OK=1
     : > "$index"
     while IFS=$'|\r' read -r name kind source ref path; do
         case "$name" in ''|\#*) continue ;; esac
+        skill_pin_for "$name" "$kind" "$source"
         case "$kind" in
             git)
                 skill_fetch_git "$name" "$source" "$ref" "$path" "$cache" "$root" "$index" ||
@@ -155,7 +202,9 @@ prepare_skill_library() {
         cat "$index"
     } > "$XDG_STATE_HOME/dotfiles/skills.lock.tsv"
     rm -f "$index"
-    date +%s > "$cache/.refreshed"
+    if [ "$SKILL_REFRESH" = 1 ] && [ "$SKILL_REFRESH_OK" = 1 ]; then
+        date +%s > "$cache/.refreshed"
+    fi
     PAYLOAD_SKILLS_DIR=$root
     export PAYLOAD_SKILLS_DIR
 }
