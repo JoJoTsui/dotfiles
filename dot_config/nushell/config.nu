@@ -13,3 +13,13 @@ def --wrapped logs [...arguments: string] {
 const local_config_path = ($nu.home-dir | path join .config dotfiles nu.local.nu)
 const local_config = if ($local_config_path | path exists) { $local_config_path } else { null }
 source $local_config
+
+# Herdr panes use an in-process Codex app server so hooks inherit the pane
+# identity. Outside Herdr, keep the shared daemon.
+def --wrapped codex [...args] {
+    if ($env.HERDR_ENV? == "1") {
+        ^codex-herdr ...$args
+    } else {
+        ^codex ...$args
+    }
+}

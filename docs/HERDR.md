@@ -61,6 +61,39 @@ Rules that follow from the CLI:
 - Keep delegation at depth one: a Herdr-started agent must not start further
   agents unless the task asks for it.
 
+## Codex under Herdr
+
+Codex 0.166 keeps hooks in its shared app-server daemon, which retains the
+environment of the pane that first started it. Under Herdr that pane identity
+is wrong, so every Codex session is reported to another pane and cannot be
+resumed with the right command. Inside Herdr, `codex` resolves to
+`codex-herdr`: it checks `dotfiles-agent-health`, then runs
+`with-proxy codex --no-daemon`, so hooks stay in the pane process. Outside
+Herdr, `codex` keeps the shared daemon.
+
+`~/.codex/herdr-codex-resume.sh` is a custom SessionStart hook beside the
+managed `herdr-agent-state.sh`. It reports `codex-herdr resume <id>` as the
+resume argv, so a workspace restore keeps the health gate, proxy, and
+`--no-daemon`. Codex asks for hook trust once; approve it or the override is
+skipped.
+
+## Worktree persistence
+
+Herdr creates task worktrees under `worktrees.directory` (the repo config,
+shipped with the developer bundle, pins the default `~/.herdr/worktrees`). Keep
+that root on persistent storage: managed hosts use `~/.herdr` in their home; the
+legacy T9K host links `~/.herdr` into `/t9k/mnt/joey/SHELL` through
+`deployment/legacy/home-links.tsv`. Never create a task checkout under `/tmp`;
+commit, merge, or archive the branch before closing a workspace. See the
+worktree persistence rule in the shared agent instructions.
+
+## Preflight
+
+Before a restore, or when a pane cannot reach its provider, run
+`~/.local/bin/dotfiles-agent-health`. It checks Mihomo, U.S. egress, Caveman,
+the Codex app-server daemon, Herdr, and CodeGraph; `--probe` adds one paid Codex
+model round trip. See [agent health](AGENT_HEALTH.md).
+
 ## Verified here
 
 On the workstation (herdr 0.9.4, server running):

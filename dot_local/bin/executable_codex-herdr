@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# codex-herdr — launch Codex for a Herdr pane.
+#
+# Herdr's Codex integration needs the app-server in-process so hooks inherit the
+# pane's HERDR_PANE_ID; the shared daemon keeps the environment of the pane it
+# first started in and reports every session to that pane. The wrapper also
+# checks the local stack and inherits the outbound proxy for Codex's
+# account/read call.
+set -uo pipefail
+
+health=${DOTFILES_AGENT_HEALTH:-$HOME/.local/bin/dotfiles-agent-health}
+with_proxy=${DOTFILES_WITH_PROXY:-$HOME/.local/bin/with-proxy}
+
+if [ ! -x "$health" ]; then
+    printf 'codex-herdr: %s is missing\n' "$health" >&2
+    exit 1
+fi
+if [ ! -x "$with_proxy" ]; then
+    printf 'codex-herdr: %s is missing\n' "$with_proxy" >&2
+    exit 1
+fi
+if ! "$health" --quiet; then
+    printf 'codex-herdr: agent stack is unhealthy; refusing to launch\n' >&2
+    exit 1
+fi
+
+exec "$with_proxy" codex --no-daemon "$@"

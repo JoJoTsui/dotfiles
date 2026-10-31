@@ -75,7 +75,7 @@ class LegacyLinkTests(unittest.TestCase):
         for required in (
             ".qoder", ".minimax", ".minimax-code", ".minimax-code-install-logs",
             ".codex", ".opencode", ".kimi-code", ".pi", ".codegraph",
-            ".caveman",
+            ".caveman", ".herdr", ".lark-cli",
         ):
             self.assertIn(required, paths)
 

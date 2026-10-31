@@ -23,3 +23,13 @@ if [ -z "${_dotfiles_atuin_loaded:-}" ] && command -v atuin >/dev/null 2>&1; the
 fi
 
 [ ! -f "$HOME/.config/dotfiles/bash.local.sh" ] || . "$HOME/.config/dotfiles/bash.local.sh"
+
+# Herdr panes use the in-process Codex app server so hooks inherit the pane
+# identity. Outside Herdr, keep the shared daemon.
+codex() {
+    if [ "${HERDR_ENV:-}" = 1 ]; then
+        command codex-herdr "$@"
+    else
+        command codex "$@"
+    fi
+}

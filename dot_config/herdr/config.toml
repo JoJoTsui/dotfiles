@@ -7,3 +7,8 @@ dark_name = "catppuccin"
 
 [terminal]
 default_shell = "nu"
+
+# Keep task checkouts on the device's persistent home. Legacy hosts link
+# ~/.herdr into the live tree; see docs/HERDR.md.
+[worktrees]
+directory = "~/.herdr/worktrees"

@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# dotfiles-agent-health — preflight for the local coding-agent stack.
+#
+# Checks the dependency chain that fails silently after a reboot: Mihomo, its
+# U.S. egress, the Caveman gateway, the Codex app-server daemon, the Herdr
+# server, and the CodeGraph binary. The Codex resume hook runs the cheap checks;
+# `--probe` adds one real model round trip.
+set -u
+
+quiet=false
+probe=false
+for argument in "$@"; do
+    case "$argument" in
+        -q|--quiet) quiet=true ;;
+        --probe) probe=true ;;
+        -h|--help)
+            cat <<'EOF'
+usage: dotfiles-agent-health [--quiet] [--probe]
+
+  --quiet   print failures only
+  --probe   also run one Codex model round trip (uses the active provider)
+EOF
+            exit 0
+            ;;
+        *)
+            printf 'unknown argument: %s\n' "$argument" >&2
+            exit 2
+            ;;
+    esac
+done
+
+failures=0
+ok() {
+    [ "$quiet" = true ] || printf 'ok   %s\n' "$*"
+}
+fail() {
+    printf 'FAIL %s\n' "$*" >&2
+    failures=$((failures + 1))
+}
+warn() {
+    [ "$quiet" = true ] || printf 'warn %s\n' "$*" >&2
+}
+
+http_code() {
+    curl -sS -m "${2:-5}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || true
+}
+
+with_proxy=$(command -v with-proxy 2>/dev/null || true)
+[ -n "$with_proxy" ] || with_proxy=$HOME/.local/bin/with-proxy
+
+# Mihomo controller.
+code=$(http_code http://127.0.0.1:9090/version)
+if [ "$code" = 200 ]; then
+    ok "mihomo controller (127.0.0.1:9090)"
+else
+    fail "mihomo controller (127.0.0.1:9090, http ${code:-none})"
+fi
+
+# Egress must leave through the proxy on a U.S. node.
+if [ -x "$with_proxy" ]; then
+    loc=$("$with_proxy" curl -sS -m 10 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null |
+        sed -n 's/^loc=//p' | head -1)
+    if [ "$loc" = US ]; then
+        ok "proxy egress (US)"
+    else
+        fail "proxy egress (country '${loc:-unknown}', want US)"
+    fi
+else
+    fail "with-proxy not found"
+fi
+
+# Caveman gateway and its run-file process.
+code=$(http_code http://127.0.0.1:8787/)
+case "$code" in
+    200|401|403|404) ok "caveman gateway (127.0.0.1:8787, http $code)" ;;
+    *) fail "caveman gateway (127.0.0.1:8787, http ${code:-none})" ;;
+esac
+run_file=$HOME/.caveman/run/8787.json
+if [ -f "$run_file" ]; then
+    proxy_pid=$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$run_file" | head -1)
+    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
+        ok "caveman proxy pid $proxy_pid"
+    else
+        fail "caveman run file pid ${proxy_pid:-missing} is not alive"
+    fi
+else
+    fail "caveman run file $run_file missing"
+fi
+
+# Codex app-server daemon. The Herdr wrapper uses --no-daemon, so a stopped
+# daemon is a warning for that path, not a launch blocker.
+if command -v codex >/dev/null 2>&1; then
+    if timeout 10 codex app-server daemon version >/dev/null 2>&1; then
+        ok "codex app-server daemon"
+    else
+        warn "codex app-server daemon not running (not needed with --no-daemon)"
+    fi
+else
+    fail "codex not found on PATH"
+fi
+
+# Herdr server.
+if command -v herdr >/dev/null 2>&1; then
+    if herdr status 2>/dev/null | grep -q 'status: running'; then
+        ok "herdr server"
+    else
+        fail "herdr server"
+    fi
+else
+    fail "herdr not found on PATH"
+fi
+
+# CodeGraph MCP binary.
+if command -v codegraph >/dev/null 2>&1; then
+    ok "codegraph $(codegraph --version 2>/dev/null | head -1)"
+else
+    fail "codegraph not found on PATH"
+fi
+
+# Optional end-to-end model probe. This is the only step that spends tokens.
+if [ "$probe" = true ]; then
+    probe_log=${TMPDIR:-/tmp}/dotfiles-agent-health-probe.$$.log
+    if "$with_proxy" timeout 90 codex exec -C /tmp --skip-git-repo-check \
+        --sandbox read-only "Reply with HEALTH_OK and nothing else." \
+        >"$probe_log" 2>&1 && grep -q HEALTH_OK "$probe_log"; then
+        ok "codex model probe"
+    else
+        fail "codex model probe (see $probe_log)"
+    fi
+fi
+
+if [ "$failures" -ne 0 ]; then
+    printf '%d check(s) failed\n' "$failures" >&2
+    exit 1
+fi
+[ "$quiet" = true ] || printf 'agent stack healthy\n'

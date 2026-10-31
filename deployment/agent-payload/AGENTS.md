@@ -242,6 +242,15 @@ Transports beyond the one-shot table:
 - Inside Herdr (`HERDR_ENV=1`): use its worktree and agent commands; run
   `herdr --skill` for syntax and do not attach from outside.
 
+## Worktree persistence
+
+Create task worktrees under the device's persistent worktree root: Herdr's
+`worktrees.directory` (default `~/.herdr/worktrees`) or Codex's
+`~/.codex/worktrees`. Use `/tmp` only for throwaway scratch files, never for a
+task checkout or an uncommitted deliverable. Before closing a workspace, merge
+the branch or commit it and tag it `archive/<worktree-name>`; a sudden host
+interruption must not be what decides whether the work survives.
+
 ## Worktree hygiene
 
 Clean up only worktrees and build directories the task created. Never remove a
