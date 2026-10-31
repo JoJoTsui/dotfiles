@@ -1,5 +1,6 @@
 """Checks for the opt-in legacy home relinker; all writes stay in temp homes."""
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -74,8 +75,27 @@ class LegacyLinkTests(unittest.TestCase):
         for required in (
             ".qoder", ".minimax", ".minimax-code", ".minimax-code-install-logs",
             ".codex", ".opencode", ".kimi-code", ".pi", ".codegraph",
+            ".caveman",
         ):
             self.assertIn(required, paths)
+
+    def test_documented_adoption_sequence_links_a_home_only_root(self):
+        # Mirror docs/CAVEMAN.md: copy the home-only root into the live tree,
+        # move the original aside, then let the relinker create the symlink.
+        home_root = self.home / ".caveman"
+        (home_root / "bin").mkdir(parents=True)
+        (home_root / "bin" / "caveman-proxy").write_text("binary\n", encoding="utf-8")
+        shutil.copytree(home_root, self.source / ".caveman")
+        backup = self.home / ".caveman.overlay-backup"
+        home_root.rename(backup)
+
+        result = self.run_link(groups="agents")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        target = self.home / ".caveman"
+        self.assertTrue(target.is_symlink())
+        self.assertEqual(os.readlink(target), str(self.source / ".caveman"))
+        self.assertEqual((target / "bin" / "caveman-proxy").read_text(encoding="utf-8"), "binary\n")
+        self.assertEqual((backup / "bin" / "caveman-proxy").read_text(encoding="utf-8"), "binary\n")
 
     def test_full_link_is_idempotent_and_creates_no_backups(self):
         self.make_sources()

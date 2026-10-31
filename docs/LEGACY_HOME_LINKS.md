@@ -44,8 +44,12 @@ manifest.
 The manifest names entries relative to the live tree; the directory must already
 exist there. A manifest entry whose source is absent is skipped, and `--strict`
 turns that into a failure. To adopt a home-only root such as `.caveman` or
-`.lark-cli`, move or copy it into the live tree first, then run the relinker. The default source is the parent of this checkout. The default home
-is `$HOME`. Both must exist and resolve to different directories.
+`.lark-cli`, stop the service that owns it, move or copy it into the live tree
+first, then run the relinker. Keep the same target name: Caveman writes
+`~/.caveman/bin/...` into client configuration, and the symlink preserves that
+literal path. The default source is the parent of this checkout. The default home
+is `$HOME`. Both must exist and resolve to different directories. See
+[caveman](CAVEMAN.md) for the gateway-specific adoption sequence.
 
 ## Safety model
 

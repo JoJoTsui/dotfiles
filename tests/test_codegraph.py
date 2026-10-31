@@ -101,7 +101,7 @@ class CodeGraphTests(unittest.TestCase):
         original = {
             ".claude.json": '{"oauthAccount":{"emailAddress":"synthetic@example.invalid"},"mcpServers":{"device":{"command":"device-mcp"}}}',
             ".claude/settings.json": '{"model":"device-model","alwaysThinkingEnabled":false,"env":{"ANTHROPIC_AUTH_TOKEN":"synthetic-device-token","DEVICE_ENV":"keep"},"hooks":{"Stop":[]}}',
-            ".codex/config.toml": 'model = "device-model"\n[projects."/synthetic/project"]\ntrust_level = "trusted"\n[mcp_servers.device]\ncommand = "device-mcp"\n',
+            ".codex/config.toml": '# >>> caveman:native-root\nmodel = "device-model"\nmodel_provider = "caveman"\n# <<< caveman:native-root\n[projects."/synthetic/project"]\ntrust_level = "trusted"\n[mcp_servers.device]\ncommand = "device-mcp"\n[model_providers.caveman]\nname = "Caveman"\nbase_url = "http://127.0.0.1:8787/chatgpt"\nwire_api = "responses"\n',
             ".kimi-code/config.toml": 'default_model = "device/model"\n[providers."managed:kimi-code"]\napi_key = "synthetic-device-token"\n[models."device/model"]\nprovider = "device"\n',
             ".kimi-code/tui.toml": 'theme = "device-theme"\n[update]\nauto_install = true\n',
             ".kimi-code/mcp.json": '{"mcpServers":{"device":{"command":"device-mcp","env":{"SYNTHETIC_TOKEN":"keep"}}}}',
@@ -127,10 +127,14 @@ class CodeGraphTests(unittest.TestCase):
         self.assertEqual(settings["model"], "device-model")
         self.assertFalse(settings["alwaysThinkingEnabled"])
         self.assertEqual(settings["hooks"], {"Stop": []})
-        codex = tomllib.loads((self.home / ".codex/config.toml").read_text())
+        codex_text = (self.home / ".codex/config.toml").read_text()
+        codex = tomllib.loads(codex_text)
         self.assertEqual(codex["model"], "device-model")
+        self.assertEqual(codex["model_provider"], "caveman")
         self.assertEqual(codex["projects"]["/synthetic/project"]["trust_level"], "trusted")
         self.assertEqual(codex["mcp_servers"]["device"]["command"], "device-mcp")
+        self.assertEqual(codex["model_providers"]["caveman"]["base_url"], "http://127.0.0.1:8787/chatgpt")
+        self.assertNotIn("# >>> caveman", codex_text)
         kimi = tomllib.loads((self.home / ".kimi-code/config.toml").read_text())
         self.assertEqual(kimi["default_model"], "device/model")
         self.assertEqual(kimi["providers"]["managed:kimi-code"]["api_key"], "synthetic-device-token")

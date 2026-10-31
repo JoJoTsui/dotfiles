@@ -252,7 +252,7 @@ bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 | **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
 | **kimi-code** | merged `~/.kimi-code/config.toml`, `tui.toml`, owned `mcp.json` entry | `credentials/`, `oauth/`, sessions | key default from `KIMI_API_KEY`; `kimi login` per host; CodeGraph stdio enabled |
 | **pi** | `~/.pi/agent/settings.json`, `models-store.json` (MiniMax M2.7/M3 catalog) | `auth.json` (MiniMax key), `sessions/`, `trust.json` | minimal terminal harness; `pi auth login` per host |
-| **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; CodeGraph MCP, no proxy providers; remote profile ignores update events |
+| **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; CodeGraph MCP, no dotfiles-managed proxy providers; remote profile ignores update events |
 | **MiniMax Code** | merged `~/.minimax/AGENTS.md` | runtime state under `~/.minimax`; vendor installer releases under `~/.minimax-code` and install logs | frozen Bun project exposing `mcode`; instructions deployed, skill discovery not declared |
 | **Qoder** | merged `~/.qoder/AGENTS.md` | login/session under `~/.qoder` | native release pin with manifest SHA-256 verification; `qoder` and `qodercli` launchers |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
@@ -272,6 +272,16 @@ for versions, lifecycle trust, update policy, and isolated diagnostic checks.
 Runtime configs merge through the public bootstrap, retaining existing settings
 and authentication. [Client settings](docs/AGENT_SETTINGS.md) describes ownership,
 CodeGraph discovery, and the checks for indexed and unindexed projects.
+
+### Caveman gateway (optional, device-local)
+
+Caveman is a local metering/compression gateway on `127.0.0.1:8787`. Its runtime
+root (`~/.caveman`), Go binaries, hooks, and generated OpenCode plugin stay
+device-owned; the Codex merge keeps the provider/MCP values because they differ
+from the managed defaults, but drops the comment markers. Start it under
+`with-proxy`; it is not a managed service. On the legacy T9K host the
+`agents|.caveman` home link keeps that root on the persistent tree. See
+[caveman](docs/CAVEMAN.md).
 
 Common pattern: **config in git, credentials on the host** — auth flows run
 per host (`claude` login / env token, `codex login`, `kimi login`,
