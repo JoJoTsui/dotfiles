@@ -82,6 +82,12 @@ class AgentHerdrTests(unittest.TestCase):
         self.assertIn("codex-herdr resume test-123", output)
         self.assertEqual(len(output.strip().splitlines()), 2)
 
+    def test_herdr_config_uses_login_shell_and_restores_agents(self):
+        config = (SOURCE / "dot_config/herdr/config.toml").read_text(encoding="utf-8")
+        self.assertIn('default_shell = "nu-login"', config)
+        self.assertIn('shell_mode = "non_login"', config)
+        self.assertIn("resume_agents_on_restore = true", config)
+
     def test_hook_installer_is_idempotent_and_preserves_other_hooks(self):
         hooks = self.root / "hooks.json"
         hooks.write_text(

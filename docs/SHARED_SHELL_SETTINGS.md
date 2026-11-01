@@ -126,6 +126,24 @@ limitations of each shell's separate native history.
 keeps ANSI highlighting visible; existing pager overrides win. `logs --print
 application.log` prints without a pager. See [Tailspin usage](https://github.com/bensadeh/tailspin).
 
+## Pane and agent shells
+
+The account shell is `/bin/bash`; `.profile`/`.bash_profile` exec Nu for an
+interactive login. Pane shells are separate:
+
+- Herdr: `terminal.default_shell = "nu-login"` with `shell_mode = "non_login"`.
+- Zellij: `default_shell` points at `nu-login`.
+- tmux: no config is shipped; if adopted, use
+  `set -g default-command "exec $HOME/.local/bin/nu-login"`.
+
+`nu-login` starts Nu only for an interactive TTY and falls back to Bash for
+non-TTY calls, arguments, or agent-marked environments. Agent tool shells are
+client-owned and remain Bash/Zsh; Codex uses `bash -lc`, Claude honors
+`CLAUDE_CODE_SHELL`, and OpenCode uses a compatible `$SHELL` or Bash/Zsh. Do not
+export `SHELL=nu` from the login guard: keep `SHELL` as the account shell so
+`$SHELL`-based tools still find Bash. A legacy profile that exports it should be
+corrected on its next permitted apply.
+
 ## Checks and evidence
 
 ```bash

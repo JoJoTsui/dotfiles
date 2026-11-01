@@ -6,7 +6,11 @@ light_name = "catppuccin-latte"
 dark_name = "catppuccin"
 
 [terminal]
-default_shell = "nu"
+default_shell = "nu-login"
+shell_mode = "non_login"
+
+[session]
+resume_agents_on_restore = true
 
 # Keep task checkouts on the device's persistent home. Legacy hosts link
 # ~/.herdr into the live tree; see docs/HERDR.md.

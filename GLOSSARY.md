@@ -47,3 +47,22 @@ device's home or settings.
 
 **Native validation**:
 Verification of a deployment using its target platform's actual runtime.
+
+**Account shell**:
+The program recorded in the account database for a login session. It is not
+necessarily the interactive shell a TTY ends up running.
+_Avoid_: Login shell
+
+**Interactive login shell**:
+The shell a TTY login actually runs after the account shell's startup guard; it
+may replace itself with another shell.
+_Avoid_: Login shell, pane shell
+
+**Pane shell**:
+The default command a terminal multiplexer starts in a new pane.
+_Avoid_: Login shell, agent shell
+
+**Agent tool shell**:
+The client-owned shell an agent uses for tool commands, independent of the pane
+shell.
+_Avoid_: Pane shell, login shell
