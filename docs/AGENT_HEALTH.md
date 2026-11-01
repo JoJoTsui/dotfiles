@@ -27,4 +27,5 @@ need. `--probe` is opt-in because it spends tokens and depends on the active
 provider. A host without Mihomo or Caveman should skip the script rather than
 weaken it.
 
-Related: [proxy](PROXY.md), [caveman](CAVEMAN.md), [herdr](HERDR.md).
+Related: [proxy](PROXY.md), [caveman](CAVEMAN.md), [herdr](HERDR.md),
+[host bring-up](HOST_UP.md).

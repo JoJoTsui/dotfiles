@@ -110,7 +110,9 @@ Before a restore, or when a pane cannot reach its provider, run
 egress, Caveman, the Codex app-server daemon, Herdr, and CodeGraph.
 `--codex` narrows it to the Codex launch path (no CodeGraph), `--clients`
 reports client binaries and config paths, and `--probe` adds one paid Codex
-model round trip. See [agent health](AGENT_HEALTH.md).
+model round trip. After a reboot, `dotfiles-host-up up` chains the same
+dependency order and `up --restore` starts the saved Herdr session. See
+[agent health](AGENT_HEALTH.md) and [host bring-up](HOST_UP.md).
 
 ## Verified here
 

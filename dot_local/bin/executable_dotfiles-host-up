@@ -1,0 +1,294 @@
+#!/usr/bin/env bash
+# dotfiles-host-up — bring the local agent stack up after a reboot.
+#
+# It checks/repairs the legacy links, starts Mihomo, Caveman, the Codex
+# app-server daemon, and the Herdr server, then runs the health preflight.
+# Herdr is never restarted here: that would tear down every pane and agent.
+set -uo pipefail
+
+action=status
+restore=false
+restart=false
+compress=false
+quiet=false
+for argument in "$@"; do
+    case "$argument" in
+        status|up) action=$argument ;;
+        --restore) restore=true ;;
+        --restart) restart=true ;;
+        --compress) compress=true ;;
+        -q|--quiet) quiet=true ;;
+        -h|--help)
+            cat <<'EOF'
+usage: dotfiles-host-up [status|up] [--restore] [--restart] [--compress] [--quiet]
+
+  status      report links, Mihomo, Caveman, Codex daemon, Herdr, and health
+  up          repair links and start anything that is down
+  --restore   after `up`, start Herdr and let its saved workspace/agents restore;
+              attach afterwards with `herdr`. A running Herdr server is never restarted.
+  --restart   recycle Mihomo, Caveman, and the Codex daemon when they are running
+  --compress  start Caveman in compress mode instead of byte-safe record mode
+  --quiet     suppress success lines
+EOF
+            exit 0
+            ;;
+        *) printf 'dotfiles-host-up: unknown argument: %s\n' "$argument" >&2; exit 2 ;;
+    esac
+done
+
+failures=0
+ok() { [ "$quiet" = true ] || printf 'ok   %s\n' "$*"; }
+warn() { printf 'warn %s\n' "$*" >&2; }
+fail() { printf 'FAIL %s\n' "$*" >&2; failures=$((failures + 1)); }
+
+self=$(readlink -f "$0" 2>/dev/null || printf '%s' "$0")
+default_live_root=$(dirname "$(dirname "$self")")
+if [ -n "${DOTFILES_SOURCE:-}" ]; then
+    source_dir=$DOTFILES_SOURCE
+    live_root=${DOTFILES_LIVE_ROOT:-$(dirname "$source_dir")}
+elif [ -f "$default_live_root/dotfiles/deployment/legacy/link-home.sh" ]; then
+    live_root=$default_live_root
+    source_dir=$default_live_root/dotfiles
+elif [ -f "$(dirname "$default_live_root")/deployment/legacy/link-home.sh" ]; then
+    source_dir=$(dirname "$default_live_root")
+    live_root=$(dirname "$source_dir")
+else
+    source_dir=$default_live_root
+    live_root=${DOTFILES_LIVE_ROOT:-$(dirname "$default_live_root")}
+fi
+with_proxy=${DOTFILES_WITH_PROXY:-$HOME/.local/bin/with-proxy}
+curl_bin=${DOTFILES_CURL:-$(command -v curl 2>/dev/null || true)}
+health=${DOTFILES_AGENT_HEALTH:-$HOME/.local/bin/dotfiles-agent-health}
+link_home=${DOTFILES_LINK_HOME:-$source_dir/deployment/legacy/link-home.sh}
+caveman=${DOTFILES_CAVEMAN_BIN:-$HOME/.pixi/envs/nodejs/bin/caveman}
+codex=${DOTFILES_CODEX_BIN:-$(command -v codex 2>/dev/null || true)}
+herdr=${DOTFILES_HERDR_BIN:-$(command -v herdr 2>/dev/null || true)}
+
+http_code() {
+    [ -n "$curl_bin" ] || return 0
+    "$curl_bin" -sS -m "${2:-5}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || true
+}
+
+wait_http() {
+    local url=$1 wanted=$2 tries=${3:-20} code attempt=0
+    while [ "$attempt" -lt "$tries" ]; do
+        code=$(http_code "$url")
+        case " $wanted " in *" $code "*) return 0 ;; esac
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    return 1
+}
+
+caveman_code() {
+    http_code http://127.0.0.1:8787/
+}
+
+caveman_running() {
+    case "$(caveman_code)" in
+        200|401|403|404) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+caveman_mode() {
+    local run_file=$HOME/.caveman/run/8787.json
+    [ -f "$run_file" ] || return 0
+    sed -n 's/.*"mode":"\([^"]*\)".*/\1/p' "$run_file" | head -1
+}
+
+codex_running() {
+    [ -n "$codex" ] && timeout 10 "$codex" app-server daemon version >/dev/null 2>&1
+}
+
+codex_proxy_ok() {
+    local pid
+    [ -r /proc/self/environ ] || return 0
+    pid=$(pgrep -f 'app-server.*managed-daemon' 2>/dev/null | head -1)
+    [ -n "$pid" ] && [ -r "/proc/$pid/environ" ] || return 0
+    tr '\0' '\n' <"/proc/$pid/environ" 2>/dev/null | grep -q '^HTTPS_PROXY='
+}
+
+herdr_running() {
+    [ -n "$herdr" ] && "$herdr" api snapshot >/dev/null 2>&1
+}
+
+herdr_restore_enabled() {
+    local config=$HOME/.config/herdr/config.toml
+    [ -f "$config" ] && grep -Eq '^[[:space:]]*resume_agents_on_restore[[:space:]]*=[[:space:]]*true' "$config"
+}
+
+ensure_links() {
+    [ -f "$link_home" ] || { warn "link-home is missing: $link_home"; return 0; }
+    if bash "$link_home" --check >/dev/null 2>&1; then
+        ok "links"
+        return 0
+    fi
+    warn "links drifted; repairing through link-home"
+    if bash "$link_home" >/dev/null; then ok "links repaired"; else fail "links"; fi
+}
+
+ensure_mihomo() {
+    if [ "$(http_code http://127.0.0.1:9090/version)" = 200 ]; then
+        ok "mihomo"
+        return 0
+    fi
+    if [ "$restart" = true ]; then
+        pkill -f 'run-mihomo-supervised' >/dev/null 2>&1 || true
+        sleep 1
+    fi
+    local supervisor=${DOTFILES_MIHOMO_SUPERVISOR:-}
+    if [ -z "$supervisor" ]; then
+        for candidate in \
+            "$live_root/.local/share/dotfiles/proxy/scripts/run-mihomo-supervised.sh" \
+            "$live_root/clash/scripts/run-mihomo-supervised.sh"; do
+            if [ -x "$candidate" ]; then supervisor=$candidate; break; fi
+        done
+    fi
+    if [ -z "$supervisor" ] || [ ! -x "$supervisor" ]; then
+        fail "mihomo supervisor not found (tried live root $live_root)"
+        return 1
+    fi
+    mkdir -p "$live_root/.local/share/mihomo/run"
+    setsid nohup "$supervisor" >>"$live_root/.local/share/mihomo/run/supervisor.log" 2>&1 </dev/null &
+    if wait_http http://127.0.0.1:9090/version 200 30; then ok "mihomo started"; else fail "mihomo"; fi
+}
+
+ensure_caveman() {
+    if caveman_running && [ "$restart" != true ]; then
+        local mode
+        mode=$(caveman_mode)
+        ok "caveman (${mode:-unknown} mode)"
+        return 0
+    fi
+    if [ "$restart" = true ] && caveman_running; then
+        "$caveman" stop >/dev/null 2>&1 || true
+        sleep 1
+    fi
+    [ -x "$with_proxy" ] || { fail "with-proxy not found"; return 1; }
+    [ -x "$caveman" ] || { fail "caveman not found: $caveman"; return 1; }
+    local mode=record
+    [ "$compress" = true ] && mode=compress
+    mkdir -p "$HOME/.caveman/run"
+    setsid nohup "$with_proxy" env CAVEMAN_MODE="$mode" "$caveman" start \
+        >>"$HOME/.caveman/run/supervisor.log" 2>&1 </dev/null &
+    if wait_http http://127.0.0.1:8787/ "200 401 403 404" 30; then
+        ok "caveman started ($mode)"
+    else
+        fail "caveman"
+    fi
+}
+
+ensure_codex() {
+    [ -n "$codex" ] || { fail "codex not found"; return 1; }
+    [ -x "$with_proxy" ] || { fail "with-proxy not found"; return 1; }
+    if codex_running; then
+        if codex_proxy_ok; then
+            ok "codex app-server daemon (proxy)"
+        else
+            warn "codex app-server daemon is running without HTTPS_PROXY; use --restart"
+        fi
+        if [ "$restart" = true ]; then
+            if "$with_proxy" "$codex" app-server daemon restart >/dev/null 2>&1; then
+                ok "codex daemon restarted"
+            else
+                fail "codex daemon restart"
+            fi
+        fi
+        return 0
+    fi
+    if "$with_proxy" "$codex" app-server daemon start >/dev/null 2>&1 && codex_running; then
+        ok "codex app-server daemon started"
+    else
+        fail "codex app-server daemon"
+    fi
+}
+
+ensure_herdr() {
+    [ -n "$herdr" ] || { fail "herdr not found"; return 1; }
+    if herdr_running; then
+        ok "herdr server"
+        if [ "$restore" = true ]; then
+            warn "herdr is already running; restore happens on the next server start, not by restarting it now"
+        fi
+        return 0
+    fi
+    mkdir -p "$HOME/.config/herdr"
+    setsid nohup "$herdr" server >>"$HOME/.config/herdr/herdr-server.log" 2>&1 </dev/null &
+    local attempt=0
+    while [ "$attempt" -lt 30 ]; do
+        if herdr_running; then
+            ok "herdr server started"
+            if [ "$restore" = true ]; then
+                if herdr_restore_enabled; then
+                    printf 'Herdr restore enabled; attach with `herdr`.\n'
+                else
+                    warn "set [session] resume_agents_on_restore = true in the Herdr config for agent restore"
+                fi
+            fi
+            return 0
+        fi
+        attempt=$((attempt + 1))
+        sleep 1
+    done
+    fail "herdr server"
+}
+
+run_health() {
+    if [ ! -x "$health" ]; then
+        warn "health preflight is missing: $health"
+        return 0
+    fi
+    if [ "$quiet" = true ]; then
+        "$health" --quiet
+    else
+        "$health"
+    fi
+}
+
+show_status() {
+    if [ -f "$link_home" ] && bash "$link_home" --check >/dev/null 2>&1; then
+        ok "links"
+    else
+        fail "links drift"
+    fi
+    if [ "$(http_code http://127.0.0.1:9090/version)" = 200 ]; then ok "mihomo"; else fail "mihomo"; fi
+    if caveman_running; then
+        local mode
+        mode=$(caveman_mode)
+        ok "caveman (${mode:-unknown} mode)"
+    else
+        fail "caveman"
+    fi
+    if codex_running; then
+        if codex_proxy_ok; then ok "codex app-server daemon (proxy)"; else warn "codex daemon lacks HTTPS_PROXY"; fi
+    else
+        fail "codex app-server daemon"
+    fi
+    if herdr_running; then
+        if herdr_restore_enabled; then ok "herdr server (restore enabled)"; else warn "herdr restore not enabled"; fi
+    else
+        fail "herdr server"
+    fi
+    run_health
+}
+
+case "$action" in
+    status)
+        show_status
+        ;;
+    up)
+        ensure_links
+        ensure_mihomo
+        ensure_caveman
+        ensure_codex
+        ensure_herdr
+        run_health
+        ;;
+esac
+
+if [ "$failures" -ne 0 ]; then
+    printf '%d check(s) failed\n' "$failures" >&2
+    exit 1
+fi
+[ "$quiet" = true ] || printf 'host stack ready\n'

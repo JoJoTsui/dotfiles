@@ -286,6 +286,8 @@ from the managed defaults, but drops the comment markers. Start it under
 Inside interactive Herdr shells, Codex launches through `codex-herdr` (health
 preflight plus `with-proxy codex --no-daemon`) so its hooks inherit the pane
 identity; non-interactive `with-proxy codex exec` keeps the shared daemon.
+After a reboot, `dotfiles-host-up up` chains links, proxy, Caveman, the Codex
+daemon, Herdr, and health; see [host bring-up](docs/HOST_UP.md).
 See [herdr](docs/HERDR.md).
 
 Common pattern: **config in git, credentials on the host** — auth flows run
