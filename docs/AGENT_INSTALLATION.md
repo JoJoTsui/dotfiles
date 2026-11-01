@@ -64,7 +64,7 @@ mechanism; a filtered monolithic manifest is not used.
 | pi | `@earendil-works/pi-coding-agent` 1.4.0 | `pi` |
 | opencode | `@opencode/cli` 2.2.0 | `opencode`, `opencode2` |
 | claude | `@anthropic-ai/claude-code` 2.1.311 | `claude` |
-| codex | `@openai/codex` 0.164.0 | `codex` |
+| codex | `@openai/codex` 0.166.0 | `codex` |
 | minimax | `@minimax-ai/code` 0.7.0 | `mcode` |
 | qoder (native) | release manifest pin 1.1.80 | `qoder`, `qodercli` |
 | independent default | `@colbymchenry/codegraph` 1.6.2 | `codegraph` |

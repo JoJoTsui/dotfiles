@@ -38,7 +38,7 @@ developer|glow-md|glow-md==2.1.2|glow=glow|conda-forge|all
 developer-portable|go-yq|go-yq==4.54.1|yq=yq|conda-forge|all
 developer|grex|grex==1.4.6|grex=grex|conda-forge|all
 developer|gsutil|gsutil==5.36|gsutil=gsutil|conda-forge|all
-developer|herdr|herdr==0.9.3|herdr=herdr|conda-forge|all
+developer|herdr|herdr==0.9.4|herdr=herdr|conda-forge|all
 developer|hexyl|hexyl==0.17.0|hexyl=hexyl|conda-forge|all
 developer-portable|hyperfine|hyperfine==2.0.0|hyperfine=hyperfine|conda-forge|all
 developer|imagemagick|imagemagick==7.1.0_19|magick=magick,magick-script=magick-script|conda-forge|all

@@ -31,7 +31,7 @@ Separate credential, trust, session, plugin, and cache files stay client-owned.
 | Client | Managed CodeGraph location | Integration |
 | --- | --- | --- |
 | Claude 2.1.311 | `~/.claude.json`, `mcpServers.codegraph` | stdio, `alwaysLoad: true` |
-| Codex 0.164.0 | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
+| Codex 0.166.0 | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
 | Kimi 2.3.3 | `~/.kimi-code/mcp.json`, `mcpServers.codegraph` | inferred stdio |
 | OpenCode 2.2.0 | `~/.config/opencode/opencode.jsonc`, `mcp.servers.codegraph` | local, enabled, `codemode: false` |
 | Pi 1.4.0 | `~/.pi/agent/mcp.json`, `mcpServers.codegraph` | stdio, user scope |

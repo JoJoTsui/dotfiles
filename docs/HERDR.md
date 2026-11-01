@@ -63,19 +63,35 @@ Rules that follow from the CLI:
 
 ## Codex under Herdr
 
-Codex 0.166 keeps hooks in its shared app-server daemon, which retains the
-environment of the pane that first started it. Under Herdr that pane identity
-is wrong, so every Codex session is reported to another pane and cannot be
-resumed with the right command. Inside Herdr, `codex` resolves to
-`codex-herdr`: it checks `dotfiles-agent-health`, then runs
-`with-proxy codex --no-daemon`, so hooks stay in the pane process. Outside
-Herdr, `codex` keeps the shared daemon.
+Codex 0.166 (the repo pin) keeps hooks in its shared app-server daemon, which
+retains the environment of the pane that first started it. Under Herdr that
+pane identity is wrong, so every Codex session is reported to another pane and
+cannot be resumed with the right command. Inside interactive Herdr shells,
+`codex` resolves to `codex-herdr`: it checks `dotfiles-agent-health --codex`,
+then runs `with-proxy codex --no-daemon`, so hooks stay in the pane process.
+Non-interactive `with-proxy codex exec` bypasses the shell wrapper and keeps
+the shared daemon; it has no pane identity to preserve. Outside Herdr, `codex`
+keeps the shared daemon.
 
 `~/.codex/herdr-codex-resume.sh` is a custom SessionStart hook beside the
-managed `herdr-agent-state.sh`. It reports `codex-herdr resume <id>` as the
-resume argv, so a workspace restore keeps the health gate, proxy, and
-`--no-daemon`. Codex asks for hook trust once; approve it or the override is
-skipped.
+Herdr-installed `herdr-agent-state.sh`. It reports `codex-herdr resume <id>` as
+the resume argv, so a workspace restore keeps the health gate, proxy, and
+`--no-daemon`. The script is managed, but `~/.codex/hooks.json` is device-owned;
+register it once after `herdr integration install codex`:
+
+```bash
+dotfiles-codex-herdr install
+```
+
+The installer preserves every existing hook, removes an older copy of this
+entry, and places it last so its resume argv wins. For reference, the entry is:
+
+```json
+{"hooks":[{"type":"command","command":"bash \"$HOME/.codex/herdr-codex-resume.sh\"","timeout":5}]}
+```
+
+Codex asks for hook trust once; approve it or the override is skipped.
+
 
 ## Worktree persistence
 
@@ -90,8 +106,10 @@ worktree persistence rule in the shared agent instructions.
 ## Preflight
 
 Before a restore, or when a pane cannot reach its provider, run
-`~/.local/bin/dotfiles-agent-health`. It checks Mihomo, U.S. egress, Caveman,
-the Codex app-server daemon, Herdr, and CodeGraph; `--probe` adds one paid Codex
+`~/.local/bin/dotfiles-agent-health`. The full check covers Mihomo, U.S.
+egress, Caveman, the Codex app-server daemon, Herdr, and CodeGraph.
+`--codex` narrows it to the Codex launch path (no CodeGraph), `--clients`
+reports client binaries and config paths, and `--probe` adds one paid Codex
 model round trip. See [agent health](AGENT_HEALTH.md).
 
 ## Verified here

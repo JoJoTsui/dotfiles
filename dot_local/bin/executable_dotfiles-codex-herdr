@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# dotfiles-codex-herdr — register the Herdr Codex resume hook idempotently.
+#
+# The hook script is managed by the dotfiles source, but ~/.codex/hooks.json is
+# device-owned. Run this after `herdr integration install codex`; it preserves
+# every existing hook and places the custom SessionStart entry last so its
+# resume argv wins.
+set -uo pipefail
+
+hooks=${DOTFILES_CODEX_HOOKS:-$HOME/.codex/hooks.json}
+action=${1:-status}
+shift || true
+
+usage() {
+    cat <<'EOF'
+usage: dotfiles-codex-herdr [install|status]
+
+  install   ensure the custom SessionStart hook is present and last
+  status    report whether it is registered
+EOF
+}
+
+case "$action" in
+    install)
+        python3 - "$hooks" <<'PY'
+import json
+import os
+import shutil
+import sys
+import time
+
+path = sys.argv[1]
+entry = {
+    "hooks": [
+        {
+            "type": "command",
+            "command": 'bash "$HOME/.codex/herdr-codex-resume.sh"',
+            "timeout": 5,
+        }
+    ]
+}
+try:
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+except FileNotFoundError:
+    data = {}
+except Exception as error:
+    raise SystemExit(f"dotfiles-codex-herdr: cannot parse {path}: {error}")
+if not isinstance(data, dict):
+    raise SystemExit(f"dotfiles-codex-herdr: {path} is not a JSON object")
+hooks = data.setdefault("hooks", {})
+if not isinstance(hooks, dict):
+    raise SystemExit(f"dotfiles-codex-herdr: hooks in {path} is not an object")
+session = hooks.setdefault("SessionStart", [])
+if not isinstance(session, list):
+    raise SystemExit(f"dotfiles-codex-herdr: hooks.SessionStart in {path} is not a list")
+session[:] = [
+    item for item in session
+    if not any("herdr-codex-resume.sh" in hook.get("command", "")
+               for hook in item.get("hooks", []) if isinstance(hook, dict))
+]
+session.append(entry)
+if os.path.exists(path):
+    shutil.copy2(path, f"{path}.bak.{time.strftime('%Y%m%d-%H%M%S')}")
+    target = os.path.realpath(path)
+else:
+    target = path
+os.makedirs(os.path.dirname(target), exist_ok=True)
+temporary = f"{target}.tmp.{os.getpid()}"
+with open(temporary, "w", encoding="utf-8") as handle:
+    json.dump(data, handle, indent=2)
+    handle.write("\n")
+os.chmod(temporary, 0o600)
+os.replace(temporary, target)
+print(f"installed {path}")
+PY
+        ;;
+    status)
+        python3 - "$hooks" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+except FileNotFoundError:
+    raise SystemExit(f"dotfiles-codex-herdr: {path} is missing")
+except Exception as error:
+    raise SystemExit(f"dotfiles-codex-herdr: cannot parse {path}: {error}")
+found = any(
+    "herdr-codex-resume.sh" in hook.get("command", "")
+    for item in data.get("hooks", {}).get("SessionStart", [])
+    for hook in item.get("hooks", [])
+    if isinstance(hook, dict)
+)
+raise SystemExit(0 if found else 1)
+PY
+        if [ "$?" -eq 0 ]; then
+            printf 'registered %s\n' "$hooks"
+        else
+            printf 'not registered %s\n' "$hooks" >&2
+            exit 1
+        fi
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac

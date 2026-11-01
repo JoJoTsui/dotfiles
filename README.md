@@ -283,9 +283,10 @@ from the managed defaults, but drops the comment markers. Start it under
 `agents|.caveman` home link keeps that root on the persistent tree. See
 [caveman](docs/CAVEMAN.md).
 
-Inside Herdr, Codex launches through `codex-herdr` (health preflight plus
-`with-proxy codex --no-daemon`) so its hooks inherit the pane identity; outside
-Herdr, Codex keeps the shared app-server daemon. See [herdr](docs/HERDR.md).
+Inside interactive Herdr shells, Codex launches through `codex-herdr` (health
+preflight plus `with-proxy codex --no-daemon`) so its hooks inherit the pane
+identity; non-interactive `with-proxy codex exec` keeps the shared daemon.
+See [herdr](docs/HERDR.md).
 
 Common pattern: **config in git, credentials on the host** — auth flows run
 per host (`claude` login / env token, `codex login`, `kimi login`,

@@ -3,22 +3,28 @@
 #
 # Checks the dependency chain that fails silently after a reboot: Mihomo, its
 # U.S. egress, the Caveman gateway, the Codex app-server daemon, the Herdr
-# server, and the CodeGraph binary. The Codex resume hook runs the cheap checks;
-# `--probe` adds one real model round trip.
+# server, and (in the full check) the CodeGraph binary. The Codex launcher runs
+# the narrow `--codex` set; `--probe` adds one real model round trip.
 set -u
 
 quiet=false
 probe=false
+codex_only=false
+clients=false
 for argument in "$@"; do
     case "$argument" in
         -q|--quiet) quiet=true ;;
         --probe) probe=true ;;
+        --codex) codex_only=true ;;
+        --clients) clients=true ;;
         -h|--help)
             cat <<'EOF'
-usage: dotfiles-agent-health [--quiet] [--probe]
+usage: dotfiles-agent-health [--quiet] [--codex] [--clients] [--probe]
 
-  --quiet   print failures only
-  --probe   also run one Codex model round trip (uses the active provider)
+  --quiet    print failures only
+  --codex    check only what a Herdr Codex launch needs (no CodeGraph)
+  --clients  report client binaries and config paths (diagnostic)
+  --probe    also run one Codex model round trip (uses the active provider)
 EOF
             exit 0
             ;;
@@ -99,9 +105,10 @@ else
     fail "codex not found on PATH"
 fi
 
-# Herdr server.
+# Herdr server. The socket API is the structured check; the human status text
+# is not a stable contract.
 if command -v herdr >/dev/null 2>&1; then
-    if herdr status 2>/dev/null | grep -q 'status: running'; then
+    if herdr api snapshot >/dev/null 2>&1; then
         ok "herdr server"
     else
         fail "herdr server"
@@ -110,19 +117,49 @@ else
     fail "herdr not found on PATH"
 fi
 
-# CodeGraph MCP binary.
-if command -v codegraph >/dev/null 2>&1; then
-    ok "codegraph $(codegraph --version 2>/dev/null | head -1)"
-else
-    fail "codegraph not found on PATH"
+# CodeGraph is a client MCP, not a Codex-launch dependency.
+if [ "$codex_only" = false ]; then
+    if command -v codegraph >/dev/null 2>&1; then
+        ok "codegraph $(codegraph --version 2>/dev/null | head -1)"
+    else
+        fail "codegraph not found on PATH"
+    fi
+fi
+
+# Optional client diagnostics; warnings only, because selection is per host.
+if [ "$clients" = true ]; then
+    for command_name in codex opencode claude kimi pi qoder qodercli mcode; do
+        if command -v "$command_name" >/dev/null 2>&1; then
+            ok "client $command_name"
+        else
+            warn "client $command_name missing"
+        fi
+    done
+    for config in \
+        "$HOME/.codex/config.toml" \
+        "$HOME/.config/opencode/opencode.jsonc" \
+        "$HOME/.claude.json" \
+        "$HOME/.kimi-code/mcp.json" \
+        "$HOME/.pi/agent/mcp.json" \
+        "$HOME/.qoder/settings.json" \
+        "$HOME/.minimax/mcp.json"; do
+        if [ -f "$config" ]; then
+            ok "config ${config#"$HOME"/}"
+        else
+            warn "config ${config#"$HOME"/} missing"
+        fi
+    done
 fi
 
 # Optional end-to-end model probe. This is the only step that spends tokens.
 if [ "$probe" = true ]; then
-    probe_log=${TMPDIR:-/tmp}/dotfiles-agent-health-probe.$$.log
-    if "$with_proxy" timeout 90 codex exec -C /tmp --skip-git-repo-check \
+    probe_log=$(mktemp "${TMPDIR:-/tmp}/dotfiles-agent-health-probe.XXXXXX") || probe_log=
+    if [ -z "$probe_log" ]; then
+        fail "codex model probe (cannot create a temporary log)"
+    elif "$with_proxy" timeout 90 codex exec -C /tmp --skip-git-repo-check \
         --sandbox read-only "Reply with HEALTH_OK and nothing else." \
         >"$probe_log" 2>&1 && grep -q HEALTH_OK "$probe_log"; then
+        rm -f "$probe_log"
         ok "codex model probe"
     else
         fail "codex model probe (see $probe_log)"

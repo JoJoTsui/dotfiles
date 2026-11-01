@@ -23,6 +23,8 @@ dev|.aspera
 dev|.npm
 dev|.aws
 dev|.bun
+dev|.fzf
+dev|.rye
 vscode|.vscode-server
 vscode|.vscode-server-insiders
 trae|.trae-aicc

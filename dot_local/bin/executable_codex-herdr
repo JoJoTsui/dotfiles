@@ -19,7 +19,7 @@ if [ ! -x "$with_proxy" ]; then
     printf 'codex-herdr: %s is missing\n' "$with_proxy" >&2
     exit 1
 fi
-if ! "$health" --quiet; then
+if ! "$health" --quiet --codex; then
     printf 'codex-herdr: agent stack is unhealthy; refusing to launch\n' >&2
     exit 1
 fi
