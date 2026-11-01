@@ -114,10 +114,10 @@ Rules:
 3. Managed CLIs live in `~/.pixi/bin`. If a client's bundled copy misbehaves (a
    crashing `rg`, for example), call the managed binary explicitly or prepend
    that directory to `PATH`.
-4. Bound text search with `timeout` when available (`gtimeout` on macOS),
-   scope the path, and use `-g` globs. Without a timeout command, cap matches
-   and scope harder. On shared mounts avoid `/t9k`, `$HOME`, and `--no-ignore`.
-   A timeout means narrow the query, not retry wider.
+4. Bound text search with `timeout` when available, scope the path, and use
+   `-g` globs. Without a timeout command, cap matches and scope harder. On
+   shared mounts avoid `$HOME` and `--no-ignore`. A timeout means narrow the
+   query, not retry wider.
 5. Recheck availability per device and use a portable fallback when a tool is
    missing.
 6. In Nu, retain structured values through native pipelines; use `^command`
@@ -138,7 +138,7 @@ reports host CPUs inside Docker while the cgroup quota may be lower.
 - CPU: `cpu.max` on cgroup v2, or `cpu.cfs_quota_us`/`cpu.cfs_period_us` on v1;
   effective CPUs are `min(nproc, quota/period)` when quota is not `max`.
 - Memory: `memory.max` (v2) or `memory.limit_in_bytes` (v1); prefer it over host
-  `MemAvailable`. Physical hosts use `MemAvailable` or `vm_stat`.
+  `MemAvailable`. Physical hosts use `MemAvailable`.
 - Throttling: `cpu.stat` and `/proc/pressure/*`; back off when throttled.
 
 Honor a task or scheduler grant before the shared cgroup ceiling. Cap parallel
@@ -153,7 +153,7 @@ reduce, not retry.
 
 ## Shared hosts and remote jobs
 
-On t9k-style shared hosts, Docker or Kubernetes pods, and SSH runners, `$HOME`
+On shared compute hosts, Docker or Kubernetes pods, and SSH runners, `$HOME`
 can be fresh and the shell is non-login: dotfiles, `PATH`, and wrappers may be
 absent. Do not assume an interactive shell.
 
@@ -163,9 +163,8 @@ absent. Do not assume an interactive shell.
   shared-mount workflow. Otherwise expose read-only paths, copy only wrappers,
   or use task-owned `CARGO_HOME`, `RUSTUP_HOME`, and `PIXI_HOME`. Link `.agents`
   when RTK or CLIENTS references are needed.
-- A project script such as `tools/link_remote_environment.sh` is the reference:
-  keep the source overridable, skip existing entries, and never replace a home
-  file.
+- Follow the project's linking helper: keep the source overridable, skip
+  existing entries, and never replace a home file.
 - Pass absolute paths; quote them. A remote shell may expand an unquoted `~`, and
   a double-quoted command still evaluates variables.
 - Create scratch on the execution host, keep inputs read-only, and propagate the
@@ -199,18 +198,16 @@ bounded task.
 | --- | --- |
 | Codex | `with-proxy codex exec -C . "<task>"` |
 | Kimi | `kimi -p "<task>"` |
-| Pi | `pi -p --model minimax-cn/MiniMax-M3.1-Flash "<task>"` |
-| OpenCode | `opencode run --standalone --model opencode/deepseek-v4.1-flash-free "<task>"` |
-| Qoder | `qoder -p -m DeepSeek-Flash "<task>"` |
-| MiniMax Code | `mcode exec --model minimax/MiniMax-M3.1-Flash "<task>"` |
+| Pi | `pi -p "<task>"` |
+| OpenCode | `opencode run --standalone "<task>"` |
+| Qoder | `qoder -p "<task>"` |
+| MiniMax Code | `mcode exec "<task>"` |
 
-Codex needs the host proxy route where its provider is unreachable directly;
-`with-proxy` is a managed launcher. Free defaults are
-`opencode/deepseek-v4.1-flash-free`, `minimax-cn/MiniMax-M3.1-Flash` for Pi,
-`minimax/MiniMax-M3.1-Flash` for MiniMax Code, and `DeepSeek-Flash` for Qoder.
-Model IDs move: confirm with `opencode models`, `pi --list-models`, or
-`qoder --list-models`. Codex and Kimi resolve models from their own
-configuration, so pass one only when you know its name.
+Where the host requires an outbound proxy, prefix Codex with the managed
+`with-proxy` launcher; the exact route belongs in device-local instructions.
+Use each client's configured default model; confirm it with `opencode models`,
+`pi --list-models`, or `qoder --list-models`. Codex and Kimi resolve models from
+their own configuration, so pass one only when you know its name.
 
 Rules:
 

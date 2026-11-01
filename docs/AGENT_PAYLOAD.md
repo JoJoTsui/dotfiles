@@ -12,6 +12,11 @@ operations:
 - `file`: replace the owned regular file.
 - `block`: replace the `DOTFILES_AGENT_START` / `DOTFILES_AGENT_END` instruction
   block, preserving surrounding device text. A first deployment appends the block.
+Host-specific text (absolute shared-mount paths, the proxy route, Caveman/Herdr
+daemon names) belongs outside that block in the client's user file; the block
+replacement preserves it. Platform command differences live in
+`deployment/agent-payload/overlays/<platform>.md` and are concatenated into the
+block; the core stays portable.
 - `retire`: remove a previously owned instruction block from a target that is no
   longer managed, preserving device text and deleting the file when nothing else
   remains. It is idempotent and runs on every deployment.

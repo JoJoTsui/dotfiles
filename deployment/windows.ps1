@@ -156,6 +156,10 @@ function Copy-InstructionBlock([string]$From, [string]$To) {
     $ends = ([regex]::Matches($existing, [regex]::Escape($end))).Count
     if ($starts -gt 1 -or $ends -gt 1 -or $starts -ne $ends) { Stop-Deployment 'duplicate or unfinished managed instruction markers' }
     $body = [IO.File]::ReadAllText($From)
+    $overlay = Join-Path (Split-Path -Parent $From) 'overlays/windows.md'
+    if ([IO.File]::Exists($overlay)) {
+        $body = $body + "`n`n" + [IO.File]::ReadAllText($overlay)
+    }
     $block = $start + "`n" + $body + $end
     if ($starts) {
         $begin = $existing.IndexOf($start); $finish = $existing.IndexOf($end)

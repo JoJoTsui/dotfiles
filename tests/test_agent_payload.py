@@ -23,6 +23,7 @@ try:
 except ModuleNotFoundError:
     tomllib = None
 import unittest
+from unittest import mock
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -208,6 +209,35 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertNotIn("/t9k/", (self.home / ".agents/RTK.md").read_text())
         self.assertFalse((self.home / ".codegraph").exists())
         self.assertFalse((self.home / ".codex/auth.json").exists())
+
+    def test_platform_overlay_replaces_only_the_managed_instruction_block(self):
+        target = self.home / ".claude/CLAUDE.md"
+        target.parent.mkdir(parents=True)
+        target.write_text("# Device prefix\n\nKeep this text.\n")
+        with mock.patch.dict(os.environ, {"DOTFILES_TEST_PLATFORM": "macos"}):
+            result = self.deploy("--agents", "none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        macos = target.read_text()
+        self.assertIn("Keep this text.", macos)
+        self.assertIn("## macOS specifics", macos)
+        self.assertIn("gtimeout", macos)
+        self.assertNotIn("## Linux specifics", macos)
+        with mock.patch.dict(os.environ, {"DOTFILES_TEST_PLATFORM": "linux"}):
+            result = self.deploy("--agents", "none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        linux = target.read_text()
+        self.assertIn("Keep this text.", linux)
+        self.assertIn("## Linux specifics", linux)
+        self.assertIn("`sed -i`", linux)
+        self.assertNotIn("## macOS specifics", linux)
+        self.assertEqual(linux.count("<!-- DOTFILES_AGENT_START -->"), 1)
+        self.assertEqual(linux.count("<!-- DOTFILES_AGENT_END -->"), 1)
+
+    def test_platform_overlay_is_wired_into_both_deployment_adapters(self):
+        posix = (SOURCE / "deployment/payload.sh").read_text()
+        windows = (SOURCE / "deployment/windows.ps1").read_text()
+        self.assertIn("agent-payload/overlays/$DEPLOY_PLATFORM.md", posix)
+        self.assertIn("overlays/windows.md", windows)
 
     def test_repeat_deployment_preserves_unrelated_instructions_skills_and_local_state(self):
         instructions = self.home / ".claude/CLAUDE.md"
