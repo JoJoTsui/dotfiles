@@ -24,7 +24,7 @@ class LegacyApplyTests(unittest.TestCase):
 
     def run_apply(self, *arguments):
         return subprocess.run(
-            ["/bin/bash", str(SCRIPT), "--source", str(SOURCE),
+            ["/bin/bash", str(SCRIPT), "--checkout", str(SOURCE),
              "--home", str(self.home), "--live-root", str(self.live), *arguments],
             cwd=SOURCE,
             capture_output=True,
@@ -54,6 +54,24 @@ class LegacyApplyTests(unittest.TestCase):
         self.assertTrue((self.live / ".local/bin/dotfiles-host-up").is_file())
         second = self.run_apply("--check", "--groups", "agent")
         self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+
+    def test_mode_drift_is_reported_and_repaired(self):
+        result = self.run_apply("--apply", "--groups", "agent")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        target = self.live / ".local/bin/nu-login"
+        target.chmod(0o644)
+        check = self.run_apply("--check", "--groups", "agent")
+        self.assertNotEqual(check.returncode, 0)
+        self.assertIn("DRIFT .local/bin/nu-login (mode 644 -> 755)", check.stdout)
+        repair = self.run_apply("--apply", "--groups", "agent")
+        self.assertEqual(repair.returncode, 0, repair.stderr)
+        self.assertEqual(target.stat().st_mode & 0o777, 0o755)
+
+    def test_config_group_does_not_install_agent_files(self):
+        result = self.run_apply("--apply", "--groups", "config")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.live / ".config/herdr/config.toml").is_file())
+        self.assertFalse((self.live / ".local/bin/nu-login").exists())
 
     def test_symlink_target_is_refused(self):
         target = self.live / ".local/bin/codex-herdr"

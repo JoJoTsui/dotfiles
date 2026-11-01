@@ -121,6 +121,11 @@ explains every changed pair.
   stay in copy mode. The utility validates before writing, backs up replaced
   targets, and requires `--system` for `/etc` changes. Read
   `docs/LEGACY_HOME_LINKS.md` before adding state roots to the manifest.
+  `deployment/legacy/apply.sh` and `apply.tsv` are the companion file-level
+  adapter: they sync only listed repo-owned executables and the Herdr config,
+  refuse symlink targets and escapes, back up, and exclude client settings,
+  payload blocks, shell rc, auth, packages, and runtime state. Read
+  `docs/LEGACY_APPLY.md` before adding files.
 - **Agent payloads use the public bootstrap copier**: instructions and adapters
   live under `deployment/agent-payload/`; skill bytes are fetched from the
   upstream catalog in `deployment/skills.tsv` and never vendored. Copying
