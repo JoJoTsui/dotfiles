@@ -11,15 +11,16 @@ dotfiles-host-up up --restore
 
 `status` checks the link manifest, Mihomo `9090`, Caveman `8787`, the Codex
 app-server daemon, Herdr, and the health preflight. `up` repairs links through
-`link-home`, starts Mihomo, starts Caveman under `with-proxy` (record mode by
-default; `--compress` selects compress mode), starts the Codex daemon under
-`with-proxy` when absent, and starts the Herdr server when absent.
+`link-home` (or reports a non-legacy home without failing), starts Mihomo,
+starts Caveman under `with-proxy` (record mode by default; `--compress` selects
+compress mode), starts the Codex daemon under `with-proxy` when absent, and
+runs the health preflight. A failed preflight fails the command.
 
-`--restore` starts Herdr and lets `session.json` restore the workspace, panes,
-and agents. It does not restart a running Herdr server; that would tear down
-every pane and agent. Attach afterwards with `herdr`. The repo Herdr config sets
-`[session] resume_agents_on_restore = true`; apply it to a live host only with
-the owner's permission.
+`--restore` additionally starts Herdr and lets `session.json` restore the
+workspace, panes, and agents. It does not restart a running Herdr server; that
+would tear down every pane and agent. Attach afterwards with `herdr`. The repo
+Herdr config sets `[session] resume_agents_on_restore = true`; apply it to a live
+host only with the owner's permission.
 
 `--restart` recycles Mihomo, Caveman, and the Codex daemon. It never restarts
 Herdr. Use it when the daemon lacks `HTTPS_PROXY` or a mode change is required.

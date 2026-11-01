@@ -35,6 +35,11 @@ clash
 {{- if not (and (has "desktop" .bundles) (has .platform (list "linux" "wsl"))) }}
 .local/bin/firefox
 {{- end }}
+# The host bring-up helper is Linux/WSL-specific: it uses procps and util-linux
+# and targets the legacy daemon stack. Do not install it on macOS or Windows.
+{{- if not (has .platform (list "linux" "wsl")) }}
+.local/bin/dotfiles-host-up
+{{- end }}
 **/*keys.json
 **/auth.json
 **/credentials*

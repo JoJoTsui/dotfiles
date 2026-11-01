@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # dotfiles-host-up — bring the local agent stack up after a reboot.
 #
-# It checks/repairs the legacy links, starts Mihomo, Caveman, the Codex
-# app-server daemon, and the Herdr server, then runs the health preflight.
-# Herdr is never restarted here: that would tear down every pane and agent.
+# It checks/repairs the legacy links, starts Mihomo, Caveman, and the Codex
+# app-server daemon, then runs the health preflight. Herdr is started only with
+# --restore; it is never restarted here, because that would tear down panes.
 set -uo pipefail
 
 action=status
@@ -23,9 +23,9 @@ for argument in "$@"; do
 usage: dotfiles-host-up [status|up] [--restore] [--restart] [--compress] [--quiet]
 
   status      report links, Mihomo, Caveman, Codex daemon, Herdr, and health
-  up          repair links and start anything that is down
-  --restore   after `up`, start Herdr and let its saved workspace/agents restore;
-              attach afterwards with `herdr`. A running Herdr server is never restarted.
+  up          repair links and start Mihomo, Caveman, and the Codex daemon
+  --restore   also start Herdr and let its saved workspace/agents restore;
+              attach afterwards with `herdr`. A running Herdr is never restarted.
   --restart   recycle Mihomo, Caveman, and the Codex daemon when they are running
   --compress  start Caveman in compress mode instead of byte-safe record mode
   --quiet     suppress success lines
@@ -91,6 +91,10 @@ caveman_running() {
     esac
 }
 
+mihomo_running() {
+    [ "$(http_code http://127.0.0.1:9090/version)" = 200 ]
+}
+
 caveman_mode() {
     local run_file=$HOME/.caveman/run/8787.json
     [ -f "$run_file" ] || return 0
@@ -119,7 +123,10 @@ herdr_restore_enabled() {
 }
 
 ensure_links() {
-    [ -f "$link_home" ] || { warn "link-home is missing: $link_home"; return 0; }
+    if [ ! -f "$link_home" ]; then
+        ok "links (not a legacy home)"
+        return 0
+    fi
     if bash "$link_home" --check >/dev/null 2>&1; then
         ok "links"
         return 0
@@ -129,7 +136,7 @@ ensure_links() {
 }
 
 ensure_mihomo() {
-    if [ "$(http_code http://127.0.0.1:9090/version)" = 200 ]; then
+    if mihomo_running; then
         ok "mihomo"
         return 0
     fi
@@ -240,19 +247,20 @@ run_health() {
         return 0
     fi
     if [ "$quiet" = true ]; then
-        "$health" --quiet
-    else
-        "$health"
+        if "$health" --quiet; then return 0; else fail "health preflight"; return 1; fi
     fi
+    if "$health"; then return 0; else fail "health preflight"; return 1; fi
 }
 
 show_status() {
-    if [ -f "$link_home" ] && bash "$link_home" --check >/dev/null 2>&1; then
+    if [ ! -f "$link_home" ]; then
+        ok "links (not a legacy home)"
+    elif bash "$link_home" --check >/dev/null 2>&1; then
         ok "links"
     else
         fail "links drift"
     fi
-    if [ "$(http_code http://127.0.0.1:9090/version)" = 200 ]; then ok "mihomo"; else fail "mihomo"; fi
+    if mihomo_running; then ok "mihomo"; else fail "mihomo"; fi
     if caveman_running; then
         local mode
         mode=$(caveman_mode)
@@ -282,7 +290,7 @@ case "$action" in
         ensure_mihomo
         ensure_caveman
         ensure_codex
-        ensure_herdr
+        [ "$restore" = true ] && ensure_herdr
         run_health
         ;;
 esac

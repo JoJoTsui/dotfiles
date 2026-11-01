@@ -30,16 +30,32 @@ done
 echo 000
 """)
         self.write_stub("with-proxy", "#!/bin/sh\nexec \"$@\"\n")
-        for name in ("caveman", "codex", "herdr", "health", "link-home", "mihomo"):
+        for name in ("caveman", "codex", "link-home", "mihomo"):
             self.write_stub(name, "#!/bin/sh\nexit 0\n")
+        self.herdr_state = self.root / "herdr-running"
+        self.herdr_state.touch()
+        self.herdr_log = self.root / "herdr.log"
+        self.write_stub("herdr", """#!/bin/sh
+printf '%s\\n' "$*" >> "$HERDR_LOG"
+if [ "$1 $2" = "api snapshot" ]; then
+    [ -f "$HERDR_STATE" ] && exit 0
+    exit 1
+fi
+if [ "$1" = server ]; then
+    touch "$HERDR_STATE"
+    exit 0
+fi
+exit 0
+""")
+        self.write_stub("health", "#!/bin/sh\nexit ${HEALTH_EXIT:-0}\n")
 
     def write_stub(self, name, text):
         path = self.bin / name
         path.write_text(text, encoding="utf-8")
         path.chmod(0o755)
 
-    def run_host_up(self, *arguments):
-        environment = {
+    def environment(self):
+        return {
             "HOME": str(self.home),
             "PATH": f"{self.bin}:/usr/bin:/bin",
             "DOTFILES_SOURCE": str(self.repo),
@@ -52,10 +68,14 @@ echo 000
             "DOTFILES_AGENT_HEALTH": str(self.bin / "health"),
             "DOTFILES_LINK_HOME": str(self.bin / "link-home"),
             "DOTFILES_MIHOMO_SUPERVISOR": str(self.bin / "mihomo"),
+            "HERDR_STATE": str(self.herdr_state),
+            "HERDR_LOG": str(self.herdr_log),
         }
+
+    def run_host_up(self, *arguments):
         return subprocess.run(
             ["/bin/bash", str(SCRIPT), *arguments],
-            env=environment,
+            env=self.environment(),
             cwd=SOURCE,
             capture_output=True,
             text=True,
@@ -79,6 +99,35 @@ echo 000
         result = self.run_host_up("up", "--restore")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("restore happens on the next server start", result.stderr)
+        self.assertNotIn("server", self.herdr_log.read_text().splitlines())
+
+    def test_restore_starts_herdr_when_absent_and_up_does_not(self):
+        plain = self.run_host_up("up")
+        self.assertEqual(plain.returncode, 0, plain.stderr)
+        self.assertFalse(self.herdr_log.exists())
+        self.herdr_state.unlink()
+        restored = self.run_host_up("up", "--restore")
+        self.assertEqual(restored.returncode, 0, restored.stderr)
+        self.assertIn("server", self.herdr_log.read_text().splitlines())
+
+    def test_failing_health_fails_the_command(self):
+        environment = self.environment()
+        environment["HEALTH_EXIT"] = "1"
+        result = subprocess.run(
+            ["/bin/bash", str(SCRIPT), "up"], env=environment, cwd=SOURCE,
+            capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("health preflight", result.stderr)
+        self.assertNotIn("host stack ready", result.stdout)
+
+    def test_missing_legacy_link_home_is_not_a_failure(self):
+        environment = self.environment()
+        environment["DOTFILES_LINK_HOME"] = str(self.root / "missing-link-home")
+        result = subprocess.run(
+            ["/bin/bash", str(SCRIPT), "status"], env=environment, cwd=SOURCE,
+            capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("links (not a legacy home)", result.stdout)
 
     def test_help_and_syntax(self):
         result = self.run_host_up("--help")
