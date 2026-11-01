@@ -72,6 +72,9 @@ payload_instruction() {
     content=$(cat "$source"; printf '.')
     content=${content%.}
     overlay="$DEPLOY_SOURCE/deployment/agent-payload/overlays/$DEPLOY_PLATFORM.md"
+    case "$DEPLOY_PLATFORM" in
+        linux|wsl|macos) [ -f "$overlay" ] || fail "missing platform overlay: $overlay" ;;
+    esac
     if [ -f "$overlay" ]; then
         content="$content"$'\n\n'"$(cat "$overlay"; printf '.')"
         content=${content%.}

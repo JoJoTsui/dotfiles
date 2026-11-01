@@ -196,7 +196,7 @@ bounded task.
 
 | Agent | Command |
 | --- | --- |
-| Codex | `with-proxy codex exec -C . "<task>"` |
+| Codex | `codex exec -C . "<task>"` |
 | Kimi | `kimi -p "<task>"` |
 | Pi | `pi -p "<task>"` |
 | OpenCode | `opencode run --standalone "<task>"` |
@@ -236,17 +236,17 @@ Transports beyond the one-shot table:
 - Persistent panes: `tmux new-session -d -s review -c "$PWD"`, then `send-keys`
   and `capture-pane`.
 - Remote host: `ssh host '<client command>'`; credentials stay host-local.
-- Inside Herdr (`HERDR_ENV=1`): use its worktree and agent commands; run
-  `herdr --skill` for syntax and do not attach from outside.
+- Inside a terminal multiplexer or agent manager: follow its own CLI/skill and
+  device-local instructions; do not attach from outside.
 
 ## Worktree persistence
 
-Create task worktrees under the device's persistent worktree root: Herdr's
-`worktrees.directory` (default `~/.herdr/worktrees`) or Codex's
-`~/.codex/worktrees`. Use `/tmp` only for throwaway scratch files, never for a
-task checkout or an uncommitted deliverable. Before closing a workspace, merge
-the branch or commit it and tag it `archive/<worktree-name>`; a sudden host
-interruption must not be what decides whether the work survives.
+Create task worktrees under the device's persistent worktree root (the
+multiplexer or Codex configuration names it). Use `/tmp` only for throwaway
+scratch files, never for a task checkout or an uncommitted deliverable. Before
+closing a workspace, merge the branch or commit it and tag it
+`archive/<worktree-name>`; a sudden host interruption must not be what decides
+whether the work survives.
 
 ## Worktree hygiene
 

@@ -283,6 +283,7 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
             self.assertTrue(json.loads(settings.read_text())['deviceOnly'])
             self.assertEqual(json.loads(settings.read_text())['env']['ANTHROPIC_AUTH_TOKEN'], environment['GLM_API_TOKEN'])
             self.assertIn('device instructions stay', instructions.read_text())
+            self.assertIn('## Native Windows specifics', instructions.read_text())
             self.assertEqual(retired.read_text(), 'device kimi instructions\n')
             self.assertEqual(custom_skill.read_text(), 'custom skill\n')
             self.assertEqual(auth.read_text(), '{"synthetic":"device-auth"}\n')

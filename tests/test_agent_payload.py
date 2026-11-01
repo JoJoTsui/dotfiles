@@ -233,12 +233,6 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(linux.count("<!-- DOTFILES_AGENT_START -->"), 1)
         self.assertEqual(linux.count("<!-- DOTFILES_AGENT_END -->"), 1)
 
-    def test_platform_overlay_is_wired_into_both_deployment_adapters(self):
-        posix = (SOURCE / "deployment/payload.sh").read_text()
-        windows = (SOURCE / "deployment/windows.ps1").read_text()
-        self.assertIn("agent-payload/overlays/$DEPLOY_PLATFORM.md", posix)
-        self.assertIn("overlays/windows.md", windows)
-
     def test_repeat_deployment_preserves_unrelated_instructions_skills_and_local_state(self):
         instructions = self.home / ".claude/CLAUDE.md"
         instructions.parent.mkdir(parents=True)
