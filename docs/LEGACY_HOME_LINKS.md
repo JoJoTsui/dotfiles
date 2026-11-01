@@ -49,7 +49,9 @@ the live tree first, then run the relinker. Keep the same target name: Caveman
 writes `~/.caveman/bin/...` into client configuration, and the symlink preserves
 that literal path. The default source is the parent of this checkout. The
 default home is `$HOME`. Both must exist and resolve to different directories.
-See [caveman](CAVEMAN.md) for the gateway-specific adoption sequence.
+See [caveman](CAVEMAN.md) for the gateway-specific adoption sequence. For applying
+the listed repo-owned files rather than links, see
+[legacy apply](LEGACY_APPLY.md).
 
 ## Safety model
 

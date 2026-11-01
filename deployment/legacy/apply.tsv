@@ -1,0 +1,11 @@
+# Repo-owned files that a legacy symlink home can receive without running the
+# public bootstrap. Device-owned client settings, payload blocks, shell rc,
+# auth, state, and packages are deliberately absent.
+# op|group|source relative to repo|target relative to home|mode|owner|render
+file|agent|dot_local/bin/executable_dotfiles-agent-health|.local/bin/dotfiles-agent-health|0755|repo|none
+file|agent|dot_local/bin/executable_codex-herdr|.local/bin/codex-herdr|0755|repo|none
+file|agent|dot_local/bin/executable_dotfiles-codex-herdr|.local/bin/dotfiles-codex-herdr|0755|repo|none
+file|agent|dot_local/bin/executable_dotfiles-host-up|.local/bin/dotfiles-host-up|0755|repo|none
+file|agent|dot_local/bin/executable_nu-login|.local/bin/nu-login|0755|repo|none
+file|agent|dot_codex/executable_herdr-codex-resume.sh|.codex/herdr-codex-resume.sh|0755|repo|none
+file|config|dot_config/herdr/config.toml|.config/herdr/config.toml|0644|repo|none
