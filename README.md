@@ -156,8 +156,8 @@ Shared settings are generated from one model:
   direnv, fzf) are kept structurally identical across `.bashrc` and
   `.zshrc`; zsh adds `compinit`, which its completion system requires.
 - Multiplexers start nu the same way: zellij panes launch the managed
-  `~/.local/bin/nu-login` (TTY/client guard → Nu), herdr sets
-  `default_shell = "nu"`.
+  `~/.local/bin/nu-login` (TTY/client guard → Nu), herdr starts the same
+  `nu-login` with `shell_mode = "non_login"`.
 
 zoxide and `logs` are available in all supported shells. `logs` runs Tailspin
 with the managed less pager; `logs --print file.log` prints without paging.
@@ -255,7 +255,7 @@ bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 | **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; CodeGraph MCP, no dotfiles-managed proxy providers; remote profile ignores update events |
 | **MiniMax Code** | merged `~/.minimax/AGENTS.md` | runtime state under `~/.minimax`; vendor installer releases under `~/.minimax-code` and install logs | frozen Bun project exposing `mcode`; instructions deployed, skill discovery not declared |
 | **Qoder** | merged `~/.qoder/AGENTS.md` | login/session under `~/.qoder` | native release pin with manifest SHA-256 verification; `qoder` and `qodercli` launchers |
-| **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
+| **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu-login"`, `shell_mode = "non_login"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
 All seven clients install by default: six through fresh Bun projects and Qoder
 from its pinned native release manifest. `--agents none` or

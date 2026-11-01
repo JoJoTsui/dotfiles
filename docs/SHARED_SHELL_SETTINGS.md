@@ -133,8 +133,7 @@ interactive login. Pane shells are separate:
 
 - Herdr: `terminal.default_shell = "nu-login"` with `shell_mode = "non_login"`.
 - Zellij: `default_shell` points at `nu-login`.
-- tmux: no config is shipped; if adopted, use
-  `set -g default-command "exec $HOME/.local/bin/nu-login"`.
+- tmux: not configured; tmux is unused on this host.
 
 `nu-login` starts Nu only for an interactive TTY and falls back to Bash for
 non-TTY calls, arguments, or agent-marked environments. Agent tool shells are

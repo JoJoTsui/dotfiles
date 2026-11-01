@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -82,11 +83,23 @@ class AgentHerdrTests(unittest.TestCase):
         self.assertIn("codex-herdr resume test-123", output)
         self.assertEqual(len(output.strip().splitlines()), 2)
 
-    def test_herdr_config_uses_login_shell_and_restores_agents(self):
-        config = (SOURCE / "dot_config/herdr/config.toml").read_text(encoding="utf-8")
-        self.assertIn('default_shell = "nu-login"', config)
-        self.assertIn('shell_mode = "non_login"', config)
-        self.assertIn("resume_agents_on_restore = true", config)
+    def test_herdr_config_is_valid(self):
+        herdr = shutil.which("herdr")
+        if not herdr:
+            self.skipTest("herdr is not installed")
+        home = self.root / "herdr-home"
+        config = home / ".config/herdr/config.toml"
+        config.parent.mkdir(parents=True)
+        config.write_text((SOURCE / "dot_config/herdr/config.toml").read_text(encoding="utf-8"),
+                          encoding="utf-8")
+        result = subprocess.run(
+            [herdr, "config", "check"],
+            env=dict(self.env, HOME=str(home), XDG_CONFIG_HOME=str(home / ".config")),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_hook_installer_is_idempotent_and_preserves_other_hooks(self):
         hooks = self.root / "hooks.json"

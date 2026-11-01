@@ -60,7 +60,7 @@ _Avoid_: Login shell, pane shell
 
 **Pane shell**:
 The default command a terminal multiplexer starts in a new pane.
-_Avoid_: Login shell, agent shell
+_Avoid_: Login shell
 
 **Agent tool shell**:
 The client-owned shell an agent uses for tool commands, independent of the pane
