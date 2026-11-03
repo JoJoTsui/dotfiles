@@ -20,13 +20,20 @@ Private baselines under `~/.local/state/dotfiles/client-settings/` omit token,
 API-key, password, authorization, and secret fields; authentication is never
 used as a replacement baseline.
 
-The adapter parses JSON/JSONC/TOML and writes normalized files with mode 0600;
-values are preserved, while comments and formatting are not. It validates
+The adapter parses JSON/JSONC/TOML/YAML and writes normalized files with mode
+0600; values are preserved, while comments and formatting are not. It validates
 destination parents, rejects symlinks/type conflicts, and stages the whole
 batch before replacing client settings. Invalid input fails at
 `apply-source.client-settings` and names the path/format. Parser diagnostics
 stay private and are removed, so malformed secret values are not printed.
 Separate credential, trust, session, plugin, and cache files stay client-owned.
+A target whose merged content is unchanged keeps its file and its modification
+time, so services that read those files are not restarted for nothing.
+
+One target is not a client setting: `deployment/client-settings/caveman.yaml`
+becomes the Caveman gateway configuration `~/.caveman/caveman.yaml` under the
+`caveman-config` policy, which owns the provider mount base URL. See
+[Caveman gateway](CAVEMAN.md).
 
 | Client | Managed CodeGraph location | Integration |
 | --- | --- | --- |

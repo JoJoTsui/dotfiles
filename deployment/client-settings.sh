@@ -3,7 +3,7 @@
 validate_client_settings() {
     local format source target policy value
     while IFS=$'|\r' read -r format source target policy; do
-        case "$format" in ''|\#*) continue ;; json|jsonc|toml) ;; *) fail "unknown client settings format: $format" ;; esac
+        case "$format" in ''|\#*) continue ;; json|jsonc|toml|yaml) ;; *) fail "unknown client settings format: $format" ;; esac
         for value in "$source" "$target" "$policy"; do
             case "$value" in ''|/*|..|../*|*/../*|*/..) fail "client settings catalog path must be relative: $value" ;; esac
         done
@@ -57,7 +57,11 @@ deploy_client_settings() {
         key=$(printf '%s' "$target" | tr '/.' '__')
         mkdir -p "$(dirname "$HOME/$target")" "$XDG_STATE_HOME/dotfiles/client-settings"
         chmod 600 "$stage/$key.config" "$stage/$key.baseline"
-        mv "$stage/$key.config" "$HOME/$target"
+        # An unchanged configuration keeps its device file untouched, so file
+        # times stay meaningful for the services that read them.
+        if [ ! -f "$HOME/$target" ] || ! cmp -s "$stage/$key.config" "$HOME/$target"; then
+            mv "$stage/$key.config" "$HOME/$target"
+        fi
         mv "$stage/$key.baseline" "$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
     done < "$DEPLOY_SOURCE/deployment/client-settings/targets.tsv"
     rm -rf "$stage"

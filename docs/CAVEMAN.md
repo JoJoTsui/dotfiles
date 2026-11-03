@@ -13,6 +13,7 @@ files.
 | Path | Owner |
 | --- | --- |
 | `~/.caveman/` | Caveman installer; device runtime state |
+| `~/.caveman/caveman.yaml` | repository-managed gateway configuration; merged by bootstrap |
 | `~/.caveman/bin/` | `caveman setup --install` (downloaded release binaries) |
 | `~/.caveman/integrations/<agent>.json` | `caveman setup --agent-native` ownership journal, when present |
 | `~/.caveman/caveman.db`, `receipts/`, `run/`, `runtime/` | runtime databases and state |
@@ -23,7 +24,9 @@ files.
 | `~/.local/share/caveman-blocks/` | separate optional `caveman-blocks` install |
 
 Never add `~/.caveman`, the generated plugin, or the generated hook entries to
-the Chezmoi source. `deployment/client-settings/codex.toml` owns the managed
+the Chezmoi source. The gateway configuration `~/.caveman/caveman.yaml` is the
+one file bootstrap manages there: it is merged like a client setting and never
+enters the source tree. `deployment/client-settings/codex.toml` owns the managed
 `model_provider = "openai"` default. A device that selects Caveman keeps
 `model_provider = "caveman"` plus its `[model_providers.caveman]` and
 `[mcp_servers.caveman]` tables because they differ from that default; the
@@ -42,6 +45,51 @@ disappear after a bootstrap apply. The provider, its MCP server, and
 lost. Re-run `caveman enable codex` after a merge to restore the markers.
 `caveman disable codex` also removes recognizable entries written without an
 install journal, so the integration remains reversible either way.
+
+## Provider mounts
+
+The gateway serves the providers in its built-in catalog. A provider outside
+that catalog needs a named mount: the gateway then proxies
+`/compat/<provider>/...` to the provider's own base URL and forwards the
+caller's credential, so agent traffic is metered and compressed instead of
+passing through untouched.
+
+Pi reports a provider it cannot route as:
+
+```text
+Caveman: pass-through for minimax-cn/MiniMax-M3.1-Flash (no compat mount named
+"minimax-cn" in the local proxy; add compat.minimax-cn.base_url to caveman.yaml
+to route it); no compression
+```
+
+The mount base URL must equal the provider's own base URL. Pi compares the
+mount with the endpoint it resolved for the model and keeps the provider
+direct when the two disagree.
+
+`deployment/client-settings/caveman.yaml` is this repository's copy of that
+configuration. Bootstrap merges it into `~/.caveman/caveman.yaml` under the
+`caveman-config` policy: the `compat.minimax-cn.base_url` value is owned here,
+and every other key of the device file survives the merge.
+`tests/test_caveman.py` keeps the managed base URL in step with the pi provider
+catalog in `deployment/client-settings/pi-models-store.json`.
+
+The merge belongs to the client settings mechanism, so it also inherits that
+mechanism's rules: it refuses symlinked destinations, and a host whose home
+directories are legacy symlinks keeps its gateway configuration outside the
+merge. See [Legacy home links](LEGACY_HOME_LINKS.md).
+
+The gateway reads its configuration once at startup, so bootstrap restarts a
+running gateway when the merged configuration changed. An unchanged
+configuration is left untouched, and hosts without Caveman keep their state.
+
+Check the published mount after an apply:
+
+```bash
+cat ~/.caveman/run/8787.json
+```
+
+A missing `minimax-cn` entry means the running gateway still serves the older
+configuration; restart it as described in [Start and stop](#start-and-stop).
 
 ## Install
 
@@ -84,6 +132,11 @@ configured compressor for a supervised start, pass the mode explicitly:
 setsid nohup with-proxy env CAVEMAN_MODE=compress caveman start \
   >> ~/.caveman/run/supervisor.log 2>&1 < /dev/null &
 ```
+
+Bootstrap uses that supervised form when it has to restart a running gateway
+after the managed configuration changed. The restart repeats the settings the
+running gateway published (mode, listener and recovery), because the run state
+is the only record of them.
 
 There is no managed systemd unit: the binary and CLI are device-local, so a
 unit would either point at a missing path or duplicate the installer's

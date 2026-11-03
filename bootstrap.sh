@@ -235,6 +235,7 @@ trap 'cleanup_skill_library' EXIT
 run_step apply-source.agent-payload deploy_agent_payload
 cleanup_skill_library
 run_step apply-source.client-settings deploy_client_settings
+run_step apply-source.caveman-proxy refresh_caveman_proxy
 run_step apply-source.macos-discovery deploy_macos_config
 if "$DEPLOY_AGENTS_ONLY"; then
     run_step install-agents install_agents

@@ -12,6 +12,7 @@ source "$DEPLOY_SOURCE/deployment/history.sh"
 source "$DEPLOY_SOURCE/deployment/skills.sh"
 source "$DEPLOY_SOURCE/deployment/payload.sh"
 source "$DEPLOY_SOURCE/deployment/client-settings.sh"
+source "$DEPLOY_SOURCE/deployment/caveman.sh"
 source "$DEPLOY_SOURCE/deployment/macos.sh"
 source "$DEPLOY_SOURCE/deployment/system.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)

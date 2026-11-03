@@ -40,6 +40,9 @@
 {{- if eq $format "toml" -}}
 {{- $desired = fromToml $desiredText -}}
 {{- if lstat $target -}}{{- $host = include $target | fromToml -}}{{- end -}}
+{{- else if eq $format "yaml" -}}
+{{- $desired = fromYaml $desiredText -}}
+{{- if lstat $target -}}{{- $host = include $target | fromYaml -}}{{- end -}}
 {{- else -}}
 {{- $desired = fromJsonc $desiredText -}}
 {{- if lstat $target -}}{{- $host = include $target | fromJsonc -}}{{- end -}}
@@ -79,6 +82,8 @@
 {{- end -}}
 {{- if eq $format "toml" -}}
 {{ $host | toToml }}
+{{- else if eq $format "yaml" -}}
+{{ $host | toYaml }}
 {{- else -}}
 {{ $host | toPrettyJson }}
 {{- end -}}

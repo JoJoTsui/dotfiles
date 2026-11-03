@@ -143,6 +143,12 @@ explains every changed pair.
   `deployment/client-settings/` merge into runtime paths excluded from Chezmoi.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,
   ownership, or preservation. Index creation stays an explicit project action.
+- **Caveman provider mounts are repository-owned**: `deployment/client-settings/
+  caveman.yaml` owns `compat.<provider>.base_url` in `~/.caveman/caveman.yaml`;
+  a mount base URL must equal the provider's own base URL or the agent falls
+  back to a pass-through. Bootstrap restarts a running gateway only when the
+  merged configuration changed. Read `docs/CAVEMAN.md` before changing mounts,
+  the gateway lifecycle, or that file's ownership.
 
 ## CLI tools
 
