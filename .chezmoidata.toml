@@ -56,11 +56,20 @@ cargoIndex = "sparse+https://mirrors.tuna.tsinghua.edu.cn/crates.io-index/"
 rustupUpdateRoot = "https://mirrors.tuna.tsinghua.edu.cn/rustup/rustup"
 rustupDistServer = "https://mirrors.tuna.tsinghua.edu.cn/rustup"
 condaChannelAlias = "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud"
-condaChannels = ["https://conda.anaconda.org/nvidia/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda/", "https://mirrors.tuna.tsinghua.edu.cn/anaconda/pkgs/main/"]
+condaChannels = ["nvidia", "pytorch", "conda-forge", "bioconda"]
+condaCustomChannels = { nvidia = "https://mirrors.zju.edu.cn/anaconda/cloud" }
+
+# Channel mirror lists, ordered primary then upstream fallback. Pixi omits
+# nvidia because ZJU rejects non-mirrored subdirectories during `pixi search`.
+[mirrors.tuna.condaMirrors]
+"conda-forge" = ["https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge", "https://conda.anaconda.org/conda-forge"]
+"bioconda" = ["https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/bioconda", "https://conda.anaconda.org/bioconda"]
+"pytorch" = ["https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/pytorch", "https://conda.anaconda.org/pytorch"]
+"nvidia" = ["https://mirrors.zju.edu.cn/anaconda/cloud/nvidia", "https://conda.anaconda.org/nvidia"]
 
 [mirrors.upstream]
 pythonIndex = "https://pypi.org/simple"
 rustupUpdateRoot = "https://static.rust-lang.org/rustup"
 rustupDistServer = "https://static.rust-lang.org"
 condaChannelAlias = "https://conda.anaconda.org"
-condaChannels = ["nvidia", "pytorch", "conda-forge", "bioconda", "https://repo.anaconda.com/pkgs/main/"]
+condaChannels = ["nvidia", "pytorch", "conda-forge", "bioconda"]

@@ -1,0 +1,18 @@
+# Keep one shared cache on the Ceph home; use "auto" for node-local repodata
+# on a cluster where every solve should avoid the network filesystem.
+[cache]
+netfs-redirect = "never"
+{{ if eq .mirror "tuna" }}
+# nvidia is intentionally left upstream for Pixi: ZJU returns 403 on
+# non-mirrored subdirectories during `pixi search`. conda/micromamba still
+# use the ZJU mirror through .condarc.
+[mirrors]
+{{ range $channel, $mirrors := (index .mirrors .mirror).condaMirrors -}}
+{{- if ne $channel "nvidia" }}
+"https://conda.anaconda.org/{{ $channel }}" = {{ $mirrors | toJson }}
+{{- end }}
+{{ end }}
+# TUNA serves channel repodata but not sharded repodata.
+[repodata-config."https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud"]
+disable-sharded = true
+{{ end -}}

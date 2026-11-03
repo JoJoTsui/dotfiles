@@ -54,6 +54,18 @@ class PortableConfigTests(TemporaryDevice):
             self.assertEqual(posix.splitlines(), actual)
             for path in ['.config/uv/uv.toml', '.config/pip/pip.conf']:
                 self.assertIn(python, (self.home / path).read_text())
+            condarc = (self.home / '.condarc').read_text()
+            pixi_config = (self.home / '.pixi/config.toml').read_text()
+            if mirror == 'tuna':
+                self.assertIn('mirrored_channels:', condarc)
+                self.assertIn('https://mirrors.zju.edu.cn/anaconda/cloud/nvidia', condarc)
+                self.assertIn('"https://conda.anaconda.org/conda-forge"', pixi_config)
+                self.assertNotIn('https://conda.anaconda.org/nvidia', pixi_config)
+                self.assertNotIn('zju.edu.cn', pixi_config)
+                self.assertIn('disable-sharded = true', pixi_config)
+            else:
+                self.assertNotIn('mirrored_channels:', condarc)
+                self.assertNotIn('zju.edu.cn', pixi_config)
             if mirror == 'upstream':
                 for path in ['.cargo/config.toml', '.condarc', '.env_core']:
                     self.assertNotIn('tuna.tsinghua', (self.home / path).read_text())

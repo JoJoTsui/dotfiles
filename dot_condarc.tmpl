@@ -1,12 +1,21 @@
 changeps1: false
-channel_alias: {{ (index .mirrors .mirror).condaChannelAlias | quote }}
 channels:
 {{ range (index .mirrors .mirror).condaChannels }}  - {{ . | quote }}
 {{ end -}}
-channel_priority: flexible
-
+show_channel_urls: true
+channel_priority: strict
+channel_alias: {{ (index .mirrors .mirror).condaChannelAlias | quote }}
+{{- if eq .mirror "tuna" }}
+custom_channels:
+{{ range $channel, $base := (index .mirrors .mirror).condaCustomChannels }}  {{ $channel }}: {{ $base | quote }}
+{{ end -}}
+mirrored_channels:
+{{ range $channel, $mirrors := (index .mirrors .mirror).condaMirrors }}  {{ $channel }}:
+{{ range $mirrors }}    - {{ . | quote }}
+{{ end }}{{ end }}
+{{- end }}
 # network settings
-remote_connect_timeout_secs: 300
-remote_read_timeout_secs: 300
-remote_max_retries: 10
+remote_connect_timeout_secs: 30
+remote_read_timeout_secs: 120
+remote_max_retries: 3
 remote_backoff_factor: 2

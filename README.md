@@ -110,7 +110,7 @@ dot_local/bin/executable_bat-modules    # bat syntax/module installer (bash)
 dot_local/bin/executable_fetchChromSizes  # UCSC chrom.sizes fetcher (POSIX sh)
 dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
                             # rerere, lfs filters, gh credential helper
-dot_condarc.tmpl            # selected mirrors, nvidia/pytorch/conda-forge/bioconda channels
+dot_condarc.tmpl            # mirror channels with upstream fallback; community only
 deployment/common-tools.tsv  # exact common requirements and command exposures
 deployment/agents/           # Bun catalog, per-client manifests + bun.lock,
                              # native release pins (native.tsv)
@@ -127,7 +127,7 @@ dot_config/
   zellij/config.kdl.tmpl    # multiplexer: custom keybinds, default_shell nu-login
   nushell/                  # env.nu.tmpl, config.nu, adjacent managed resources
 dot_pixi/
-  config.toml                 # netfs-redirect = never (network mount)
+  config.toml.tmpl            # netfs cache policy + conda channel mirrors
 dot_vscode-server/…         # remote compute Machine settings
 system/bash.bashrc          # manual system banner payload; never auto-applied
 deployment/system/bashrc    # portable Bash defaults; installed only by --system-config
@@ -213,7 +213,9 @@ merges owned entries into the device's Pixi registry, preserving unrelated
 environments, extra dependencies/exposures, and channels, then runs sync.
 RTK uses package `rtk-cli` and exposes `rtk`; Tailspin exposes `tspin` and
 includes `less`. Bun and Node are common defaults. Python/pip and uv discover
-the rendered TUNA configuration.
+the rendered TUNA configuration. Pixi resolves conda-forge, bioconda, and
+pytorch through the rendered TUNA mirrors; nvidia stays upstream to keep
+`pixi search` usable.
 
 Pixi global has no lockfile. Exact direct pins are enforced, while solver-selected
 builds and transitive dependencies can drift. Update source pins deliberately

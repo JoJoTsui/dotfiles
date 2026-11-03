@@ -10,9 +10,19 @@ compatibility variables; their directories never enter managed PATH.
 
 Set `DOTFILES_MIRROR=tuna` (default) or `DOTFILES_MIRROR=upstream` when running
 bootstrap. The selection is persisted in Chezmoi data and covers pip, uv,
-Cargo, Rustup, and Micromamba channels through one model. Environment overrides
-still win. Pixi catalogs explicitly use conda-forge/Bioconda and retain those
-sources; this switch does not rewrite pinned release or skill download URLs.
+Cargo, Rustup, conda, Micromamba, and Pixi channels through one model. The
+conda/micromamba config maps conda-forge, bioconda, pytorch, and nvidia to TUNA
+(nvidia via ZJU) with an upstream fallback, and omits `defaults` so the
+Anaconda official repository is never fetched implicitly. Pixi's global config
+mirrors conda-forge, bioconda, and pytorch; it leaves nvidia upstream because
+ZJU returns 403 for non-mirrored subdirectories when Pixi enumerates all
+platforms. Environment overrides still win. Pinned release and skill download
+URLs are not rewritten.
+
+Conda/micromamba still use ZJU for nvidia, and mamba/micromamba fall back to
+upstream when a mirror lacks a package. Conda itself does not implement
+`mirrored_channels`, so its fallback is limited to the channels in its list;
+use micromamba or Pixi when a just-published package is missing from the mirror.
 
 ## Device-local overrides
 
