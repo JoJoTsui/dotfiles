@@ -16,10 +16,11 @@ restart.
 Idempotent. Safe to re-run after Mihomo restarts (which loses in-memory state).
 """
 
-import importlib.util
+import ipaddress
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -98,16 +99,15 @@ def probe_delay(base: str, name: str) -> int | None:
         return None
 
 
-def load_exit_ip():
-    """The exit-IP fetch from test-proxy.py, so both scripts use one implementation."""
-    path = Path(__file__).with_name("test-proxy.py")
-    spec = importlib.util.spec_from_file_location("test_proxy", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.get_exit_ip
-
-
-GET_EXIT_IP = load_exit_ip()
+def get_exit_ip(proxy_url: str) -> str:
+    """Check the selected route even when the caller inherited NO_PROXY."""
+    result = subprocess.run(
+        ["curl", "--fail", "--silent", "--show-error", "--proxy", proxy_url,
+         "--noproxy", "", "--connect-timeout", "3", "--max-time", "8",
+         "https://api.ipify.org"],
+        check=True, capture_output=True, text=True, timeout=12,
+    )
+    return str(ipaddress.ip_address(result.stdout.strip()))
 
 
 def route_health(proxy_url: str) -> tuple[bool, str]:
@@ -120,7 +120,7 @@ def route_health(proxy_url: str) -> tuple[bool, str]:
     if not proxy_url:
         return False, ""
     try:
-        ip = GET_EXIT_IP(proxy_url)
+        ip = get_exit_ip(proxy_url)
     except Exception:
         return False, ""
     return bool(ip), ip or ""
