@@ -40,6 +40,13 @@ json_array() {
 }
 report_failure() {
     local exit_status=$?
+    # A command substitution cannot fail the shell that runs it: exiting here
+    # would only end the substitution and let the caller continue. Let the
+    # caller see the non-zero status and decide, so a guarded lookup stays
+    # quiet and an unguarded one still fails the deployment.
+    if [ "${BASH_SUBSHELL:-0}" -gt 0 ]; then
+        return "$exit_status"
+    fi
     printf 'dotfiles: step %s failed (exit %s)\n' "$DEPLOY_STEP" "$exit_status" >&2
     exit "$exit_status"
 }
