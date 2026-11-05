@@ -119,10 +119,14 @@ class HistoryBehaviorTests(unittest.TestCase):
                 drain(0.6)
             os.write(primary, b"exit\n")
             drain(0.4)
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                self.fail(output.decode(errors="replace"))
+            # Late shell/editor startup can still request a cursor position.
+            # Keep servicing the PTY within the same ten-second exit budget.
+            deadline = time.monotonic() + 10
+            while process.poll() is None:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    self.fail(output.decode(errors="replace"))
+                drain(min(remaining, 0.1))
             self.assertEqual(process.returncode, 0, output.decode(errors="replace"))
         finally:
             if process.poll() is None:
