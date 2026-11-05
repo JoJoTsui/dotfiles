@@ -185,5 +185,69 @@ class ProxyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+    def write_proxy_fixture(self):
+        """A home with the scripts and the profile the deployment builds."""
+        scripts = self.home / ".local/share/dotfiles/proxy/scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        root = self.home / ".local/share/mihomo"
+        (root / "profiles").mkdir(parents=True, exist_ok=True)
+        (root / "profiles/fixture.yaml").write_text(
+            "mixed-port: 7890\nport: 7891\nsocks-port: 7892\n"
+            "external-controller: 127.0.0.1:9090\nsecret: \"topsecret\"\n"
+            "proxies:\n  - name: \"US-1\"\n    server: us.example.invalid\n"
+            "proxy-groups:\n  - name: GLOBAL\n    type: select\n    proxies: [\"US-1\"]\n"
+            "rules:\n  - MATCH,GLOBAL\n",
+            encoding="utf-8")
+        (root / "subscription-url").write_text("https://example.invalid/subscription", encoding="utf-8")
+        refresh = scripts / "refresh-profile.sh"
+        refresh.write_text(
+            "#!/bin/sh\nmkdir -p \"$INSTALL_ROOT/profiles\"\n"
+            "cp \"$HOME/.local/share/mihomo/profiles/fixture.yaml\" \"$INSTALL_ROOT/profiles/config.yaml\"\n",
+            encoding="utf-8")
+        refresh.chmod(0o755)
+        for name in ("restrict-proxy-groups.py", "apply-us-routing-policy.py"):
+            policy = scripts / name
+            policy.write_text(
+                "#!/usr/bin/env python3\nimport sys\n"
+                "profile = sys.argv[-1]\n"
+                "open(profile, 'a').write('# policy applied\\n')\n",
+                encoding="utf-8")
+            policy.chmod(0o755)
+        return scripts
+
+    def test_the_deployment_profile_owns_its_ports_and_controller(self):
+        self.write_proxy_fixture()
+        result = self.run_proxy_script(
+            'DEPLOY_PROXY_PORT=7895\nDEPLOY_PROXY_CONTROLLER_PORT=9091\n'
+            'deploy_proxy_profile')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        profile = self.home / ".local/share/mihomo/profiles/deployment-config.yaml"
+        self.assertTrue(profile.is_file())
+        text = profile.read_text(encoding="utf-8")
+        self.assertIn("mixed-port: 7895", text)
+        self.assertIn("port: 0", text)
+        self.assertIn("socks-port: 0", text)
+        self.assertIn("external-controller: 127.0.0.1:9091", text)
+        self.assertIn('secret: ""', text)
+        self.assertNotIn("topsecret", text)
+
+    def test_the_deployment_profile_leaves_the_service_profile_alone(self):
+        self.write_proxy_fixture()
+        result = self.run_proxy_script(
+            'DEPLOY_PROXY_PORT=7895\nDEPLOY_PROXY_CONTROLLER_PORT=9091\n'
+            'deploy_proxy_profile')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        service = self.home / ".local/share/mihomo/profiles/config.yaml"
+        self.assertFalse(service.exists())
+
+    def test_the_deployment_profile_needs_the_us_policy_scripts(self):
+        self.write_proxy_fixture()
+        (self.home / ".local/share/dotfiles/proxy/scripts/restrict-proxy-groups.py").unlink()
+        result = self.run_proxy_script(
+            'DEPLOY_PROXY_PORT=7895\nDEPLOY_PROXY_CONTROLLER_PORT=9091\n'
+            'deploy_proxy_profile')
+        self.assertNotEqual(result.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
