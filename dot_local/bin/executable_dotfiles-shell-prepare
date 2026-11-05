@@ -3,7 +3,7 @@
 set -eu
 [ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
 fail() { printf 'dotfiles-shell-prepare: %s\n' "$*" >&2; exit 1; }
-for command in pixi nu starship zoxide fzf python; do
+for command in pixi nu starship zoxide fzf python wt; do
     [ -x "$PIXI_HOME/bin/$command" ] || fail "required managed command missing: $PIXI_HOME/bin/$command"
 done
 for directory in "$HOME/.local" "$XDG_DATA_HOME" "$XDG_DATA_HOME/nushell" "$XDG_DATA_HOME/nushell/vendor" "$XDG_DATA_HOME/nushell/vendor/autoload"; do
@@ -11,7 +11,7 @@ for directory in "$HOME/.local" "$XDG_DATA_HOME" "$XDG_DATA_HOME/nushell" "$XDG_
 done
 autoload="$XDG_DATA_HOME/nushell/vendor/autoload"
 mkdir -p "$autoload"
-for filename in starship.nu pixi-completions.nu fzf.nu nu-scripts.nu; do
+for filename in starship.nu pixi-completions.nu fzf.nu nu-scripts.nu wt.nu; do
     [ ! -L "$autoload/$filename" ] || fail "startup artifact is a symlink: $autoload/$filename"
 done
 stage=$(mktemp -d "$autoload/.prepare.XXXXXX")
@@ -19,6 +19,7 @@ trap 'rm -rf "$stage"' EXIT HUP INT TERM
 starship_temporary="$stage/starship.nu"
 pixi_temporary="$stage/pixi-completions.nu"
 fzf_temporary="$stage/fzf.nu"
+wt_temporary="$stage/wt.nu"
 "$PIXI_HOME/bin/starship" init nu > "$starship_temporary"
 "$PIXI_HOME/bin/pixi" completion --shell nushell > "$pixi_temporary"
 # Atuin owns Ctrl-R. Disable fzf's history binding while its adapter loads,
@@ -26,15 +27,18 @@ fzf_temporary="$stage/fzf.nu"
 printf '%s\n' 'let __dotfiles_fzf_history_command = ($env | get -o FZF_CTRL_R_COMMAND)' '$env.FZF_CTRL_R_COMMAND = ""' > "$fzf_temporary"
 "$PIXI_HOME/bin/fzf" --nushell >> "$fzf_temporary"
 printf '%s\n' 'if $__dotfiles_fzf_history_command == null { hide-env FZF_CTRL_R_COMMAND } else { $env.FZF_CTRL_R_COMMAND = $__dotfiles_fzf_history_command }' >> "$fzf_temporary"
-chmod 600 "$starship_temporary" "$pixi_temporary" "$fzf_temporary"
+"$PIXI_HOME/bin/wt" config shell init nu > "$wt_temporary"
+chmod 600 "$starship_temporary" "$pixi_temporary" "$fzf_temporary" "$wt_temporary"
 # Nu omits vendor autoload under -c. Validate all new resources before any
 # replaces the last working artifact, then validate the managed base config.
 "$PIXI_HOME/bin/nu" --config "$pixi_temporary" --env-config "$starship_temporary" -c 'null'
 "$PIXI_HOME/bin/nu" --config "$fzf_temporary" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
+"$PIXI_HOME/bin/nu" --config "$wt_temporary" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
 "$PIXI_HOME/bin/nu" --config "$XDG_CONFIG_HOME/nushell/config.nu" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
 "$PIXI_HOME/bin/python" "$HOME/.local/lib/dotfiles/completions.py" --nu "$PIXI_HOME/bin/nu" --autoload-dir "$stage"
 mv -f "$starship_temporary" "$autoload/starship.nu"
 mv -f "$pixi_temporary" "$autoload/pixi-completions.nu"
 mv -f "$fzf_temporary" "$autoload/fzf.nu"
+mv -f "$wt_temporary" "$autoload/wt.nu"
 mv -f "$stage/nu-scripts.nu" "$autoload/nu-scripts.nu"
 printf 'dotfiles-shell-prepare: prepared Nushell startup\n'

@@ -101,7 +101,7 @@ dot_env_core.tmpl           # generated POSIX env for bash+zsh: PATH, EDITOR,
                             # rustup TUNA mirrors, noproxy/unproxy (rendered URL)
 dot_profile                 # login shells: exec-nu guard (TTY + no Claude session)
 dot_bashrc                  # bash init: pixi, mamba, starship, zoxide,
-                            # direnv, fzf
+                            # direnv, fzf, wt
 dot_zshenv                  # every zsh: env_core + umask (bash parity)
 dot_zshrc                   # interactive zsh: same inits as .bashrc (+ compinit)
 dot_local/bin/executable_nu-login   # guarded interactive Nu; Bash for scripts
@@ -226,6 +226,9 @@ upstream assets. Rustup installs no compiler toolchain by default.
 
 Bioinformatics, GPU, desktop, and additional developer tools remain discoverable
 under `deployment/inventory`; they are opt-in rather than common defaults.
+Worktrunk is a common Unix tool: the `wt` command is the shared worktree
+manager for the agents, and native Windows excludes it because `wt` names
+Windows Terminal there. See [worktrunk](docs/WORKTRUNK.md).
 Native Windows bootstrap exceptions and execution are supplied by ticket 11;
 Unix-only conda entries are excluded from its desired manifest.
 
@@ -275,6 +278,12 @@ for versions, lifecycle trust, update policy, and isolated diagnostic checks.
 Runtime configs merge through the public bootstrap, retaining existing settings
 and authentication. [Client settings](docs/AGENT_SETTINGS.md) describes ownership,
 CodeGraph discovery, and the checks for indexed and unindexed projects.
+
+[Worktrunk](docs/WORKTRUNK.md) gives the agents one shared worktree model: the
+`wt` command is a common tool on Unix hosts, its upstream skill reaches every
+client through the shared skill library, and the Claude Code, Codex, opencode
+and pi plugins report which worktree an agent is using. Native Windows keeps
+the name for Windows Terminal and deploys neither the command nor the plugins.
 
 ### Caveman gateway (optional, device-local)
 

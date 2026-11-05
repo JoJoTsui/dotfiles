@@ -10,4 +10,5 @@
 .local/share/nushell/vendor/autoload/pixi-completions.nu|Library/Application Support/nushell/autoload/pixi-completions.nu|optional
 .local/share/nushell/vendor/autoload/fzf.nu|Library/Application Support/nushell/autoload/fzf.nu|optional
 .local/share/nushell/vendor/autoload/nu-scripts.nu|Library/Application Support/nushell/autoload/nu-scripts.nu|optional
+.local/share/nushell/vendor/autoload/wt.nu|Library/Application Support/nushell/autoload/wt.nu|optional
 .local/share/nushell/vendor/autoload/atuin.nu|Library/Application Support/nushell/autoload/atuin.nu|optional

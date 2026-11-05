@@ -15,6 +15,7 @@ git|git==2.56.0|git=git|all
 git-lfs|git-lfs==3.8.1|git-lfs=git-lfs|all
 git-delta|git-delta==0.20.1|delta=delta|all
 gh|gh==2.103.3|gh=gh|all
+worktrunk|worktrunk==0.80.0|wt=wt|unix
 starship|starship==1.27.0|starship=starship|all
 direnv|direnv==2.38.2|direnv=direnv|all
 micromamba|micromamba==2.10.0|micromamba=micromamba|all

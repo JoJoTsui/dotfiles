@@ -299,6 +299,20 @@ agent_retry() {
     return "$status"
 }
 
+# Worktrunk's client plugins report which worktree an agent is using. The
+# plugin files are client state; the CLI owns their content, so they are
+# installed through it instead of being written from this source.
+install_worktrunk_plugins() {
+    local wt="$PIXI_HOME/bin/wt" client
+    [ -x "$wt" ] || return 0
+    for client in claude codex opencode pi; do
+        agent_selected "$client" || continue
+        DEPLOY_STEP="install-agents.worktrunk.$client"
+        agent_retry env PATH="$HOME/.local/bin:$PATH" "$wt" config plugins "$client" install --yes ||
+            fail "cannot install the worktrunk plugin for $client"
+    done
+}
+
 install_agents() {
     local bun="${DOTFILES_BUN_BIN:-$PIXI_HOME/bin/bun}" node="${DOTFILES_NODE_BIN:-$PIXI_HOME/bin/node}"
     local bun_pin node_pin name package version commands minimum trusted project command launcher diagnostic
@@ -353,4 +367,5 @@ install_agents() {
         done
     done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
     install_native_agents
+    install_worktrunk_plugins
 }

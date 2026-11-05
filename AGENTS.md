@@ -166,6 +166,12 @@ explains every changed pair.
 - **Skills carry a selection**: the catalog's last column is `auto` or a tag.
   Tagged skills are not deployed automatically; a host asks for them with
   `DOTFILES_SKILLS=<tag>`. The Lark skills are tagged.
+- **Worktrunk is the shared worktree tool**: the `wt` command is a common Unix
+  tool (native Windows keeps the name for Windows Terminal), its skill bytes
+  come from the upstream catalog like every other skill, and the per-client
+  plugins are client state that the CLI writes. The deployment never reproduces
+  plugin content. Read `docs/WORKTRUNK.md` before changing the command, the
+  skill rows, the shell integration, or the plugin step.
 - **Client settings merge through bootstrap**: defaults under ignored
   `deployment/client-settings/` merge into runtime paths excluded from Chezmoi.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,

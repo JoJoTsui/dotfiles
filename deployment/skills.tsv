@@ -124,7 +124,9 @@ wait-what|git|https://github.com/mattpocock/skills|main|skills/productivity/wait
 wayfinder|git|https://github.com/mattpocock/skills|main|skills/engineering/wayfinder|auto
 wizard|git|https://github.com/mattpocock/skills|main|skills/engineering/wizard|auto
 workflow-skill-creator|git|https://github.com/google-deepmind/science-skills|main|skills/workflow_skill_creator|auto
+worktrunk|git|https://github.com/max-sixty/worktrunk|main|skills/worktrunk|auto
 writing-beats|git|https://github.com/mattpocock/skills|main|skills/in-progress/writing-beats|auto
 writing-for-agents|git|https://github.com/mattpocock/skills|main|skills/productivity/writing-for-agents|auto
 writing-fragments|git|https://github.com/mattpocock/skills|main|skills/in-progress/writing-fragments|auto
 writing-shape|git|https://github.com/mattpocock/skills|main|skills/in-progress/writing-shape|auto
+wt-switch-create|git|https://github.com/max-sixty/worktrunk|main|skills/wt-switch-create|auto
