@@ -10,7 +10,9 @@ version = 1
 {{- range splitList "\n" (include "deployment/common-tools.tsv") }}
 {{- if and (ne . "") (not (hasPrefix "#" .)) }}
 {{- $fields := splitList "|" . }}
-{{- if or (eq (index $fields 3) "all") (ne $platform "windows") }}
+{{- $targets := index $fields 3 }}
+{{- $include := or (eq $targets "all") (and (eq $targets "unix") (ne $platform "windows")) (has $platform (splitList "," $targets)) }}
+{{- if $include }}
 
 [envs.{{ index $fields 0 | quote }}]
 channels = ["conda-forge"]

@@ -9,7 +9,12 @@ if [ "$DEPLOY_PLATFORM" = windows ]; then
 fi
 
 common_target_matches() {
-    [ "$1" = all ] || { [ "$1" = unix ] && [ "$DEPLOY_PLATFORM" != windows ]; }
+    [ "$1" = all ] && return 0
+    [ "$1" = unix ] && { [ "$DEPLOY_PLATFORM" != windows ]; return; }
+    case ",$1," in
+        *",$DEPLOY_PLATFORM,"*) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 while IFS=$'|\r' read -r common_env common_specs common_exposed common_targets; do

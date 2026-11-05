@@ -23,6 +23,17 @@ SOURCE = Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(os.name == "posix", "native Windows history is verified by its own adapter")
 class HistoryBehaviorTests(unittest.TestCase):
+    def shell_binaries(self):
+        """The shells the platform under test manages, and their Pixi envs."""
+        platform = os.environ.get("DOTFILES_TEST_PLATFORM", "linux")
+        # macOS runs Zsh: it installs no managed Bash runtime.
+        if platform == "macos":
+            return (("zsh", "zsh"), ("nu", "nushell"))
+        return (("bash", "bash"), ("zsh", "zsh"), ("nu", "nushell"))
+
+    def shell_names(self):
+        return tuple(name for name, _ in self.shell_binaries())
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-history-")
         self.addCleanup(self.temporary.cleanup)
@@ -44,7 +55,7 @@ class HistoryBehaviorTests(unittest.TestCase):
             self.skipTest("missing borrowed managed Python")
         (self.home / ".pixi/bin/python").symlink_to(python)
         self.shells = {}
-        for name, environment in (("bash", "bash"), ("zsh", "zsh"), ("nu", "nushell")):
+        for name, environment in self.shell_binaries():
             binary = self.tool_home / ".pixi/envs" / environment / "bin" / name
             if not binary.is_file():
                 self.skipTest(f"missing borrowed shell: {binary}")
@@ -177,14 +188,14 @@ class HistoryBehaviorTests(unittest.TestCase):
         prepared = subprocess.run([str(self.home / ".local/bin/dotfiles-history-prepare")],
                                   env=self.env, cwd=self.home, capture_output=True, text=True, timeout=20)
         self.assertEqual(prepared.returncode, 0, prepared.stderr)
-        for name in ("bash", "zsh", "nu"):
+        for name in self.shell_names():
             command = f"echo portable-{name}-history-token"
             synthetic_secret = "ghp_" + "A" * 36
             secret_command = f"echo filtered-{name}-token-{synthetic_secret}"
             self.terminal(name, [command, secret_command, "echo after-filter-check"])
         search = self.atuin_command("search", "--cmd-only", "--search-mode", "fulltext", "portable-")
         self.assertEqual(search.returncode, 0, search.stderr)
-        for name in ("bash", "zsh", "nu"):
+        for name in self.shell_names():
             self.assertIn(f"echo portable-{name}-history-token", search.stdout)
         excluded = self.atuin_command("search", "--cmd-only", "--search-mode", "fulltext", "filtered-")
         self.assertEqual(excluded.returncode, 1, excluded.stderr)  # Atuin's no-match status
@@ -196,6 +207,8 @@ class HistoryBehaviorTests(unittest.TestCase):
         self.assertIn("pending activation", state.stdout)
 
     def test_bash_migration_is_explicit_filtered_and_one_time(self):
+        # The Bash format is imported from an explicit file on every platform,
+        # including the ones that manage no Bash history of their own.
         fixture = self.root / "bash-import.fixture"
         secret = "ghp_" + "B" * 36
         fixture.write_text(f"#1700000000\necho imported-bash-token\n#1700000001\necho excluded-import-{secret}\n")

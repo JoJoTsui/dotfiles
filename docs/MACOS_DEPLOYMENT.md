@@ -5,6 +5,12 @@ shell values, agent payload/settings adapters, and history setup. The supported
 baseline is macOS 13 or newer, on Intel or Apple silicon. Bootstrap runs with
 system Bash 3.2 and installs into user-scoped roots.
 
+macOS runs **Zsh**, not Bash: the profile applies no Bash startup file, installs
+no managed Bash runtime, and manages `~/.zprofile` as the Zsh login file.
+`~/.zprofile` matters because Zsh never reads `~/.profile`: `/etc/zprofile`
+runs `path_helper`, which rewrites PATH after `~/.zshenv` has set it, so the
+login file re-applies the managed tool paths.
+
 From a source checkout:
 
 ```bash

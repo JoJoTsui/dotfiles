@@ -138,8 +138,10 @@ application.log` prints without a pager. See [Tailspin usage](https://github.com
 
 ## Pane and agent shells
 
-The account shell is `/bin/bash`; `.profile`/`.bash_profile` exec Nu for an
-interactive login. Pane shells are separate:
+The account shell is `/bin/bash` on Linux and WSL and `/bin/zsh` on macOS;
+`.profile`/`.bash_profile` and `.zprofile` exec Nu for an interactive login.
+macOS applies no Bash startup file, so its login path runs through
+`~/.zprofile`. Pane shells are separate:
 
 - Herdr: `terminal.default_shell = "nu-login"` with `shell_mode = "non_login"`.
 - Zellij: `default_shell` points at `nu-login`.

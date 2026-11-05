@@ -3,5 +3,9 @@
 if [ "$#" -eq 0 ] && command -v _dotfiles_can_start_nu >/dev/null 2>&1 && _dotfiles_can_start_nu; then
     exec nu --login
 fi
-# Script arguments and non-TTY/agent entry points retain Bash semantics.
-exec bash "$@"
+# Script arguments and non-TTY/agent entry points keep the managed script
+# shell: Bash on Linux and WSL, Zsh on macOS, which manages no Bash runtime.
+case "${DOTFILES_PLATFORM:-}" in
+    macos) exec zsh "$@" ;;
+    *) exec bash "$@" ;;
+esac

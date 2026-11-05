@@ -78,6 +78,9 @@ explains every changed pair.
 
 - **`.env_core` is POSIX sh and idempotent** (`: "${VAR:=...}"` guards);
   bash sources it before the interactive check so non-interactive shells get PATH.
+  Managed tool paths own the front of PATH: `_dotfiles_prepend_path` moves an
+  existing copy instead of skipping it, because macOS `path_helper` rewrites
+  PATH after `~/.zshenv` runs.
 - **Shared settings are defined once**: `.chezmoidata.toml` owns shared defaults
   and PATH priority. `dot_env_core.tmpl` and
   `dot_config/nushell/env.nu.tmpl` render its POSIX/Nu syntax; change the model,
@@ -102,6 +105,9 @@ explains every changed pair.
   source without it renders 0644 — verified on chezmoi 2.59.1 and 2.72.2), so
   every managed script is named `dot_local/bin/executable_*` and lands
   `~/.local/bin/<name>` with mode 0755.
+- **macOS runs Zsh, not Bash**: macOS applies no Bash startup file and installs
+  no managed Bash runtime. `dot_zprofile` is the Zsh login file and shares
+  `~/.profile` with Bash's, because Zsh never reads `~/.profile` itself.
 - **The exec-nu guard** in `dot_profile`/`dot_bashrc` stays POSIX-safe and
   fires only for a real interactive TTY outside a Claude Code session
   (rationale: `docs/CLAUDE_SETUP_T9K.md`).

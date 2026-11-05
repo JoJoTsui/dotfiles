@@ -145,7 +145,8 @@ git-ignored and always stay host-local.
 guard in `~/.profile` (exception for Claude Code sessions:
 `docs/CLAUDE_SETUP_T9K.md`). **bash and zsh are installed by default** from
 the pixi manifest, because coding agents spawn them (`SHELL=/bin/bash`,
-`#!/bin/sh` scripts, `zsh -c`).
+`#!/bin/sh` scripts, `zsh -c`). macOS is the exception: it runs **zsh**, applies
+no Bash startup file, and installs no managed Bash runtime.
 
 Shared settings are generated from one model:
 

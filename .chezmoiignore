@@ -40,6 +40,13 @@ clash
 {{- if not (has .platform (list "linux" "wsl")) }}
 .local/bin/dotfiles-host-up
 {{- end }}
+# macOS runs Zsh, not Bash. Bash startup files would never be read there, and
+# the managed Bash runtime is not installed on macOS.
+{{- if eq .platform "macos" }}
+.bashrc
+.bash_profile
+.bash_logout
+{{- end }}
 # The Mihomo proxy stack is Linux/WSL only: the pinned release is a Linux
 # build, its supervisor is a systemd unit, and its scripts need procps and
 # util-linux.

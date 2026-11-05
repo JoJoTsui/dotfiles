@@ -36,7 +36,29 @@ _dotfiles_prepend_path() {
         set -- "$(cygpath -u "$1")"
     fi
 {{ end -}}
-    case ":$PATH:" in *":$1:"*) ;; *) PATH="$1${PATH:+:$PATH}" ;; esac
+    # Managed tool paths own the front of PATH. Every copy of the path is
+    # removed before it is put back at the front: macOS path_helper rewrites
+    # PATH after this file runs and would otherwise leave the managed paths
+    # behind the system ones. The scan uses parameter expansion only, so it
+    # behaves the same in Bash, Zsh and dash.
+    _dotfiles_path_rest=''
+    _dotfiles_path_scan=$PATH
+    while [ -n "$_dotfiles_path_scan" ]; do
+        case "$_dotfiles_path_scan" in
+            *:*)
+                _dotfiles_path_entry=${_dotfiles_path_scan%%:*}
+                _dotfiles_path_scan=${_dotfiles_path_scan#*:} ;;
+            *)
+                _dotfiles_path_entry=$_dotfiles_path_scan
+                _dotfiles_path_scan='' ;;
+        esac
+        if [ "$_dotfiles_path_entry" = "$1" ]; then
+            continue
+        fi
+        _dotfiles_path_rest="${_dotfiles_path_rest:+$_dotfiles_path_rest:}$_dotfiles_path_entry"
+    done
+    PATH="$1${_dotfiles_path_rest:+:$_dotfiles_path_rest}"
+    unset _dotfiles_path_rest _dotfiles_path_scan _dotfiles_path_entry
 }
 {{ $paths := .sharedShell.paths -}}
 {{- if eq .platform "windows" -}}{{- $paths = concat $paths .sharedShell.windowsPaths -}}{{- end -}}
@@ -49,6 +71,9 @@ unset _dotfiles_native_home
 {{ end -}}
 export PATH
 umask {{ .sharedShell.umask }}
+# The deployment platform belongs to the shared environment: the shell
+# adapters pick their managed runtime from it.
+export DOTFILES_PLATFORM={{ .platform | toJson }}
 
 if command -v vivid >/dev/null 2>&1; then
     : "${LS_COLORS:=$(vivid generate dracula)}"

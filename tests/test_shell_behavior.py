@@ -37,7 +37,7 @@ class ShellBehaviorTests(unittest.TestCase):
             self.skipTest("shell execution requires chezmoi and DOTFILES_TEST_TOOL_HOME with pinned tools")
         self.binaries = {}
         for command, environment in {
-            "bash": "bash", "zsh": "zsh", "nu": "nushell", "zoxide": "zoxide",
+            "zoxide": "zoxide",
             "tspin": "tailspin", "less": "less", "rtk": "rtk-cli", "micromamba": "micromamba",
             "starship": "starship", "direnv": "direnv", "fzf": "fzf", "vivid": "vivid",
             "python": "python",
@@ -57,9 +57,21 @@ class ShellBehaviorTests(unittest.TestCase):
         launcher = self.home / ".pixi/bin/pixi"
         launcher.write_text('#!/bin/sh\nexec "' + str(pixi) + '" "$@"\n')
         launcher.chmod(0o755)
-        self.bash_version = subprocess.check_output(
-            [self.binaries['bash'], '--noprofile', '--norc', '-c', 'printf "%s" "$BASH_VERSION"'],
-            env=self.env, text=True, timeout=10)
+        self.borrow_shells()
+        # The launcher keeps the managed script shell of the platform: Bash on
+        # Linux and WSL, Zsh on macOS.
+        self.script_shell = "zsh" if os.environ.get("DOTFILES_TEST_PLATFORM", "linux") == "macos" else "bash"
+        self.script_shell_version = ""
+        if self.script_shell in self.binaries:
+            # Bash and Zsh take different startup flags, and each reports its
+            # own version variable.
+            if self.script_shell == "zsh":
+                arguments = ['-f', '-c', 'printf "%s" "$ZSH_VERSION"']
+            else:
+                arguments = ['--noprofile', '--norc', '-c', 'printf "%s" "$BASH_VERSION"']
+            self.script_shell_version = subprocess.check_output(
+                [self.binaries[self.script_shell], *arguments],
+                env=self.env, text=True, timeout=10)
 
     def deploy(self, role=None, *, overrides=None):
         role = role or os.environ.get("DOTFILES_TEST_ROLE", "workstation")
@@ -84,6 +96,32 @@ class ShellBehaviorTests(unittest.TestCase):
             arguments = [self.binaries[name], *( ["-i"] if interactive else [] ), "-c", script]
         return subprocess.run(arguments, env=env, cwd=self.home, capture_output=True, text=True, timeout=20)
 
+    def shells(self):
+        """The shells the selected platform manages."""
+        platform = os.environ.get("DOTFILES_TEST_PLATFORM", "linux")
+        # macOS runs Zsh: it applies no Bash startup file and installs no
+        # managed Bash runtime.
+        return ("zsh", "nu") if platform == "macos" else ("bash", "zsh", "nu")
+
+    def script_shell_probe(self):
+        """Print the version of the platform's script shell."""
+        variable = "ZSH_VERSION" if self.script_shell == "zsh" else "BASH_VERSION"
+        return f'printf "SECONDARY-%s\\n" "${variable}"'
+
+    def borrow_shells(self):
+        """Borrow the managed shell runtimes of the platform under test."""
+        environments = {"bash": "bash", "zsh": "zsh", "nu": "nushell"}
+        for name in self.shells():
+            binary = self.tool_home / ".pixi/envs" / environments[name] / "bin" / name
+            if not binary.is_file():
+                self.skipTest(f"missing borrowed shell: {binary}")
+            self.binaries[name] = str(binary)
+            target = self.home / ".pixi/bin" / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.is_symlink() or target.exists():
+                target.unlink()
+            target.symlink_to(binary)
+
     def environment(self, name, *, overrides=None):
         names = ["EDITOR", "UV_PYTHON_PREFERENCE", "PIP_INDEX_URL", "UV_DEFAULT_INDEX",
                  "RUSTUP_DIST_SERVER", "RUSTUP_UPDATE_ROOT", "CHOKIDAR_USEPOLLING", "MAMBA_EXE",
@@ -105,7 +143,7 @@ class ShellBehaviorTests(unittest.TestCase):
     def test_fresh_shells_share_managed_paths_and_role_defaults(self):
         for role, polling in (("workstation", "0"), ("remote-compute", "1")):
             self.deploy(role)
-            for name in ("bash", "zsh", "nu"):
+            for name in self.shells():
                 with self.subTest(role=role, shell=name):
                     actual = self.environment(name)
                     self.assertEqual(actual["EDITOR"], "hx")
@@ -131,7 +169,7 @@ class ShellBehaviorTests(unittest.TestCase):
             "CHOKIDAR_USEPOLLING": "0", "MAMBA_EXE": "/device/managed-micromamba",
             "JOEY": str(self.home / "custom-legacy-root"),
         }
-        for name in ("bash", "zsh", "nu"):
+        for name in self.shells():
             with self.subTest(shell=name):
                 actual = self.environment(name, overrides=overrides)
                 self.assertEqual({key: actual[key] for key in overrides}, overrides)
@@ -144,7 +182,7 @@ class ShellBehaviorTests(unittest.TestCase):
     def test_proxy_helpers_agree_and_unset_all_variants(self):
         proxy = 'http://127.0.0.1:17777/?quoted=\'"value\\path'
         self.deploy(overrides={"HTTP_PROXY_URL": proxy})
-        for name in ("bash", "zsh", "nu"):
+        for name in self.shells():
             with self.subTest(shell=name):
                 if name == "nu":
                     script = 'noproxy; print ([$env.http_proxy $env.https_proxy $env.HTTP_PROXY $env.HTTPS_PROXY] | to json --raw); unproxy; $env | columns | where {|name| $name in [http_proxy https_proxy HTTP_PROXY HTTPS_PROXY] } | to json --raw'
@@ -165,7 +203,7 @@ class ShellBehaviorTests(unittest.TestCase):
         destination.mkdir()
         logfile = self.home / "application.log"
         logfile.write_text("2026-10-13 ERROR portable-log-token count=42\n")
-        for name in ("bash", "zsh", "nu"):
+        for name in self.shells():
             with self.subTest(shell=name):
                 if name == "nu":
                     script = '^zoxide add navigation-unique-token; z navigation-unique-token; print $env.PWD; logs --print ../application.log; ^rtk --version'
@@ -182,11 +220,11 @@ class ShellBehaviorTests(unittest.TestCase):
         launcher = self.home / ".local/bin/nu-login"
         for overrides in ({}, {"CLAUDECODE": "1"}, {"ANTHROPIC_AUTH_TOKEN": "synthetic-session-marker"}):
             with self.subTest(overrides=overrides):
-                result = subprocess.run([str(launcher), "-c", 'printf "SECONDARY-%s\\n" "$BASH_VERSION"'],
+                result = subprocess.run([str(launcher), "-c", self.script_shell_probe()],
                                         env=dict(self.env, **overrides), cwd=self.home,
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(result.stdout.strip(), 'SECONDARY-' + self.bash_version)
+                self.assertEqual(result.stdout.strip(), 'SECONDARY-' + self.script_shell_version)
 
     def terminal(self, arguments, command, *, overrides=None):
         primary, secondary = pty.openpty()
@@ -230,8 +268,8 @@ class ShellBehaviorTests(unittest.TestCase):
         output = self.terminal([launcher], 'print (["PREFERRED" "NU"] | str join "-"); exit\n')
         self.assertIn("PREFERRED-NU", output)
         for overrides in ({"CLAUDECODE": "1"}, {"DOTFILES_SECONDARY_SHELL": "1"}):
-            output = self.terminal([launcher], 'printf "SECONDARY-%s\\n" "$BASH_VERSION"; exit\n', overrides=overrides)
-            self.assertIn('SECONDARY-' + self.bash_version, output)
+            output = self.terminal([launcher], self.script_shell_probe() + "; exit\n", overrides=overrides)
+            self.assertIn('SECONDARY-' + self.script_shell_version, output)
 
     def test_logs_uses_the_default_less_pager(self):
         self.deploy()
@@ -240,7 +278,7 @@ class ShellBehaviorTests(unittest.TestCase):
         pager = self.home / ".local/bin/less"
         pager.write_text('#!/bin/sh\nprintf "PAGER-REACHED\\n" >&2\nexec "' + self.binaries["less"] + '" -F -X "$@"\n')
         pager.chmod(0o755)
-        for name in ("bash", "zsh", "nu"):
+        for name in self.shells():
             with self.subTest(shell=name):
                 arguments = [self.binaries[name], "--config", str(self.home / ".config/nushell/config.nu"), "--env-config", str(self.home / ".config/nushell/env.nu"), "-c", "logs application.log"] if name == "nu" else [self.binaries[name], "-c", '. "$HOME/.env_core"; logs application.log']
                 output = self.terminal(arguments, "")
@@ -327,9 +365,14 @@ source ''' + json.dumps(str(artifact)) + '\nsource ' + json.dumps(str(artifact))
         self.deploy()
         for path in (self.home / ".pixi/bin").iterdir():
             path.unlink()
-        for name in ("bash", "zsh", "nu"):
+        for name in self.shells():
             with self.subTest(shell=name):
-                script = 'print "standalone-ok"' if name == "nu" else '. "$HOME/.bashrc"; printf "standalone-ok\\n"' if name == "bash" else 'printf "standalone-ok\\n"'
+                if name == "nu":
+                    script = 'print "standalone-ok"'
+                elif name == "bash":
+                    script = '. "$HOME/.bashrc"; printf "standalone-ok\\n"'
+                else:
+                    script = '. "$HOME/.zshrc"; printf "standalone-ok\\n"'
                 result = self.shell(name, script)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), "standalone-ok")

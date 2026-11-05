@@ -3,7 +3,7 @@ uv|uv==0.13.6|uv=uv,uvx=uvx|all
 bun|bun==1.4.2|bun=bun,bunx=bunx|unix
 nodejs|nodejs==26.12.1|node=node,npm=npm,npx=npx|all
 nushell|nushell==0.116.1|nu=nu|all
-bash|bash==5.3|bash=bash|unix
+bash|bash==5.3|bash=bash|linux,wsl
 zsh|zsh==5.9.2|zsh=zsh|unix
 rtk-cli|rtk-cli==1.1.0|rtk=rtk|all
 atuin|atuin==18.24.1|atuin=atuin|unix

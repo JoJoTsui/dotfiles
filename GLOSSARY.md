@@ -21,6 +21,11 @@ _Avoid_: Host class
 **Profile preset**:
 A named choice of platform and host role for a common deployment.
 
+**Manager pin**:
+The version and per-target release digests of one bootstrap manager, treated as
+a single value. A version without matching digests is not a pin.
+_Avoid_: Version, version pin
+
 **Shared shell history**:
 One logical collection of commands entered across devices in Nushell, Bash, and
 Zsh. Coding-agent conversations and sessions are outside this term.
@@ -48,6 +53,10 @@ device's home or settings.
 **Native validation**:
 Verification of a deployment using its target platform's actual runtime.
 
+**Deployment step**:
+One named stage of a bootstrap run, such as installing managers or applying the
+source. A step that fails ends the run; a step that has nothing to do succeeds.
+
 **Account shell**:
 The program recorded in the account database for a login session. It is not
 necessarily the interactive shell a TTY ends up running.
@@ -66,3 +75,8 @@ _Avoid_: Login shell
 The client-owned shell an agent uses for tool commands, independent of the pane
 shell.
 _Avoid_: Pane shell, login shell
+
+**Script shell**:
+The managed shell a launcher keeps for script arguments and agent entry points:
+Bash on Linux and WSL, Zsh on macOS.
+_Avoid_: Agent tool shell, Pane shell, Login shell
