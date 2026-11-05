@@ -32,7 +32,9 @@ if [[ ! -r "$SUBSCRIPTION_URL_FILE" ]]; then
   exit 1
 fi
 
-read -r subscription_url < "$SUBSCRIPTION_URL_FILE"
+subscription_url=''
+# A valid legacy file can end at EOF immediately after its URL.
+read -r subscription_url < "$SUBSCRIPTION_URL_FILE" || :
 [[ -n $subscription_url ]] || { echo "Subscription URL is empty." >&2; exit 1; }
 
 umask 077

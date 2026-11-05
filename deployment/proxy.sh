@@ -246,7 +246,7 @@ deploy_proxy_subscription() {
     if [ ! -s "$secret" ] && [ -n "${MIHOMO_SUBSCRIPTION_URL:-}" ]; then
         mkdir -p "$root"
         chmod 750 "$root" 2>/dev/null || true
-        printf '%s' "$MIHOMO_SUBSCRIPTION_URL" > "$secret"
+        printf '%s\n' "$MIHOMO_SUBSCRIPTION_URL" > "$secret"
         chmod 600 "$secret"
     fi
     [ -s "$secret" ] || return 1

@@ -44,7 +44,7 @@ class ProxyBootstrapHelperTests(unittest.TestCase):
     def test_fresh_helpers_build_a_real_us_profile_before_source_application(self):
         root = self.home / ".local/share/mihomo"
         root.mkdir(parents=True)
-        (root / "subscription-url").write_text("https://fixture.invalid/profile\n")
+        self.env["MIHOMO_SUBSCRIPTION_URL"] = "https://fixture.invalid/profile"
         profile = self.home / "subscription.yaml"
         profile.write_text(
             "mixed-port: 7890\nproxies:\n"
@@ -57,6 +57,7 @@ class ProxyBootstrapHelperTests(unittest.TestCase):
                         f"cp {shlex.quote(str(profile))} \"$2\"\n")
         curl.chmod(0o755)
         result = self.run_proxy(
+            'deploy_proxy_subscription >/dev/null\n'
             'DEPLOY_PROXY_PORT=7895\nDEPLOY_PROXY_CONTROLLER_PORT=9091\n'
             'deploy_proxy_profile\nstop_deployment_proxy\n')
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -69,3 +70,4 @@ class ProxyBootstrapHelperTests(unittest.TestCase):
         self.assertIn("US-1", group)
         self.assertNotIn("HK-1", group)
         self.assertFalse((root / "profiles/config.yaml").exists())
+        self.assertEqual((root / "subscription-url").read_bytes(), b"https://fixture.invalid/profile\n")
