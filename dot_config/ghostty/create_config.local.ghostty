@@ -1,0 +1,2 @@
+# Device-local Ghostty tweaks. The deployment creates this file once and never
+# overwrites it; the managed configuration includes it.

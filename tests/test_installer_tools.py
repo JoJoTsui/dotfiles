@@ -54,9 +54,15 @@ class InstallerCatalogTests(unittest.TestCase):
     def test_the_ghostty_configuration_is_managed_on_macos_only(self):
         template = SOURCE / "dot_config/ghostty/config.ghostty.tmpl"
         text = template.read_text(encoding="utf-8")
-        self.assertIn("theme = catppuccin-mocha", text)
+        # Ghostty resolves a built-in theme by its resource name.
+        self.assertIn("theme = Catppuccin Mocha", text)
         self.assertIn("{{ .chezmoi.homeDir }}/.local/bin/nu-login", text)
-        self.assertIn("config.local.ghostty", text)
+        self.assertIn("{{ .chezmoi.homeDir }}/.config/ghostty/config.local.ghostty", text)
+        # The include is created once and never overwritten, so the managed
+        # configuration never reports a missing file.
+        local = SOURCE / "dot_config/ghostty/create_config.local.ghostty"
+        self.assertTrue(local.exists())
+        self.assertIn("Device-local Ghostty tweaks", local.read_text(encoding="utf-8"))
         ignore = (SOURCE / ".chezmoiignore").read_text(encoding="utf-8")
         self.assertIn(".config/ghostty", ignore)
 

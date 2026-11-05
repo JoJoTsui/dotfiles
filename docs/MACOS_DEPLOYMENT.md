@@ -79,8 +79,8 @@ Homebrew falls through to Pixi. The tier is declared in
 The Ghostty configuration is a managed file at
 `~/.config/ghostty/config.ghostty`, the only path Ghostty reads. It sets the
 Catppuccin Mocha theme, a font size, and the managed `nu-login` shell, and it
-includes `~/.config/ghostty/config.local.ghostty` when the device has one, so
-local tweaks stay out of the managed file.
+includes `~/.config/ghostty/config.local.ghostty`, which the deployment creates
+once and never overwrites, so device tweaks stay out of the managed file.
 
 A cask install writes an application bundle into `/Applications`, which is
 outside the home. The tier therefore installs only on the real account home: a
