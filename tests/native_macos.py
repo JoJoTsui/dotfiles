@@ -12,6 +12,7 @@ from pathlib import Path
 import platform
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -87,6 +88,112 @@ def source_state(directory):
             digest.update(b'missing')
         digest.update(b'\0')
     return {'commit': revision, 'working_tree_dirty': dirty, 'source_sha256': digest.hexdigest()}
+
+
+PUBLIC_CACHE_PATHS = ("pixi/pkgs", "pixi/repodata", "bun/install",
+                      "dotfiles/skills", "dotfiles/nu-scripts")
+
+
+def _cache_entries(root):
+    entries = []
+    for directory, directories, files in os.walk(root, followlinks=False):
+        for name in directories + files:
+            path = Path(directory) / name
+            relative = path.relative_to(root)
+            mode = path.lstat().st_mode
+            if stat.S_ISLNK(mode):
+                target = path.resolve(strict=True)
+                require(target.is_relative_to(root), "package cache link escapes its allowed subtree")
+                raw = os.readlink(path)
+                # Bun aliases are absolute. Rebase them without following links
+                # when copying; relative Pixi package links remain byte-for-byte.
+                link = os.path.relpath(raw, path.parent) if os.path.isabs(raw) else raw
+                entries.append((relative, "link", link))
+            elif stat.S_ISDIR(mode):
+                entries.append((relative, "directory", None))
+            else:
+                require(stat.S_ISREG(mode), "package cache contains a special file")
+                entries.append((relative, "file", None))
+    return entries
+
+
+def _open_cache_file(root_fd, relative):
+    # Anchor every component to an open allowed-root descriptor. A source
+    # ancestor replaced by a symlink after preflight must not redirect reads.
+    descriptor = os.dup(root_fd)
+    try:
+        for part in relative.parts[:-1]:
+            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                            dir_fd=descriptor)
+            os.close(descriptor)
+            descriptor = child
+        return os.open(relative.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def seed_package_cache(cache, home):
+    """Copy only public caches into a new fixture, never an installed prefix.
+
+    The caller supplies a private, quiescent cache snapshot. Package managers
+    still own installation and their normal lock/integrity checks. Copies are
+    independent: neither hard links nor source-pointing aliases are retained.
+    """
+    cache, home = Path(cache).absolute(), Path(home).absolute()
+    require(cache == cache.resolve(strict=True) and cache.is_dir(),
+            "package cache must be a canonical real directory")
+    require(home == home.resolve() and not home.exists(),
+            "package cache seeding requires a fresh real fixture path")
+    require(cache != home and cache not in home.parents and home not in cache.parents,
+            "package cache and fixture paths overlap")
+    trees = []
+    for relative in PUBLIC_CACHE_PATHS:
+        root = cache / relative
+        component = cache
+        for part in Path(relative).parts:
+            component /= part
+            require(not component.is_symlink(), "allowed package cache subtree contains a symlink")
+            if not component.exists():
+                break
+        if not root.exists() and not root.is_symlink():
+            continue
+        require(root.is_dir() and root == root.resolve(strict=True),
+                "allowed package cache subtree contains a symlink")
+        trees.append((relative, root, _cache_entries(root)))
+    require(trees, "package cache contains no allowed public cache subtree")
+    # Validate every input before creating any destination. An invalid cache
+    # cannot leave a partially accepted seed or cause the install to start.
+    home.mkdir(mode=0o700)
+    summary = {"source": str(cache), "paths": [], "regular_files": 0,
+               "symlinks": 0, "bytes": 0}
+    for relative, root, entries in trees:
+        destination = home / ".cache" / relative
+        destination.mkdir(parents=True)
+        root_fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            for path, kind, link in entries:
+                target = destination / path
+                if kind == "directory":
+                    target.mkdir(exist_ok=True)
+                elif kind == "file":
+                    with os.fdopen(_open_cache_file(root_fd, path), "rb") as reader:
+                        info = os.fstat(reader.fileno())
+                        require(stat.S_ISREG(info.st_mode), "package cache file changed type")
+                        with target.open("xb") as writer:
+                            shutil.copyfileobj(reader, writer)
+                            os.fchmod(writer.fileno(), stat.S_IMODE(info.st_mode))
+                            os.utime(writer.fileno(), ns=(info.st_atime_ns, info.st_mtime_ns))
+                    summary["regular_files"] += 1
+                    summary["bytes"] += info.st_size
+            # Files/directories are complete before links become visible.
+            for path, kind, link in entries:
+                if kind == "link":
+                    (destination / path).symlink_to(link)
+                    summary["symlinks"] += 1
+        finally:
+            os.close(root_fd)
+        summary["paths"].append(relative)
+    return summary
 
 
 def minimal_environment(home):
@@ -353,6 +460,8 @@ def main():
     parser.add_argument("--bundles", default="",
                         help="comma-separated optional bundle names to install with the common defaults")
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--package-cache", type=Path,
+                        help="seed allowed public caches from a canonical private snapshot; reports cache-assisted installation")
     parser.add_argument("--install-timeout", type=int, default=2400,
                         help="positive per-installation timeout in seconds (default: 2400)")
     parser.add_argument("--keep-failed-home", action="store_true",
@@ -367,7 +476,7 @@ def main():
               "runtime": platform.platform(), "image_version": os.environ.get("ImageVersion", "unknown"),
               "commit": os.environ.get("GITHUB_SHA", "local"), "checks": [],
               "installation_timeout_seconds": args.install_timeout,
-              "installation_cache": "empty",
+              "installation_cache": "cache-assisted" if args.package_cache else "empty",
               "bundles": [name for name in args.bundles.split(",") if name]}
     if os.environ.get("GITHUB_RUN_ID"):
         report["run_url"] = f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
@@ -395,6 +504,11 @@ def main():
         temporary = tempfile.mkdtemp(prefix="dotfiles-native-macos-", dir=os.environ.get("RUNNER_TEMP"))
         try:
             home = Path(temporary).resolve() / "device with spaces"
+            if args.package_cache:
+                phase = "public package cache seed"
+                checkpoint(phase)
+                report["package_cache_seed"] = seed_package_cache(args.package_cache, home)
+                report["checks"].append(phase)
             originals = seed_device(home)
             env = minimal_environment(home)
             command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--role", args.role]

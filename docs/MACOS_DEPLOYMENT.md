@@ -161,6 +161,13 @@ dirty state, selected timeout, current phase, and completed checks. A source
 change during the gate fails verification. Timeouts terminate the bootstrap's
 process group, including download/lifecycle children.
 
+`--package-cache /canonical/private/cache` seeds a fresh home only with public
+Pixi, Bun, skill, and completion caches. It excludes installed environments,
+launchers, and authentication, gives the fixture independent cache writes, and
+rebases internal aliases. Package managers still perform every installation and
+their normal lock/integrity checks. The report labels this cache-assisted;
+it does not establish empty-cache transport availability.
+
 Nu `-c` bypasses normal startup/autoload in the pinned release even with `-i`.
 Discovery checks use `-e` to enter REPL startup before executing and exiting.
 The shared shell suite separately checks actual controlling-terminal behavior.
