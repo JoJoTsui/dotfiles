@@ -50,6 +50,14 @@ payload rows copy that tree to `~/.agents/skills` and the adapters. Moving branc
 names in the catalog are discovery inputs for explicit updates, not deployment
 versions. Cached archives and newly downloaded archives must match the lock.
 
+One name belongs to one discovery root per client. Pi reads the shared tree
+natively and also scans its own user root (`~/.pi/agent/skills`), so a name in
+both roots is a collision: Pi keeps the first copy it finds and warns about
+the second. The shared tree is the portable home, and a client root holds only
+names the shared tree does not provide. The deployment reports the duplicates
+it finds — `deployment/agent-payload/skill-roots.tsv` lists the client roots
+that overlap the shared tree — instead of removing a file the client owns.
+
 Update explicitly, inspect the lock diff and changed upstream skills, then run
 the deployment checks before committing:
 

@@ -1,0 +1,7 @@
+# client|skill root relative to the designated home
+# The shared tree (~/.agents/skills) is the portable home of the library. A
+# client that also scans a root of its own discovers the same name twice: it
+# keeps the first copy and warns about the second. The client root therefore
+# holds only names the shared tree does not provide, and the deployment
+# reports the duplicates it finds.
+pi|.pi/agent/skills

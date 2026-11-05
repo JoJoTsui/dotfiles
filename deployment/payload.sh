@@ -153,4 +153,45 @@ deploy_agent_payload() {
             retire) payload_retire_block "$HOME/$target" ;;
         esac
     done < "$payload/targets.tsv"
+    report_skill_collisions
+}
+
+# The skill names a client discovers in one root. A skill directory holds a
+# SKILL.md; the declared name wins and the directory name is the fallback.
+payload_skill_names() {
+    local root=$1 file name
+    [ -d "$root" ] || return 0
+    find "$root" -maxdepth 3 -name SKILL.md -type f 2>/dev/null | while IFS= read -r file; do
+        name=$(sed -n '1,10s/^name:[[:space:]]*//p' "$file" | head -1 | tr -d "\"'"[:space:])
+        [ -n "$name" ] || name=$(basename "$(dirname "$file")")
+        printf '%s\n' "$name"
+    done | sort -u
+}
+
+# Report a skill name that the shared tree and a client root both provide. The
+# client keeps the first copy it finds and warns about the second, so the
+# shared tree is the portable home and the client root holds only names the
+# shared tree does not provide. The deployment reports the duplicate instead
+# of removing a file the client owns.
+report_skill_collisions() {
+    local shared="$HOME/.agents/skills"
+    local catalog="$DEPLOY_SOURCE/deployment/agent-payload/skill-roots.tsv"
+    local client root shared_names client_names duplicate name
+    [ -f "$catalog" ] || return 0
+    [ -d "$shared" ] || return 0
+    while IFS='|' read -r client root; do
+        case "$client" in ''|\#*) continue ;; esac
+        [ -d "$HOME/$root" ] || continue
+        shared_names=$(mktemp "$TMPDIR/skill-shared.XXXXXX") || return 0
+        client_names=$(mktemp "$TMPDIR/skill-client.XXXXXX") || { rm -f "$shared_names"; return 0; }
+        payload_skill_names "$shared" > "$shared_names"
+        payload_skill_names "$HOME/$root" > "$client_names"
+        duplicate=$(comm -12 "$shared_names" "$client_names")
+        rm -f "$shared_names" "$client_names"
+        for name in $duplicate; do
+            printf 'dotfiles: skill %s is in both %s and %s; %s keeps the first copy and warns about the second\n' \
+                "$name" "$shared" "$HOME/$root" "$client" >&2
+        done
+    done < "$catalog"
+    return 0
 }

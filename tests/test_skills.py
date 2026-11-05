@@ -211,5 +211,50 @@ class SkillFetchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class SkillCollisionTests(unittest.TestCase):
+    """A name in two roots of one client is a warning in that client."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-skills-collision-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "device"
+        self.tmp = self.root / "tmp"
+        self.tmp.mkdir()
+
+    def write_skill(self, relative, name):
+        directory = self.home / relative / name
+        directory.mkdir(parents=True)
+        (directory / "SKILL.md").write_text(f"---\nname: {name}\ndescription: demo\n---\nbody\n")
+
+    def run_report(self):
+        script = self.root / "report.sh"
+        script.write_text(
+            "set -e\n"
+            f"DEPLOY_SOURCE='{SOURCE}'\n"
+            f"export HOME='{self.home}' TMPDIR='{self.tmp}'\n"
+            "fail() { echo \"$*\" >&2; exit 1; }\n"
+            f"source '{SOURCE}/deployment/payload.sh'\n"
+            "report_skill_collisions\n",
+            encoding="utf-8")
+        return subprocess.run(["/bin/bash", str(script)], capture_output=True,
+                              text=True, timeout=120)
+
+    def test_reports_a_name_the_shared_tree_and_the_client_root_share(self):
+        self.write_skill(".agents/skills", "impeccable")
+        self.write_skill(".pi/agent/skills", "impeccable")
+        result = self.run_report()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("impeccable", result.stderr)
+        self.assertIn(".pi/agent/skills", result.stderr)
+
+    def test_a_name_only_one_root_provides_is_not_reported(self):
+        self.write_skill(".agents/skills", "impeccable")
+        self.write_skill(".pi/agent/skills", "other")
+        result = self.run_report()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr.strip(), "")
+
+
 if __name__ == "__main__":
     unittest.main()

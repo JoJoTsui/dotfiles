@@ -147,8 +147,11 @@ explains every changed pair.
   upstream catalog in `deployment/skills.tsv` and never vendored. Copying
   preserves filenames and permissions without executing helpers, and applying
   produces regular discovery files plus managed instruction blocks while
-  preserving unrelated device content. Read `docs/AGENT_PAYLOAD.md` before
-  changing global instructions, skills, or their copy adapters.
+  preserving unrelated device content. A skill name belongs to one discovery
+  root per client: the shared tree `~/.agents/skills` is the portable home, and
+  a client root that repeats a name makes that client warn — the deployment
+  reports the duplicate. Read `docs/AGENT_PAYLOAD.md` before changing global
+  instructions, skills, or their copy adapters.
 - **Proxy provisioning is opt-in and pinned**: `deployment/proxy/mihomo.tsv`
   owns the release URL and SHA-256 per target; `bootstrap.sh --proxy`
   installs and refreshes the profile, and the managed tree under

@@ -36,6 +36,11 @@ Pi resolves the shared tree relative to its managed agent directory, and
 OpenCode V2 receives the target home's absolute skill path in its managed
 config so isolated deployments do not fall back to the host account's home.
 
+Pi also scans its own user root, `~/.pi/agent/skills`. A name that the shared
+tree provides must not be repeated there: Pi keeps the first copy it finds and
+warns about the second. The deployment reports such a duplicate instead of
+removing a file the client owns.
+
 Claude Code and Kimi expose a `Skill` tool; OpenCode exposes its own skill
 mechanism. Qoder lists the shared library with `qoder skills list`; MiniMax Code
 reads only its own `skills` directory, which receives a real-file copy. Codex
