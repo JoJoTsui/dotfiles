@@ -28,9 +28,11 @@ class SkillFetchTests(unittest.TestCase):
         script.write_text(
             "set -e\n"
             f"DEPLOY_SOURCE='{self.source}'\n"
+            f"DEPLOY_HOME='{self.root}'\n"
             f"export XDG_CACHE_HOME='{self.root}/xdg-cache' XDG_STATE_HOME='{self.root}/xdg-state' TMPDIR='{self.tmp}'\n"
             "fail() { echo \"$*\" >&2; exit 1; }\n"
             f"source '{SOURCE}/deployment/skills.sh'\n"
+            f"source '{SOURCE}/deployment/payload.sh'\n"
             + body,
             encoding="utf-8")
         environment = dict(os.environ, **(env or {}))
@@ -96,6 +98,56 @@ class SkillFetchTests(unittest.TestCase):
         automatic = self.run_script('prepare_skill_library', env={"DOTFILES_SKILLS_REFRESH": "auto"})
         self.assertEqual(automatic.returncode, 0, automatic.stderr)
         self.assertEqual(marker.read_text().strip(), previous)
+
+    def test_symlinked_skill_state_is_rejected_before_fetching(self):
+        archive = self.make_tarball("arc")
+        self.write_catalog(f"arc|tarball|file://{archive}||")
+        state = self.root / "xdg-state/dotfiles/skills.lock.tsv"
+        state.parent.mkdir(parents=True)
+        outside = self.root / "outside"
+        outside.write_text("preserve outside\n")
+        state.symlink_to(outside)
+        result = self.run_script("prepare_skill_library")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr)
+        self.assertEqual(outside.read_text(), "preserve outside\n")
+        self.assertFalse((self.root / "xdg-cache").exists())
+
+    def test_skill_state_replacement_is_regular_private_and_preserves_failed_fetch(self):
+        archive = self.make_tarball("arc")
+        self.write_catalog(f"arc|tarball|file://{archive}||")
+        state = self.root / "xdg-state/dotfiles/skills.lock.tsv"
+        state.parent.mkdir(parents=True)
+        state.write_text("previous state\n")
+        result = self.run_script("prepare_skill_library")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(state.is_file())
+        self.assertFalse(state.is_symlink())
+        self.assertEqual(state.stat().st_mode & 0o777, 0o600)
+        self.assertIn("arc|tarball|", state.read_text())
+        before = state.read_bytes()
+        self.write_catalog("broken|tarball|file:///nonexistent-skill-archive||")
+        result = self.run_script("sleep() { :; }\nprepare_skill_library")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(state.read_bytes(), before)
+        self.assertEqual(list(state.parent.glob(".skills.lock.*")), [])
+
+    def test_public_preflight_rejects_skill_state_symlink_before_preparing_home(self):
+        home = self.root / "selected"
+        state = home / ".local/state/dotfiles/skills.lock.tsv"
+        state.parent.mkdir(parents=True)
+        outside = self.root / "outside"
+        outside.write_text("preserve outside\n")
+        state.symlink_to(outside)
+        result = subprocess.run(
+            ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home),
+             "--platform", "macos", "--apply-only"],
+            env={"HOME": str(self.root / "original"), "PATH": "/usr/bin:/bin"},
+            capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr)
+        self.assertEqual(outside.read_text(), "preserve outside\n")
+        self.assertFalse((home / ".config").exists())
 
     def test_failed_refresh_reuses_cache_without_advancing_timestamp(self):
         repo = self.make_git_repo('demo-repo')

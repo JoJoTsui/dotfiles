@@ -203,6 +203,9 @@ for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .lo
 done
 DEPLOY_STEP=apply-source.skills
 validate_skill_catalog
+if [ -z "${DOTFILES_SKILLS_DIR:-}" ]; then
+    validate_skill_state "$DEPLOY_HOME/.local/state/dotfiles/skills.lock.tsv"
+fi
 DEPLOY_STEP=apply-source.agent-payload
 validate_agent_payload
 DEPLOY_STEP=apply-source.client-settings

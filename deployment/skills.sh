@@ -27,6 +27,11 @@ skills_cache_root() {
     fi
 }
 
+validate_skill_state() {
+    payload_safe_destination "$1"
+    [ ! -e "$1" ] || [ -f "$1" ] || fail "skill state must be a regular file: $1"
+}
+
 skill_sha256() {
     if command -v sha256sum >/dev/null 2>&1; then
         sha256sum "$1" | awk '{print $1}'
@@ -206,7 +211,7 @@ skill_fetch_tarball() {
 # DOTFILES_SKILLS_DIR wins, which keeps tests and air-gapped hosts hermetic.
 prepare_skill_library() {
     local catalog="$DEPLOY_SOURCE/deployment/skills.tsv"
-    local cache name kind source ref path index
+    local cache name kind source ref path index state staged_state
     local root="$TMPDIR/skills.$$"
     validate_skill_catalog
     if [ -n "${DOTFILES_SKILLS_DIR:-}" ]; then
@@ -215,6 +220,8 @@ prepare_skill_library() {
         export PAYLOAD_SKILLS_DIR
         return 0
     fi
+    state="$XDG_STATE_HOME/dotfiles/skills.lock.tsv"
+    validate_skill_state "$state"
     cache=$(skills_cache_root)
     index="$root.index"
     rm -rf "$root" "$index"
@@ -239,10 +246,13 @@ prepare_skill_library() {
         esac
     done < "$catalog"
     mkdir -p "$XDG_STATE_HOME/dotfiles"
+    validate_skill_state "$state"
+    staged_state=$(mktemp "$XDG_STATE_HOME/dotfiles/.skills.lock.XXXXXX")
     {
         printf '# name|kind|source|resolved\n'
         cat "$index"
-    } > "$XDG_STATE_HOME/dotfiles/skills.lock.tsv"
+    } > "$staged_state"
+    mv -f "$staged_state" "$state"
     rm -f "$index"
     if [ "$SKILL_REFRESH" = 1 ] && [ "$SKILL_REFRESH_OK" = 1 ]; then
         date +%s > "$cache/.refreshed"
