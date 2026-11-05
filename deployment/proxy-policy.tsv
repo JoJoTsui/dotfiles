@@ -17,6 +17,7 @@ apply-source.client-settings|no|the settings merge is local
 apply-source.caveman-proxy|no|the gateway is reached over loopback
 apply-source.macos-discovery|no|the configuration check is local
 install-common|no|the regional conda mirror is the fast path
+install-installer-tools|yes|Homebrew packages are fetched from the Homebrew CDN
 prepare-shell|no|the startup resources are generated locally
 configure-system|no|the system configuration is local
 set-login-shell|no|the account configuration is local

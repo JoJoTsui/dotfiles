@@ -16,6 +16,12 @@ for `fetchChromSizes`. `../bundles.tsv` declares whole-bundle targets and host
 prerequisites. A requested bundle includes its complete inventory; unsupported
 requests fail before state creation rather than dropping unsupported members.
 
+Commands the package catalog cannot provide belong to an installer instead, and
+`../installer-tools.tsv` declares them. The catalog columns are
+`name|installer|kind|package|minimum|bundle|platforms`. Homebrew is adopted
+from the device and never installed here; see the
+[installer order](../../docs/adr/0008-installer-order.md).
+
 | Bundle | Contents | Declared targets |
 | --- | --- | --- |
 | `bio` | 14 former Bioconda tool environments, curl, and `fetchChromSizes` | Linux/WSL x86-64 and ARM64 |

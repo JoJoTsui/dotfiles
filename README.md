@@ -112,6 +112,7 @@ dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
                             # rerere, lfs filters, gh credential helper
 dot_condarc.tmpl            # mirror channels with upstream fallback; community only
 deployment/common-tools.tsv  # exact common requirements and command exposures
+deployment/installer-tools.tsv # installer-owned commands: Homebrew casks
 deployment/agents/           # Bun catalog, per-client manifests + bun.lock,
                              # native release pins (native.tsv)
 deployment/client-settings/  # default configs and preservation/CodeGraph catalog
@@ -120,6 +121,7 @@ dot_config/
   starship.toml             # Catppuccin powerline prompt
   direnv/direnvrc           # layout_micromamba
   git/ignore                # global gitignore incl. secret-pattern guardrails
+  ghostty/config.ghostty.tmpl # terminal: catppuccin theme, managed shell
   herdr/config.toml         # agent muxer: catppuccin theme, default shell nu
   pip/pip.conf              # PyPI via TUNA mirror
   uv/uv.toml                # python-preference=managed + TUNA default index
@@ -249,6 +251,15 @@ for target support, host prerequisites, and retained setup-on-use capabilities.
 
 Env vars and configs only ever reference binaries that this manifest (or a
 bootstrap step) installs — see the matching invariant in `AGENTS.md`.
+
+A command the package catalog cannot provide comes from an installer instead.
+The installer order is macOS: Homebrew, then Pixi, then a native release;
+Linux, WSL, and native Windows: Pixi, then a native release. Homebrew is
+adopted from the device and never installed here, and a device without it falls
+through to the next installer. `deployment/installer-tools.tsv` declares what
+the tier owns — today the Ghostty cask for the `desktop` bundle on macOS — and
+the deployment records the installed version and fails below the declared
+minimum. Read the [installer order](docs/adr/0008-installer-order.md).
 
 ## Coding agents
 

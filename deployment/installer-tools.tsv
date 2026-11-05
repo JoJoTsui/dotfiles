@@ -1,0 +1,8 @@
+# Installer-owned commands: what the package catalog cannot provide.
+# name|installer|kind|package|minimum|bundle|platforms
+# installer homebrew: adopted from the device, never installed here.
+# kind formula|cask: the installer's own package kind.
+# minimum: the lowest installed version the deployment accepts.
+# bundle: the tool bundle that selects this row.
+# platforms: comma-separated platform names, or all.
+ghostty|homebrew|cask|ghostty|1.4.0|desktop|macos

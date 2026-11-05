@@ -24,6 +24,11 @@ clash
 .config/opencode/opencode.jsonc
 .pi/agent/settings.json
 .pi/agent/models-store.json
+# The Ghostty configuration follows the platform where the deployment manages
+# the terminal; the XDG path is the one Ghostty reads.
+{{- if ne .platform "macos" }}
+.config/ghostty
+{{- end }}
 # Optional developer/bio payloads accompany their selected bundle.
 {{- if not (has "developer" .bundles) }}
 .config/herdr

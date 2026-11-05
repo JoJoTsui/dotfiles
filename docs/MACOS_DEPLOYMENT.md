@@ -67,6 +67,27 @@ Use [explicit first-device/join setup](SHARED_HISTORY.md) for encrypted sync and
 optional native-history import. Skill prerequisites remain on use. Installing
 and registering CodeGraph leaves project indexing explicit.
 
+## Installer tier and the terminal
+
+macOS resolves a command the package catalog cannot provide through the
+installer order: Homebrew first, then Pixi, then a native release. Homebrew is
+adopted from the device — the deployment never installs it — and a Mac without
+Homebrew falls through to Pixi. The tier is declared in
+`deployment/installer-tools.tsv`; today it owns the Ghostty cask, which the
+`desktop` bundle selects.
+
+The Ghostty configuration is a managed file at
+`~/.config/ghostty/config.ghostty`, the only path Ghostty reads. It sets the
+Catppuccin Mocha theme, a font size, and the managed `nu-login` shell, and it
+includes `~/.config/ghostty/config.local.ghostty` when the device has one, so
+local tweaks stay out of the managed file.
+
+A cask install writes an application bundle into `/Applications`, which is
+outside the home. The tier therefore installs only on the real account home: a
+simulated deployment reports the tier instead of performing it, and the
+installed version is recorded in the deployment state with the catalog's
+minimum as a floor. See the [installer order](adr/0008-installer-order.md).
+
 ## Native verification
 
 On a matching Mac:

@@ -42,6 +42,24 @@ The portable tools and settings selected by default for every supported device.
 A selectable group of specialist tools added to the common defaults, such as
 bioinformatics, GPU, or desktop tools.
 
+**Installer**:
+A mechanism that provides a command to a deployment: Homebrew, a Pixi
+environment, or a native release.
+_Avoid_: Manager, package manager
+
+**Installer order**:
+The per-platform sequence that decides which installer provides a command the
+device does not have.
+_Avoid_: Install priority, tool priority
+
+**Adopted command**:
+A command the device already provides, used as it is and never reinstalled.
+_Avoid_: Provisioned command
+
+**Provisioned command**:
+A command the deployment installed through an installer.
+_Avoid_: Adopted command
+
 **Shared agent instructions**:
 The personal operating rules that apply to coding agents across projects and
 devices. A project's own instructions describe that project's separate contract.

@@ -106,6 +106,16 @@ explains every changed pair.
   the manager digests when it bumps a manager version, and `check` fails when a
   pinned target is missing. A version bump that leaves a digest, a runtime
   version check, or a second catalog behind breaks the deployment.
+- **The installer order is per platform**: macOS resolves a missing command
+  through Homebrew, then Pixi, then a native release; Linux, WSL, and native
+  Windows use Pixi, then a native release. Homebrew is adopted from the device
+  and never installed here, and a device without it falls through to the next
+  installer. `deployment/installer-tools.tsv` owns the commands the package
+  catalog cannot provide; their versions are floors recorded in the deployment
+  state, not exact pins. An installer install writes outside the home, so it
+  runs only on the real account home. Read
+  `docs/adr/0008-installer-order.md` before changing the order, the catalog, or
+  the tier step.
 - **Legacy tool dirs stay off PATH**: `.env_core`/`env.nu` keep `$GIZMO`/
   `$BIO_GIZMO`/`$NUSHELL_PATH` as variables for legacy hosts and scripts, but
   never prepend them — every CLI (bio tools included) comes from the pixi

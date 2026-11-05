@@ -21,3 +21,9 @@ version, the digests belong to the same owner as the version they verify, and
 any other place that needs the version reads it from that owner instead of
 copying it. This replaces treating a version constant, a digest table, and a
 runtime version check as independent catalogs that may drift apart silently.
+
+An installer that owns its own versions is not a pinned owner. Homebrew moves
+its formula catalog on its own schedule, so a version pinned here would say
+nothing about what the device installs. The installer catalog therefore states
+a minimum version, and the deployment records the version the installer
+actually provides; see the [installer order](0008-installer-order.md).

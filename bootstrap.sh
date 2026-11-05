@@ -165,6 +165,7 @@ if "$DEPLOY_PLAN"; then
     printf ',"packages":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else print_common_packages; fi
     printf ',"bundles":'; json_array ${DEPLOY_BUNDLES[@]+"${DEPLOY_BUNDLES[@]}"}
     printf ',"bundlePackages":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else print_bundle_packages; fi
+printf ',"installerTools":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else print_installer_tools; fi
     printf ',"bundlePrerequisites":'; print_bundle_prerequisites
     printf ',"agents":'; json_array ${DEPLOY_AGENTS[@]+"${DEPLOY_AGENTS[@]}"}
     printf ',"agentPackages":'; print_agent_packages
@@ -265,6 +266,7 @@ if "$DEPLOY_AGENTS_ONLY"; then
     run_step install-agents install_agents
 elif ! "$DEPLOY_APPLY_ONLY"; then
     run_step install-common install_common
+    run_step install-installer-tools install_installer_tools
     run_step install-agents install_agents
     if "$DEPLOY_PROXY"; then run_step install-proxy install_proxy; fi
     run_step prepare-shell prepare_shell

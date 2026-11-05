@@ -4,6 +4,7 @@
 # shellcheck disable=SC2034 # Plan arrays are consumed by the sourced caller.
 source "$DEPLOY_SOURCE/deployment/common.sh"
 source "$DEPLOY_SOURCE/deployment/bundles.sh"
+source "$DEPLOY_SOURCE/deployment/installer.sh"
 source "$DEPLOY_SOURCE/deployment/managers.sh"
 source "$DEPLOY_SOURCE/deployment/agents.sh"
 source "$DEPLOY_SOURCE/deployment/proxy.sh"
