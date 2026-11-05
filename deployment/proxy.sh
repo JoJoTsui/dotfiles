@@ -53,8 +53,13 @@ install_proxy_binary() {
         aarch64|arm64) arch=arm64 ;;
         *) fail "unsupported proxy architecture: $machine" ;;
     esac
+    # Bash 3.2 cannot parse a `case` inside a command substitution, so the
+    # catalog row is selected with `if`.
     pin=$(while IFS=$'|\r' read -r _ version row_arch url sha; do
-        case "$row_arch" in "$arch") printf '%s|%s|%s' "$version" "$url" "$sha"; break ;; esac
+        if [ "$row_arch" = "$arch" ]; then
+            printf '%s|%s|%s' "$version" "$url" "$sha"
+            break
+        fi
     done < "$catalog")
     [ -n "$pin" ] || fail "proxy catalog has no row for $arch"
     version=${pin%%|*}
@@ -98,6 +103,11 @@ refresh_proxy_profile() {
 }
 
 install_proxy() {
+    case "$DEPLOY_PLATFORM" in
+        linux|wsl) ;;
+        *)
+            fail 'the pinned Mihomo release is a Linux build; the proxy is not provisioned on this platform' ;;
+    esac
     validate_proxy_catalog
     install_proxy_binary
     refresh_proxy_profile

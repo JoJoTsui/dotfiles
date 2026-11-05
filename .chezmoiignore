@@ -40,6 +40,14 @@ clash
 {{- if not (has .platform (list "linux" "wsl")) }}
 .local/bin/dotfiles-host-up
 {{- end }}
+# The Mihomo proxy stack is Linux/WSL only: the pinned release is a Linux
+# build, its supervisor is a systemd unit, and its scripts need procps and
+# util-linux.
+{{- if not (has .platform (list "linux" "wsl")) }}
+.config/systemd
+.local/share/dotfiles/proxy
+.local/share/mihomo
+{{- end }}
 **/*keys.json
 **/auth.json
 **/credentials*
