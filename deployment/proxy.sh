@@ -41,11 +41,18 @@ proxy_pin() {
 
 # The platform and architecture the deployment runs on, as the catalog keys it.
 proxy_target() {
+    local platform arch
+    case "$DEPLOY_PLATFORM" in
+        linux|wsl) platform=linux ;;
+        macos) platform=darwin ;;
+        *) fail "unsupported proxy platform: $DEPLOY_PLATFORM" ;;
+    esac
     case "$(uname -m)" in
-        x86_64|amd64) printf 'amd64' ;;
-        aarch64|arm64) printf 'arm64' ;;
+        x86_64|amd64) arch=amd64 ;;
+        aarch64|arm64) arch=arm64 ;;
         *) fail "unsupported proxy architecture: $(uname -m)" ;;
     esac
+    printf '%s-%s' "$platform" "$arch"
 }
 
 validate_proxy_catalog() {
@@ -78,15 +85,10 @@ proxy_sha256() {
 }
 
 install_proxy_binary() {
-    local machine arch target pin version url sha root cache archive binary
+    local arch target pin version url sha root cache archive binary
     local catalog="$DEPLOY_SOURCE/deployment/proxy/mihomo.tsv"
-    machine=$(uname -m)
-    case "$machine" in
-        x86_64|amd64) arch=amd64 ;;
-        aarch64|arm64) arch=arm64 ;;
-        *) fail "unsupported proxy architecture: $machine" ;;
-    esac
-    target="$DEPLOY_PLATFORM-$arch"
+    target=$(proxy_target)
+    arch=${target#*-}
     # Bash 3.2 cannot parse a `case` inside a command substitution, so the
     # catalog row is selected with `if`.
     pin=$(while IFS=$'|\r' read -r _ version row_target url sha; do

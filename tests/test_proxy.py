@@ -82,8 +82,6 @@ class ProxyTests(unittest.TestCase):
         self.assertIn("install-proxy", plan["actions"])
 
     def test_binary_install_verifies_the_pin_and_replaces_stale_binary(self):
-        if os.uname().machine not in ("x86_64", "amd64"):
-            self.skipTest("fixture pins the amd64 asset")
         source = self.root / "source"
         catalog = source / "deployment/proxy/mihomo.tsv"
         catalog.parent.mkdir(parents=True)
@@ -91,15 +89,18 @@ class ProxyTests(unittest.TestCase):
         asset = self.root / "mihomo.gz"
         asset.write_bytes(payload)
         digest = hashlib.sha256(payload).hexdigest()
-        catalog.write_text(f"mihomo|1.19.29|amd64|file://{asset}|{digest}\n")
+        catalog.write_text(f"mihomo|1.19.29|linux-amd64|https://fixture.invalid/mihomo.gz|{digest}\n")
         script = self.root / "run.sh"
         script.write_text(
             "set -e\n"
             f"DEPLOY_SOURCE='{source}'\n"
+            "DEPLOY_PLATFORM=wsl\n"
             f"HOME='{self.root}/home'\n"
             f"export XDG_CACHE_HOME='{self.root}/cache'\n"
             f"mkdir -p \"$HOME\"\n"
             "fail() { echo \"$*\" >&2; exit 1; }\n"
+            "uname() { printf x86_64; }\n"
+            f"curl() {{ cp '{asset}' \"$9\"; }}\n"
             f"source '{SOURCE}/deployment/proxy.sh'\n"
             "install_proxy_binary\n"
             "test -x \"$HOME/.local/share/mihomo/bin/mihomo\"\n",
@@ -113,7 +114,7 @@ class ProxyTests(unittest.TestCase):
 
         # A digest mismatch must fail on a fresh install.
         binary.unlink()
-        catalog.write_text(f"mihomo|1.19.29|amd64|file://{asset}|{'0' * 64}\n")
+        catalog.write_text(f"mihomo|1.19.29|linux-amd64|https://fixture.invalid/mihomo.gz|{'0' * 64}\n")
         result = subprocess.run(["/bin/bash", str(script)], env=dict(os.environ),
                                 capture_output=True, text=True, timeout=60)
         self.assertNotEqual(result.returncode, 0)
