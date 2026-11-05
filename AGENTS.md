@@ -150,11 +150,20 @@ explains every changed pair.
   preserving unrelated device content. Read `docs/AGENT_PAYLOAD.md` before
   changing global instructions, skills, or their copy adapters.
 - **Proxy provisioning is opt-in and pinned**: `deployment/proxy/mihomo.tsv`
-  owns the release URL and SHA-256 per architecture; `bootstrap.sh --proxy`
+  owns the release URL and SHA-256 per target; `bootstrap.sh --proxy`
   installs and refreshes the profile, and the managed tree under
   `dot_local/share/dotfiles/proxy/` owns routing and supervision. The
   subscription URL is template data (`MIHOMO_SUBSCRIPTION_URL`), never git.
   Read `docs/PROXY.md` before changing either side.
+- **The deployment proxy is a process, not a service**:
+  `deployment/proxy-policy.tsv` says which sections need a proxy and which do
+  not, and the bootstrap validates that every step has a rule. The instance
+  starts with the first section that needs it and stops with the deployment.
+  A proxy client the user already runs is detected and left alone: the
+  deployment takes another port rather than competing for the usual one.
+- **Skills carry a selection**: the catalog's last column is `auto` or a tag.
+  Tagged skills are not deployed automatically; a host asks for them with
+  `DOTFILES_SKILLS=<tag>`. The Lark skills are tagged.
 - **Client settings merge through bootstrap**: defaults under ignored
   `deployment/client-settings/` merge into runtime paths excluded from Chezmoi.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,

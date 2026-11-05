@@ -34,15 +34,17 @@ class ProxyTests(unittest.TestCase):
                               cwd=SOURCE, env=self.env, capture_output=True,
                               text=True, timeout=120)
 
-    def test_catalog_pins_one_https_digest_per_architecture(self):
+    def test_catalog_pins_one_https_digest_per_target(self):
         rows = [line.split("|") for line in
                 (SOURCE / "deployment/proxy/mihomo.tsv").read_text().splitlines()
                 if line and not line.startswith("#")]
-        self.assertEqual({row[2] for row in rows}, {"amd64", "arm64"})
-        for name, version, arch, url, digest in rows:
+        self.assertEqual({row[2] for row in rows},
+                         {"linux-amd64", "linux-arm64", "darwin-amd64", "darwin-arm64"})
+        for name, version, target, url, digest in rows:
             self.assertEqual(name, "mihomo")
             self.assertTrue(url.startswith("https://"))
             self.assertIn(f"v{version}", url)
+            self.assertIn(target.split("-")[0], url)
             self.assertRegex(digest, r"^[0-9a-f]{64}$")
 
     def test_apply_installs_wrappers_scripts_secret_and_unit(self):
@@ -116,6 +118,71 @@ class ProxyTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=60)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("digest mismatch", result.stderr)
+
+
+    def run_proxy_script(self, body, env=None):
+        script = self.root / "proxy.sh"
+        script.write_text(
+            "set -e\n"
+            f"DEPLOY_SOURCE='{SOURCE}'\n"
+            f"export HOME='{self.home}'\n"
+            "fail() { echo \"$*\" >&2; exit 1; }\n"
+            f"source '{SOURCE}/deployment/proxy.sh'\n"
+            + body,
+            encoding="utf-8")
+        environment = dict(os.environ, **(env or {}))
+        return subprocess.run(["/bin/bash", str(script)], env=environment,
+                              capture_output=True, text=True, timeout=120)
+
+    def test_the_policy_covers_every_deployment_step(self):
+        policy = (SOURCE / "deployment/proxy-policy.tsv").read_text(encoding="utf-8")
+        names = set()
+        for line in policy.splitlines():
+            if not line or line.startswith("#"):
+                continue
+            names.add(line.split("|")[0])
+        steps = set()
+        for line in (SOURCE / "bootstrap.sh").read_text(encoding="utf-8").splitlines():
+            if "run_step " in line:
+                steps.add(line.split("run_step ", 1)[1].split()[0])
+        self.assertTrue(steps)
+        self.assertEqual(steps - names, set())
+
+    def test_a_section_needs_the_proxy_only_when_the_policy_says_so(self):
+        result = self.run_proxy_script(
+            'for step in install-managers apply-source.skills install-agents install-common '
+            'apply-source prepare-shell; do\n'
+            '  if deploy_step_uses_proxy "$step"; then printf "%s yes\\n" "$step"; '
+            'else printf "%s no\\n" "$step"; fi\n'
+            'done')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rules = dict(line.split() for line in result.stdout.splitlines() if line.split())
+        self.assertEqual(rules["install-managers"], "yes")
+        self.assertEqual(rules["apply-source.skills"], "yes")
+        self.assertEqual(rules["install-agents"], "yes")
+        self.assertEqual(rules["install-common"], "no")
+        self.assertEqual(rules["apply-source"], "no")
+        self.assertEqual(rules["prepare-shell"], "no")
+
+    def test_the_deployment_proxy_takes_a_free_port_when_one_is_busy(self):
+        import socket
+        busy = socket.socket()
+        busy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        busy.bind(("127.0.0.1", 0))
+        busy.listen(1)
+        port = busy.getsockname()[1]
+        try:
+            result = self.run_proxy_script(
+                f'DEPLOY_PROXY_PORTS="{port} {port + 1}"\n'
+                'deploy_proxy_choose_port')
+        finally:
+            busy.close()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), str(port + 1))
+
+    def test_a_running_proxy_client_is_detected(self):
+        result = self.run_proxy_script('deploy_proxy_client_running || printf "none\n"')
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == "__main__":

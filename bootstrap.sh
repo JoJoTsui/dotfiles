@@ -50,7 +50,22 @@ report_failure() {
     printf 'dotfiles: step %s failed (exit %s)\n' "$DEPLOY_STEP" "$exit_status" >&2
     exit "$exit_status"
 }
-run_step() { DEPLOY_STEP=$1; shift; "$@"; }
+# A step runs with the proxy when the policy says it needs one, and without
+# it otherwise. The rules live in deployment/proxy-policy.tsv.
+run_step() {
+    DEPLOY_STEP=$1
+    shift
+    if deploy_step_uses_proxy "$DEPLOY_STEP"; then
+        deploy_proxy_ensure
+        deploy_proxy_env_on
+        "$@"
+        status=$?
+        deploy_proxy_env_off
+        return "$status"
+    fi
+    deploy_proxy_env_off
+    "$@"
+}
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -193,6 +208,8 @@ DEPLOY_STEP=apply-source.client-settings
 validate_client_settings
 DEPLOY_STEP=apply-source.macos-discovery
 validate_macos_config
+DEPLOY_STEP=apply-source.proxy-policy
+deploy_proxy_policy_complete
 
 # History databases and credentials remain within the selected device root.
 for relative in .config/atuin .config/atuin/config.toml .local/share/atuin .local/share/atuin/meta.db .local/share/atuin/history.db .local/share/atuin/records.db .local/share/atuin/key .local/share/atuin/session; do
@@ -233,12 +250,12 @@ trap report_failure ERR
 set -E
 mkdir -p "$HOME/.local/bin" "$XDG_CONFIG_HOME/chezmoi" "$TMPDIR" "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
+trap 'cleanup_skill_library; stop_deployment_proxy' EXIT
 run_step install-managers install_managers
 DEPLOY_STEP=apply-source
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
 run_step apply-source.skills prepare_skill_library
-trap 'cleanup_skill_library' EXIT
 run_step apply-source.agent-payload deploy_agent_payload
 cleanup_skill_library
 run_step apply-source.client-settings deploy_client_settings

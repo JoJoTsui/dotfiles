@@ -28,10 +28,36 @@ and refreshes the profile. It requires a full deployment; it conflicts with
 `--apply-only` and `--agents-only`. `DOTFILES_PROXY=true` is the environment
 equivalent.
 
-The pinned release is a Linux build, so the proxy belongs to Linux and WSL.
-macOS applies none of the managed proxy payload, `--proxy` fails there with
-that reason instead of installing a Linux binary, and the Codex launcher runs
-directly rather than through `with-proxy`.
+The pinned release is a Linux build, so the long-standing service belongs to
+Linux and WSL. macOS applies none of the managed proxy payload, `--proxy`
+fails there with that reason instead of installing a Linux binary, and the
+Codex launcher runs directly rather than through `with-proxy`.
+
+## The deployment proxy
+
+The deployment has network needs of its own: manager releases, the skill
+catalog and the agent packages. `deployment/proxy-policy.tsv` says which
+sections reach the internet through a proxy and which do not, so the choice is
+reviewed rather than implied by the order of the steps.
+
+A section marked `yes` runs with the proxy environment set. A section marked
+`no` runs without one, because its traffic is local or because the regional
+mirror is the fast path. Loopback never goes through the proxy, so the local
+agent daemons stay reachable.
+
+The proxy that serves those sections is a **process, not a service**. It
+starts with the first section that needs it and stops when the deployment
+ends; it is not a unit and does not outlive the run. It is not the
+long-standing service above.
+
+The deployment reuses a proxy that is already answering on the usual port. If
+none is, it starts its own instance with the pinned binary and a profile
+whose ports it owns. A proxy client the user already runs — Clash Verge is
+the common one — is detected and left alone: the deployment instance takes
+another port rather than competing for the usual one.
+
+Without a subscription there is nothing to route through, and the deployment
+downloads directly.
 
 The pin lives in `deployment/proxy/mihomo.tsv` with per-architecture URLs and
 digests. Update all three together.

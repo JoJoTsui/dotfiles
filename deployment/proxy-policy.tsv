@@ -1,0 +1,22 @@
+# Deployment proxy policy: section|proxy|reason
+#
+# The deployment runs its own network steps in two classes. A section marked
+# "yes" reaches the internet through the deployment proxy; a section marked
+# "no" runs without one. The rules are here so the choice is reviewed rather
+# than implied by the order of the steps.
+#
+# Loopback never goes through the proxy, so the local agent daemons stay
+# reachable in every section.
+install-managers|yes|manager releases are fetched from GitHub
+apply-source.skills|yes|skill clones and archive downloads
+install-agents|yes|agent packages are fetched from the npm registry
+install-proxy|yes|the proxy release itself is fetched from GitHub
+apply-source|no|the source application only reads and writes local files
+apply-source.agent-payload|no|the payload copy is local
+apply-source.client-settings|no|the settings merge is local
+apply-source.caveman-proxy|no|the gateway is reached over loopback
+apply-source.macos-discovery|no|the configuration check is local
+install-common|no|the regional conda mirror is the fast path
+prepare-shell|no|the startup resources are generated locally
+configure-system|no|the system configuration is local
+set-login-shell|no|the account configuration is local

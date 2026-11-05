@@ -1,3 +1,5 @@
-# name|version|arch|url|sha256
-mihomo|1.19.29|amd64|https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-linux-amd64-compatible-v1.19.29.gz|5612e698e96c8b8ad15abc4c0a4f098eba9234354b4f248cb97f2528e215b094
-mihomo|1.19.29|arm64|https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-linux-arm64-v1.19.29.gz|9a868b5e4e0ad91d9d71e1b41b0cfce78aaba44360c30df74a723f8e3926a86c
+# name|version|target|url|sha256
+mihomo|1.19.29|linux-amd64|https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-linux-amd64-compatible-v1.19.29.gz|5612e698e96c8b8ad15abc4c0a4f098eba9234354b4f248cb97f2528e215b094
+mihomo|1.19.29|linux-arm64|https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-linux-arm64-v1.19.29.gz|9a868b5e4e0ad91d9d71e1b41b0cfce78aaba44360c30df74a723f8e3926a86c
+mihomo|1.19.29|darwin-amd64|https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-darwin-amd64-v1.19.29.gz|b57fec2e38462532fe75252792b355b99db16b0b8ea2d6bdf0cd8bc7ddacb9d2
+mihomo|1.19.29|darwin-arm64|https://github.com/MetaCubeX/mihomo/releases/download/v1.19.29/mihomo-darwin-arm64-v1.19.29.gz|4dc25df9e899f14161911302a8ee5fc9e202ed9c976fc405bf82c50ff27466ca
