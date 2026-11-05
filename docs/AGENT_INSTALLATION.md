@@ -86,16 +86,17 @@ inventories remain under `deployment/inventory`. Source application and project
 installation preserve the device's unrelated global Bun registry and tools.
 Real executable launchers under `~/.bun/bin` and `~/.local/bin` point to the
 same project, preserve package-relative native resources, and prepend managed
-Node/Bun paths. Qoder launchers point at its versioned native binary and its
-entry-point wrapper. Omitted launchers are unchanged.
+Node/Bun paths. Both managed Qoder launchers point at the verified versioned
+native binary. Existing vendor dispatchers and older releases retain their
+device-owned state. Omitted launchers are unchanged.
 
 Qoder is not executed from the vendor install script. The installer reads
 `<manifest-base>/<version>/manifest.json`, requires that it advertises the
 pinned version, selects the declared host archive, requires an HTTPS URL and a
 64-character SHA-256 digest, downloads and verifies the archive, extracts
-`qodercli`, and runs `qodercli install --force --skip-path`. The upstream
-self-contained binary owns versioned placement under `~/.qoder`; dotfiles owns
-only the launchers and the pin. Linux x64 falls back to the manifest's
+`qodercli`, checks its exact version, and places those verified bytes under
+`~/.qoder/bin/qodercli`. Dotfiles owns that versioned executable and its two
+launchers. Linux x64 falls back to the manifest's
 baseline archive when the CPU lacks the required Bun feature flags. macOS
 reports Apple silicon under Rosetta so the native archive is selected.
 

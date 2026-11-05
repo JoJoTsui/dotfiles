@@ -206,11 +206,11 @@ agent_launcher() {
 }
 
 install_qoder() {
-    local version=$1 manifest_base=$2 root cli entry manifest archive scratch url checksum os arch
+    local version=$1 manifest_base=$2 root cli entry manifest archive scratch url checksum os arch command diagnostic
     local manifest_json=''
     root="$HOME/.qoder"
     cli="$root/bin/qodercli/qodercli-$version"
-    if [ ! -x "$cli" ] || [ "$("$cli" --version 2>/dev/null || true)" != "$version" ]; then
+    if [ ! -x "$cli" ] || ! diagnostic=$("$cli" --version 2>/dev/null) || [ "$diagnostic" != "$version" ]; then
         set -- $(qoder_platform_key)
         os=$1 arch=$2
         case "$os" in
@@ -242,6 +242,11 @@ install_qoder() {
         tar -xzf "$archive" -C "$scratch" || fail 'cannot extract the Qoder archive'
         [ -f "$scratch/qodercli" ] || fail 'Qoder archive did not contain qodercli'
         chmod 755 "$scratch/qodercli"
+        DEPLOY_STEP='install-agents.qoder.verify'
+        diagnostic=$("$scratch/qodercli" --version) ||
+            fail "downloaded Qoder did not report pinned version $version"
+        [ "$diagnostic" = "$version" ] ||
+            fail "downloaded Qoder did not report pinned version $version"
         DEPLOY_STEP='install-agents.qoder.install'
         # The verified archive is the installed binary. Upstream's own
         # installer resolves its latest release and would place an unpinned
@@ -252,19 +257,18 @@ install_qoder() {
         rm -rf "$scratch"
     fi
     mkdir -p "$HOME/.local/bin"
-    agent_launcher "$HOME/.local/bin/qodercli" "$cli"
-    if [ -x "$root/entry/qoder" ]; then
-        agent_launcher "$HOME/.local/bin/qoder" "$root/entry/qoder"
-    else
-        agent_launcher "$HOME/.local/bin/qoder" "$cli"
-    fi
+    # A vendor dispatcher may select another installed release. Both managed
+    # commands use the verified pin while the device-owned dispatcher survives.
+    for command in qoder qodercli; do
+        agent_launcher "$HOME/.local/bin/$command" "$cli"
+    done
     DEPLOY_STEP='install-agents.qoder.diagnostic'
-    diagnostic=$("$HOME/.local/bin/qodercli" --version)
-    printf '%s\n' "$diagnostic"
-    case "$diagnostic" in
-        *"$version"*) ;;
-        *) fail "qoder diagnostic did not report pinned version $version" ;;
-    esac
+    for command in qoder qodercli; do
+        diagnostic=$("$HOME/.local/bin/$command" --version)
+        printf '%s\n' "$diagnostic"
+        [ "$diagnostic" = "$version" ] ||
+            fail "$command diagnostic did not report pinned version $version"
+    done
 }
 
 install_native_agents() {
