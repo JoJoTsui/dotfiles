@@ -38,7 +38,10 @@ class SkillFetchTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=120)
 
     def write_catalog(self, *rows):
-        self.catalog.write_text("# name|kind|source|ref|path\n" + "\n".join(rows) + "\n")
+        # The catalog carries a selection column; these rows are automatic
+        # unless a test names its own selection.
+        rows = [row if len(row.split('|')) >= 6 else row + '|auto' for row in rows]
+        self.catalog.write_text("# name|kind|source|ref|path|selection\n" + "\n".join(rows) + "\n")
 
     def make_git_repo(self, name, path="skills/demo"):
         repo = self.root / name
@@ -180,6 +183,23 @@ class SkillFetchTests(unittest.TestCase):
             handle.addfile(info)
         result = self.run_script(f"skill_archive_is_safe '{linked}'")
         self.assertNotEqual(result.returncode, 0)
+
+    def test_tagged_skills_are_not_deployed_without_a_request(self):
+        repo = self.make_git_repo("tagged-repo")
+        self.write_catalog(f"demo|git|{repo}|main|skills/demo",
+                           f"tagged|git|{repo}|main|skills/demo|manual")
+        result = self.run_script('prepare_skill_library && ls "$PAYLOAD_SKILLS_DIR"')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("demo", result.stdout)
+        self.assertNotIn("tagged", result.stdout)
+
+    def test_a_tagged_skill_is_deployed_when_the_host_asks_for_it(self):
+        repo = self.make_git_repo("tagged-repo")
+        self.write_catalog(f"tagged|git|{repo}|main|skills/demo|manual")
+        result = self.run_script('prepare_skill_library && ls "$PAYLOAD_SKILLS_DIR"',
+                                 env={"DOTFILES_SKILLS": "manual"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("tagged", result.stdout)
 
     def test_override_library_skips_fetching(self):
         library = self.root / "override"

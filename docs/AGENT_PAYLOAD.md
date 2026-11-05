@@ -37,6 +37,12 @@ lark-im|tarball|https://open.feishu.cn/.../lark-im.tar.gz||
 ```
 
 `deployment/skills.lock.tsv` pins Git commits and archive SHA-256 values.
+
+The catalog's last column is the selection: `auto` skills are deployed by
+every host, and a tagged skill is not deployed automatically. The Lark skills
+are tagged `lark` — a host that uses them asks for them with
+`DOTFILES_SKILLS=lark` (or by skill name). Their pins stay reviewed, so
+asking for them deploys the bytes that were pinned.
 The initial lock records the existing isolated upstream cache, including every
 declared skill path; it does not claim to select the latest upstream release.
 Bootstrap fetches these reviewed bytes into a staging tree, then the `skills`

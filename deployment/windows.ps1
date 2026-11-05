@@ -235,7 +235,13 @@ function Import-SkillLibrary {
     foreach ($row in (Read-Catalog 'deployment/skills.tsv')) {
         $name = $row.columns[0]; $kind = $row.columns[1]; $sourceUrl = $row.columns[2]
         $ref = $row.columns[3]; $path = $row.columns[4]; if (-not $path) { $path = '' }
+        $skillSelection = $row.columns[5]; if (-not $skillSelection) { $skillSelection = 'auto' }
         if (-not $name -or $name.StartsWith('#')) { continue }
+        # Tagged skills are not deployed automatically; a host asks for them.
+        if ($skillSelection -ne 'auto') {
+            $requested = ",$env:DOTFILES_SKILLS,"
+            if ($requested -notlike "*,$skillSelection,*" -and $requested -notlike "*,$name,*") { continue }
+        }
         $pin = ''
         if ($pins.Count) {
             $locked = $pins[$name]

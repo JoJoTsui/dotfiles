@@ -28,25 +28,27 @@ def rows(path: Path, width: int) -> list[list[str]]:
 
 
 def check(catalog: Path, lock: Path) -> None:
-    declarations = {row[0]: row for row in rows(catalog, 5)}
-    pins = {row[0]: row for row in rows(lock, 4)}
+    declarations = {row[0]: row for row in rows(catalog, 6)}
+    pins = {row[0]: row for row in rows(lock, 5)}
     if declarations.keys() != pins.keys():
         raise ValueError("skill catalog and lock names differ; refresh the lock")
     for name, declaration in declarations.items():
         pin = pins[name]
         if declaration[:3] != pin[:3]:
             raise ValueError(f"skill lock source mismatch: {name}")
+        if declaration[5] != pin[4]:
+            raise ValueError(f"skill lock selection mismatch: {name}")
         pattern = r"[a-f0-9]{40}" if pin[1] == "git" else r"[a-f0-9]{64}"
         if pin[1] not in ("git", "tarball") or not re.fullmatch(pattern, pin[3]):
             raise ValueError(f"invalid skill pin: {name}")
 
 
 def refresh(catalog: Path, lock: Path) -> None:
-    lines = ["# Reviewed source snapshot: name|kind|source|git commit or archive SHA-256"]
+    lines = ["# Reviewed source snapshot: name|kind|source|git commit or archive SHA-256|selection"]
     with tempfile.TemporaryDirectory(prefix="dotfiles-skills-update-") as temporary:
         root = Path(temporary)
         repositories = {}
-        for name, kind, source, ref, path in rows(catalog, 5):
+        for name, kind, source, ref, path, selection in rows(catalog, 6):
             if kind == "git":
                 key = (source, ref)
                 if key not in repositories:
@@ -77,7 +79,7 @@ def refresh(catalog: Path, lock: Path) -> None:
                 revision = hashlib.sha256(archive.read_bytes()).hexdigest()
             else:
                 raise ValueError(f"unknown skill kind: {kind}")
-            lines.append("|".join((name, kind, source, revision)))
+            lines.append("|".join((name, kind, source, revision, selection)))
         # Complete and validate the candidate before atomically replacing pins.
         candidate = root / "candidate.tsv"
         candidate.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -100,7 +102,7 @@ def main() -> None:
     if args.command == "refresh":
         refresh(args.catalog, args.lock)
     check(args.catalog, args.lock)
-    print(f"skill pins: checked {len(rows(args.lock, 4))} entries")
+    print(f"skill pins: checked {len(rows(args.lock, 5))} entries")
 
 
 if __name__ == "__main__":

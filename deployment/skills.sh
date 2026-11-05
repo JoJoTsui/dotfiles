@@ -41,7 +41,7 @@ skill_pin_for() {
     SKILL_PIN=''
     [ -f "$lock" ] || return 0
     [ ! -L "$lock" ] || fail 'skill lock is a symlink'
-    while IFS=$'|\r' read -r entry entry_kind entry_source revision; do
+    while IFS=$'|\r' read -r entry entry_kind entry_source revision entry_selection; do
         [ "$entry" = "$name" ] || continue
         [ "$entry_kind" = "$kind" ] && [ "$entry_source" = "$source" ] || fail "skill lock source mismatch: $name"
         [ -z "$SKILL_PIN" ] || fail "duplicate skill lock entry: $name"
@@ -59,15 +59,35 @@ skill_slug() {
     printf '%s' "$1" | sed -e 's#^[A-Za-z][A-Za-z0-9+.-]*://##' -e 's#/*$##' -e 's#[^A-Za-z0-9._-]#_#g'
 }
 
+# A skill is deployed when it is automatic, or when the host asks for it by
+# tag or by name. The Lark skills are tagged: they are not deployed unless a
+# host asks for them.
+skill_selected() {
+    local name=$1 selection=$2 requested
+    [ "$selection" = auto ] && return 0
+    [ -n "${DOTFILES_SKILLS:-}" ] || return 1
+    requested=",${DOTFILES_SKILLS},"
+    case "$requested" in
+        *",$selection,"*) return 0 ;;
+        *",$name,"*) return 0 ;;
+    esac
+    return 1
+}
+
 validate_skill_catalog() {
     local catalog="$DEPLOY_SOURCE/deployment/skills.tsv" name kind source ref path seen=' '
     [ -f "$catalog" ] || fail 'skill catalog is missing'
     [ ! -L "$catalog" ] || fail 'skill catalog is a symlink'
-    while IFS=$'|\r' read -r name kind source ref path; do
+    while IFS=$'|\r' read -r name kind source ref path selection; do
         case "$name" in ''|\#*) continue ;; esac
         case " $seen " in *" $name "*) fail "duplicate skill catalog entry: $name" ;; esac
         seen="$seen$name "
         case "$name" in */*|*..*) fail "skill name must be a plain directory: $name" ;; esac
+
+        case "$selection" in
+            auto|[a-z][a-z0-9-]*) ;;
+            *) fail "invalid skill selection: $name" ;;
+        esac
         [ -n "$source" ] || fail "skill source is missing: $name"
         case "$kind" in
             git)
@@ -196,8 +216,9 @@ prepare_skill_library() {
     skill_refresh_check
     SKILL_REFRESH_OK=1
     : > "$index"
-    while IFS=$'|\r' read -r name kind source ref path; do
+    while IFS=$'|\r' read -r name kind source ref path selection; do
         case "$name" in ''|\#*) continue ;; esac
+        skill_selected "$name" "$selection" || continue
         skill_pin_for "$name" "$kind" "$source"
         case "$kind" in
             git)
