@@ -315,8 +315,10 @@ def main():
         report["checks"].append("native runtime and architecture")
         report["status"] = "failed"
         # Every install/cache/client fixture belongs to this temporary tree.
+        # The temporary root is resolved because macOS puts it behind the
+        # /var -> /private/var symlink and Nushell reports canonical paths.
         with tempfile.TemporaryDirectory(prefix="dotfiles-native-macos-", dir=os.environ.get("RUNNER_TEMP")) as temporary:
-            home = Path(temporary) / "device with spaces"
+            home = Path(temporary).resolve() / "device with spaces"
             originals = seed_device(home)
             env = minimal_environment(home)
             command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--role", args.role]

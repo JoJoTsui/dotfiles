@@ -25,7 +25,9 @@ class LegacyLinkTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-legacy-link-")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Resolve the temporary root: macOS puts it behind the /var ->
+        # /private/var symlink, and the linked tree records canonical paths.
+        self.root = Path(self.temporary.name).resolve()
         self.source = self.root / "legacy"
         self.home = self.root / "home"
         self.source.mkdir()

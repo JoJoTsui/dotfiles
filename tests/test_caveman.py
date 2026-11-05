@@ -44,7 +44,10 @@ class CavemanMountTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-caveman-")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Resolve the temporary root: macOS puts it behind the /var ->
+        # /private/var symlink, and the managed state is written under the
+        # canonical home the scripts see.
+        self.root = Path(self.temporary.name).resolve()
         self.home = self.root / "device"
         self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not self.chezmoi:
@@ -120,7 +123,10 @@ class CavemanRestartTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-caveman-restart-")
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Resolve the temporary root: macOS puts it behind the /var ->
+        # /private/var symlink, and the managed state is written under the
+        # canonical home the scripts see.
+        self.root = Path(self.temporary.name).resolve()
         self.home = self.root / "device"
         self.home.mkdir()
         self.gateway = self.home / ".caveman"
@@ -178,7 +184,10 @@ class CavemanRestartTests(unittest.TestCase):
         standby = self.standby_gateway()
         self.write_state(standby.pid)
         time.sleep(0.05)
-        os.utime(self.config, None)
+        # The config must be strictly newer than the run state. Bash 3.2
+        # compares whole seconds, so the difference has to be visible there.
+        stamp = time.time() + 2
+        os.utime(self.config, (stamp, stamp))
         binary = self.fake_proxy()
         stub = self.root / "caveman"
         stub.write_text("#!/bin/sh\nexit 0\n")

@@ -28,7 +28,7 @@ caveman_run_state() {
 # Read one scalar field from the gateway run state.
 caveman_run_state_value() {
     local state=$1 field=$2
-    sed -n "s/.*\"$field\":[[:space:]]*\(\"[^\"]*\"\|[A-Za-z0-9._-][A-Za-z0-9._-]*\).*/\1/p" "$state" | head -1 | tr -d '"'
+    sed -n -E "s/.*\"$field\":[[:space:]]*(\"[^\"]*\"|[A-Za-z0-9._-]+).*/\1/p" "$state" | head -1 | tr -d '"'
 }
 
 # The Caveman CLI is installed outside the shared PATH.
