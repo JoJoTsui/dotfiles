@@ -23,7 +23,7 @@ from `common-tools.tsv` and use `common` in the bundle column. Optional casks
 use their selecting bundle. The package catalog owns the exact Pixi fallback
 specifications.
 
-An installer-provided command carries a floor rather than an exact pin. The
+Most installer-provided commands carry a floor rather than an exact pin. The
 installer owns its own versions and moves them on its own schedule, so the
 deployment records the observed command version in its state. A common group
 is accepted only when every exposure is executable and its version meets the
@@ -31,6 +31,11 @@ floor. Python also checks pip. PATH adoption resolves catalog executable
 aliases together from one bin directory. Formula adoption checks `bin` and
 `libexec/bin`. Bun and Node use these floors on macOS, while other platforms
 retain their exact runtime checks.
+
+Atuin is an exception: native-history migration is verified against its pinned
+storage schema. Adopted and Homebrew commands must report the exact Atuin pin
+in `common-tools.tsv`; older, newer, or suffixed versions use the pinned Pixi
+fallback. The device installation remains intact.
 
 Resolve common providers before merging Pixi desired state. Compatible device
 commands are adopted first, followed by Homebrew. A missing, incompatible, or

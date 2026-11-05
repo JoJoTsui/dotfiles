@@ -147,6 +147,22 @@ installer_command_version() {
     printf '%s\n' "$diagnostic" | sed -nE 's/^[^0-9]*([0-9]+(\.[0-9]+)*).*/\1/p' | head -n 1
 }
 
+# Atuin's history importer is verified against one storage schema. Its exact
+# version remains owned by the common catalog; other providers keep floors.
+installer_common_version_compatible() {
+    local name=$1 version=$2 minimum=$3 command=$4 diagnostic pin
+    if [ "$name" = atuin ]; then
+        pin=$(common_package_pin atuin)
+        [ "$version" = "$pin" ] || return 1
+        # The generic parser drops suffixes. Check the actual diagnostic too,
+        # using the same `atuin <pin>` fields required by the importer.
+        diagnostic=$("$command" --version 2>/dev/null) || return 1
+        printf '%s\n' "$diagnostic" | awk -v pin="$pin" 'NF { exit !($1 == "atuin" && $2 == pin) }'
+    else
+        installer_version_at_least "$version" "$minimum"
+    fi
+}
+
 installer_owned_launcher() {
     LC_ALL=C head -c 80 "$1" 2>/dev/null | LC_ALL=C grep -Fq '# Managed by dotfiles common installer.'
 }
@@ -213,7 +229,8 @@ installer_resolve_common() {
     installer_native_target || return 1
     mappings=$(installer_common_mappings "$name") || return 1
     INSTALLER_PROVIDER=adopted
-    if ! installer_common_paths "$mappings" '' || ! installer_version_at_least "$INSTALLER_VERSION" "$minimum"; then
+    if ! installer_common_paths "$mappings" '' ||
+        ! installer_common_version_compatible "$name" "$INSTALLER_VERSION" "$minimum" "${INSTALLER_PATHS[0]}"; then
         brew=$(installer_homebrew) || return 1
         INSTALLER_PROVIDER=homebrew
         if ! installer_tool_version "$brew" formula "$package" >/dev/null; then
@@ -222,7 +239,7 @@ installer_resolve_common() {
         fi
         prefix=$("$brew" --prefix "$package") || return 1
         installer_common_paths "$mappings" "$prefix" || return 1
-        installer_version_at_least "$INSTALLER_VERSION" "$minimum" || return 1
+        installer_common_version_compatible "$name" "$INSTALLER_VERSION" "$minimum" "${INSTALLER_PATHS[0]}" || return 1
     fi
     for ((index=0; index<${#INSTALLER_COMMANDS[@]}; index++)); do
         installer_common_launcher "${INSTALLER_COMMANDS[$index]}" "${INSTALLER_PATHS[$index]}"

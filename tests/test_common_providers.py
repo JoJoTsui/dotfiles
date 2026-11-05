@@ -1,4 +1,5 @@
 """Common command adoption, isolation, and transitions back to Pixi."""
+import ast
 import os
 from pathlib import Path
 import subprocess
@@ -162,6 +163,83 @@ class CommonProviderTests(unittest.TestCase):
         for command, expected in (("python3", "3.15.2"), ("pip3", "26.2.2")):
             output = subprocess.check_output([str(self.home / ".local/bin" / command)], text=True)
             self.assertEqual(output.strip(), expected)
+
+    def atuin_group(self):
+        row = next(line for line in (SOURCE / "deployment/common-tools.tsv").read_text().splitlines()
+                   if line.startswith("atuin|"))
+        (self.source / "deployment/common-tools.tsv").write_text(row + "\n")
+        installer_row = next(line for line in (SOURCE / "deployment/installer-tools.tsv").read_text().splitlines()
+                             if line.startswith("atuin|"))
+        self.catalog.write_text(installer_row + "\n")
+        pin = row.split("|")[1].split("==")[1]
+        components = pin.split(".")
+        older = ".".join(components[:-1] + [str(int(components[-1]) - 1)])
+        newer = ".".join(components[:-1] + [str(int(components[-1]) + 1)])
+        return pin, older, newer
+
+    def assert_history_compatible_atuin(self):
+        # The consumer's schema guard is intentionally exact. Check the actual
+        # selected launcher against it without importing or reading any history.
+        tree = ast.parse((SOURCE / "dot_local/lib/dotfiles/history.py").read_text())
+        importer_pin = next(ast.literal_eval(node.value) for node in tree.body
+                            if isinstance(node, ast.Assign)
+                            and any(isinstance(target, ast.Name) and target.id == "ATUIN_PIN"
+                                    for target in node.targets))
+        diagnostic = subprocess.check_output(
+            [str(self.home / ".local/bin/atuin"), "--version"], text=True)
+        self.assertEqual(diagnostic.split()[:2], ["atuin", importer_pin])
+
+    def test_atuin_device_adoption_requires_the_importer_schema_pin(self):
+        pin, older, newer = self.atuin_group()
+        for version in (older, newer, pin + "-custom", pin):
+            with self.subTest(version=version):
+                self.binary(self.tools, "atuin", f"atuin {version}")
+                result = self.run_installer()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if version == pin:
+                    self.assertIn(f"atuin|adopted|{pin}|", self.state.read_text())
+                    self.assert_history_compatible_atuin()
+                else:
+                    self.assertEqual(self.state.read_text(), "")
+                    self.assertIn("pinned Pixi fallback", result.stdout)
+        self.assertNotIn("install", self.log.read_text())
+
+    def test_atuin_formula_adoption_requires_the_importer_schema_pin(self):
+        pin, older, newer = self.atuin_group()
+        self.brew.write_text(
+            f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{self.log}'\n"
+            f"case \"$1\" in list) echo 'atuin {newer}' ;; --prefix) echo '{self.formula}' ;; *) exit 18 ;; esac\n")
+        for version in (older, newer, pin + "-custom", pin):
+            with self.subTest(version=version):
+                self.binary(self.formula / "bin", "atuin", f"atuin {version}")
+                result = self.run_installer()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                if version == pin:
+                    self.assertIn(f"atuin|homebrew|{pin}|", self.state.read_text())
+                    self.assert_history_compatible_atuin()
+                else:
+                    self.assertEqual(self.state.read_text(), "")
+                    self.assertIn("pinned Pixi fallback", result.stdout)
+        self.assertNotIn("install", self.log.read_text())
+
+    def test_atuin_upgrade_replaces_prior_adoption_with_the_pinned_pixi_launcher(self):
+        pin, _, newer = self.atuin_group()
+        device = self.binary(self.tools, "atuin", f"atuin {pin}")
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("atuin|adopted|", self.state.read_text())
+        self.binary(self.tools, "atuin", f"atuin {newer}")
+        pixi_bin = self.home / ".pixi/bin"
+        pixi_bin.mkdir(parents=True)
+        self.binary(pixi_bin, "atuin", f"atuin {pin}")
+        result = self.run_installer("install_installer_tools\ninstaller_expose_common")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.state.read_text(), "")
+        self.assertIn(str(pixi_bin / "atuin"), (self.home / ".local/bin/atuin").read_text())
+        self.assert_history_compatible_atuin()
+        self.assertEqual(subprocess.check_output([str(device), "--version"], text=True).strip(),
+                         f"atuin {newer}")
+        self.assertNotIn("install", self.log.read_text())
 
     @unittest.skipUnless(tomllib, "registry assertions require Python 3.11 or newer")
     def test_provider_filter_preserves_existing_registry_and_unresolved_pins(self):
