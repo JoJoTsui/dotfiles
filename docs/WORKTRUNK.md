@@ -21,6 +21,11 @@ revision recorded in `deployment/skills.lock.tsv`; they are never vendored into
 this source. The plugin files are client state: the CLI writes them, and the
 deployment never reproduces their content.
 
+Agent installation finishes through the existing client-settings merger.
+This preserves plugin-added settings and gives the first deployment the same
+serialization as later applies. Claude and Codex plugin installers write their
+own settings format before that final merge.
+
 ## Native Windows
 
 `wt` is not deployed on native Windows, where the name belongs to Windows

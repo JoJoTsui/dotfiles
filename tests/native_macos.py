@@ -345,7 +345,11 @@ def main():
                 check_preservation(home, originals)
                 current = managed_snapshot(home)
                 if snapshot is not None:
-                    require(snapshot == current, "managed files are idempotent after default reapplication")
+                    changed = sorted(path for path in snapshot.keys() | current.keys()
+                                     if snapshot.get(path) != current.get(path))
+                    if changed:
+                        report["changed_managed_files"] = changed
+                    require(not changed, "managed files are idempotent after default reapplication")
                 snapshot = current
                 report["checks"].append(phase)
             phase = "pinned commands and pending history"

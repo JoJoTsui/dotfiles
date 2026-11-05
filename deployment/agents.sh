@@ -368,4 +368,8 @@ install_agents() {
     done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
     install_native_agents
     install_worktrunk_plugins
+    # Client installers can add plugin settings in their own formatting. Finish
+    # through the existing merger so the first and later applies agree.
+    DEPLOY_STEP=install-agents.client-settings
+    deploy_client_settings
 }

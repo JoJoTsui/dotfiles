@@ -39,7 +39,7 @@ class ShellBehaviorTests(unittest.TestCase):
         for command, environment in {
             "zoxide": "zoxide",
             "tspin": "tailspin", "less": "less", "rtk": "rtk-cli", "micromamba": "micromamba",
-            "starship": "starship", "direnv": "direnv", "fzf": "fzf", "vivid": "vivid",
+            "starship": "starship", "direnv": "direnv", "fzf": "fzf", "vivid": "vivid", "wt": "worktrunk",
             "python": "python",
         }.items():
             binary = self.tool_home / ".pixi/envs" / environment / "bin" / command

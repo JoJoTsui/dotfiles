@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import shutil
+import sys
 import tempfile
 import unittest
 from pins import agent_pins, common_pin, native_agent_pins
@@ -73,6 +74,52 @@ class AgentTests(unittest.TestCase):
                 self.assertFalse(self.home.exists())
         result = self.deploy("--plan", "--agents", "none", env=dict(self.env, DOTFILES_AGENTS="all"))
         self.assertEqual(json.loads(result.stdout)["agents"], [])
+
+    def test_plugin_settings_are_stable_on_the_first_and_second_deployment(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual apply requires chezmoi")
+        tools = self.root / "tools"
+        tools.mkdir()
+        bun = tools / "bun"
+        helper = tools / "bun.py"
+        helper.write_text(
+            "import os, pathlib, sys\n"
+            f"pins = {agent_pins()!r}\n"
+            "project = pathlib.Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
+            "pin = pins[project.name]\n"
+            "for command in pin['commands'].split(','):\n"
+            "    launcher = project / 'node_modules/.bin' / command\n"
+            "    launcher.parent.mkdir(parents=True, exist_ok=True)\n"
+            "    launcher.write_text('#!/bin/sh\\necho ' + pin['version'] + '\\n')\n"
+            "    launcher.chmod(0o755)\n")
+        bun.write_text('#!/bin/sh\nif [ "$1" = --version ]; then echo ' + common_pin("bun") +
+                       '; else exec "' + sys.executable + '" "' + str(helper) + '" "$@"; fi\n')
+        bun.chmod(0o755)
+        node = tools / "node"
+        node.write_text('#!/bin/sh\necho v' + common_pin("nodejs") + '\n')
+        node.chmod(0o755)
+        wt = self.home / ".pixi/bin/wt"
+        wt.parent.mkdir(parents=True)
+        wt.write_text('#!' + sys.executable + '\n'
+                      'import json, os, pathlib\n'
+                      'path = pathlib.Path(os.environ["HOME"]) / ".claude/settings.json"\n'
+                      'settings = json.loads(path.read_text())\n'
+                      'if "enabledPlugins" not in settings:\n'
+                      '    settings["enabledPlugins"] = {"worktrunk@worktrunk": True}\n'
+                      '    path.write_text(json.dumps(settings, indent=2) + "\\n")\n')
+        wt.chmod(0o755)
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi,
+                           DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node))
+        settings = self.home / ".claude/settings.json"
+        before = None
+        for _ in range(2):
+            result = self.deploy("--agents-only", "--agents", "claude", env=environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(json.loads(settings.read_text())["enabledPlugins"]["worktrunk@worktrunk"])
+            if before is not None:
+                self.assertEqual(settings.read_bytes(), before)
+            before = settings.read_bytes()
 
     def test_required_bun_failure_has_a_package_step_and_preserves_global_registry(self):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
