@@ -180,8 +180,9 @@ explains every changed pair.
   caveman.yaml` owns `compat.<provider>.base_url` in `~/.caveman/caveman.yaml`;
   a mount base URL must equal the provider's own base URL or the agent falls
   back to a pass-through. Bootstrap restarts a running gateway only when the
-  merged configuration changed. Read `docs/CAVEMAN.md` before changing mounts,
-  the gateway lifecycle, or that file's ownership.
+  merged configuration changed, and starts it without the managed proxy on
+  macOS, where no Mihomo is provisioned. Read `docs/CAVEMAN.md` before changing
+  mounts, the gateway lifecycle, or that file's ownership.
 
 ## CLI tools
 

@@ -138,6 +138,12 @@ after the managed configuration changed. The restart repeats the settings the
 running gateway published (mode, listener and recovery), because the run state
 is the only record of them.
 
+The managed proxy payload is a Linux build, so a macOS host has no Mihomo to
+route through. The restart therefore starts the gateway with the environment it
+inherits instead of wrapping it in `with-proxy`, which would point it at a port
+nothing serves. The Codex launcher makes the same choice on macOS; see
+[proxy](PROXY.md).
+
 There is no managed systemd unit: the binary and CLI are device-local, so a
 unit would either point at a missing path or duplicate the installer's
 ownership. After a reboot, start the gateway again. If the Codex app-server

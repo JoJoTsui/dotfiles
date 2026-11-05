@@ -106,11 +106,22 @@ caveman_stop_gateway() {
     return 0
 }
 
+# The managed proxy payload is a Linux build, so macOS runs the gateway with
+# the environment it inherits instead of pointing it at a port nothing serves.
+# The Codex launcher makes the same choice on macOS.
+caveman_gateway_proxy() {
+    case "${DEPLOY_PLATFORM:-}" in
+        macos) return 0 ;;
+    esac
+    [ -x "$HOME/.local/bin/with-proxy" ] || return 0
+    printf '%s' "$HOME/.local/bin/with-proxy"
+}
+
 # Start the gateway with the settings of the instance it replaces. The proxy
 # is a long-lived process, so it is detached from the deployment shell.
 caveman_start_gateway() {
-    local binary=$1 listen=$2 mode=$3 recovery=$4 home=$5 proxy=''
-    [ -x "$HOME/.local/bin/with-proxy" ] && proxy="$HOME/.local/bin/with-proxy"
+    local binary=$1 listen=$2 mode=$3 recovery=$4 home=$5 proxy
+    proxy=$(caveman_gateway_proxy)
     if command -v setsid >/dev/null 2>&1; then
         setsid nohup ${proxy:+"$proxy"} env CAVEMAN_MODE="$mode" CAVEMAN_LISTEN="$listen" \
             CAVEMAN_RECOVERY="$recovery" CAVEMAN_PROXY_OWNER=start "$binary" \

@@ -186,8 +186,7 @@ class CavemanRestartTests(unittest.TestCase):
         time.sleep(0.05)
         # The config must be strictly newer than the run state. Bash 3.2
         # compares whole seconds, so the difference has to be visible there.
-        stamp = time.time() + 2
-        os.utime(self.config, (stamp, stamp))
+        self.newer_config()
         binary = self.fake_proxy()
         stub = self.root / "caveman"
         stub.write_text("#!/bin/sh\nexit 0\n")
@@ -211,6 +210,48 @@ class CavemanRestartTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.home / "proxy-env").exists())
         self.assertEqual(standby.poll(), None)
+
+    def newer_config(self):
+        """Make the configuration strictly newer than the run state.
+
+        Bash 3.2 compares whole seconds, so the difference has to be visible
+        there.
+        """
+        stamp = time.time() + 2
+        os.utime(self.config, (stamp, stamp))
+
+    def managed_proxy(self):
+        """A with-proxy stub that records that it wrapped the gateway."""
+        stub = self.home / ".local" / "bin" / "with-proxy"
+        stub.parent.mkdir(parents=True, exist_ok=True)
+        stub.write_text("#!/bin/sh\n"
+                        "printf 'wrapped' > \"$HOME/proxy-wrapped\"\n"
+                        "exec \"$@\"\n")
+        stub.chmod(0o755)
+        return stub
+
+    def test_macos_starts_the_gateway_without_the_managed_proxy(self):
+        standby = self.standby_gateway()
+        self.write_state(standby.pid)
+        self.newer_config()
+        binary = self.fake_proxy()
+        self.managed_proxy()
+        result = self.run_adapter(DEPLOY_PLATFORM="macos",
+                                   CAVEMAN_PROXY_BIN=str(binary))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / "proxy-env").exists())
+        self.assertFalse((self.home / "proxy-wrapped").exists())
+
+    def test_linux_starts_the_gateway_through_the_managed_proxy(self):
+        standby = self.standby_gateway()
+        self.write_state(standby.pid)
+        self.newer_config()
+        binary = self.fake_proxy()
+        self.managed_proxy()
+        result = self.run_adapter(DEPLOY_PLATFORM="linux",
+                                   CAVEMAN_PROXY_BIN=str(binary))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / "proxy-wrapped").exists())
 
 
 if __name__ == "__main__":
