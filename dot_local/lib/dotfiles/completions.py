@@ -16,6 +16,7 @@ import sys
 import tarfile
 import tempfile
 import tomllib
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path, PurePosixPath
@@ -145,8 +146,19 @@ def read_modules(source: Path, catalog: dict, selected: list[dict]) -> dict[str,
                 try:
                     url = ("https://raw.githubusercontent.com/nushell/nu_scripts/" + catalog["revision"]
                            + "/" + urllib.parse.quote(module["path"], safe="/"))
-                    with os.fdopen(descriptor, "wb") as output, urllib.request.urlopen(url, timeout=90) as response:
-                        shutil.copyfileobj(response, output)
+                    # A transient TLS failure must not abort the deployment;
+                    # the checksum below still guards the bytes.
+                    attempt = 0
+                    while True:
+                        attempt += 1
+                        try:
+                            with os.fdopen(descriptor, "wb") as output, urllib.request.urlopen(url, timeout=90) as response:
+                                shutil.copyfileobj(response, output)
+                            break
+                        except OSError as error:
+                            if attempt >= 3:
+                                raise
+                            time.sleep(3)
                     if sha256(temporary) != module["sha256"]:
                         raise CompletionError("Nu completion module checksum mismatch: " + module["command"])
                     os.replace(temporary, cached)

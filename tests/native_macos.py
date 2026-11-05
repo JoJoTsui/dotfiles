@@ -30,6 +30,12 @@ def run(arguments, *, env, cwd, timeout=60, allow_failure=False):
     if not allow_failure:
         failure = next((line for line in result.stderr.splitlines() if line.startswith("dotfiles: step ")),
                        f"command failed: {Path(arguments[0]).name}")
+        # The step name alone hides what went wrong; keep the last lines of
+        # the output with it.
+        detail = [line for line in result.stderr.splitlines()
+                  if line.strip() and not line.startswith("dotfiles: step ")]
+        if detail:
+            failure = f"{failure} | {detail[-1].strip()[:160]}"
         require(result.returncode == 0, failure)
     return result
 
