@@ -103,6 +103,20 @@ skill_extract_archive() {
     [ -f "$destination/SKILL.md" ] || return 1
 }
 
+# One artifact fetch can fail on a transient network error, and the catalog
+# holds many artifacts. Retry a bounded number of times before giving up.
+skill_retry() {
+    local attempts=3 attempt=1 status=1
+    while [ "$attempt" -le "$attempts" ]; do
+        "$@"
+        status=$?
+        [ "$status" -eq 0 ] && return 0
+        attempt=$((attempt + 1))
+        [ "$attempt" -le "$attempts" ] && sleep 2
+    done
+    return "$status"
+}
+
 skill_fetch_git() {
     local name=$1 source=$2 ref=$3 path=$4 cache=$5 destination=$6 index=$7
     local slug repo resolved depth
@@ -114,13 +128,13 @@ skill_fetch_git() {
             git -C "$repo" remote add origin "$source" || return 1
         fi
         if ! git -C "$repo" cat-file -e "$SKILL_PIN^{commit}" 2>/dev/null; then
-            git -C "$repo" fetch --quiet --depth 1 origin "$SKILL_PIN" || return 1
+            skill_retry git -C "$repo" fetch --quiet --depth 1 origin "$SKILL_PIN" || return 1
         fi
         resolved=$SKILL_PIN
     elif [ ! -d "$repo/.git" ]; then
         git clone --quiet --no-checkout --depth 1 --branch "$ref" "$source" "$repo" >/dev/null 2>&1 || return 1
     elif [ "$SKILL_REFRESH" = 1 ]; then
-        git -C "$repo" fetch --quiet --depth 1 origin "$ref" >/dev/null 2>&1 || SKILL_REFRESH_OK=0
+        skill_retry git -C "$repo" fetch --quiet --depth 1 origin "$ref" >/dev/null 2>&1 || SKILL_REFRESH_OK=0
     fi
     if [ -z "$SKILL_PIN" ]; then
         resolved=$(git -C "$repo" rev-parse FETCH_HEAD 2>/dev/null) || resolved=$(git -C "$repo" rev-parse HEAD 2>/dev/null) || return 1
@@ -141,7 +155,8 @@ skill_fetch_tarball() {
     temporary="$archive.part.$$"
     if [ "$SKILL_REFRESH" = 1 ] || [ ! -s "$archive" ]; then
         # Conditional download keeps repeat applies cheap and offline-safe.
-        if ! curl -fsSL --connect-timeout 5 --max-time 90 -z "$archive" -o "$temporary" "$source" >/dev/null 2>&1; then
+        if ! skill_retry curl -fsSL --connect-timeout 5 --max-time 90 --retry 2 --retry-delay 1 \
+            -z "$archive" -o "$temporary" "$source" >/dev/null 2>&1; then
             SKILL_REFRESH_OK=0
             rm -f "$temporary"
             [ -s "$archive" ] || return 1

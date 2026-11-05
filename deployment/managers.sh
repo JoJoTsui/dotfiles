@@ -15,7 +15,20 @@ verify_sha256() {
 }
 
 download_verified() {
-    curl -fsSL --connect-timeout 15 --max-time 180 --retry 2 "$1" -o "$2"
+    # A partial transfer is a transient network failure that curl does not
+    # retry on its own, so the whole download is attempted again a few times.
+    # The digest is checked once, after the bytes are complete.
+    local attempt=1 status=1
+    while [ "$attempt" -le 3 ]; do
+        # The manager archives are the largest downloads, and a slow link
+        # needs more than the short timeout a small asset would.
+        curl -fsSL --connect-timeout 15 --max-time 600 --retry 2 "$1" -o "$2"
+        status=$?
+        [ "$status" -eq 0 ] && break
+        attempt=$((attempt + 1))
+        [ "$attempt" -le 3 ] && sleep 2
+    done
+    [ "$status" -eq 0 ] || return "$status"
     verify_sha256 "$2" "$3"
 }
 
