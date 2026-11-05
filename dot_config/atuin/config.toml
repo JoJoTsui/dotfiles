@@ -202,6 +202,10 @@ local_timeout = 3
 # Search the same encrypted shell-command history from every supported shell.
 shells = "all"
 
+[sync]
+# Keep the encrypted record-sync protocol explicit across device upgrades.
+records = true
+
 [daemon]
 enabled = false
 autostart = false

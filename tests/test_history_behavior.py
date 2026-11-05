@@ -270,6 +270,9 @@ class HistoryBehaviorTests(unittest.TestCase):
             address = self.atuin_command("config", "get", "--resolved", "sync_address")
             self.assertEqual(address.returncode, 0, address.stderr)
             self.assertEqual(address.stdout.strip().rstrip("/"), server.address)
+            records = self.atuin_command("config", "get", "--resolved", "sync.records")
+            self.assertEqual(records.returncode, 0, records.stderr)
+            self.assertEqual(records.stdout.strip(), "true")
             password = "synthetic-password-only-for-loopback-test"
             output = self.setup_device("first-device", [
                 ("username:", "synthetic-user"), ("email:", "synthetic@example.invalid"),

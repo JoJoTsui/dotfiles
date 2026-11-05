@@ -30,6 +30,10 @@ are excluded from the chezmoi payload and git. The pinned version stores auth
 in `meta.db`; checking only a legacy `session` file would misreport activation.
 Status uses Atuin's secret-safe offline doctor instead of exposing those tokens.
 
+`sync.records = true` explicitly selects encrypted record sync. Existing-device
+rehearsal verifies that setting and the account endpoint against device choices
+before replacing the managed configuration.
+
 Atuin layers some environment settings before its config file. A config
 value such as `sync_address` or `auto_sync` therefore takes precedence over the
 same environment variable. The local sync tests set and verify their temporary
