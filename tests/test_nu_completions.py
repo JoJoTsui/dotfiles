@@ -158,6 +158,60 @@ class NuCompletionTests(unittest.TestCase):
             self.assertEqual(self.prepare(), 2)
         self.assertEqual(self.loader.read_bytes(), before)
 
+    def test_transient_download_open_failure_retries_successfully(self):
+        self.install("git")
+        os.environ.pop("DOTFILES_NU_SCRIPTS_ARCHIVE")
+        content = self.module_bytes[self.modules[0]["path"]]
+        with (mock.patch.object(self.module.urllib.request, "urlopen",
+                                side_effect=[OSError("transient TLS failure"), io.BytesIO(content)]) as download,
+              mock.patch.object(self.module.time, "sleep") as sleep):
+            self.assertEqual(self.prepare(), 1)
+        self.assertEqual(download.call_count, 2)
+        sleep.assert_called_once_with(3)
+        cache = self.home / ".cache/dotfiles/nu-scripts"
+        self.assertEqual([path.name for path in cache.iterdir()], [self.modules[0]["sha256"] + ".nu"])
+        self.assertEqual(next(cache.iterdir()).read_bytes(), content)
+        self.assertIn("git-completions.nu", self.loader.read_text())
+
+    def test_interrupted_download_retries_with_truncated_temporary_file(self):
+        class InterruptedResponse(io.BytesIO):
+            def read(self, size=-1):
+                if self.tell():
+                    raise OSError("interrupted download")
+                return super().read(size)
+
+        self.install("git")
+        os.environ.pop("DOTFILES_NU_SCRIPTS_ARCHIVE")
+        content = self.module_bytes[self.modules[0]["path"]]
+        partial = InterruptedResponse(content + b"discard these trailing bytes")
+        with (mock.patch.object(self.module.urllib.request, "urlopen",
+                                side_effect=[partial, io.BytesIO(content)]) as download,
+              mock.patch.object(self.module.time, "sleep") as sleep):
+            self.assertEqual(self.prepare(), 1)
+        self.assertEqual(download.call_count, 2)
+        sleep.assert_called_once_with(3)
+        cache = self.home / ".cache/dotfiles/nu-scripts"
+        self.assertEqual([path.name for path in cache.iterdir()], [self.modules[0]["sha256"] + ".nu"])
+        self.assertEqual(next(cache.iterdir()).read_bytes(), content)
+
+    def test_exhausted_download_retries_clean_cache_and_preserve_working_resources(self):
+        self.install("git")
+        self.prepare()
+        before_loader = self.loader.read_bytes()
+        before_modules = {path: path.read_bytes() for path in self.home.rglob("*-completions.nu")}
+        os.environ.pop("DOTFILES_NU_SCRIPTS_ARCHIVE")
+        with (mock.patch.object(self.module.urllib.request, "urlopen",
+                                side_effect=OSError("persistent TLS failure")) as download,
+              mock.patch.object(self.module.time, "sleep") as sleep,
+              self.assertRaisesRegex(OSError, "persistent TLS failure")):
+            self.prepare()
+        self.assertEqual(download.call_count, 3)
+        self.assertEqual(sleep.call_args_list, [mock.call(3), mock.call(3)])
+        self.assertEqual(self.loader.read_bytes(), before_loader)
+        self.assertEqual({path: path.read_bytes() for path in self.home.rglob("*-completions.nu")}, before_modules)
+        self.assertEqual(list((self.home / ".cache/dotfiles/nu-scripts").iterdir()), [])
+        self.assertFalse(list(self.autoload.glob(".nu-scripts-*")))
+
     def test_native_generators_use_managed_binaries_without_community_downloads(self):
         self.write_desired(common=("uv",), bundles=("just",))
         self.install("uv")

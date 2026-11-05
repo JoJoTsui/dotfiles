@@ -145,6 +145,7 @@ def read_modules(source: Path, catalog: dict, selected: list[dict]) -> dict[str,
             if not cached.exists():
                 descriptor, name = tempfile.mkstemp(prefix=".nu-scripts-", dir=source)
                 temporary = Path(name)
+                os.close(descriptor)
                 try:
                     url = ("https://raw.githubusercontent.com/nushell/nu_scripts/" + catalog["revision"]
                            + "/" + urllib.parse.quote(module["path"], safe="/"))
@@ -154,7 +155,9 @@ def read_modules(source: Path, catalog: dict, selected: list[dict]) -> dict[str,
                     while True:
                         attempt += 1
                         try:
-                            with os.fdopen(descriptor, "wb") as output, urllib.request.urlopen(url, timeout=90) as response:
+                            # Reopen and truncate after either a failed open or
+                            # an interrupted copy closed the previous attempt.
+                            with temporary.open("wb") as output, urllib.request.urlopen(url, timeout=90) as response:
                                 shutil.copyfileobj(response, output)
                             break
                         except OSError as error:
