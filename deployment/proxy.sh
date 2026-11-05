@@ -184,6 +184,16 @@ deploy_proxy_port_free() {
     ! (exec 3<>"/dev/tcp/127.0.0.1/$1") >/dev/null 2>&1
 }
 
+# A listener is reusable only when it can carry an HTTPS request as a proxy.
+# Disable inherited bypass rules so a direct request cannot validate the port.
+deploy_proxy_answers() {
+    local status
+    status=$(curl --fail --silent --show-error --proxy "http://127.0.0.1:$1" \
+        --noproxy '' --connect-timeout 2 --max-time 5 --output /dev/null \
+        --write-out '%{http_code}' https://www.gstatic.com/generate_204 2>/dev/null) || return 1
+    [ "$status" = 204 ]
+}
+
 # A proxy client the user already runs (Clash Verge, a Mihomo core) owns the
 # usual port. The deployment takes another one instead of fighting for it.
 deploy_proxy_client_running() {
@@ -334,7 +344,7 @@ deploy_proxy_ensure() {
     # An existing proxy answers on the first candidate port. Reusing it keeps
     # the deployment off the port a proxy client already owns.
     for port in $DEPLOY_PROXY_PORTS; do
-        if ! deploy_proxy_port_free "$port"; then
+        if ! deploy_proxy_port_free "$port" && deploy_proxy_answers "$port"; then
             DEPLOY_PROXY_PORT="$port"
             DEPLOY_PROXY_URL="http://127.0.0.1:$port"
             if deploy_proxy_client_running; then
