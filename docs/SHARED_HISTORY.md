@@ -11,7 +11,7 @@ It checks local diagnostic state without contacting a sync server.
 ## Activate devices deliberately
 
 On the first device, run `dotfiles-history first-device` from an interactive
-terminal. Atuin 18.23's hosted service uses its browser account flow. On another
+terminal. Atuin's hosted service uses its browser account flow. On another
 device, run `dotfiles-history join` using the same account and encryption key.
 Retrieve the existing key with `atuin key` in a private terminal and keep a
 private backup. Paste it at the hidden join prompt, never into a shell command
@@ -30,7 +30,7 @@ are excluded from the chezmoi payload and git. The pinned version stores auth
 in `meta.db`; checking only a legacy `session` file would misreport activation.
 Status uses Atuin's secret-safe offline doctor instead of exposing those tokens.
 
-Atuin 18.23 layers some environment settings before its config file. A config
+Atuin layers some environment settings before its config file. A config
 value such as `sync_address` or `auto_sync` therefore takes precedence over the
 same environment variable. The local sync tests set and verify their temporary
 config address before activation; a different endpoint must be selected in the
@@ -67,7 +67,8 @@ format leaves history unchanged. If local record initialization fails after
 accepted entries transfer, the failure is visible and `dotfiles-history sync`
 can finish Atuin's automatic store initialization without importing again.
 
-The transfer is deliberately tied to Atuin 18.23.0. It refuses other versions
+The transfer is deliberately tied to the Atuin pin in the common catalog and
+verified importer. It refuses other versions
 and unequal native history schemas. This small SQLite transfer is needed to
 retain metadata because the public command-text export cannot do so. An Atuin
 update must rerun migration and encrypted sync tests before changing this pin.
@@ -98,3 +99,8 @@ verified adapter. WSL uses the Unix boundary.
 Primary references: [pinned account/sync guide](https://docs.atuin.sh/18.23/guide/sync/),
 [pinned import implementation](https://github.com/atuinsh/atuin/blob/v18.23.0/crates/atuin/src/command/client/import.rs),
 [pinned secret filtering](https://github.com/atuinsh/atuin/blob/v18.23.0/crates/atuin-client/src/history.rs).
+
+These release links record the initial integration sources. Compatibility of
+the current catalog pin is established by the runtime migration and encrypted
+sync checks; an existing device additionally needs the backed-up-store rehearsal
+described in [macOS deployment](MACOS_DEPLOYMENT.md).

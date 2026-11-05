@@ -10,9 +10,12 @@ Rules that follow from it:
 
 - The repo is the source of truth. Fold host changes *into it*; never edit a
   target host and consider the job done.
-- **Never run `chezmoi init/apply` against this session's real `$HOME`.** The
-  legacy T9K live tree (pre-chezmoi) would be overwritten. Validation happens on
-  a simulated home only (recipe below).
+- **Real-home application requires explicit user authorization and successful
+  verification first.** Validate in simulated homes, pass the matching native
+  deployment gate, and rehearse migration of an existing device before applying
+  to its account home. Read `docs/MACOS_DEPLOYMENT.md` for the existing-Mac gate.
+- The legacy T9K live tree predates Chezmoi and remains outside ordinary
+  deployment; its explicit legacy adapters preserve that separate boundary.
 
 ## Naming
 

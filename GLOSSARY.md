@@ -38,6 +38,12 @@ shells available in a deployment profile.
 **Common defaults**:
 The portable tools and settings selected by default for every supported device.
 
+**Full default deployment**:
+The complete baseline environment selected by a deployment profile, including
+common tools, coding agents, shared shell settings, instructions, and skills.
+Optional tool bundles and account or system changes are separate selections.
+_Avoid_: All optional tools, system setup
+
 **Tool bundle**:
 A selectable group of specialist tools added to the common defaults, such as
 bioinformatics, GPU, or desktop tools.
@@ -70,6 +76,11 @@ device's home or settings.
 
 **Native validation**:
 Verification of a deployment using its target platform's actual runtime.
+
+**Migration rehearsal**:
+Verification of a deployment starting from an existing device's configuration
+and preservation constraints.
+_Avoid_: Fresh installation, live application
 
 **Deployment step**:
 One named stage of a bootstrap run, such as installing managers or applying the

@@ -10,6 +10,8 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -25,8 +27,31 @@ def require(condition, message):
 
 
 def run(arguments, *, env, cwd, timeout=60, allow_failure=False):
-    result = subprocess.run(arguments, env=env, cwd=cwd, capture_output=True,
-                            text=True, timeout=timeout)
+    # Package managers spawn downloaders and lifecycle children. A timed-out
+    # bootstrap must not leave those children writing into a deleted fixture.
+    with subprocess.Popen(arguments, env=env, cwd=cwd, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, start_new_session=True) as process:
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            finally:
+                # A child can ignore TERM and close its inherited pipes, so
+                # parent exit/EOF alone does not establish group cleanup.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.communicate()
+            raise
+        result = subprocess.CompletedProcess(arguments, process.returncode, stdout, stderr)
     if not allow_failure:
         failure = next((line for line in result.stderr.splitlines() if line.startswith("dotfiles: step ")),
                        f"command failed: {Path(arguments[0]).name}")
@@ -38,6 +63,30 @@ def run(arguments, *, env, cwd, timeout=60, allow_failure=False):
             failure = f"{failure} | {detail[-1].strip()[:160]}"
         require(result.returncode == 0, failure)
     return result
+
+
+def source_state(directory):
+    """Identify working source without reading ignored device-local files."""
+    def git(*arguments):
+        return subprocess.check_output(['git', '-C', str(directory), *arguments], timeout=10)
+
+    revision = git('rev-parse', 'HEAD').decode().strip()
+    dirty = bool(git('status', '--porcelain', '--untracked-files=normal'))
+    digest = hashlib.sha256()
+    for relative in sorted(set(git('ls-files', '--cached', '--others', '--exclude-standard', '-z').split(b'\0'))):
+        if not relative:
+            continue
+        path = directory / os.fsdecode(relative)
+        digest.update(relative + b'\0')
+        if path.is_symlink():
+            digest.update(b'link\0' + os.fsencode(os.readlink(path)))
+        elif path.is_file():
+            digest.update(str(path.stat().st_mode & 0o777).encode() + b'\0')
+            digest.update(path.read_bytes())
+        else:
+            digest.update(b'missing')
+        digest.update(b'\0')
+    return {'commit': revision, 'working_tree_dirty': dirty, 'source_sha256': digest.hexdigest()}
 
 
 def minimal_environment(home):
@@ -304,30 +353,47 @@ def main():
     parser.add_argument("--bundles", default="",
                         help="comma-separated optional bundle names to install with the common defaults")
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--install-timeout", type=int, default=2400,
+                        help="positive per-installation timeout in seconds (default: 2400)")
+    parser.add_argument("--keep-failed-home", action="store_true",
+                        help="retain the private synthetic fixture after a failed gate for diagnosis")
     args = parser.parse_args()
+    if args.install_timeout <= 0:
+        parser.error('--install-timeout must be positive')
     machine = platform.machine()
     actual_arch = {"arm64": "aarch64", "aarch64": "aarch64", "x86_64": "x86_64"}.get(machine, machine)
     report = {"platform": "macos", "arch": args.arch, "actual_arch": actual_arch,
               "role": args.role, "native_execution": sys.platform == "darwin", "status": "unavailable",
               "runtime": platform.platform(), "image_version": os.environ.get("ImageVersion", "unknown"),
               "commit": os.environ.get("GITHUB_SHA", "local"), "checks": [],
+              "installation_timeout_seconds": args.install_timeout,
+              "installation_cache": "empty",
               "bundles": [name for name in args.bundles.split(",") if name]}
     if os.environ.get("GITHUB_RUN_ID"):
         report["run_url"] = f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
     phase = "runtime"
+    temporary = None
     started = time.monotonic()
+    def checkpoint(name):
+        report['current_check'] = name
+        args.report.parent.mkdir(parents=True, exist_ok=True)
+        args.report.write_text(json.dumps(report, indent=2) + '\n')
+        print(f'native macOS: {name}', flush=True)
+
     try:
         require(sys.platform == "darwin", "native macOS execution requires Darwin; foreign rendering is separate")
         require(actual_arch == args.arch, "native macOS runner architecture does not match the requested target")
+        report.update(source_state(SOURCE))
         version = subprocess.check_output(["/usr/bin/sw_vers", "-productVersion"], text=True).strip()
         report["os_version"] = version
         require(int(version.split(".")[0]) >= 13, "common defaults require macOS 13 or newer")
         report["checks"].append("native runtime and architecture")
-        report["status"] = "failed"
+        report["status"] = "running"
         # Every install/cache/client fixture belongs to this temporary tree.
         # The temporary root is resolved because macOS puts it behind the
         # /var -> /private/var symlink and Nushell reports canonical paths.
-        with tempfile.TemporaryDirectory(prefix="dotfiles-native-macos-", dir=os.environ.get("RUNNER_TEMP")) as temporary:
+        temporary = tempfile.mkdtemp(prefix="dotfiles-native-macos-", dir=os.environ.get("RUNNER_TEMP"))
+        try:
             home = Path(temporary).resolve() / "device with spaces"
             originals = seed_device(home)
             env = minimal_environment(home)
@@ -335,6 +401,7 @@ def main():
             if args.bundles:
                 command += ["--bundles", args.bundles]
             phase = "profile detection"
+            checkpoint(phase)
             plan = json.loads(run([*command, "--plan"], env=env, cwd=SOURCE).stdout)
             require(plan["platform"] == "macos" and plan["arch"] == args.arch and plan["role"] == args.role,
                     "detected macOS deployment profile")
@@ -345,7 +412,8 @@ def main():
             snapshot = None
             for attempt in (1, 2):
                 phase = f"default installation {attempt}"
-                run(command, env=env, cwd=SOURCE, timeout=2400)
+                checkpoint(phase)
+                run(command, env=env, cwd=SOURCE, timeout=args.install_timeout)
                 check_preservation(home, originals)
                 current = managed_snapshot(home)
                 if snapshot is not None:
@@ -357,18 +425,31 @@ def main():
                 snapshot = current
                 report["checks"].append(phase)
             phase = "pinned commands and pending history"
+            checkpoint(phase)
             check_pinned_tools(home, plan, report)
             report["checks"].append(phase)
             phase = "ordinary native configuration discovery"
+            checkpoint(phase)
             check_native_discovery(home, args.role)
             report["checks"].append(phase)
             phase = "native shell, instruction, CodeGraph and encrypted-history behavior"
+            checkpoint(phase)
             check_portable_suites(home, args.role, report)
             report["checks"].append(phase)
             if args.bundles:
                 phase = "selected bundle exposures"
+                checkpoint(phase)
                 check_bundle_tools(home, args.bundles, report)
                 report["checks"].append(phase)
+            require(source_state(SOURCE)['source_sha256'] == report['source_sha256'],
+                    'working source changed during native verification')
+        except BaseException:
+            if args.keep_failed_home:
+                report['retained_fixture'] = str(Path(temporary).resolve())
+            raise
+        finally:
+            if 'retained_fixture' not in report:
+                shutil.rmtree(temporary)
         report["status"] = "passed"
     except (RuntimeError, OSError, ValueError, subprocess.SubprocessError) as error:
         report["failed_check"] = phase
@@ -378,6 +459,11 @@ def main():
         message = f"{phase}: {suite}" if suite else phase
         print(f"::error title=Native macOS acceptance failed::{message}", file=sys.stderr, flush=True)
     finally:
+        if report['status'] == 'running':
+            report['status'] = 'failed'
+            report.setdefault('failed_check', phase)
+            report.setdefault('reason', 'Interrupted')
+        report.pop('current_check', None)
         report["elapsed_seconds"] = round(time.monotonic() - started, 3)
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2) + "\n")
