@@ -320,28 +320,89 @@ system_admin() {
     sudo "$@"
 }
 
+# Resolve symlinks component by component without requiring realpath/readlink
+# extensions. Keep the traversed paths: a source that passes through a target
+# being replaced is unsafe even if its current final referent is elsewhere.
+resolve_source_path() {
+    local pending=$1 resolved= component candidate destination depth=0
+    SOURCE_RESOLUTION_PATHS=()
+    while [ -n "$pending" ]; do
+        pending=${pending#/}
+        component=${pending%%/*}
+        if [ "$pending" = "$component" ]; then
+            pending=
+        else
+            pending=${pending#*/}
+        fi
+        case "$component" in
+            ''|.) continue ;;
+            ..) resolved=${resolved%/*}; continue ;;
+        esac
+        candidate="$resolved/$component"
+        SOURCE_RESOLUTION_PATHS+=("$candidate")
+        if [ -L "$candidate" ]; then
+            depth=$((depth + 1))
+            [ "$depth" -le 40 ] ||
+                die "symlink cycle or too many symlinks resolving source: $1"
+            destination=$(readlink "$candidate") ||
+                die "cannot resolve source symlink: $candidate"
+            case "$destination" in
+                /*) resolved= ;;
+            esac
+            pending="$destination${pending:+/$pending}"
+        else
+            resolved=$candidate
+        fi
+    done
+}
+
 # Validate every selected entry before writing anything. This catches a wrong
 # --source and recursive target/source combinations without half-applying a run.
 FOUND_SOURCES=0
 MISSING_SOURCES=0
+CHANGING_TARGETS=()
+DEPENDENCY_SOURCES=()
+DEPENDENCY_PATHS=()
 i=0
 while [ "$i" -lt "${#SELECTED_PATHS[@]}" ]; do
     path=${SELECTED_PATHS[$i]}
     source_path="$SOURCE/$path"
     target_path="$TARGET_HOME/$path"
+    resolve_source_path "$source_path"
     if [ -e "$source_path" ]; then
         FOUND_SOURCES=$((FOUND_SOURCES + 1))
+        if ! points_to "$target_path" "$source_path"; then
+            CHANGING_TARGETS+=("$target_path")
+        fi
+        j=0
+        while [ "$j" -lt "${#SOURCE_RESOLUTION_PATHS[@]}" ]; do
+            DEPENDENCY_SOURCES+=("$source_path")
+            DEPENDENCY_PATHS+=("${SOURCE_RESOLUTION_PATHS[$j]}")
+            j=$((j + 1))
+        done
     else
         MISSING_SOURCES=$((MISSING_SOURCES + 1))
         if [ "$STRICT" = true ]; then
             log_warn "missing source: $source_path"
         fi
     fi
-    [ "$source_path" != "$target_path" ] ||
-        die "refusing to link a path to itself: $target_path"
-    if [ "${source_path#"$target_path"/}" != "$source_path" ]; then
-        die "refusing to link $target_path: it would contain source $source_path"
-    fi
+    i=$((i + 1))
+done
+
+# Check the whole selection, including aliases into a different selected entry.
+# Correct links remain in place, so sources may safely traverse those targets.
+i=0
+while [ "$i" -lt "${#DEPENDENCY_PATHS[@]}" ]; do
+    dependency=${DEPENDENCY_PATHS[$i]}
+    j=0
+    while [ "$j" -lt "${#CHANGING_TARGETS[@]}" ]; do
+        target_path=${CHANGING_TARGETS[$j]}
+        if [ "$dependency" = "$target_path" ] ||
+            [ "${dependency#"$target_path"/}" != "$dependency" ]; then
+            die "refusing to link $target_path: it would contain source ${DEPENDENCY_SOURCES[$i]} (through $dependency)"
+        fi
+        j=$((j + 1))
+    done
     i=$((i + 1))
 done
 

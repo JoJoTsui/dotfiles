@@ -215,6 +215,106 @@ class LegacyLinkTests(unittest.TestCase):
         self.assertFalse((self.home / ".config").is_symlink())
         self.assertEqual(self.backups(), [])
 
+    def test_source_symlink_may_not_alias_target_or_its_contents(self):
+        target = self.home / ".config"
+        (target / "nested").mkdir(parents=True)
+        (target / "marker").write_text("keep\n", encoding="utf-8")
+        # An earlier selected entry must also remain untouched when the later
+        # .config source is recursive.
+        self.make_sources([("config", ".bashrc")])
+        self.make_source_file(".bashrc", "new\n")
+        (self.home / ".bashrc").write_text("old\n", encoding="utf-8")
+        source = self.source / ".config"
+        for destination in (target, target / "nested"):
+            source.symlink_to(os.path.relpath(destination, self.source))
+            for arguments in (("--dry-run",), ()):
+                with self.subTest(destination=destination, arguments=arguments):
+                    result = self.run_link(*arguments, groups="config,runtime")
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("would contain source", result.stderr)
+                    self.assertFalse(target.is_symlink())
+                    self.assertEqual((target / "marker").read_text(encoding="utf-8"), "keep\n")
+                    self.assertEqual((self.home / ".bashrc").read_text(encoding="utf-8"), "old\n")
+                    self.assertEqual(self.backups(), [])
+            source.unlink()
+
+    def test_source_alias_to_another_replaced_target_fails_before_writing(self):
+        self.make_sources([("runtime", ".config")])
+        target = self.home / ".config"
+        target.mkdir()
+        (target / "marker").write_text("keep\n", encoding="utf-8")
+        (self.source / ".local").symlink_to(target)
+
+        for arguments in (("--dry-run",), ()):
+            with self.subTest(arguments=arguments):
+                result = self.run_link(*arguments, groups="runtime")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("would contain source", result.stderr)
+                self.assertFalse(target.is_symlink())
+                self.assertFalse((self.home / ".local").exists())
+                self.assertEqual((target / "marker").read_text(encoding="utf-8"), "keep\n")
+                self.assertEqual(self.backups(), [])
+
+    def test_source_alias_through_wrong_target_symlink_fails_before_writing(self):
+        self.make_sources([("runtime", ".local")])
+        external = self.root / "external"
+        external.mkdir()
+        (external / "marker").write_text("keep\n", encoding="utf-8")
+        target = self.home / ".local"
+        target.symlink_to(external)
+        (self.source / ".config").symlink_to(target)
+
+        for arguments in (("--dry-run",), ()):
+            with self.subTest(arguments=arguments):
+                result = self.run_link(*arguments, groups="runtime")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("would contain source", result.stderr)
+                self.assertEqual(os.readlink(target), str(external))
+                self.assertFalse((self.home / ".config").exists())
+                self.assertEqual((external / "marker").read_text(encoding="utf-8"), "keep\n")
+                self.assertEqual(self.backups(), [])
+
+    def test_existing_source_symlink_cycle_fails_before_writing(self):
+        self.make_sources([("runtime", ".config")])
+        (self.source / ".local").symlink_to(".cache")
+        (self.source / ".cache").symlink_to(".local")
+
+        for arguments in (("--dry-run",), ()):
+            with self.subTest(arguments=arguments):
+                result = self.run_link(*arguments, groups="runtime")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("symlink cycle", result.stderr)
+                self.assertFalse((self.home / ".config").exists())
+                self.assertEqual(self.backups(), [])
+
+    def test_source_alias_through_already_correct_target_remains_supported(self):
+        self.make_sources([("runtime", ".local")])
+        (self.source / ".config").symlink_to(self.home / ".local")
+        (self.home / ".local").symlink_to(self.source / ".local")
+
+        for arguments in (("--dry-run",), (), ("--check",), ()):
+            with self.subTest(arguments=arguments):
+                result = self.run_link(*arguments, groups="runtime")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(os.readlink(self.home / ".local"), str(self.source / ".local"))
+                self.assertEqual(self.backups(), [])
+        self.assertTrue((self.home / ".config").is_dir())
+
+    def test_dangling_source_symlinks_still_follow_missing_source_policy(self):
+        self.make_sources([("runtime", ".config")])
+        (self.source / ".local").symlink_to("absent")
+        strict = self.run_link("--strict", groups="runtime")
+        self.assertNotEqual(strict.returncode, 0)
+        self.assertIn("selected source path(s) missing", strict.stderr)
+        self.assertFalse((self.home / ".config").exists())
+
+        result = self.run_link(groups="runtime")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.home / ".config").is_symlink())
+        self.assertFalse((self.home / ".local").exists())
+        self.assertIn("source missing, skipping", result.stderr)
+        self.assertEqual(self.backups(), [])
+
     def test_system_request_fails_before_home_changes_when_source_is_missing(self):
         self.make_sources([("config", ".bashrc")])
         result = self.run_link("--system", groups="config")
