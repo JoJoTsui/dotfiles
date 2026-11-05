@@ -1,4 +1,6 @@
 # ~/.zprofile — read by every zsh login shell (the macOS account shell).
 # Zsh does not read ~/.profile, so the shared POSIX login environment and the
 # Nu guard live here too. Bash's login file delegates to ~/.profile the same way.
+# Device login setup must run before the shared profile can exec Nu.
+[ -f "$HOME/.config/dotfiles/zprofile.local.zsh" ] && . "$HOME/.config/dotfiles/zprofile.local.zsh"
 [ -f "$HOME/.profile" ] && . "$HOME/.profile"

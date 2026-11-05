@@ -33,6 +33,7 @@ These files are optional, unmanaged, and preserved on reapply:
 | `dotfiles/env.local.sh` | Before shared POSIX defaults; keep POSIX-safe and idempotent |
 | `dotfiles/env.local.nu` | Before shared Nu defaults |
 | `dotfiles/bash.local.sh` | After interactive Bash hooks |
+| `dotfiles/zprofile.local.zsh` | In Zsh login startup, before the shared profile can enter Nu |
 | `dotfiles/zsh.local.zsh` | After interactive Zsh hooks |
 | `dotfiles/nu.local.nu` | After managed Nu commands, including ordinary `-c` startup |
 | `git/local.conf` | At the end of the managed Git configuration |
