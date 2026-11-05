@@ -28,6 +28,11 @@ and refreshes the profile. It requires a full deployment; it conflicts with
 `--apply-only` and `--agents-only`. `DOTFILES_PROXY=true` is the environment
 equivalent.
 
+The pinned release is a Linux build, so the proxy belongs to Linux and WSL.
+macOS applies none of the managed proxy payload, `--proxy` fails there with
+that reason instead of installing a Linux binary, and the Codex launcher runs
+directly rather than through `with-proxy`.
+
 The pin lives in `deployment/proxy/mihomo.tsv` with per-architecture URLs and
 digests. Update all three together.
 

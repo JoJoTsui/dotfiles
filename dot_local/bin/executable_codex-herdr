@@ -24,4 +24,9 @@ if ! "$health" --quiet --codex; then
     exit 1
 fi
 
+# The Mihomo proxy is deployed on Linux and WSL only. macOS runs without it,
+# so the launch stays direct instead of pointing at a port nothing serves.
+case "${DOTFILES_PLATFORM:-}" in
+    macos) exec codex --no-daemon "$@" ;;
+esac
 exec "$with_proxy" codex --no-daemon "$@"
