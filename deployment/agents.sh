@@ -280,6 +280,19 @@ install_native_agents() {
     done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
 }
 
+# One attempt of a command that reaches the network can fail on its own.
+agent_retry() {
+    local attempts=3 attempt=1 status=1
+    while [ "$attempt" -le "$attempts" ]; do
+        "$@"
+        status=$?
+        [ "$status" -eq 0 ] && return 0
+        attempt=$((attempt + 1))
+        [ "$attempt" -le "$attempts" ] && sleep 3
+    done
+    return "$status"
+}
+
 install_agents() {
     local bun="${DOTFILES_BUN_BIN:-$PIXI_HOME/bin/bun}" node="${DOTFILES_NODE_BIN:-$PIXI_HOME/bin/node}"
     local bun_pin node_pin name package version commands minimum trusted project command launcher diagnostic
@@ -307,7 +320,10 @@ install_agents() {
         cp "$DEPLOY_SOURCE/deployment/agents/$name/package.json" "$project/package.json"
         cp "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" "$project/bun.lock"
         DEPLOY_STEP="install-agents.$name.install"
-        npm_config_global=false pnpm_config_global=false npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
+        # A registry hiccup should not abort the deployment; the lock file
+        # keeps the result the same on every attempt.
+        agent_retry env npm_config_global=false pnpm_config_global=false \
+            npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
         IFS=, read -r -a exposed_commands <<< "$commands"
         for command in "${exposed_commands[@]}"; do
             launcher="$BUN_INSTALL/bin/$command"
