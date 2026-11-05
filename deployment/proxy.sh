@@ -260,14 +260,25 @@ deploy_proxy_subscription() {
 # applied, the repository copy before that.
 deploy_proxy_scripts() {
     local managed="$HOME/.local/share/dotfiles/proxy/scripts"
-    local repo="$DEPLOY_SOURCE/dot_local/share/dotfiles/proxy/scripts"
+    local repo="$DEPLOY_SOURCE/dot_local/share/dotfiles/proxy" stage source name
     if [ -x "$managed/refresh-profile.sh" ]; then
         printf '%s' "$managed"
-    elif [ -x "$repo/refresh-profile.sh" ]; then
-        printf '%s' "$repo"
-    else
-        return 1
+        return 0
     fi
+    [ -f "$repo/scripts/executable_refresh-profile.sh" ] || return 1
+    stage="$XDG_CACHE_HOME/dotfiles/proxy-scripts/$$"
+    proxy_validate_destination_tree "$stage"
+    mkdir -p "$stage/scripts" "$stage/config"
+    for source in "$repo/scripts"/executable_*; do
+        [ -f "$source" ] && [ ! -L "$source" ] || return 1
+        name=${source##*/}
+        name=${name#executable_}
+        cp "$source" "$stage/scripts/$name" || return 1
+        chmod 755 "$stage/scripts/$name" || return 1
+    done
+    [ -f "$repo/config/startup.env" ] && [ ! -L "$repo/config/startup.env" ] || return 1
+    cp "$repo/config/startup.env" "$stage/config/startup.env" || return 1
+    printf '%s' "$stage/scripts"
 }
 
 # The profile the deployment instance runs with. It is its own profile: the
@@ -287,7 +298,7 @@ deploy_proxy_profile() {
     [ -x "$scripts/apply-us-routing-policy.py" ] || return 1
     # Build the deployment profile in its own root, so the service profile is
     # left exactly as it is.
-    mkdir -p "$root/deployment/profiles"
+    mkdir -p "$root/profiles" "$root/deployment/profiles"
     INSTALL_ROOT="$root/deployment" PROFILE_PATH="$root/deployment/profiles/config.yaml" \
         SUBSCRIPTION_URL_FILE="$subscription" \
         "$scripts/refresh-profile.sh" >/dev/null 2>&1 || return 1
@@ -385,11 +396,15 @@ deploy_proxy_ensure() {
 
 # The deployment proxy is a process: it stops with the deployment.
 stop_deployment_proxy() {
-    [ -n "$DEPLOY_PROXY_PID" ] || return 0
-    kill "$DEPLOY_PROXY_PID" 2>/dev/null || true
-    wait "$DEPLOY_PROXY_PID" 2>/dev/null || true
-    DEPLOY_PROXY_PID=""
-    DEPLOY_PROXY_URL=""
+    if [ -n "$DEPLOY_PROXY_PID" ]; then
+        kill "$DEPLOY_PROXY_PID" 2>/dev/null || true
+        wait "$DEPLOY_PROXY_PID" 2>/dev/null || true
+        DEPLOY_PROXY_PID=""
+        DEPLOY_PROXY_URL=""
+    fi
+    if [ -n "${XDG_CACHE_HOME:-}" ]; then
+        rm -rf "$XDG_CACHE_HOME/dotfiles/proxy-scripts/$$"
+    fi
 }
 
 # The proxy environment for a section that needs one. Loopback never goes

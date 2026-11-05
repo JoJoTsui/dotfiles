@@ -23,6 +23,8 @@ re-running is a no-op.
     ./scripts/apply-us-routing-policy.py /path/config.yaml
 """
 
+from __future__ import annotations
+
 import os
 import sys
 import tempfile

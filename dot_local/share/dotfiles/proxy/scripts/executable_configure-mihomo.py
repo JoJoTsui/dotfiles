@@ -16,6 +16,8 @@ restart.
 Idempotent. Safe to re-run after Mihomo restarts (which loses in-memory state).
 """
 
+from __future__ import annotations
+
 import ipaddress
 import json
 import os
