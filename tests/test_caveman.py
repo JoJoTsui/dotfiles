@@ -116,6 +116,53 @@ class CavemanMountTests(unittest.TestCase):
         self.assertEqual(second.returncode, 0, second.returncode and second.stderr)
         self.assertEqual(before, config.stat().st_mtime_ns)
 
+    def test_first_apply_preserves_correct_device_yaml_and_running_gateway(self):
+        config = self.gateway_config()
+        config.parent.mkdir(parents=True)
+        managed_url = managed_mounts(MANAGED_CONFIG.read_text())["minimax-cn"]
+        original = (
+            "# Keep this device comment and ordering.\n"
+            "mode: 'compress'\n"
+            "compat:\n"
+            f"  minimax-cn: {{base_url: '{managed_url}'}}\n"
+            "  device-mount:\n"
+            "    base_url: https://device.invalid/anthropic\n").encode()
+        config.write_bytes(original)
+        # Distinct whole seconds also exercise Bash 3.2's -nt comparison.
+        stamp = time.time() - 20
+        os.utime(config, (stamp, stamp))
+        before = config.stat().st_mtime_ns
+
+        gateway = config.parent
+        (gateway / "run").mkdir()
+        (gateway / "bin").mkdir()
+        standby = subprocess.Popen(["/bin/sleep", "300"])
+        self.addCleanup(standby.wait, timeout=5)
+        self.addCleanup(standby.terminate)
+        state = gateway / "run" / "8787.json"
+        state.write_text(json.dumps({
+            "pid": standby.pid, "listen": "127.0.0.1:8787", "mode": "compress",
+            "compat_upstreams": {"minimax-cn": managed_url},
+        }))
+        os.utime(state, (stamp + 10, stamp + 10))
+        binary = gateway / "bin" / "caveman-proxy"
+        binary.write_text(
+            "#!/bin/sh\n"
+            "printf restarted > \"$HOME/proxy-restarted\"\n"
+            f"printf '%s' '{json.dumps({'compat_upstreams': {'minimax-cn': managed_url}})}'"
+            " > \"$HOME/.caveman/run/8787.json\"\n")
+        binary.chmod(0o755)
+
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(config.read_bytes(), original)
+        self.assertEqual(config.stat().st_mtime_ns, before)
+        self.assertFalse((self.home / "proxy-restarted").exists())
+        self.assertIsNone(standby.poll())
+        baseline = self.home / ".local/state/dotfiles/client-settings/caveman-config.json"
+        self.assertEqual(json.loads(baseline.read_text())["compat"]["minimax-cn"]["base_url"],
+                         managed_url)
+
 
 class CavemanRestartTests(unittest.TestCase):
     """The gateway restart repeats the settings of the instance it replaces."""

@@ -83,7 +83,13 @@
 {{- if eq $format "toml" -}}
 {{ $host | toToml }}
 {{- else if eq $format "yaml" -}}
+{{- /* Preserve device bytes and mtime when no settings changed: the gateway
+       publishes configuration changes by restarting after a newer file. */ -}}
+{{- if and (lstat $target) (deepEqual $host (include $target | fromYaml)) -}}
+{{ include $target }}
+{{- else -}}
 {{ $host | toYaml }}
+{{- end -}}
 {{- else -}}
 {{ $host | toPrettyJson }}
 {{- end -}}
