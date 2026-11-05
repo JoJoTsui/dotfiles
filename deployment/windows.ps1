@@ -567,8 +567,16 @@ function Install-Common {
 function Install-Qoder([string]$Version, [string]$ManifestBase) {
     $root = Join-Path $TargetHome '.qoder'
     $cli = Join-Path $root "bin/qodercli/qodercli-$Version.exe"
-    $dispatcher = Join-Path $root 'entry/qoder.exe'
-    if (-not [IO.File]::Exists($cli)) {
+    Assert-SafePath $cli
+    $cachedValid = $false
+    if ([IO.File]::Exists($cli)) {
+        $script:Step = 'install-agents.qoder.cached-version'
+        $savedFailureCode = $script:FailureCode
+        try { $cachedValid = (Invoke-Tool $cli @('--version') -Quiet).Trim() -ceq $Version }
+        catch { $cachedValid = $false }
+        finally { $script:FailureCode = $savedFailureCode }
+    }
+    if (-not $cachedValid) {
         $script:Step = 'install-agents.qoder.manifest'
         $manifestUrl = "$ManifestBase/$Version/manifest.json"
         if ($manifestUrl -notmatch '^https://') { Stop-Deployment 'Qoder manifest must use HTTPS' }
@@ -599,8 +607,11 @@ function Install-Qoder([string]$Version, [string]$ManifestBase) {
             Expand-VerifiedZip $archive $extracted
             $binary = Join-Path $extracted 'qodercli.exe'
             if (-not [IO.File]::Exists($binary)) { Stop-Deployment 'Qoder archive did not contain qodercli.exe' }
+            $script:Step = 'install-agents.qoder.verify'
+            $diagnostic = Invoke-Tool $binary @('--version') -Quiet
+            if ($diagnostic.Trim() -cne $Version) { Stop-Deployment 'downloaded Qoder did not report its pinned version' }
             $script:Step = 'install-agents.qoder.install'
-            Invoke-Tool $binary @('install', '--force', '--skip-path') -Quiet | Out-Null
+            Copy-RegularTree $binary $cli
         } finally {
             Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -610,14 +621,8 @@ function Install-Qoder([string]$Version, [string]$ManifestBase) {
         Assert-SafePath (Join-Path $TargetHome $relative)
         [IO.Directory]::CreateDirectory((Join-Path $TargetHome $relative)) | Out-Null
     }
-    $entry = @(
-        $dispatcher,
-        (Join-Path $root 'entry/qoder.cmd'),
-        (Join-Path $root 'entry/qoder')
-    ) | Where-Object { [IO.File]::Exists($_) } | Select-Object -First 1
-    if (-not $entry) { $entry = $cli }
-    foreach ($definition in @(@{ Name = 'qodercli'; Target = $cli }, @{ Name = 'qoder'; Target = $entry })) {
-        $name = $definition.Name; $targetPath = $definition.Target
+    foreach ($name in @('qodercli', 'qoder')) {
+        $targetPath = $cli
         foreach ($relative in @('.local/bin', '.bun/bin')) {
             $launcher = Join-Path $TargetHome "$relative/$name.cmd"
             Write-Utf8 $launcher ("@echo off`r`n" + '"' + $targetPath + '" %*' + "`r`nexit /b %errorlevel%`r`n")
@@ -629,9 +634,11 @@ function Install-Qoder([string]$Version, [string]$ManifestBase) {
         }
     }
     $script:Step = 'install-agents.qoder.diagnostic'
-    $diagnostic = Invoke-Tool $cli @('--version') -Quiet
-    [Console]::Out.Write($diagnostic)
-    if (-not $diagnostic.Contains($Version)) { Stop-Deployment 'qoder diagnostic did not report its pinned version' }
+    foreach ($name in @('qoder', 'qodercli')) {
+        $diagnostic = Invoke-Tool (Join-Path $TargetHome ".local/bin/$name.cmd") @('--version') -Quiet
+        [Console]::Out.Write($diagnostic)
+        if ($diagnostic.Trim() -cne $Version) { Stop-Deployment "$name diagnostic did not report its pinned version" }
+    }
 }
 
 function Install-Agents {

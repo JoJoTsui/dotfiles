@@ -39,7 +39,12 @@ session prerequisites remain explicit, on-use dependencies.
 
 The six Bun-managed agents and CodeGraph use the same manifests and frozen Bun
 locks as Unix. Qoder uses its pinned native Windows release manifest with the
-same SHA-256 verification and managed launchers. Their projects live under
+same SHA-256 verification. The verified executable is copied directly to
+`.qoder/bin/qodercli/qodercli-<version>.exe`; both managed Qoder commands invoke
+that pin. Existing vendor dispatchers, older versions and device state survive.
+Cached binaries and downloaded payloads must report the exact pinned version;
+an invalid cache is repaired only after the replacement passes verification.
+Bun projects live under
 `.bun/managed`; existing global Bun and Pixi registries survive. Omitted agents
 remain installed. Native command launchers
 use managed Node; CodeGraph MCP registrations spawn `node.exe` plus the pinned

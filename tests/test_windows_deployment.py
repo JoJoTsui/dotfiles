@@ -5,9 +5,11 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import tarfile
 import unittest
+import zipfile
 from pins import agent_pins, common_pin, native_agent_pins, windows_assets
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -212,6 +214,158 @@ Import-SkillLibrary
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(Path(result.stdout), offline)
         self.assertFalse(offline_home.exists(), 'offline library unexpectedly created cache/state')
+
+    def qoder_fixture(self, reported_version=None, exit_code=0):
+        version = native_agent_pins()['qoder']['version']
+        if reported_version is None:
+            reported_version = version
+        payload = ('#!' + sys.executable + '\n'
+                   'import json, os, pathlib, sys\n'
+                   'with pathlib.Path(os.environ["DOTFILES_TEST_QODER_LOG"]).open("a") as log:\n'
+                   '    log.write(json.dumps({"binary":sys.argv[0],"arguments":sys.argv[1:],'
+                   '"requested":os.environ.get("DOTFILES_TEST_QODER_REQUESTED", sys.argv[0])}) + "\\n")\n'
+                   'if sys.argv[1:] != ["--version"]:\n'
+                   '    raise SystemExit("self-install/update must not run")\n'
+                   f'print({reported_version!r})\n'
+                   f'raise SystemExit({exit_code})\n').encode()
+        archive = self.root / 'qodercli.zip'
+        with zipfile.ZipFile(archive, 'w') as package:
+            package.writestr('qodercli.exe', payload)
+        manifest = self.root / 'qoder-manifest.json'
+        manifest.write_text(json.dumps({'latest': version, 'files': [{
+            'os': 'windows', 'arch': 'amd64', 'url': 'https://example.invalid/qodercli.zip',
+            'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+        }]}))
+        temporary = self.home / '.cache/tmp'
+        temporary.mkdir(parents=True, exist_ok=True)
+        script = self.root / 'qoder-install.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+function Invoke-RestMethod([string]$Uri, [switch]$UseBasicParsing) {
+    if ($env:DOTFILES_TEST_QODER_CACHED -eq '1') { throw 'cached pin unexpectedly fetched a manifest' }
+    if ($Uri -ne "https://example.invalid/$env:DOTFILES_TEST_QODER_VERSION/manifest.json") { throw 'unexpected manifest URL' }
+    [IO.File]::ReadAllText($env:DOTFILES_TEST_QODER_MANIFEST) | ConvertFrom-Json
+}
+function Invoke-WebRequest([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing, [int]$TimeoutSec) {
+    if ($Uri -ne 'https://example.invalid/qodercli.zip') { throw 'unexpected archive URL' }
+    [IO.File]::Copy($env:DOTFILES_TEST_QODER_ARCHIVE, $OutFile)
+}
+# Execute the synthetic archive payload through Python on either host. Keep
+# the production subprocess runner and diagnostic output/error propagation.
+$script:FixtureInvokeTool = ${function:Invoke-Tool}
+function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet) {
+    $env:DOTFILES_TEST_QODER_REQUESTED = $Executable
+    if ($Executable.EndsWith('.cmd')) {
+        $launcher = [IO.File]::ReadAllLines($Executable)
+        $target = [regex]::Match($launcher[1], '^"([^"]+)" %\*$')
+        if (-not $target.Success) { throw 'unexpected native Qoder launcher' }
+        $Executable = $target.Groups[1].Value
+    }
+    & $script:FixtureInvokeTool $env:DOTFILES_TEST_PYTHON (@($Executable) + $Arguments) -Quiet:$Quiet
+}
+Install-Qoder $env:DOTFILES_TEST_QODER_VERSION 'https://example.invalid'
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(self.home),
+                           DOTFILES_TEST_PYTHON=sys.executable, DOTFILES_TEST_QODER_VERSION=version,
+                           DOTFILES_TEST_QODER_ARCHIVE=str(archive), DOTFILES_TEST_QODER_MANIFEST=str(manifest),
+                           DOTFILES_TEST_QODER_LOG=str(self.root / 'qoder-invocations.jsonl'), TEMP=str(temporary))
+        return script, environment, payload
+
+    def test_qoder_places_verified_pin_without_self_install_and_reuses_it(self):
+        script, environment, payload = self.qoder_fixture()
+        preserved = {
+            '.qoder/entry/qoder.exe': b'device dispatcher selecting a newer release',
+            '.qoder/bin/qodercli/qodercli-0.0.1.exe': b'older installed version',
+            '.qoder/device-session': b'unrelated device state',
+        }
+        for relative, content in preserved.items():
+            target = self.home / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(content)
+        pinned = self.home / f'.qoder/bin/qodercli/qodercli-{environment["DOTFILES_TEST_QODER_VERSION"]}.exe'
+        for cached in ('0', '1'):
+            with self.subTest(cached=cached):
+                result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                        env=dict(environment, DOTFILES_TEST_QODER_CACHED=cached),
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), [environment['DOTFILES_TEST_QODER_VERSION']] * 2)
+                self.assertEqual(pinned.read_bytes(), payload)
+                for relative, content in preserved.items():
+                    self.assertEqual((self.home / relative).read_bytes(), content)
+                for relative in ('.local/bin', '.bun/bin'):
+                    for command in ('qoder', 'qodercli'):
+                        launcher = self.home / relative / command
+                        self.assertIn('"' + str(pinned) + '" %*', launcher.with_suffix('.cmd').read_text())
+                        self.assertIn(str(pinned).replace('\\', '/'), launcher.read_text())
+                        if os.name != 'nt':
+                            pinned.chmod(0o755)  # ZIP fixture is source text, rather than a native Windows PE.
+                            diagnostic = subprocess.run(['sh', str(launcher), '--version'], env=environment,
+                                                        capture_output=True, text=True, timeout=10)
+                            self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
+                            self.assertEqual(diagnostic.stdout.strip(), environment['DOTFILES_TEST_QODER_VERSION'])
+                self.assertEqual(list(Path(environment['TEMP']).iterdir()), [])
+        invocations = [json.loads(line) for line in Path(environment['DOTFILES_TEST_QODER_LOG']).read_text().splitlines()]
+        self.assertTrue(invocations)
+        self.assertEqual(Path(invocations[0]['binary']).name, 'qodercli.exe')
+        self.assertTrue(all(Path(call['binary']) == pinned for call in invocations[1:]), invocations)
+        self.assertTrue(all(call['arguments'] == ['--version'] for call in invocations), invocations)
+        for command in ('qoder', 'qodercli'):
+            self.assertIn(str(self.home / '.local/bin' / (command + '.cmd')),
+                          [call['requested'] for call in invocations])
+
+    def test_qoder_rejects_wrong_or_failing_download_before_replacing_state(self):
+        version = native_agent_pins()['qoder']['version']
+        pinned = self.home / f'.qoder/bin/qodercli/qodercli-{version}.exe'
+        preserved = {
+            pinned: b'print("old invalid pin")\n',
+            self.home / '.local/bin/qoder.cmd': b'old working launcher\r\n',
+            self.home / '.qoder/entry/qoder.exe': b'device dispatcher',
+        }
+        for path, content in preserved.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        for reported, exit_code in ((version + '0', 0), (version + '-dev', 0), (version, 9)):
+            with self.subTest(reported=reported, exit_code=exit_code):
+                script, environment, _payload = self.qoder_fixture(reported, exit_code)
+                result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                        env=environment, capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('pinned version' if exit_code == 0 else 'required command failed', result.stderr)
+                for path, content in preserved.items():
+                    self.assertEqual(path.read_bytes(), content)
+                self.assertEqual(list(Path(environment['TEMP']).iterdir()), [])
+
+    def test_qoder_repairs_cached_suffix_or_failed_diagnostic_from_verified_archive(self):
+        script, environment, payload = self.qoder_fixture()
+        version = environment['DOTFILES_TEST_QODER_VERSION']
+        pinned = self.home / f'.qoder/bin/qodercli/qodercli-{version}.exe'
+        pinned.parent.mkdir(parents=True)
+        for output, exit_code in ((version + '0', 0), (version, 7)):
+            with self.subTest(output=output, exit_code=exit_code):
+                pinned.write_text(f'print({output!r})\nraise SystemExit({exit_code})\n')
+                result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                        env=environment, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines(), [version] * 2)
+                self.assertEqual(pinned.read_bytes(), payload)
+                self.assertEqual(list(Path(environment['TEMP']).iterdir()), [])
+
+    def test_qoder_checksum_failure_does_not_place_or_execute_payload(self):
+        script, environment, _payload = self.qoder_fixture()
+        manifest_path = Path(environment['DOTFILES_TEST_QODER_MANIFEST'])
+        manifest = json.loads(manifest_path.read_text())
+        manifest['files'][0]['sha256'] = '0' * 64
+        manifest_path.write_text(json.dumps(manifest))
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=environment, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('Qoder SHA-256 mismatch', result.stderr)
+        self.assertFalse((self.home / '.qoder').exists())
+        self.assertFalse(Path(environment['DOTFILES_TEST_QODER_LOG']).exists())
+        self.assertEqual(list(Path(environment['TEMP']).iterdir()), [])
 
     def test_retirement_preserves_device_content_and_rejects_malformed_markers(self):
         script = self.root / 'retire.ps1'
