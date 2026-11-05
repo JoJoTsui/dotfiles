@@ -47,7 +47,9 @@ an invalid cache is repaired only after the replacement passes verification.
 Bun projects live under
 `.bun/managed`; existing global Bun and Pixi registries survive. Omitted agents
 remain installed. Native command launchers
-use managed Node; CodeGraph MCP registrations spawn `node.exe` plus the pinned
+bind JavaScript entries to the validated `DOTFILES_NODE_BIN` override when
+supplied, or managed `.pixi/bin/node.exe` by default. Git Bash companions use
+the same selected runtime. CodeGraph MCP registrations spawn `node.exe` plus the pinned
 `npm-shim.js` directly because a `.cmd` launcher is not universally executable
 by a client's stdio subprocess implementation. Bootstrap creates no index.
 

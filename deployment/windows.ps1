@@ -672,7 +672,8 @@ function Install-Agents {
                 $launcher = Join-Path $TargetHome "$relative/$command.cmd"
                 $relativeEntry = ('.bun/managed/' + $name + '/node_modules/' + $row.columns[1] + '/' + $entry).Replace('/', '\')
                 if ($usesNode) {
-                    $launcherText = "@echo off`r`n`"%~dp0..\..\.pixi\bin\node.exe`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
+                    $nodeCmd = $node.Replace('%', '%%')
+                    $launcherText = "@echo off`r`nsetlocal DisableDelayedExpansion`r`n`"$nodeCmd`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
                 } else {
                     # Some platform-specific packages expose a native .exe bin.
                     # Do not pass a PE executable to Node as a JavaScript file.
@@ -686,7 +687,8 @@ function Install-Agents {
                 $posix = '#!/bin/sh' + "`n" + 'dotfiles_device=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) || exit 1' + "`n"
                 $posix += '. "$dotfiles_device/.env_core"' + "`n"
                 if ($usesNode) {
-                    $posix += 'exec "$dotfiles_device/.pixi/bin/node.exe" "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                    $quotedNode = $singleQuote + $node.Replace('\', '/').Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
+                    $posix += 'exec ' + $quotedNode + ' "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
                 } else {
                     $posix += 'exec "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
                 }

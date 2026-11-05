@@ -367,6 +367,125 @@ Install-Qoder $env:DOTFILES_TEST_QODER_VERSION 'https://example.invalid'
         self.assertFalse(Path(environment['DOTFILES_TEST_QODER_LOG']).exists())
         self.assertEqual(list(Path(environment['TEMP']).iterdir()), [])
 
+    def test_agent_launchers_use_validated_external_node_and_preserve_native_entries(self):
+        node = os.environ.get('DOTFILES_TEST_NODE') or shutil.which('node')
+        if not node:
+            self.skipTest('external-runtime execution requires Node')
+        version = subprocess.run([node, '--version'], capture_output=True, text=True, check=True).stdout.strip()
+        tools = self.root / ("runtime tools 'quotes'" + (' %NODE% !node!' if os.name != 'nt' else ''))
+        tools.mkdir()
+        log = self.root / 'node-invocations.jsonl'
+        native_log = self.root / 'native-invocations.jsonl'
+        runtime = tools / ('node override.cmd' if os.name == 'nt' else 'node override.exe')
+        node_script = tools / 'node.py'
+        node_script.write_text('import json, pathlib, subprocess, sys\n'
+                               f'with pathlib.Path({str(log)!r}).open("a") as log:\n'
+                               '    log.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                               f'raise SystemExit(subprocess.run([{node!r}, *sys.argv[1:]]).returncode)\n')
+        bun = tools / ('bun.cmd' if os.name == 'nt' else 'bun')
+        bun_script = tools / 'bun.py'
+        native_payload = ('#!' + sys.executable + '\n'
+                          'import json, pathlib, sys\n'
+                          f'with pathlib.Path({str(native_log)!r}).open("a") as log:\n'
+                          '    log.write(json.dumps(sys.argv[1:]) + "\\n")\n'
+                          'if sys.argv[1:] == ["--version"]: print("4.5.6")\n'
+                          'else:\n'
+                          '    print(json.dumps(sys.argv[1:])); raise SystemExit(23)\n')
+        javascript = ('const args=process.argv.slice(2);\n'
+                      'if (JSON.stringify(args)===\'["--version"]\') console.log("1.2.3");\n'
+                      'else { console.log(JSON.stringify(args)); process.exit(37); }\n')
+        bun_script.write_text('import json, pathlib, sys\n'
+                              'if sys.argv[1:] == ["--version"]:\n'
+                              f'    print({common_pin("bun")!r}); raise SystemExit(0)\n'
+                              'project = pathlib.Path(sys.argv[sys.argv.index("--cwd") + 1])\n'
+                              'native = project.name == "codex"\n'
+                              'package = project / "node_modules" / ("fixture-native" if native else "fixture-js")\n'
+                              'package.mkdir(parents=True)\n'
+                              'entry = "native entry.exe" if native else "javascript entry.js"\n'
+                              '(package / "package.json").write_text(json.dumps({"bin":entry}))\n'
+                              f'(package / entry).write_text({native_payload!r} if native else {javascript!r})\n'
+                              '(package / entry).chmod(0o755)\n')
+        for launcher, helper in ((runtime, node_script), (bun, bun_script)):
+            if os.name == 'nt':
+                launcher.write_text(f'@echo off\r\n"{sys.executable}" "{helper}" %*\r\nexit /b %errorlevel%\r\n')
+            else:
+                launcher.write_text('#!' + sys.executable + '\n' + helper.read_text())
+                launcher.chmod(0o755)
+        self.home.mkdir()
+        (self.home / '.env_core').write_text('# isolated launcher environment\n')
+        script = self.root / 'agent-launchers.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+function Get-Input([string]$Name, [string]$Fallback) {
+    $value = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    if ($value) { return $value }; return $Fallback
+}
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$Source = $env:DOTFILES_TEST_SOURCE
+$roots = @{ bun = (Join-Path $TargetHome '.bun'); pixi = (Join-Path $TargetHome '.pixi') }
+$selectedAgents = @('codex')
+. (Join-Path $Source 'deployment/windows.ps1')
+function Read-Catalog([string]$Relative) {
+    if ($Relative -eq 'deployment/common-tools.tsv') {
+        @{ columns = @('runtimes', "bun==$env:DOTFILES_TEST_BUN_VERSION,nodejs==$env:DOTFILES_TEST_NODE_VERSION") }
+    } elseif ($Relative -eq 'deployment/agents/catalog.tsv') {
+        @{ columns = @('codegraph', 'fixture-js', '1.2.3', 'fixture-js', '0.0.0') }
+        @{ columns = @('codex', 'fixture-native', '4.5.6', 'fixture-native', '0.0.0') }
+    } elseif ($Relative -ne 'deployment/agents/native.tsv') { throw 'unexpected catalog' }
+}
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    # The portable native-entry fixture contains Python source, rather than PE.
+    $script:FixtureInvokeTool = ${function:Invoke-Tool}
+    function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet, [switch]$ShowFailureOutput) {
+        if ($Executable.EndsWith('native entry.exe')) {
+            & $script:FixtureInvokeTool $env:DOTFILES_TEST_PYTHON (@($Executable) + $Arguments) -Quiet:$Quiet -ShowFailureOutput:$ShowFailureOutput
+        } else {
+            & $script:FixtureInvokeTool $Executable $Arguments -Quiet:$Quiet -ShowFailureOutput:$ShowFailureOutput
+        }
+    }
+}
+Install-Agents
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(self.home),
+                           DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(runtime),
+                           DOTFILES_TEST_BUN_VERSION=common_pin('bun'), DOTFILES_TEST_NODE_VERSION=version.removeprefix('v'),
+                           DOTFILES_TEST_PYTHON=sys.executable)
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=environment, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.home / '.pixi/bin/node.exe').exists())
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertEqual(calls[0], ['--version'])
+        self.assertEqual(Path(calls[1][0]).name, 'javascript entry.js')
+        self.assertEqual(calls[1][1:], ['--version'])
+        self.assertEqual(len(calls), 2, 'native entry was incorrectly passed to Node')
+        arguments = ['argument with spaces', "single ' and double \" quotes", '$literal; & values', '']
+        for relative in ('.bun/bin', '.local/bin'):
+            js = self.home / relative / 'fixture-js'
+            cmd = js.with_suffix('.cmd').read_text()
+            self.assertIn('"' + str(runtime).replace('%', '%%') + '"', cmd)
+            self.assertIn('setlocal DisableDelayedExpansion', cmd)
+            self.assertNotIn('.pixi\\bin\\node.exe', cmd)
+            native = self.home / relative / 'fixture-native'
+            self.assertNotIn(str(runtime), native.with_suffix('.cmd').read_text())
+            self.assertNotIn('node.exe', native.read_text())
+            if os.name == 'nt':
+                probe = subprocess.run([str(js.with_suffix('.cmd')), *arguments], env=environment,
+                                       capture_output=True, text=True, timeout=10)
+            else:
+                probe = subprocess.run(['sh', str(js), *arguments], env=environment,
+                                       capture_output=True, text=True, timeout=10)
+            self.assertEqual(probe.returncode, 37, probe.stderr)
+            self.assertEqual(json.loads(probe.stdout), arguments)
+            before_native = log.read_bytes()
+            if os.name != 'nt':
+                probe = subprocess.run(['sh', str(native), *arguments], env=environment,
+                                       capture_output=True, text=True, timeout=10)
+                self.assertEqual(probe.returncode, 23, probe.stderr)
+                self.assertEqual(json.loads(probe.stdout), arguments)
+            self.assertEqual(log.read_bytes(), before_native)
+        self.assertEqual(len(log.read_text().splitlines()), 4)
+
     def test_retirement_preserves_device_content_and_rejects_malformed_markers(self):
         script = self.root / 'retire.ps1'
         script.write_text(r'''$ErrorActionPreference = 'Stop'
