@@ -37,6 +37,14 @@ proposal exists, and then reinstalls through the same boundary. Vendor
 self-updaters are not invoked. The working checkout remains the source of
 truth, so the refreshed manifests and locks can be reviewed and committed.
 
+Lock generation requires the exact Bun pin from the common catalog. When a
+proposal changes Bun-managed pins, `update` reuses the selected Bun only at that
+version; otherwise managed Pixi supplies a separate cached runtime through
+`pixi exec --spec bun==<pin>`. The command verifies that runtime before refresh
+and leaves device Bun intact. Empty and native-only proposals need no lock
+runtime. Normal macOS agent installation continues to accept compatible newer
+Bun versions.
+
 `--agents-only` applies the working source and installs selected packages. It
 skips common installation and shell preparation and requires compatible Bun/Node
 already exposed through the common command directory. macOS uses regular

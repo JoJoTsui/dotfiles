@@ -45,6 +45,52 @@ install_agents() {
     exec bash "$BOOTSTRAP" --source "$SOURCE" --agents-only --agents "$selection"
 }
 
+lock_refresh_bun() {
+    local selected=$1 proposal=$2 pin actual bun pixi
+    pin=$("$PYTHON" - "$SOURCE" "$proposal" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+sys.path.insert(0, str(root))
+from deployment.update_versions import agent_rows, common_versions
+
+proposal = json.loads(Path(sys.argv[2]).read_text())
+if set(proposal["agents"]) & agent_rows(root).keys():
+    print(common_versions(root)["bun"])
+PY
+    ) || { printf 'dotfiles-agents: cannot read the Bun pin for lock refresh\n' >&2; return 1; }
+    # Native-only proposals do not regenerate Bun locks.
+    if [ -z "$pin" ]; then printf '%s' "$selected"; return 0; fi
+    case "$selected" in
+        /*)
+            if [ -x "$selected" ] && actual=$("$selected" --version 2>/dev/null) && [ "$actual" = "$pin" ]; then
+                printf '%s' "$selected"
+                return 0
+            fi
+            ;;
+    esac
+    pixi="${PIXI_HOME:-$HOME/.pixi}/bin/pixi"
+    [ -x "$pixi" ] || {
+        printf 'dotfiles-agents: lock refresh requires Bun %s; managed Pixi is missing at %s\n' "$pin" "$pixi" >&2
+        return 1
+    }
+    bun=$("$pixi" exec --spec "bun==$pin" sh -c 'command -v bun') || {
+        printf 'dotfiles-agents: cannot acquire Bun %s for lock refresh through managed Pixi\n' "$pin" >&2
+        return 1
+    }
+    case "$bun" in
+        /*) ;;
+        *) printf 'dotfiles-agents: lock refresh requires an absolute Bun runtime from managed Pixi\n' >&2; return 1 ;;
+    esac
+    if [ ! -x "$bun" ] || ! actual=$("$bun" --version 2>/dev/null) || [ "$actual" != "$pin" ]; then
+        printf 'dotfiles-agents: managed Pixi did not provide Bun %s for lock refresh\n' "$pin" >&2
+        return 1
+    fi
+    printf '%s' "$bun"
+}
+
 update_agents() {
     local selection bun proposal_dir proposal
     need_source
@@ -52,13 +98,13 @@ update_agents() {
     bun=${DOTFILES_BUN_BIN:-${DOTFILES_COMMON_BIN:-$HOME/.pixi/bin}/bun}
     command -v "$PYTHON" >/dev/null 2>&1 ||
         { printf 'dotfiles-agents: %s is required for pin resolution\n' "$PYTHON" >&2; exit 1; }
-    [ -x "$bun" ] || { printf 'dotfiles-agents: pinned Bun not found at %s\n' "$bun" >&2; exit 1; }
     proposal_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-agents.XXXXXX")
     proposal="$proposal_dir/proposal.json"
     trap 'rm -rf "$proposal_dir"' EXIT
     "$PYTHON" "$SOURCE/deployment/update_versions.py" propose-agents \
         --root "$SOURCE" --selection "$selection" --output "$proposal"
     if "$PYTHON" -c 'import json, sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["agents"] else 1)' "$proposal"; then
+        bun=$(lock_refresh_bun "$bun" "$proposal")
         "$PYTHON" "$SOURCE/deployment/update_versions.py" refresh \
             --root "$SOURCE" --proposal "$proposal" --bun "$bun"
     else
