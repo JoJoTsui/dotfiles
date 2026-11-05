@@ -59,6 +59,18 @@ another port rather than competing for the usual one.
 Without a subscription there is nothing to route through, and the deployment
 downloads directly.
 
+### US nodes
+
+The deployment instance routes through US leaves, the same policy the
+long-standing service uses. Its groups are narrowed to the US nodes and the
+routing policy is applied, so local and China destinations stay direct and
+everything else leaves through a US node. The instance configures itself
+through a controller port of its own and pins the `GLOBAL` group to the
+lowest-latency US leaf, the way the service's supervisor does.
+
+The instance builds **its own** profile. The long-standing service keeps its
+own profile untouched, and the deployment never overwrites it.
+
 The pin lives in `deployment/proxy/mihomo.tsv` with per-architecture URLs and
 digests. Update all three together.
 

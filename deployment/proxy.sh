@@ -122,6 +122,7 @@ DEPLOY_PROXY_URL=""
 DEPLOY_PROXY_PID=""
 DEPLOY_PROXY_PORT=""
 DEPLOY_PROXY_PORTS="${DEPLOY_PROXY_PORTS:-7890 7891 7892 7893 7894}"
+DEPLOY_PROXY_CONTROLLER_PORTS="${DEPLOY_PROXY_CONTROLLER_PORTS:-9091 9092 9093 9094 9095}"
 
 # Whether a deployment section reaches the internet through the proxy. The
 # rules live in deployment/proxy-policy.tsv so the choice is reviewed.
@@ -168,6 +169,18 @@ deploy_proxy_client_running() {
     return 1
 }
 
+# The first free port of a list.
+deploy_proxy_first_free() {
+    local port
+    for port in "$@"; do
+        if deploy_proxy_port_free "$port"; then
+            printf '%s' "$port"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # The deployment instance takes a port of its own. A proxy client that is
 # running may claim the usual port at any moment, so the deployment leaves
 # that one alone and takes the next free port.
@@ -185,6 +198,12 @@ deploy_proxy_choose_port() {
         fi
     done
     return 1
+}
+
+# The instance configures itself through its own controller port, so it never
+# talks to a proxy client or the long-standing service.
+deploy_proxy_choose_controller() {
+    deploy_proxy_first_free $DEPLOY_PROXY_CONTROLLER_PORTS
 }
 
 # The decision is reported once: the proxy is consulted by several steps.
@@ -213,25 +232,62 @@ deploy_proxy_subscription() {
     printf '%s' "$secret"
 }
 
-# The profile the deployment instance runs with: the service profile with the
-# listen ports moved to the port this run owns.
+# The scripts that own the profile: the managed copy when the source is
+# applied, the repository copy before that.
+deploy_proxy_scripts() {
+    local managed="$HOME/.local/share/dotfiles/proxy/scripts"
+    local repo="$DEPLOY_SOURCE/dot_local/share/dotfiles/proxy/scripts"
+    if [ -x "$managed/refresh-profile.sh" ]; then
+        printf '%s' "$managed"
+    elif [ -x "$repo/refresh-profile.sh" ]; then
+        printf '%s' "$repo"
+    else
+        return 1
+    fi
+}
+
+# The profile the deployment instance runs with. It is its own profile: the
+# long-standing service keeps its own. The groups are narrowed to US leaves
+# and the routing policy is applied, so the instance leaves the country the
+# service chooses, and it listens on the ports this run owns.
 deploy_proxy_profile() {
-    local root source target port script
+    local root scripts source target subscription
     root=$(proxy_root)
+    scripts=$(deploy_proxy_scripts) || return 1
     source="$root/profiles/config.yaml"
     target="$root/profiles/deployment-config.yaml"
-    script="$(proxy_script_root)/scripts/refresh-profile.sh"
-    [ -x "$script" ] || script="$DEPLOY_SOURCE/dot_local/share/dotfiles/proxy/scripts/refresh-profile.sh"
-    [ -x "$script" ] || return 1
-    INSTALL_ROOT="$root" "$script" >/dev/null 2>&1 || return 1
+    subscription="$root/subscription-url"
+    [ -s "$subscription" ] || return 1
+    command -v python3 >/dev/null 2>&1 || return 1
+    [ -x "$scripts/restrict-proxy-groups.py" ] || return 1
+    [ -x "$scripts/apply-us-routing-policy.py" ] || return 1
+    # Build the deployment profile in its own root, so the service profile is
+    # left exactly as it is.
+    mkdir -p "$root/deployment/profiles"
+    INSTALL_ROOT="$root/deployment" SUBSCRIPTION_URL_FILE="$subscription" \
+        "$scripts/refresh-profile.sh" >/dev/null 2>&1 || return 1
+    source="$root/deployment/profiles/config.yaml"
     [ -s "$source" ] || return 1
-    port="$DEPLOY_PROXY_PORT"
-    sed -e "s/^mixed-port:.*/mixed-port: $port/" \
-        -e "s/^port:.*/port: 0/" \
-        -e "s/^socks-port:.*/socks-port: 0/" \
-        "$source" > "$target" || return 1
+    {
+        printf 'external-controller: 127.0.0.1:%s\n' "$DEPLOY_PROXY_CONTROLLER_PORT"
+        printf 'secret: ""\n'
+        sed -e '/^external-controller:/d' -e '/^secret:/d' \
+            -e "s/^mixed-port:.*/mixed-port: $DEPLOY_PROXY_PORT/" \
+            -e "s/^port:.*/port: 0/" \
+            -e "s/^socks-port:.*/socks-port: 0/" \
+            "$source"
+    } > "$target" || return 1
     chmod 600 "$target" 2>/dev/null || true
     printf '%s' "$target"
+}
+
+# Pin the GLOBAL group to a US leaf, the way the long-standing supervisor
+# does, so the deployment proxy leaves the country the service chooses.
+deploy_proxy_select_us_node() {
+    local scripts=$1
+    MIHOMO_CONTROLLER="http://127.0.0.1:$DEPLOY_PROXY_CONTROLLER_PORT" \
+    MIHOMO_MODE=rule MIHOMO_PREFER_REGION=us MIHOMO_PREFER_SELECTOR=GLOBAL \
+        python3 "$scripts/configure-mihomo.py" >/dev/null 2>&1
 }
 
 # Start the deployment instance, or reuse the one that is already running.
@@ -261,13 +317,21 @@ deploy_proxy_ensure() {
         deploy_proxy_report 'no free proxy port; the deployment downloads directly'
         return 0
     }
+    DEPLOY_PROXY_CONTROLLER_PORT=$(deploy_proxy_choose_controller) || {
+        deploy_proxy_report 'no free controller port; the deployment downloads directly'
+        return 0
+    }
     if deploy_proxy_client_running; then
         deploy_proxy_report "a proxy client is running; the deployment proxy uses 127.0.0.1:$DEPLOY_PROXY_PORT"
     fi
     install_proxy_binary
     binary="$root/bin/mihomo"
+    scripts=$(deploy_proxy_scripts) || {
+        deploy_proxy_report 'the proxy scripts are missing; the deployment downloads directly'
+        return 0
+    }
     profile=$(deploy_proxy_profile) || {
-        printf 'dotfiles: cannot build a deployment profile; the deployment downloads directly\n' >&2
+        deploy_proxy_report 'cannot build a deployment profile; the deployment downloads directly'
         return 0
     }
     mkdir -p "$root/run"
@@ -278,6 +342,13 @@ deploy_proxy_ensure() {
         if ! deploy_proxy_port_free "$DEPLOY_PROXY_PORT"; then
             DEPLOY_PROXY_URL="http://127.0.0.1:$DEPLOY_PROXY_PORT"
             deploy_proxy_report "the deployment proxy is running on 127.0.0.1:$DEPLOY_PROXY_PORT"
+            # The instance routes through US leaves, the same policy the
+            # long-standing service uses.
+            if deploy_proxy_select_us_node "$scripts"; then
+                deploy_proxy_report 'the deployment proxy is pinned to a US node'
+            else
+                deploy_proxy_report 'the deployment proxy could not pin a US node'
+            fi
             return 0
         fi
         attempt=$((attempt + 1))

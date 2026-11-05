@@ -160,7 +160,9 @@ explains every changed pair.
   not, and the bootstrap validates that every step has a rule. The instance
   starts with the first section that needs it and stops with the deployment.
   A proxy client the user already runs is detected and left alone: the
-  deployment takes another port rather than competing for the usual one.
+  deployment takes another port rather than competing for the usual one. The
+  instance routes through US nodes on its own ports and its own profile, so
+  the long-standing service keeps its profile and its controller.
 - **Skills carry a selection**: the catalog's last column is `auto` or a tag.
   Tagged skills are not deployed automatically; a host asks for them with
   `DOTFILES_SKILLS=<tag>`. The Lark skills are tagged.
