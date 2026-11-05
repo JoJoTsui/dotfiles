@@ -49,6 +49,9 @@ function Assert-OwnedState {
     foreach ($relative in @('.local', '.local/bin', '.local/lib', '.local/share', '.local/state', '.local/run', '.config', '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml', '.bun', '.bun/bin', '.bun/managed', '.bun/install/global', '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin', '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi', '.pi/agent', '.qoder', '.minimax', '.minimax-code', '.minimax-code-install-logs')) {
         Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ([string]$relative))
     }
+    if (-not $env:DOTFILES_SKILLS_DIR) {
+        Assert-InstallerDirectory (Join-Path $TargetHome '.cache/dotfiles/skills')
+    }
     foreach ($name in @('meta.db', 'history.db', 'records.db', 'key', 'session', 'host_id')) { Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ".local/share/atuin/$name") }
     foreach ($asset in $exceptions) {
         $assetTarget = [string]$asset.target
@@ -212,6 +215,7 @@ function Import-SkillLibrary {
     }
     $stage = Join-Path $env:TEMP ('skills-' + [Guid]::NewGuid().ToString('N'))
     $cache = Join-Path $roots.cache 'dotfiles/skills'
+    Assert-InstallerDirectory $cache
     [IO.Directory]::CreateDirectory($stage) | Out-Null
     [IO.Directory]::CreateDirectory((Join-Path $cache 'git')) | Out-Null
     [IO.Directory]::CreateDirectory((Join-Path $cache 'tarballs')) | Out-Null

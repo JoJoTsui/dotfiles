@@ -1,10 +1,12 @@
 """Public PowerShell boundary; Linux results cover planning/rendering only."""
+import hashlib
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import tarfile
 import unittest
 from pins import agent_pins, common_pin, native_agent_pins, windows_assets
 
@@ -98,6 +100,118 @@ if (Test-Path -LiteralPath $TargetHome) { throw 'preflight created the target ho
                                          DOTFILES_TEST_TARGET_HOME=str(self.home)),
                                 capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_skill_cache_reparse_paths_fail_before_fetching_or_mutation(self):
+        script = self.root / 'skill-cache-preflight.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{
+    cache = (Join-Path $TargetHome '.cache')
+    state = (Join-Path $TargetHome '.local/state')
+    appData = (Join-Path $TargetHome 'AppData/Roaming')
+}
+$exceptions = @()
+function Read-Catalog([string]$Relative) {
+    foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source $Relative))) {
+        if ($line -and -not $line.StartsWith('#')) { @{ columns = $line.Split('|') } }
+    }
+}
+. (Join-Path $Source 'deployment/windows.ps1')
+function Invoke-WebRequest { throw 'unexpected network request' }
+function Invoke-Tool { throw 'unexpected tool invocation' }
+if ($env:DOTFILES_TEST_CACHE_ACTION -eq 'preflight') { Assert-OwnedState }
+else { Import-SkillLibrary }
+throw 'unsafe skill cache was accepted'
+''')
+        sentinel = self.original / 'device-data'
+        sentinel.write_bytes(b'protected device data\x00\n')
+        before = {path.relative_to(self.original).as_posix(): path.read_bytes()
+                  for path in self.original.rglob('*') if path.is_file()}
+        cases = (
+            ('.cache/dotfiles', True),
+            ('.cache/dotfiles/skills', True),
+            ('.cache/dotfiles/skills/git', True),
+            ('.cache/dotfiles/skills/git/repository/.git/objects', True),
+            ('.cache/dotfiles/skills/tarballs', True),
+            ('.cache/dotfiles/skills/.refreshed', False),
+            ('.cache/dotfiles/skills/tarballs/archive.tgz', False),
+            ('.cache/dotfiles/skills/tarballs/archive.tgz.part', False),
+        )
+        for index, (relative, directory) in enumerate(cases):
+            for action in ('preflight', 'import'):
+                with self.subTest(path=relative, action=action):
+                    home = self.root / f'cache-case-{index}-{action}'
+                    linked = home / relative
+                    linked.parent.mkdir(parents=True)
+                    try:
+                        linked.symlink_to(self.original if directory else sentinel, target_is_directory=directory)
+                    except OSError:
+                        self.skipTest('OS policy prohibits creating the test symlink')
+                    temporary = home / '.cache/tmp'
+                    temporary.mkdir(parents=True)
+                    environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE),
+                                       DOTFILES_TEST_TARGET_HOME=str(home), DOTFILES_TEST_CACHE_ACTION=action,
+                                       DOTFILES_SKILLS_DIR='', TEMP=str(temporary))
+                    result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                            env=environment, capture_output=True, text=True, timeout=30)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn('symlink or reparse', result.stderr)
+                    self.assertEqual(list(temporary.iterdir()), [], 'created skill staging before rejection')
+                    self.assertFalse((home / '.local').exists())
+                    after = {path.relative_to(self.original).as_posix(): path.read_bytes()
+                             for path in self.original.rglob('*') if path.is_file()}
+                    self.assertEqual(after, before)
+                    self.assertEqual(sorted(path.name for path in self.original.iterdir()), ['device-data'])
+
+    def test_skill_cache_reuses_regular_archive_and_offline_library(self):
+        source_skill = self.root / 'SKILL.md'
+        source_skill.write_text('# cached skill\n')
+        archive = self.home / '.cache/dotfiles/skills/tarballs/example.invalid_skill.tgz.tgz'
+        archive.parent.mkdir(parents=True)
+        with tarfile.open(archive, 'w:gz') as payload:
+            payload.add(source_skill, arcname='SKILL.md')
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        temporary = self.home / '.cache/tmp'
+        temporary.mkdir(parents=True)
+        script = self.root / 'skill-cache-regular.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{ cache = (Join-Path $TargetHome '.cache'); state = (Join-Path $TargetHome '.local/state') }
+. (Join-Path $Source 'deployment/windows.ps1')
+function Read-Catalog([string]$Relative) {
+    if ($Relative -eq 'deployment/skills.lock.tsv') {
+        @{ columns = @('cached-skill', 'tarball', 'https://example.invalid/skill.tgz', $env:DOTFILES_TEST_DIGEST) }
+    } elseif ($Relative -eq 'deployment/skills.tsv') {
+        @{ columns = @('cached-skill', 'tarball', 'https://example.invalid/skill.tgz', '', '', 'auto') }
+    } else { throw 'unexpected catalog' }
+}
+function Invoke-WebRequest { throw 'unexpected network request' }
+Import-SkillLibrary
+[Console]::Out.Write($script:SkillLibrary)
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(self.home),
+                           DOTFILES_TEST_DIGEST=digest, DOTFILES_SKILLS_DIR='', DOTFILES_SKILLS_REFRESH='0',
+                           TEMP=str(temporary))
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=environment, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((Path(result.stdout) / 'cached-skill/SKILL.md').read_text(), source_skill.read_text())
+        self.assertEqual(hashlib.sha256(archive.read_bytes()).hexdigest(), digest)
+        self.assertIn(digest, (self.home / '.local/state/dotfiles/skills.lock.tsv').read_text())
+        self.assertFalse((archive.parent.parent / '.refreshed').exists())
+        offline_home = self.root / 'offline-device'
+        offline = SOURCE / 'tests/fixtures/skill-library'
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=dict(environment, DOTFILES_TEST_TARGET_HOME=str(offline_home),
+                                         DOTFILES_SKILLS_DIR=str(offline)),
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(Path(result.stdout), offline)
+        self.assertFalse(offline_home.exists(), 'offline library unexpectedly created cache/state')
 
     def test_retirement_preserves_device_content_and_rejects_malformed_markers(self):
         script = self.root / 'retire.ps1'
