@@ -211,6 +211,7 @@ DEPLOY_STEP=apply-source.macos-discovery
 validate_macos_config
 DEPLOY_STEP=apply-source.proxy-policy
 deploy_proxy_policy_complete
+validate_proxy_destinations
 
 # History databases and credentials remain within the selected device root.
 for relative in .config/atuin .config/atuin/config.toml .local/share/atuin .local/share/atuin/meta.db .local/share/atuin/history.db .local/share/atuin/records.db .local/share/atuin/key .local/share/atuin/session; do

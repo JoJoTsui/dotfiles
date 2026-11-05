@@ -11,6 +11,27 @@ proxy_script_root() {
     printf '%s' "$HOME/.local/share/dotfiles/proxy"
 }
 
+# Proxy helpers and Mihomo also write runtime files whose names come from the
+# profile. Reject symlinks throughout their owned trees, including leaves and
+# dangling links, before an early subscription write or any installer runs.
+# DEPLOY_HOME is deliberate: bootstrap has not rebound HOME at preflight.
+proxy_validate_destination_tree() {
+    local target=$1 entry
+    payload_safe_destination "$target"
+    [ -d "$target" ] || return 0
+    for entry in "$target"/* "$target"/.[!.]* "$target"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        proxy_validate_destination_tree "$entry"
+    done
+}
+
+validate_proxy_destinations() {
+    local relative
+    for relative in .local/share/mihomo .local/share/dotfiles/proxy .cache/dotfiles/mihomo .cache/dotfiles/proxy-scripts; do
+        proxy_validate_destination_tree "$DEPLOY_HOME/$relative"
+    done
+}
+
 proxy_pin() {
     local target=$1 name=$2 version=$3 wanted=$4 url=$5 sha=$6
     [ "$target" = "$wanted" ] || return 1
@@ -112,7 +133,8 @@ refresh_proxy_profile() {
     case "$(head -c 32 "$secret" 2>/dev/null)" in
         REPLACE_ME*) fail "proxy subscription URL is still REPLACE_ME: $secret" ;;
     esac
-    INSTALL_ROOT="$root" "$script"
+    INSTALL_ROOT="$root" PROFILE_PATH="$root/profiles/config.yaml" \
+        SUBSCRIPTION_URL_FILE="$secret" "$script"
 }
 
 # The deployment proxy is a process, not a service. It serves the downloads
@@ -264,7 +286,8 @@ deploy_proxy_profile() {
     # Build the deployment profile in its own root, so the service profile is
     # left exactly as it is.
     mkdir -p "$root/deployment/profiles"
-    INSTALL_ROOT="$root/deployment" SUBSCRIPTION_URL_FILE="$subscription" \
+    INSTALL_ROOT="$root/deployment" PROFILE_PATH="$root/deployment/profiles/config.yaml" \
+        SUBSCRIPTION_URL_FILE="$subscription" \
         "$scripts/refresh-profile.sh" >/dev/null 2>&1 || return 1
     source="$root/deployment/profiles/config.yaml"
     [ -s "$source" ] || return 1
