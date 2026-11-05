@@ -10,6 +10,11 @@ On Linux, WSL, and native Windows the order is a Pixi environment, then a
 native release. The order applies when the device does not already provide the
 command; a command the device has is adopted as it is.
 
+This provider order covers common command groups and declared installer tools.
+Coding agents retain their own frozen/native installation ownership, with the
+exact-match macOS Codex exception recorded in
+[ADR 0009](0009-adopt-matching-macos-codex.md).
+
 Homebrew is adopted, never installed. The deployment uses the Homebrew that the
 device's PATH resolves and does not install Homebrew itself: Homebrew's
 bootstrap lives in a separate unpinned script, its formula catalog moves every

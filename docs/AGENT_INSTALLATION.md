@@ -80,12 +80,17 @@ mechanism; a filtered monolithic manifest is not used.
 | qoder (native) | release manifest pin 1.1.82 | `qoder`, `qodercli` |
 | independent default | `@colbymchenry/codegraph` 1.6.2 | `codegraph` |
 
-Only Bun owns desired Codex installation; Pixi does not declare Codex.
+On native macOS, an existing Codex is adopted only when its successful
+`codex-cli <version>` diagnostic exactly matches the catalog pin. Both regular
+managed launchers point to its physical executable, and every deployment
+rechecks it. Missing, mismatched, suffixed, or failing diagnostics use the frozen
+Bun installation. Other platforms retain Bun ownership; Pixi does not declare
+Codex. See [ADR 0009](adr/0009-adopt-matching-macos-codex.md).
 OpenCode has one selected distribution, without `opencode-ai`. Historical
 inventories remain under `deployment/inventory`. Source application and project
 installation preserve the device's unrelated global Bun registry and tools.
 Real executable launchers under `~/.bun/bin` and `~/.local/bin` point to the
-same project, preserve package-relative native resources, and prepend managed
+same selected executable, preserve package-relative native resources, and prepend managed
 Node/Bun paths. Both managed Qoder launchers point at the verified versioned
 native binary. Existing vendor dispatchers and older releases retain their
 device-owned state. Omitted launchers are unchanged.

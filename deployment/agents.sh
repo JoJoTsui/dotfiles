@@ -318,12 +318,60 @@ install_worktrunk_plugins() {
     done
 }
 
+# Resolve the physical executable so a Homebrew symlink remains separate from
+# the two launchers we replace. Bound symlink traversal, including device loops.
+agent_codex_physical_path() {
+    local candidate=$1 directory target hops=0
+    while [ "$hops" -lt 40 ]; do
+        directory=$(CDPATH= cd -P -- "$(dirname "$candidate")" 2>/dev/null && pwd -P) || return 1
+        candidate="$directory/${candidate##*/}"
+        if [ ! -L "$candidate" ]; then
+            [ -f "$candidate" ] && [ -x "$candidate" ] || return 1
+            printf '%s' "$candidate"
+            return 0
+        fi
+        target=$(readlink "$candidate") || return 1
+        case "$target" in /*) candidate=$target ;; *) candidate="$directory/$target" ;; esac
+        hops=$((hops + 1))
+    done
+    return 1
+}
+
+# This exact-pin exception belongs only to native macOS Codex. Search beyond
+# prior managed launchers on PATH, and recheck the device executable every run.
+agent_matching_macos_codex() {
+    [ "$DEPLOY_PLATFORM" = macos ] && installer_native_target || return 1
+    local version=$1 directory candidate diagnostic physical_home physical_bun
+    local search_paths=()
+    physical_home=$(CDPATH= cd -P -- "$HOME" && pwd -P) || return 1
+    if [ -d "$BUN_INSTALL" ]; then
+        physical_bun=$(CDPATH= cd -P -- "$BUN_INSTALL" && pwd -P) || return 1
+    else
+        physical_bun=$(CDPATH= cd -P -- "$(dirname "$BUN_INSTALL")" && pwd -P) || return 1
+        physical_bun="$physical_bun/${BUN_INSTALL##*/}"
+    fi
+    IFS=: read -r -a search_paths <<< "$PATH"
+    for directory in "${search_paths[@]}"; do
+        case "$directory" in /*) ;; *) continue ;; esac
+        candidate=$(agent_codex_physical_path "$directory/codex") || continue
+        case "$candidate" in
+            "$physical_home/.local/bin/codex"|"$physical_bun/bin/codex"|"$physical_bun/managed/"*) continue ;;
+        esac
+        if LC_ALL=C head -c 160 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# Managed by dotfiles'; then continue; fi
+        diagnostic=$("$candidate" --version 2>/dev/null) || continue
+        [ "$diagnostic" = "codex-cli $version" ] || continue
+        printf '%s' "$candidate"
+        return 0
+    done
+    return 1
+}
+
 install_agents() {
     local common_bin="${DOTFILES_COMMON_BIN:-$PIXI_HOME/bin}"
     local bun="${DOTFILES_BUN_BIN:-$common_bin/bun}" node="${DOTFILES_NODE_BIN:-$common_bin/node}"
     if [ -z "${DOTFILES_BUN_BIN:-}" ] && [ ! -x "$bun" ]; then bun="$PIXI_HOME/bin/bun"; fi
     if [ -z "${DOTFILES_NODE_BIN:-}" ] && [ ! -x "$node" ]; then node="$PIXI_HOME/bin/node"; fi
-    local bun_pin node_pin node_version name package version commands minimum trusted project command launcher diagnostic
+    local bun_pin node_pin node_version name package version commands minimum trusted project command launcher diagnostic adopted_codex entrypoint
     local exposed_commands=()
     DEPLOY_STEP=install-agents.runtime
     case "$bun" in /*) ;; *) fail 'Bun binary override must be absolute' ;; esac
@@ -348,30 +396,41 @@ install_agents() {
         agent_selected "$name" || continue
         agent_version_at_least "${node_version#v}" "$minimum" || fail "Node $node_version does not satisfy $name >=$minimum"
         project="$BUN_INSTALL/managed/$name"
-        for command in "$project" "$project/node_modules" "$project/package.json" "$project/bun.lock"; do
-            [ ! -L "$command" ] || fail "managed Bun project is a symlink: $command"
-        done
-        [ -f "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" ] || fail "missing supported Bun lock for $name"
-        mkdir -p "$project" "$BUN_INSTALL/bin"
-        cp "$DEPLOY_SOURCE/deployment/agents/$name/package.json" "$project/package.json"
-        cp "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" "$project/bun.lock"
-        DEPLOY_STEP="install-agents.$name.install"
-        # A registry hiccup should not abort the deployment; the lock file
-        # keeps the result the same on every attempt.
-        agent_retry env npm_config_global=false pnpm_config_global=false \
-            npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
+        adopted_codex=''
+        if [ "$name" = codex ] && adopted_codex=$(agent_matching_macos_codex "$version"); then
+            mkdir -p "$BUN_INSTALL/bin"
+            printf 'dotfiles: adopted Codex %s from %s\n' "$version" "$adopted_codex"
+        else
+            for command in "$project" "$project/node_modules" "$project/package.json" "$project/bun.lock"; do
+                [ ! -L "$command" ] || fail "managed Bun project is a symlink: $command"
+            done
+            [ -f "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" ] || fail "missing supported Bun lock for $name"
+            mkdir -p "$project" "$BUN_INSTALL/bin"
+            cp "$DEPLOY_SOURCE/deployment/agents/$name/package.json" "$project/package.json"
+            cp "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" "$project/bun.lock"
+            DEPLOY_STEP="install-agents.$name.install"
+            # A registry hiccup should not abort the deployment; the lock file
+            # keeps the result the same on every attempt.
+            agent_retry env npm_config_global=false pnpm_config_global=false \
+                npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
+        fi
         IFS=, read -r -a exposed_commands <<< "$commands"
         for command in "${exposed_commands[@]}"; do
             launcher="$BUN_INSTALL/bin/$command"
-            [ -x "$project/node_modules/.bin/$command" ] || fail "$name did not expose $command"
+            entrypoint="${adopted_codex:-$project/node_modules/.bin/$command}"
+            [ -x "$entrypoint" ] || fail "$name did not expose $command"
             [ ! -L "$launcher" ] || rm "$launcher"
             {
-                printf '#!/bin/sh\n# Managed by dotfiles; Bun installs the frozen project.\n'
+                if [ -n "$adopted_codex" ]; then
+                    printf '#!/bin/sh\n# Managed by dotfiles; adopted macOS Codex.\n'
+                else
+                    printf '#!/bin/sh\n# Managed by dotfiles; Bun installs the frozen project.\n'
+                fi
                 printf 'PATH='; agent_shell_quote "$(dirname "$node"):$(dirname "$bun")"; printf ':"$PATH"\nexport PATH\n'
-                printf 'exec '; agent_shell_quote "$project/node_modules/.bin/$command"; printf ' "$@"\n'
+                printf 'exec '; agent_shell_quote "$entrypoint"; printf ' "$@"\n'
             } > "$launcher"
             chmod 755 "$launcher"
-            # The same Bun-owned project is available to older shell PATHs.
+            # The same selected executable is available to older shell PATHs.
             # Omitted agents never reach this loop and retain their launchers.
             [ ! -L "$HOME/.local/bin/$command" ] || rm "$HOME/.local/bin/$command"
             cp "$launcher" "$HOME/.local/bin/$command"
@@ -379,7 +438,11 @@ install_agents() {
             DEPLOY_STEP="install-agents.$name.diagnostic"
             diagnostic=$("$launcher" --version)
             printf '%s\n' "$diagnostic"
-            case "$diagnostic" in *"$version"*) ;; *) fail "$name diagnostic did not report pinned version $version" ;; esac
+            if [ -n "$adopted_codex" ]; then
+                [ "$diagnostic" = "codex-cli $version" ] || fail "$name diagnostic did not report pinned version $version"
+            else
+                case "$diagnostic" in *"$version"*) ;; *) fail "$name diagnostic did not report pinned version $version" ;; esac
+            fi
         done
     done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
     install_native_agents

@@ -276,7 +276,9 @@ can be retained safely during migration. See the
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu-login"`, `shell_mode = "non_login"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
 All seven clients install by default: six through fresh Bun projects and Qoder
-from its pinned native release manifest. `--agents none` or
+from its pinned native release manifest. Native macOS reuses an existing Codex
+when it exactly matches the catalog pin, with frozen Bun installation as fallback.
+`--agents none` or
 `--agents codex,qoder` controls installation without removing omitted clients;
 CodeGraph remains a default independent of selection. Each exact manifest and
 frozen Bun lock installs into `~/.bun/managed/<name>` and exposes real launchers
