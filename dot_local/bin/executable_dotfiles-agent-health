@@ -51,52 +51,85 @@ http_code() {
     curl -sS -m "${2:-5}" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || true
 }
 
+# Run a command with a time limit. GNU timeout is not part of macOS, so the
+# limit is enforced here instead of depending on a coreutils binary.
+run_with_limit() {
+    limit=$1
+    shift
+    "$@" &
+    child=$!
+    (sleep "$limit"; kill "$child" 2>/dev/null) &
+    watchdog=$!
+    # The wait redirections keep the shell's job notices out of the output
+    # while the command keeps its own streams.
+    wait "$child" 2>/dev/null
+    status=$?
+    kill "$watchdog" 2>/dev/null
+    wait "$watchdog" 2>/dev/null
+    return "$status"
+}
+
+# The legacy daemon stack (Mihomo, Caveman, Herdr) is deployed on Linux and
+# WSL only. The shared environment names the platform; the kernel name is the
+# fallback for a home that has no environment yet.
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
+daemon_stack=false
+case "${DOTFILES_PLATFORM:-}" in
+    linux|wsl) daemon_stack=true ;;
+    macos|windows) daemon_stack=false ;;
+    *) [ "$(uname -s)" = Linux ] && daemon_stack=true ;;
+esac
+
 with_proxy=$(command -v with-proxy 2>/dev/null || true)
 [ -n "$with_proxy" ] || with_proxy=$HOME/.local/bin/with-proxy
 
-# Mihomo controller.
-code=$(http_code http://127.0.0.1:9090/version)
-if [ "$code" = 200 ]; then
-    ok "mihomo controller (127.0.0.1:9090)"
-else
-    fail "mihomo controller (127.0.0.1:9090, http ${code:-none})"
+if [ "$daemon_stack" = true ]; then
+    # Mihomo controller.
+    code=$(http_code http://127.0.0.1:9090/version)
+    if [ "$code" = 200 ]; then
+        ok "mihomo controller (127.0.0.1:9090)"
+    else
+        fail "mihomo controller (127.0.0.1:9090, http ${code:-none})"
+    fi
+
+    # Egress must leave through the proxy on a U.S. node.
+    if [ -x "$with_proxy" ]; then
+        loc=$("$with_proxy" curl -sS -m 10 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null |
+            sed -n 's/^loc=//p' | head -1)
+        if [ "$loc" = US ]; then
+            ok "proxy egress (US)"
+        else
+            fail "proxy egress (country '${loc:-unknown}', want US)"
+        fi
+    else
+        fail "with-proxy not found"
+    fi
 fi
 
-# Egress must leave through the proxy on a U.S. node.
-if [ -x "$with_proxy" ]; then
-    loc=$("$with_proxy" curl -sS -m 10 https://www.cloudflare.com/cdn-cgi/trace 2>/dev/null |
-        sed -n 's/^loc=//p' | head -1)
-    if [ "$loc" = US ]; then
-        ok "proxy egress (US)"
+if [ "$daemon_stack" = true ]; then
+    # Caveman gateway and its run-file process.
+    code=$(http_code http://127.0.0.1:8787/)
+    case "$code" in
+        200|401|403|404) ok "caveman gateway (127.0.0.1:8787, http $code)" ;;
+        *) fail "caveman gateway (127.0.0.1:8787, http ${code:-none})" ;;
+    esac
+    run_file=$HOME/.caveman/run/8787.json
+    if [ -f "$run_file" ]; then
+        proxy_pid=$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$run_file" | head -1)
+        if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
+            ok "caveman proxy pid $proxy_pid"
+        else
+            fail "caveman run file pid ${proxy_pid:-missing} is not alive"
+        fi
     else
-        fail "proxy egress (country '${loc:-unknown}', want US)"
+        fail "caveman run file $run_file missing"
     fi
-else
-    fail "with-proxy not found"
-fi
-
-# Caveman gateway and its run-file process.
-code=$(http_code http://127.0.0.1:8787/)
-case "$code" in
-    200|401|403|404) ok "caveman gateway (127.0.0.1:8787, http $code)" ;;
-    *) fail "caveman gateway (127.0.0.1:8787, http ${code:-none})" ;;
-esac
-run_file=$HOME/.caveman/run/8787.json
-if [ -f "$run_file" ]; then
-    proxy_pid=$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$run_file" | head -1)
-    if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
-        ok "caveman proxy pid $proxy_pid"
-    else
-        fail "caveman run file pid ${proxy_pid:-missing} is not alive"
-    fi
-else
-    fail "caveman run file $run_file missing"
 fi
 
 # Codex app-server daemon. The Herdr wrapper uses --no-daemon, so a stopped
 # daemon is a warning for that path, not a launch blocker.
 if command -v codex >/dev/null 2>&1; then
-    if timeout 10 codex app-server daemon version >/dev/null 2>&1; then
+    if run_with_limit 10 codex app-server daemon version >/dev/null 2>&1; then
         ok "codex app-server daemon"
     else
         warn "codex app-server daemon not running (not needed with --no-daemon)"
@@ -105,16 +138,18 @@ else
     fail "codex not found on PATH"
 fi
 
-# Herdr server. The socket API is the structured check; the human status text
-# is not a stable contract.
-if command -v herdr >/dev/null 2>&1; then
-    if herdr api snapshot >/dev/null 2>&1; then
-        ok "herdr server"
+if [ "$daemon_stack" = true ]; then
+    # Herdr server. The socket API is the structured check; the human status
+    # text is not a stable contract.
+    if command -v herdr >/dev/null 2>&1; then
+        if herdr api snapshot >/dev/null 2>&1; then
+            ok "herdr server"
+        else
+            fail "herdr server"
+        fi
     else
-        fail "herdr server"
+        fail "herdr not found on PATH"
     fi
-else
-    fail "herdr not found on PATH"
 fi
 
 # CodeGraph is a client MCP, not a Codex-launch dependency.
@@ -156,7 +191,7 @@ if [ "$probe" = true ]; then
     probe_log=$(mktemp "${TMPDIR:-/tmp}/dotfiles-agent-health-probe.XXXXXX") || probe_log=
     if [ -z "$probe_log" ]; then
         fail "codex model probe (cannot create a temporary log)"
-    elif "$with_proxy" timeout 90 codex exec -C /tmp --skip-git-repo-check \
+    elif run_with_limit 90 "$with_proxy" codex exec -C /tmp --skip-git-repo-check \
         --sandbox read-only "Reply with HEALTH_OK and nothing else." \
         >"$probe_log" 2>&1 && grep -q HEALTH_OK "$probe_log"; then
         rm -f "$probe_log"

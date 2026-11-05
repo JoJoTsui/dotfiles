@@ -243,10 +243,12 @@ install_qoder() {
         [ -f "$scratch/qodercli" ] || fail 'Qoder archive did not contain qodercli'
         chmod 755 "$scratch/qodercli"
         DEPLOY_STEP='install-agents.qoder.install'
-        # The binary's own installer owns versioned placement and entry-point
-        # creation; PATH changes stay with the managed deployment.
-        "$scratch/qodercli" install --force --skip-path
-        [ -x "$cli" ] || fail "Qoder installation did not place $cli"
+        # The verified archive is the installed binary. Upstream's own
+        # installer resolves its latest release and would place an unpinned
+        # binary, so the deployment places the pinned one itself.
+        mkdir -p "$root/bin/qodercli"
+        cp "$scratch/qodercli" "$cli"
+        chmod 755 "$cli"
         rm -rf "$scratch"
     fi
     mkdir -p "$HOME/.local/bin"

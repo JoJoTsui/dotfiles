@@ -43,7 +43,7 @@ becomes the Caveman gateway configuration `~/.caveman/caveman.yaml` under the
 | OpenCode 2.2.0 | `~/.config/opencode/opencode.jsonc`, `mcp.servers.codegraph` | local, enabled, `codemode: false` |
 | Pi 1.4.0 | `~/.pi/agent/mcp.json`, `mcpServers.codegraph` | stdio, user scope |
 | MiniMax Code 0.7.0 | `~/.minimax/mcp.json`, `mcpServers.codegraph` | inferred stdio |
-| Qoder 1.1.80 | `~/.qoder/settings.json`, `mcpServers.codegraph` | user scope stdio |
+| Qoder 1.1.82 | `~/.qoder/settings.json`, `mcpServers.codegraph` | user scope stdio |
 
 Every MCP entry launches managed `codegraph serve --mcp`, with no credentials,
 downloads through `npx`/`bunx`, or project-specific path. OpenCode's shape is

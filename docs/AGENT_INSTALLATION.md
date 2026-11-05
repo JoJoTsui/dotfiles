@@ -66,7 +66,7 @@ mechanism; a filtered monolithic manifest is not used.
 | claude | `@anthropic-ai/claude-code` 2.1.311 | `claude` |
 | codex | `@openai/codex` 0.166.0 | `codex` |
 | minimax | `@minimax-ai/code` 0.7.0 | `mcode` |
-| qoder (native) | release manifest pin 1.1.80 | `qoder`, `qodercli` |
+| qoder (native) | release manifest pin 1.1.82 | `qoder`, `qodercli` |
 | independent default | `@colbymchenry/codegraph` 1.6.2 | `codegraph` |
 
 Only Bun owns desired Codex installation; Pixi does not declare Codex.
