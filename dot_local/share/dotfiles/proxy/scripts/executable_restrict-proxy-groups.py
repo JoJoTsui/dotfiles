@@ -66,7 +66,7 @@ GROUP_LINE_RE = re.compile(
 # type, not a stray token elsewhere in the file.
 PROXY_LINE_RE = re.compile(
     r"^\s*-\s*\{\s*name:\s*(?P<qname>['\"]?[^\"',}]+['\"]?),"
-    r"(?=[^{}]*\btype:\s*(?:vless|vmess|trojan|hysteria2|ss|socks|http|wireguard|tuic|anytls)\b)",
+    r"(?=[^{}]*\btype:\s*(?:vless|vmess|trojan|hysteria2|ss|socks5?|http|wireguard|tuic|anytls)\b)",
     re.MULTILINE,
 )
 
