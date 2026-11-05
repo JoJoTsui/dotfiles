@@ -23,7 +23,7 @@ the current catalog adds `developer-portable` and its target checks.
 
 | Layer | Command or runner | What it establishes |
 | --- | --- | --- |
-| Local matrix | `python3 tests/verify_portable.py` | Fourteen profile/architecture/role cells, defaults, agent selection, all declared bundle support/rejection outcomes, source pin consistency, and deterministic acceptance tests. |
+| Local matrix | `python3 tests/verify_portable.py` (Linux host; its unittest suite asserts native Linux detection) | Fourteen profile/architecture/role cells, defaults, agent selection, all declared bundle support/rejection outcomes, source pin consistency, and deterministic acceptance tests. |
 | Network install and diagnostics | `python3 tests/verify_portable.py --network` | Isolated Linux common-tool install/reapply and CLI checks; all selected Bun-managed agents plus native Qoder installed/diagnosed; actual Nushell/Bash/Zsh and synthetic history behavior; common and bundle dependency resolution for every declared target. |
 | Native macOS | [native-macos.yml](../../.github/workflows/native-macos.yml) | Intel and Apple silicon, workstation and remote-compute; native install and startup checks. Passed in run 38524061897 at commit `81857d6`. |
 | Native Windows | [native-windows.yml](../../.github/workflows/native-windows.yml) | Windows x86-64, both roles; PowerShell, Nu/Git Bash, Windows paths, installers, clients, and history boundary. Passed in run 38524061998 at commit `81857d6`. |

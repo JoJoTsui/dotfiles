@@ -129,6 +129,9 @@ def matrix_plan(root: Path, platform: str, arch: str, role: str,
             f"common defaults are missing on {platform}-{arch}: {sorted(COMMON_TOOLS - exposed_tools)}")
     if platform == "windows":
         require("zsh" not in exposed_tools, "native Windows must not claim a managed Zsh")
+    elif platform == "macos":
+        require("zsh" in exposed_tools, "macOS must expose the managed Zsh")
+        require("bash" not in exposed_tools, "macOS must not claim a managed Bash")
     else:
         require({"bash", "zsh"} <= exposed_tools, f"Unix shell trio is incomplete on {platform}-{arch}")
 

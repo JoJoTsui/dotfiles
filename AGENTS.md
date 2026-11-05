@@ -69,6 +69,11 @@ incident (rotate it; history rewrite is not a substitute).
 Run `DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest discover -s tests -v`
 for changes to the public deployment boundary; actual apply tests report a skip
 when chezmoi is unavailable. They must run before claiming application passed.
+That suite assumes a Linux x86_64 host: it asserts native-platform detection, the
+Windows architecture matrix, and the Linux-only host bring-up helper. On macOS
+those tests fail by design, so run `python tests/native_macos.py --arch aarch64
+--role workstation --report <path>` instead, and treat the remaining Linux-suite
+failures as host scope rather than regressions.
 
 Done when: the simulated apply succeeds for both legacy profiles, the nushell check
 passes (if touched), `git status` shows no secret files, and the commit body
@@ -87,12 +92,20 @@ explains every changed pair.
   then verify both adapters. Proxy input comes from `proxyUrl` and is quoted
   separately for each shell. The `.bashrc` and `.zshrc` interactive blocks keep
   equivalent managed-tool hooks (Zsh adds its required `compinit`).
+- **macOS runs Zsh, not Bash**: macOS applies no Bash startup file and installs
+  no managed Bash runtime. `dot_zprofile` is the Zsh login file and shares
+  `~/.profile` with Bash's, because Zsh never reads `~/.profile` itself.
 - **Env vars and managed binaries must match**: when a config or env var
   implies a command, the pixi manifest or a bootstrap step must install it in
   the same commit (`EDITOR=hx` → helix exposed as `hx`; `RUSTUP_*` → the
   rustup bootstrap step; `pip.conf` → the `python`/`pip` env; the vscode `ty`
   setting → the `ty` env; zellij's `default_shell` → managed
   `~/.local/bin/nu-login`).
+- **A pinned version has one owner**: the catalog owns the version and the
+  digests that verify it move with it. `deployment/update_versions.py` refreshes
+  the manager digests when it bumps a manager version, and `check` fails when a
+  pinned target is missing. A version bump that leaves a digest, a runtime
+  version check, or a second catalog behind breaks the deployment.
 - **Legacy tool dirs stay off PATH**: `.env_core`/`env.nu` keep `$GIZMO`/
   `$BIO_GIZMO`/`$NUSHELL_PATH` as variables for legacy hosts and scripts, but
   never prepend them — every CLI (bio tools included) comes from the pixi
@@ -105,14 +118,6 @@ explains every changed pair.
   source without it renders 0644 — verified on chezmoi 2.59.1 and 2.72.2), so
   every managed script is named `dot_local/bin/executable_*` and lands
   `~/.local/bin/<name>` with mode 0755.
-- **macOS runs Zsh, not Bash**: macOS applies no Bash startup file and installs
-  no managed Bash runtime. `dot_zprofile` is the Zsh login file and shares
-  `~/.profile` with Bash's, because Zsh never reads `~/.profile` itself.
-- **A pinned version has one owner**: the catalog owns the version and the
-  digests that verify it move with it. `deployment/update_versions.py` refreshes
-  the manager digests when it bumps a manager version, and `check` fails when a
-  pinned target is missing. A version bump that leaves a digest, a runtime
-  version check, or a second catalog behind breaks the deployment.
 - **The exec-nu guard** in `dot_profile`/`dot_bashrc` stays POSIX-safe and
   fires only for a real interactive TTY outside a Claude Code session
   (rationale: `docs/CLAUDE_SETUP_T9K.md`).
