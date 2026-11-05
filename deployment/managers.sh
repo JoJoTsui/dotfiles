@@ -22,9 +22,15 @@ download_verified() {
     while [ "$attempt" -le 3 ]; do
         # The manager archives are the largest downloads, and a slow link
         # needs more than the short timeout a small asset would.
-        curl -fsSL --connect-timeout 15 --max-time 600 --retry 2 "$1" -o "$2"
-        status=$?
-        [ "$status" -eq 0 ] && break
+        # The call is guarded: a bare failing command would be ended by the
+        # errexit the bootstrap runs with, before the status is captured and
+        # the attempt can be retried.
+        if curl -fsSL --connect-timeout 15 --max-time 600 --retry 2 "$1" -o "$2"; then
+            status=0
+            break
+        else
+            status=$?
+        fi
         attempt=$((attempt + 1))
         [ "$attempt" -le 3 ] && sleep 2
     done

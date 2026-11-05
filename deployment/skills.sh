@@ -128,8 +128,14 @@ skill_extract_archive() {
 skill_retry() {
     local attempts=3 attempt=1 status=1
     while [ "$attempt" -le "$attempts" ]; do
-        "$@"
-        status=$?
+        # The call is guarded: a bare failing command would be ended by the
+        # errexit the bootstrap runs with, before the status is captured and
+        # the attempt can be retried.
+        if "$@"; then
+            status=0
+        else
+            status=$?
+        fi
         [ "$status" -eq 0 ] && return 0
         attempt=$((attempt + 1))
         [ "$attempt" -le "$attempts" ] && sleep 2
