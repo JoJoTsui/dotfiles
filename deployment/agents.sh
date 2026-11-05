@@ -371,7 +371,7 @@ install_agents() {
     local bun="${DOTFILES_BUN_BIN:-$common_bin/bun}" node="${DOTFILES_NODE_BIN:-$common_bin/node}"
     if [ -z "${DOTFILES_BUN_BIN:-}" ] && [ ! -x "$bun" ]; then bun="$PIXI_HOME/bin/bun"; fi
     if [ -z "${DOTFILES_NODE_BIN:-}" ] && [ ! -x "$node" ]; then node="$PIXI_HOME/bin/node"; fi
-    local bun_pin node_pin node_version name package version commands minimum trusted project command launcher diagnostic adopted_codex entrypoint
+    local bun_pin node_pin node_version name package version commands minimum trusted project command launcher diagnostic adopted_codex entrypoint claude_keep_plain_opus=0
     local exposed_commands=()
     DEPLOY_STEP=install-agents.runtime
     case "$bun" in /*) ;; *) fail 'Bun binary override must be absolute' ;; esac
@@ -391,6 +391,10 @@ install_agents() {
     fi
     # JS package shebangs and lifecycle scripts run with the compatible Node.
     export PATH="$(dirname "$node"):$(dirname "$bun"):$PATH"
+    if agent_selected claude; then
+        DEPLOY_STEP=install-agents.claude.model-snapshot
+        if client_claude_uses_plain_opus; then claude_keep_plain_opus=1; fi
+    fi
     while IFS=$'|\r' read -r name package version commands minimum trusted; do
         case "$name" in ''|\#*) continue ;; esac
         agent_selected "$name" || continue
@@ -450,5 +454,5 @@ install_agents() {
     # Client installers can add plugin settings in their own formatting. Finish
     # through the existing merger so the first and later applies agree.
     DEPLOY_STEP=install-agents.client-settings
-    deploy_client_settings
+    deploy_client_settings "$claude_keep_plain_opus"
 }

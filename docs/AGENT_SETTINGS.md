@@ -30,6 +30,12 @@ Separate credential, trust, session, plugin, and cache files stay client-owned.
 A target whose merged content is unchanged keeps its file and its modification
 time, so services that read those files are not restarted for nothing.
 
+Claude keeps the declared `opus` default through client installation. The pinned
+client can change plain `opus` to `opus[1m]` while initializing plugins; the final
+merge restores plain `opus` only when it was selected immediately before that
+installation. Explicit `opus[1m]` and custom models survive. Claude's own runtime
+metadata migrations remain client-owned.
+
 One target is not a client setting: `deployment/client-settings/caveman.yaml`
 becomes the Caveman gateway configuration `~/.caveman/caveman.yaml` under the
 `caveman-config` policy, which owns the provider mount base URL. See

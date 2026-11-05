@@ -74,6 +74,12 @@
 {{- template "client-defaults" (list $host $desired $previous) -}}
 {{- $policies := include "deployment/client-settings/policies.json" | fromJson -}}
 {{- $policy := env "DOTFILES_SETTINGS_POLICY" -}}
+{{- /* The pinned Claude client can migrate plain opus to opus[1m] while
+      initializing plugins. Preserve only the installer's exact prior choice;
+      explicit context/custom models and all runtime metadata stay client-owned. */ -}}
+{{- if and (eq $policy "claude-settings") (eq (env "DOTFILES_SETTINGS_KEEP_PLAIN_OPUS") "1") (kindIs "string" (get $host "model")) (eq (get $host "model") "opus[1m]") -}}
+{{- $_ := set $host "model" "opus" -}}
+{{- end -}}
 {{- if not (hasKey $policies $policy) -}}{{- fail (printf "unknown client settings policy %q" $policy) -}}{{- end -}}
 {{- range $path := get $policies $policy -}}
 {{- $value := $desired -}}

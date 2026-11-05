@@ -1,5 +1,16 @@
 # Merge client defaults after source application. No agent/runtime dependency:
 # the already-required Chezmoi performs format-aware parsing and serialization.
+client_claude_uses_plain_opus() {
+    local result
+    # Source application already validated and normalized this target. Read it
+    # with the same JSONC parser; diagnostics must not expose credential values.
+    result=$(DOTFILES_SETTINGS_CLAUDE_TARGET="$HOME/.claude/settings.json" "$DEPLOY_CHEZMOI" \
+        --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" \
+        --no-tty execute-template '{{- $settings := include (env "DOTFILES_SETTINGS_CLAUDE_TARGET") | fromJsonc -}}{{- if and (kindIs "map" $settings) (kindIs "string" (get $settings "model")) (eq (get $settings "model") "opus") -}}true{{- else -}}false{{- end -}}' 2>/dev/null) ||
+        fail 'cannot inspect the declared Claude model: .claude/settings.json'
+    [ "$result" = true ]
+}
+
 validate_client_settings() {
     local format source target policy value
     while IFS=$'|\r' read -r format source target policy; do
@@ -17,7 +28,11 @@ validate_client_settings() {
 }
 
 deploy_client_settings() {
-    local format source target policy stage key trace_policy
+    local format source target policy stage key trace_policy keep_plain_opus=${1:-0}
+    case "$keep_plain_opus" in 0|1) ;; *) fail 'invalid internal Claude model preservation request' ;; esac
+    # Only the selected client installer can request this. Ordinary merges do
+    # not inherit a restoration request from the caller's environment.
+    export DOTFILES_SETTINGS_KEEP_PLAIN_OPUS="$keep_plain_opus"
     validate_client_settings
     stage=$(mktemp -d "$TMPDIR/client-settings.XXXXXX")
     # Render the entire batch before changing a client's files. Invalid existing
@@ -65,5 +80,5 @@ deploy_client_settings() {
         mv "$stage/$key.baseline" "$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
     done < "$DEPLOY_SOURCE/deployment/client-settings/targets.tsv"
     rm -rf "$stage"
-    unset DOTFILES_SETTINGS_FORMAT DOTFILES_SETTINGS_POLICY DOTFILES_SETTINGS_SOURCE DOTFILES_SETTINGS_TARGET DOTFILES_SETTINGS_BASELINE
+    unset DOTFILES_SETTINGS_FORMAT DOTFILES_SETTINGS_POLICY DOTFILES_SETTINGS_SOURCE DOTFILES_SETTINGS_TARGET DOTFILES_SETTINGS_BASELINE DOTFILES_SETTINGS_KEEP_PLAIN_OPUS
 }
