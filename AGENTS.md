@@ -110,9 +110,11 @@ explains every changed pair.
   through Homebrew, then Pixi, then a native release; Linux, WSL, and native
   Windows use Pixi, then a native release. Homebrew is adopted from the device
   and never installed here, and a device without it falls through to the next
-  installer. `deployment/installer-tools.tsv` owns the commands the package
-  catalog cannot provide; their versions are floors recorded in the deployment
-  state, not exact pins. An installer install writes outside the home, so it
+  installer. `deployment/installer-tools.tsv` owns macOS common formula
+  candidates and casks, with version floors recorded in deployment state.
+  Common command groups resolve before the Pixi merge and use regular
+  `~/.local/bin` launchers on macOS. Retain existing device Pixi entries.
+  An installer install writes outside the home, so it
   runs only on the real account home. Read
   `docs/adr/0008-installer-order.md` before changing the order, the catalog, or
   the tier step.

@@ -252,14 +252,15 @@ for target support, host prerequisites, and retained setup-on-use capabilities.
 Env vars and configs only ever reference binaries that this manifest (or a
 bootstrap step) installs — see the matching invariant in `AGENTS.md`.
 
-A command the package catalog cannot provide comes from an installer instead.
-The installer order is macOS: Homebrew, then Pixi, then a native release;
-Linux, WSL, and native Windows: Pixi, then a native release. Homebrew is
-adopted from the device and never installed here, and a device without it falls
-through to the next installer. `deployment/installer-tools.tsv` declares what
-the tier owns — today the Ghostty cask for the `desktop` bundle on macOS — and
-the deployment records the installed version and fails below the declared
-minimum. Read the [installer order](docs/adr/0008-installer-order.md).
+macOS adopts compatible common command groups already on the device, then
+tries Homebrew formulas before falling back to the exact Pixi catalog pins.
+Linux, WSL, and native Windows use Pixi, then declared native releases.
+`deployment/installer-tools.tsv` owns the macOS formula candidates, version
+floors, and the Ghostty cask selected by the `desktop` bundle. Homebrew comes
+from the device. Its installs require the real account home. Selected macOS
+commands have regular launchers under `~/.local/bin`, so existing Pixi entries
+can be retained safely during migration. See the
+[installer order](docs/adr/0008-installer-order.md).
 
 ## Coding agents
 

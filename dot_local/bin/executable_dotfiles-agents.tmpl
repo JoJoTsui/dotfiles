@@ -3,6 +3,7 @@
 # The working source tree remains authoritative; this wrapper never edits pins
 # without the proposal transaction in deployment/update_versions.py.
 set -euo pipefail
+[ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
 
 SOURCE=${DOTFILES_SOURCE:-"{{ .chezmoi.sourceDir }}"}
 PYTHON=${DOTFILES_PYTHON:-python3}
@@ -48,7 +49,7 @@ update_agents() {
     local selection bun proposal_dir proposal
     need_source
     selection=$(selection_arg "$@")
-    bun=${DOTFILES_BUN_BIN:-$HOME/.pixi/bin/bun}
+    bun=${DOTFILES_BUN_BIN:-${DOTFILES_COMMON_BIN:-$HOME/.pixi/bin}/bun}
     command -v "$PYTHON" >/dev/null 2>&1 ||
         { printf 'dotfiles-agents: %s is required for pin resolution\n' "$PYTHON" >&2; exit 1; }
     [ -x "$bun" ] || { printf 'dotfiles-agents: pinned Bun not found at %s\n' "$bun" >&2; exit 1; }

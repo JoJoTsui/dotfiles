@@ -15,8 +15,9 @@ selects. The deployment installs it and teaches the managed agents to use it.
 | Nushell integration | `dot_local/bin/executable_dotfiles-shell-prepare` | generated `wt.nu` in the vendor autoload directory |
 | Client plugins | `deployment/agents.sh` | `wt config plugins <client> install` for the installed clients |
 
-The CLI pin lives with the other common tools, so the managed tool path owns
-the version. The skill bytes are fetched from the upstream repository at the
+The CLI's exact Pixi pin lives with the other common tools. macOS can adopt a
+compatible command or Homebrew formula and exposes it through the common
+launcher directory. The skill bytes are fetched from the upstream repository at the
 revision recorded in `deployment/skills.lock.tsv`; they are never vendored into
 this source. The plugin files are client state: the CLI writes them, and the
 deployment never reproduces their content.

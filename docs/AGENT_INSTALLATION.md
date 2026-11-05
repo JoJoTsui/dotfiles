@@ -38,11 +38,14 @@ self-updaters are not invoked. The working checkout remains the source of
 truth, so the refreshed manifests and locks can be reviewed and committed.
 
 `--agents-only` applies the working source and installs selected packages. It
-skips common installation and shell preparation and requires pinned Bun/Node
-already exposed under `~/.pixi/bin`. It conflicts with `--apply-only`. Its
+skips common installation and shell preparation and requires compatible Bun/Node
+already exposed through the common command directory. macOS uses regular
+`~/.local/bin` launchers and accepts the runtime catalog floors. Older Pixi
+exposures remain usable before those launchers exist. Other platforms enforce
+the exact runtime pins under `~/.pixi/bin`. It conflicts with `--apply-only`. Its
 completion message describes only file/agent deployment. Absolute
 `DOTFILES_BUN_BIN` and `DOTFILES_NODE_BIN` paths can supply read-only runtimes
-at the exact catalog versions for isolated checks. Package caches and client
+satisfying the selected platform's version policy for isolated checks. Package caches and client
 state/config roots still follow the designated `--home`.
 
 ## Ownership, versions, and lifecycle scripts

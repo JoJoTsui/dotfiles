@@ -1,8 +1,40 @@
-# Installer-owned commands: what the package catalog cannot provide.
+# Homebrew candidates and version floors, with exact Pixi fallback pins in
+# common-tools.tsv. Compatible device commands are adopted first.
 # name|installer|kind|package|minimum|bundle|platforms
 # installer homebrew: adopted from the device, never installed here.
 # kind formula|cask: the installer's own package kind.
 # minimum: the lowest installed version the deployment accepts.
-# bundle: the tool bundle that selects this row.
+# bundle: common, or the optional tool bundle that selects this row.
 # platforms: comma-separated platform names, or all.
 ghostty|homebrew|cask|ghostty|1.4.0|desktop|macos
+# Common command groups. Names match common-tools.tsv environments. Their
+# exact Pixi specifications remain the fallback when adoption is unavailable.
+uv|homebrew|formula|uv|0.13.6|common|macos
+bun|homebrew|formula|bun|1.4.2|common|macos
+nodejs|homebrew|formula|node|26.12.1|common|macos
+nushell|homebrew|formula|nushell|0.116.1|common|macos
+zsh|homebrew|formula|zsh|5.9.2|common|macos
+rtk-cli|homebrew|formula|rtk|1.1.0|common|macos
+atuin|homebrew|formula|atuin|18.24.1|common|macos
+zoxide|homebrew|formula|zoxide|0.10.0|common|macos
+tailspin|homebrew|formula|tailspin|7.0.0|common|macos
+less|homebrew|formula|less|704.0.0|common|macos
+python|homebrew|formula|python@3.15|3.15.2|common|macos
+git|homebrew|formula|git|2.56.0|common|macos
+git-lfs|homebrew|formula|git-lfs|3.8.1|common|macos
+git-delta|homebrew|formula|git-delta|0.20.1|common|macos
+gh|homebrew|formula|gh|2.103.3|common|macos
+worktrunk|homebrew|formula|worktrunk|0.80.0|common|macos
+starship|homebrew|formula|starship|1.27.0|common|macos
+direnv|homebrew|formula|direnv|2.38.2|common|macos
+micromamba|homebrew|formula|micromamba|2.10.0|common|macos
+helix|homebrew|formula|helix|25.07.1|common|macos
+bat|homebrew|formula|bat|0.26.1|common|macos
+eza|homebrew|formula|eza|0.23.5|common|macos
+fd-find|homebrew|formula|fd|10.5.0|common|macos
+ripgrep|homebrew|formula|ripgrep|15.2.0|common|macos
+jq|homebrew|formula|jq|1.8.2|common|macos
+fzf|homebrew|formula|fzf|0.74.5|common|macos
+vivid|homebrew|formula|vivid|0.11.1|common|macos
+ty|homebrew|formula|ty|0.0.93|common|macos
+ruff|homebrew|formula|ruff|0.17.3|common|macos

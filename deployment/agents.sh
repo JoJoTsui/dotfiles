@@ -303,7 +303,8 @@ agent_retry() {
 # plugin files are client state; the CLI owns their content, so they are
 # installed through it instead of being written from this source.
 install_worktrunk_plugins() {
-    local wt="$PIXI_HOME/bin/wt" client
+    local wt="${DOTFILES_COMMON_BIN:-$PIXI_HOME/bin}/wt" client
+    [ -x "$wt" ] || wt="$PIXI_HOME/bin/wt"
     [ -x "$wt" ] || return 0
     for client in claude codex opencode pi; do
         agent_selected "$client" || continue
@@ -314,8 +315,11 @@ install_worktrunk_plugins() {
 }
 
 install_agents() {
-    local bun="${DOTFILES_BUN_BIN:-$PIXI_HOME/bin/bun}" node="${DOTFILES_NODE_BIN:-$PIXI_HOME/bin/node}"
-    local bun_pin node_pin name package version commands minimum trusted project command launcher diagnostic
+    local common_bin="${DOTFILES_COMMON_BIN:-$PIXI_HOME/bin}"
+    local bun="${DOTFILES_BUN_BIN:-$common_bin/bun}" node="${DOTFILES_NODE_BIN:-$common_bin/node}"
+    if [ -z "${DOTFILES_BUN_BIN:-}" ] && [ ! -x "$bun" ]; then bun="$PIXI_HOME/bin/bun"; fi
+    if [ -z "${DOTFILES_NODE_BIN:-}" ] && [ ! -x "$node" ]; then node="$PIXI_HOME/bin/node"; fi
+    local bun_pin node_pin node_version name package version commands minimum trusted project command launcher diagnostic
     local exposed_commands=()
     DEPLOY_STEP=install-agents.runtime
     case "$bun" in /*) ;; *) fail 'Bun binary override must be absolute' ;; esac
@@ -323,14 +327,22 @@ install_agents() {
     bun_pin=$(agent_runtime_pin bun); node_pin=$(agent_runtime_pin nodejs)
     [ -x "$bun" ] || fail 'agent installation requires managed Bun; use common bootstrap first or DOTFILES_BUN_BIN'
     [ -x "$node" ] || fail 'agent installation requires managed Node; use common bootstrap first or DOTFILES_NODE_BIN'
-    [ "$("$bun" --version)" = "$bun_pin" ] || fail "Bun must match the common runtime pin $bun_pin"
-    [ "$("$node" --version)" = "v$node_pin" ] || fail "Node must match the common runtime pin $node_pin"
+    node_version=$("$node" --version)
+    if [ "$DEPLOY_PLATFORM" = macos ]; then
+        bun_pin=$(installer_common_minimum bun)
+        node_pin=$(installer_common_minimum nodejs)
+        agent_version_at_least "$("$bun" --version)" "$bun_pin" || fail "Bun must satisfy the common runtime floor $bun_pin"
+        agent_version_at_least "${node_version#v}" "$node_pin" || fail "Node must satisfy the common runtime floor $node_pin"
+    else
+        [ "$("$bun" --version)" = "$bun_pin" ] || fail "Bun must match the common runtime pin $bun_pin"
+        [ "$node_version" = "v$node_pin" ] || fail "Node must match the common runtime pin $node_pin"
+    fi
     # JS package shebangs and lifecycle scripts run with the compatible Node.
     export PATH="$(dirname "$node"):$(dirname "$bun"):$PATH"
     while IFS=$'|\r' read -r name package version commands minimum trusted; do
         case "$name" in ''|\#*) continue ;; esac
         agent_selected "$name" || continue
-        agent_version_at_least "$node_pin" "$minimum" || fail "Node $node_pin does not satisfy $name >=$minimum"
+        agent_version_at_least "${node_version#v}" "$minimum" || fail "Node $node_version does not satisfy $name >=$minimum"
         project="$BUN_INSTALL/managed/$name"
         for command in "$project" "$project/node_modules" "$project/package.json" "$project/bun.lock"; do
             [ ! -L "$command" ] || fail "managed Bun project is a symlink: $command"

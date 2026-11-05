@@ -61,9 +61,12 @@ environments. PATH overrides in environment metadata are also rejected; a
 partial activation is never reported as success.
 
 PATH prefers Bun agent launchers, then local commands, Pixi exposures, and
-Cargo. The agent installer invokes pinned Bun explicitly; PATH preference
-does not authorize a retained device Bun binary to perform package installs.
-`MAMBA_EXE` points to the managed Pixi exposure, and its explicit device
+Cargo. `DOTFILES_COMMON_BIN` selects Pixi exposures on Linux/WSL/Windows and
+the regular common launchers on macOS. A source-only macOS upgrade retains
+Pixi discovery until those launchers exist. The agent installer invokes its
+selected Bun/Node explicitly, enforcing exact pins on other platforms and
+catalog floors on macOS. `MAMBA_EXE` follows the selected common directory,
+and its explicit device
 override is used by both shell adapters. Workstations default to normal
 watcher behavior (`CHOKIDAR_USEPOLLING=0`); remote compute defaults to polling.
 

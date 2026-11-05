@@ -19,7 +19,15 @@ fi
 {{- $base := .base -}}{{- $suffix := .suffix -}}
 {{- if and (eq $.platform "windows") (eq $base "HOME") -}}{{- $base = "_dotfiles_native_home" -}}{{- end -}}
 {{- if and (eq $.platform "windows") (get . "windowsSuffix") -}}{{- $suffix = .windowsSuffix -}}{{- end }}
+{{- if and (eq $.platform "macos") (get . "macosBase") }}
+{{ printf "if [ -f \"${%s}/%s\" ]; then" .macosProbeBase .macosProbe }}
+    {{ printf ": \"${%s:=${%s}/%s}\"" .name .macosBase .macosSuffix }}
+else
+    {{ printf ": \"${%s:=${%s}/%s}\"" .name $base $suffix }}
+fi
+{{- else }}
 {{ printf ": \"${%s:=${%s}/%s}\"" .name $base $suffix }}
+{{- end }}
 {{- else }}
 {{- $value := get . "value" -}}
 {{- if (get . "setting") }}{{ $value = index $.sharedShell .setting }}{{ end -}}

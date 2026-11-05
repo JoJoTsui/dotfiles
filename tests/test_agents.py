@@ -75,6 +75,23 @@ class AgentTests(unittest.TestCase):
         result = self.deploy("--plan", "--agents", "none", env=dict(self.env, DOTFILES_AGENTS="all"))
         self.assertEqual(json.loads(result.stdout)["agents"], [])
 
+    def test_macos_accepts_newer_runtimes_before_the_frozen_install(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual apply requires chezmoi")
+        tools = self.root / "tools"
+        tools.mkdir()
+        bun = tools / "bun"
+        bun.write_text('#!/bin/sh\nif [ "$1" = --version ]; then echo 99.0.0; else exit 23; fi\n')
+        bun.chmod(0o755)
+        node = tools / "node"
+        node.write_text('#!/bin/sh\necho v99.0.0\n')
+        node.chmod(0o755)
+        result = self.deploy("--platform", "macos", "--agents-only", "--agents", "none", env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node)))
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertIn("step install-agents.codegraph.install failed", result.stderr)
+
     def test_plugin_settings_are_stable_on_the_first_and_second_deployment(self):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not chezmoi:

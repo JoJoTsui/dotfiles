@@ -57,10 +57,10 @@ class WorktrunkCatalogTests(unittest.TestCase):
                 text = (SOURCE / name).read_text(encoding="utf-8")
                 # The managed binary is named directly: on native Windows `wt`
                 # is Windows Terminal, and PATH lookup would find that.
-                self.assertIn(f'"$PIXI_HOME/bin/wt" config shell init {shell}', text)
+                self.assertIn(f'"$DOTFILES_COMMON_BIN/wt" config shell init {shell}', text)
                 self.assertNotIn("command -v wt", text)
         prepare = (SOURCE / "dot_local/bin/executable_dotfiles-shell-prepare").read_text(encoding="utf-8")
-        self.assertIn('"$PIXI_HOME/bin/wt" config shell init nu', prepare)
+        self.assertIn('"$DOTFILES_COMMON_BIN/wt" config shell init nu', prepare)
         self.assertIn("wt.nu", prepare)
         targets = {row[0]: row for row in catalog_rows(SOURCE / "deployment/macos-targets.tsv")}
         self.assertIn(".local/share/nushell/vendor/autoload/wt.nu", targets)

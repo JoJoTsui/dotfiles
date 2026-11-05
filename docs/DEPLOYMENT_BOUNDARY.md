@@ -90,6 +90,12 @@ Chezmoi assets. Chezmoi's one intended owner is the bootstrap binary under
 explicitly supply Pixi at its required pin for isolated boundary checks.
 `--apply-only` provisions/uses Chezmoi without provisioning Pixi.
 
+The macOS installer resolves common providers before common installation.
+Accepted device or Homebrew groups are recorded in installer state and
+excluded from new Pixi desired entries at merge time. Existing registry entries
+and device aliases are retained. Every common group has regular launchers in
+`~/.local/bin` on macOS, including groups using the Pixi fallback.
+
 The common installer uses `pixi exec` with the catalog's exact Python pin to
 run `deployment/merge_pixi.py` with common and selected-bundle desired manifests,
 then runs `pixi global sync`. Both desired manifests merge atomically. The merge keeps

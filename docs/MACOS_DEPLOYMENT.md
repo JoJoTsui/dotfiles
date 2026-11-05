@@ -69,12 +69,18 @@ and registering CodeGraph leaves project indexing explicit.
 
 ## Installer tier and the terminal
 
-macOS resolves a command the package catalog cannot provide through the
-installer order: Homebrew first, then Pixi, then a native release. Homebrew is
-adopted from the device — the deployment never installs it — and a Mac without
-Homebrew falls through to Pixi. The tier is declared in
-`deployment/installer-tools.tsv`; today it owns the Ghostty cask, which the
-`desktop` bundle selects.
+macOS resolves common command groups before the Pixi merge. It adopts a
+compatible device command group, then tries Homebrew, then the exact Pixi
+fallback pins. `deployment/installer-tools.tsv` declares formula candidates and
+minimum versions for all macOS common groups, plus the Ghostty cask selected
+by `desktop`. An unavailable or incompatible formula uses Pixi. Homebrew is
+adopted from the device.
+
+Regular launchers under `~/.local/bin` expose the selected common provider.
+Shell preparation, history, Micromamba, completions and agent installation use
+these paths. Bun and Node accept the catalog floors on macOS. Existing Pixi
+entries retain device aliases. A source-only upgrade keeps using Pixi until the
+common launchers exist.
 
 The Ghostty configuration is a managed file at
 `~/.config/ghostty/config.ghostty`, the only path Ghostty reads. It sets the
@@ -84,9 +90,10 @@ once and never overwrites, so device tweaks stay out of the managed file.
 
 A cask install writes an application bundle into `/Applications`, which is
 outside the home. The tier therefore installs only on the real account home: a
-simulated deployment reports the tier instead of performing it, and the
-installed version is recorded in the deployment state with the catalog's
-minimum as a floor. See the [installer order](adr/0008-installer-order.md).
+simulated deployment may adopt installed commands but performs no Homebrew
+installation. Accepted providers and observed versions are recorded in
+`$XDG_STATE_HOME/dotfiles/installer-tools.lock.tsv`. See the
+[installer order](adr/0008-installer-order.md).
 
 ## Native verification
 

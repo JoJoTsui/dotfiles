@@ -241,6 +241,8 @@ export MINIMAX_DATA_DIR="$HOME/.minimax" QODER_CONFIG_DIR="$HOME/.qoder"
 unset MAVIS_DATA_DIR QODER_HOME QODER_USER_CONFIG_DIR
 export HISTFILE="$HOME/.bash_history" TMPDIR="$HOME/.cache/tmp"
 export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$CARGO_HOME/bin:$PATH"
+export DOTFILES_COMMON_BIN="$PIXI_HOME/bin"
+if [ "$DEPLOY_PLATFORM" = macos ]; then export DOTFILES_COMMON_BIN="$HOME/.local/bin"; fi
 export DOTFILES_PLATFORM="$DEPLOY_PLATFORM" DOTFILES_ROLE="$DEPLOY_ROLE" DOTFILES_ARCH="$DEPLOY_ARCH"
 export DOTFILES_BUNDLES="$DEPLOY_BUNDLES_CSV"
 export DOTFILES_MIRROR="$DEPLOY_MIRROR"
@@ -265,8 +267,8 @@ run_step apply-source.macos-discovery deploy_macos_config
 if "$DEPLOY_AGENTS_ONLY"; then
     run_step install-agents install_agents
 elif ! "$DEPLOY_APPLY_ONLY"; then
-    run_step install-common install_common
     run_step install-installer-tools install_installer_tools
+    run_step install-common install_common
     run_step install-agents install_agents
     if "$DEPLOY_PROXY"; then run_step install-proxy install_proxy; fi
     run_step prepare-shell prepare_shell

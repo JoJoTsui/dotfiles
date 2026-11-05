@@ -427,7 +427,8 @@ def main():
     arguments = parser.parse_args()
     validate_roots()
     os.environ.setdefault("ATUIN_SESSION", uuid.uuid4().hex)
-    atuin = Path(os.environ["PIXI_HOME"]) / ("bin/atuin.exe" if os.name == "nt" else "bin/atuin")
+    common_bin = Path(os.environ.get("DOTFILES_COMMON_BIN", str(Path(os.environ["PIXI_HOME"]) / "bin")))
+    atuin = common_bin / ("atuin.exe" if os.name == "nt" else "atuin")
     if not atuin.is_file():
         raise HistoryError("managed Atuin is not installed")
     if arguments.command == "import":

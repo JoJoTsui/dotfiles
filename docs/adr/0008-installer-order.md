@@ -17,20 +17,34 @@ day, and reimplementing that bootstrap here would write outside the home and
 track an upstream the deployment cannot pin. A macOS device without Homebrew
 falls through to the next installer in the order, which is a Pixi environment.
 
-What an installer owns is declared in `deployment/installer-tools.tsv`: a
-command, the installer, the installer's own package kind, the lowest version
-the deployment accepts, the bundle that selects it, and its platforms. The
-catalog holds what the package catalog cannot provide — a desktop application,
-for instance, whose native bundle only a cask can install. The package catalog
-keeps owning the command-line toolchain, where an exact pin is available.
+`deployment/installer-tools.tsv` declares command groups, installer packages,
+version floors, selection and platforms. Common rows identify environments
+from `common-tools.tsv` and use `common` in the bundle column. Optional casks
+use their selecting bundle. The package catalog owns the exact Pixi fallback
+specifications.
 
 An installer-provided command carries a floor rather than an exact pin. The
 installer owns its own versions and moves them on its own schedule, so the
-deployment records the installed version in its state and fails when the
-installed version is below the catalog's minimum. This is the counterpart of
-the exact pins the Pixi environments and the managers keep.
+deployment records the observed command version in its state. A common group
+is accepted only when every exposure is executable and its version meets the
+floor. Python also checks pip. PATH adoption resolves catalog executable
+aliases together from one bin directory. Formula adoption checks `bin` and
+`libexec/bin`. Bun and Node use these floors on macOS, while other platforms
+retain their exact runtime checks.
+
+Resolve common providers before merging Pixi desired state. Compatible device
+commands are adopted first, followed by Homebrew. A missing, incompatible, or
+failed formula falls through to its exact Pixi specification. Installed formulas
+below the floor also take that fallback. Existing registry entries retain extra
+aliases and dependencies. Regular launchers under `~/.local/bin` give the
+selected provider PATH priority. Reapply can replace an owned launcher with its
+Pixi fallback. An unrelated file at that path requires the operator to resolve
+the collision.
 
 The order has a cost the exact pins do not: an installer install writes into
 the installer's prefix, and a cask writes an application bundle into
 /Applications. Those writes happen only on the real account home, so a
-simulated deployment reports the tier instead of performing it.
+simulated deployment can adopt compatible native commands read-only and uses
+Pixi when adoption is unavailable. Foreign platform or architecture selections
+use their own Pixi environments. Source-only application retains Pixi command
+discovery until the macOS launchers have been provisioned.

@@ -47,6 +47,20 @@ common_python_spec() {
     fail 'common tool catalog must declare the Python bootstrap pin'
 }
 
+common_package_pin() {
+    local environment specifications mappings targets specification saved_ifs
+    while IFS=$'|\r' read -r environment specifications mappings targets; do
+        saved_ifs=$IFS; IFS=,
+        for specification in $specifications; do
+            if [ "${specification%%==*}" = "$1" ]; then
+                printf '%s' "${specification#*==}"; IFS=$saved_ifs; return 0
+            fi
+        done
+        IFS=$saved_ifs
+    done < "$DEPLOY_SOURCE/deployment/common-tools.tsv"
+    fail "common catalog has no package $1"
+}
+
 print_common_packages() {
     local environment specifications mappings targets separator='' item inner_separator saved_ifs
     printf '['

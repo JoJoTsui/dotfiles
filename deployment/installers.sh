@@ -16,7 +16,7 @@ source "$DEPLOY_SOURCE/deployment/client-settings.sh"
 source "$DEPLOY_SOURCE/deployment/caveman.sh"
 source "$DEPLOY_SOURCE/deployment/macos.sh"
 source "$DEPLOY_SOURCE/deployment/system.sh"
-DEPLOY_ACTIONS=(install-managers apply-source install-common install-agents prepare-shell)
+DEPLOY_ACTIONS=(install-managers apply-source install-installer-tools install-common install-agents prepare-shell)
 
 install_managers() {
     if ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
@@ -31,9 +31,12 @@ install_managers() {
 # the device registry. Pixi owns installation and exposure after that merge.
 install_common() {
     DEPLOY_STEP=install-common.merge-manifest
-    "$DEPLOY_PIXI" exec --spec "$(common_python_spec)" python "$DEPLOY_SOURCE/deployment/merge_pixi.py" "$XDG_CONFIG_HOME/dotfiles/pixi-global.toml" "$XDG_CONFIG_HOME/dotfiles/pixi-bundles.toml" "$PIXI_HOME/manifests/pixi-global.toml"
+    local provider_arguments=()
+    if [ "$DEPLOY_PLATFORM" = macos ]; then provider_arguments=(--providers "$XDG_STATE_HOME/dotfiles/installer-tools.lock.tsv"); fi
+    "$DEPLOY_PIXI" exec --spec "$(common_python_spec)" python "$DEPLOY_SOURCE/deployment/merge_pixi.py" ${provider_arguments[@]+"${provider_arguments[@]}"} "$XDG_CONFIG_HOME/dotfiles/pixi-global.toml" "$XDG_CONFIG_HOME/dotfiles/pixi-bundles.toml" "$PIXI_HOME/manifests/pixi-global.toml"
     DEPLOY_STEP=install-common.pixi-sync
     "$DEPLOY_PIXI" global sync
+    installer_expose_common
     DEPLOY_STEP=install-common.rustup
     install_rustup
     DEPLOY_STEP=install-common.verify-exposure
@@ -43,7 +46,7 @@ install_common() {
         common_target_matches "$targets" || continue
         saved_ifs=$IFS; IFS=,
         for mapping in $mappings; do
-            [ -x "$PIXI_HOME/bin/${mapping%%=*}" ] || fail "required command not exposed by Pixi: ${mapping%%=*}"
+            [ -x "$DOTFILES_COMMON_BIN/${mapping%%=*}" ] || fail "required common command missing: ${mapping%%=*}"
         done
         IFS=$saved_ifs
     done < "$DEPLOY_SOURCE/deployment/common-tools.tsv"

@@ -79,7 +79,18 @@ def toml_value(value):
 
 
 def main():
-    desired_paths = list(map(Path, sys.argv[1:-1]))
+    arguments = sys.argv[1:]
+    provided = set()
+    if arguments[:1] == ["--providers"]:
+        providers = Path(arguments[1])
+        if providers.is_symlink() or not providers.is_file():
+            raise ValueError("common provider state must be a regular file")
+        for line in providers.read_text(encoding="utf-8").splitlines():
+            name, provider, _version, _minimum = line.split("|")
+            if provider in ("homebrew", "adopted"):
+                provided.add(name)
+        arguments = arguments[2:]
+    desired_paths = list(map(Path, arguments[:-1]))
     registry_path = Path(sys.argv[-1])
     if not desired_paths:
         raise ValueError("at least one desired manifest is required")
@@ -98,6 +109,8 @@ def main():
         with desired_path.open("rb") as handle:
             desired = tomllib.load(handle)
         for name, owned in desired["envs"].items():
+            if name in provided:
+                continue
             environment = environments.setdefault(name, {})
             retired_coreutils |= retire_uutils_aliases(name, owned, environment)
             for field, value in owned.items():

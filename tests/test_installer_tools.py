@@ -48,7 +48,7 @@ class InstallerCatalogTests(unittest.TestCase):
                 self.assertIn(kind, ("formula", "cask"))
                 self.assertTrue(package)
                 self.assertRegex(minimum, r"^\d+\.\d+\.\d+$")
-                self.assertIn(bundle, bundles)
+                self.assertIn(bundle, bundles | {"common"})
                 self.assertTrue(platforms == "all" or platforms)
 
     def test_the_ghostty_configuration_is_managed_on_macos_only(self):
@@ -79,17 +79,25 @@ class InstallerPlanTests(unittest.TestCase):
     def test_the_tier_is_planned_for_its_bundle_and_platform(self):
         plan = self.plan("--platform", "macos", "--role", "workstation",
                          "--bundles", "desktop")
-        self.assertEqual([entry["name"] for entry in plan["installerTools"]], ["ghostty"])
+        self.assertEqual([entry["name"] for entry in plan["installerTools"] if entry["bundle"] == "desktop"], ["ghostty"])
+        self.assertIn("nushell", [entry["name"] for entry in plan["installerTools"]])
+        self.assertLess(plan["actions"].index("install-installer-tools"), plan["actions"].index("install-common"))
         self.assertEqual(plan["installerTools"][0]["installer"], "homebrew")
 
-    def test_the_tier_is_absent_without_its_bundle(self):
+    def test_only_common_formulas_are_planned_without_a_bundle(self):
         plan = self.plan("--platform", "macos", "--role", "workstation")
-        self.assertEqual(plan["installerTools"], [])
+        self.assertTrue(plan["installerTools"])
+        self.assertEqual({entry["bundle"] for entry in plan["installerTools"]}, {"common"})
 
     def test_the_tier_is_absent_on_other_platforms(self):
         plan = self.plan("--platform", "linux", "--arch", "x86_64",
                          "--role", "workstation", "--bundles", "desktop")
         self.assertEqual(plan["installerTools"], [])
+
+    def test_partial_modes_plan_no_installer_operations(self):
+        for mode in ("--apply-only", "--agents-only"):
+            plan = self.plan("--platform", "macos", "--role", "workstation", mode)
+            self.assertEqual(plan["installerTools"], [])
 
 
 class InstallerStepTests(unittest.TestCase):
@@ -119,6 +127,8 @@ class InstallerStepTests(unittest.TestCase):
             if installed:
                 marker.write_text(installed + "\n")
         script = root / "run.sh"
+        catalog = root / "installer-tools.tsv"
+        catalog.write_text("ghostty|homebrew|cask|ghostty|1.4.0|desktop|macos\n")
         script.write_text(
             "set -e\n"
             f"DEPLOY_SOURCE='{SOURCE}'\n"
@@ -132,6 +142,7 @@ class InstallerStepTests(unittest.TestCase):
             "detect_platform() { echo '" + platform + "'; }\n"
             f"native_account_value() {{ echo '{account_home or home}'; }}\n"
             f"source '{SOURCE}/deployment/installer.sh'\n"
+            f"INSTALLER_CATALOG='{catalog}'\n"
             "install_installer_tools\n",
             encoding="utf-8")
         environment = dict(os.environ, PATH="/usr/bin:/bin")

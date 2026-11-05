@@ -53,6 +53,7 @@ def managed_environment(home):
                        XDG_STATE_HOME=str(home / ".local/state"),
                        XDG_CACHE_HOME=str(home / ".cache"),
                        PIXI_HOME=str(home / ".pixi"),
+                       DOTFILES_COMMON_BIN=str(home / ".local/bin"),
                        CARGO_HOME=str(home / ".cargo"), RUSTUP_HOME=str(home / ".rustup"),
                        ATUIN_CONFIG_DIR=str(home / ".config/atuin"),
                        ATUIN_DATA_DIR=str(home / ".local/share/atuin"),
@@ -87,7 +88,7 @@ def check_native_discovery(home, role):
     """Ordinary startup has no XDG, Nu config flags, or Python mirror overrides."""
     env = minimal_environment(home)
     native = home / "Library/Application Support/nushell"
-    nu = str(home / ".pixi/bin/nu")
+    nu = str(home / ".local/bin/nu")
     script = ('print ({config_dir: $nu.default-config-dir, editor: $env.EDITOR, '
               'polling: $env.CHOKIDAR_USEPOLLING, paths: $env.PATH, '
               'preference: $env.UV_PYTHON_PREFERENCE, index: $env.UV_DEFAULT_INDEX} | to json --raw)')
@@ -113,15 +114,15 @@ def check_native_discovery(home, role):
     require(any(str(native / "autoload") == path for path in json.loads(run(
         [nu, "-e", 'print ($nu.user-autoload-dirs | to json --raw); exit'], env=env, cwd=home).stdout)),
         "native Nu user autoload path")
-    pip = str(home / ".pixi/bin/pip")
+    pip = str(home / ".local/bin/pip")
     mirror = run([pip, "config", "get", "global.index-url"], env=env, cwd=home)
     require(mirror.stdout.strip() == MIRROR, "ordinary native pip TUNA discovery")
     debug = run([pip, "config", "debug"], env=env, cwd=home)
     require(str(home / "Library/Application Support/pip/pip.conf") in debug.stdout,
             "native pip discovery path")
-    uv_command = str(home / ".pixi/bin/uv")
+    uv_command = str(home / ".local/bin/uv")
     uv_arguments = ["pip", "install", "--dry-run", "--system", "--python",
-                    str(home / ".pixi/bin/python"), "--offline", "dotfiles-unavailable==0.0.0"]
+                    str(home / ".local/bin/python"), "--offline", "dotfiles-unavailable==0.0.0"]
     uv_settings = run([uv_command, "--show-settings", *uv_arguments],
                       env=env, cwd=home, allow_failure=True)
     require(uv_settings.returncode == 0 and MIRROR in uv_settings.stdout + uv_settings.stderr,
@@ -146,7 +147,10 @@ def check_pinned_tools(home, plan, report):
     tools = {exposed for package in plan["packages"] for exposed in package["exposed"]}
     tools.update(("pixi", "rustup"))
     for command in sorted(tools):
-        location = home / (".cargo/bin" if command == "rustup" else ".pixi/bin") / command
+        directory = ".local/bin"
+        if command == "rustup": directory = ".cargo/bin"
+        if command == "pixi": directory = ".pixi/bin"
+        location = home / directory / command
         require(location.is_file() and os.access(location, os.X_OK), f"managed exposure: {command}")
         arguments = [str(location), "version" if command == "git-lfs" else "--version"]
         diagnostic = run(arguments, env=env, cwd=home)
@@ -259,13 +263,13 @@ def check_portable_suites(home, role, report):
     env = managed_environment(home)
     env.update(TMPDIR=str(home / ".cache/tmp"), DOTFILES_TEST_PLATFORM="macos", DOTFILES_TEST_ROLE=role,
                DOTFILES_TEST_CHEZMOI=str(home / ".local/bin/chezmoi"), DOTFILES_TEST_TOOL_HOME=str(home),
-               DOTFILES_TEST_NODE=str(home / ".pixi/bin/node"),
+               DOTFILES_TEST_NODE=str(home / ".local/bin/node"),
                DOTFILES_TEST_PI_MODULE=str(home / ".bun/managed/pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js"))
     for name in ("claude", "codex", "kimi", "opencode", "codegraph"):
         env["DOTFILES_TEST_" + name.upper()] = str(home / ".local/bin" / name)
     summaries = []
     for pattern in ("test_shell_behavior.py", "test_agent_payload.py", "test_codegraph.py", "test_history_behavior.py"):
-        result = run([str(home / ".pixi/bin/python"), "-m", "unittest", "discover", "-s", "tests",
+        result = run([str(home / ".local/bin/python"), "-m", "unittest", "discover", "-s", "tests",
                       "-p", pattern, "-v"], env=env, cwd=SOURCE, timeout=600, allow_failure=True)
         # Required native checks may not be converted to successful skips.
         if result.returncode != 0 or "skipped=" in result.stderr:

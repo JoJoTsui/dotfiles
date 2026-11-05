@@ -84,10 +84,12 @@ def read_catalog(path: Path) -> dict:
 
 def managed_command(command: str, pixi: Path) -> Path | None:
     suffixes = ("", ".exe", ".cmd", ".bat") if WINDOWS else ("",)
-    for suffix in suffixes:
-        candidate = pixi / "bin" / (command + suffix)
-        if candidate.is_file() and (WINDOWS or os.access(candidate, os.X_OK)):
-            return candidate.absolute()
+    roots = [Path(os.environ.get("DOTFILES_COMMON_BIN", str(pixi / "bin"))), pixi / "bin"]
+    for root in dict.fromkeys(roots):
+        for suffix in suffixes:
+            candidate = root / (command + suffix)
+            if candidate.is_file() and (WINDOWS or os.access(candidate, os.X_OK)):
+                return candidate.absolute()
     return None
 
 
