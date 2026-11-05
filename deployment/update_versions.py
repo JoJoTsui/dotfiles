@@ -23,6 +23,30 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parents[1]
 VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_~-]*$")
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
+
+# A bootstrap manager's version and its per-target release digests are one
+# pin: the bytes differ per target and per rebuild, so a version without
+# matching digests cannot be verified. Each entry names where upstream
+# publishes the digest for one target of that manager.
+MANAGER_DIGEST_SOURCES = {
+    "pixi": {
+        "targets": ("x86_64-unknown-linux-musl", "aarch64-unknown-linux-musl",
+                    "x86_64-apple-darwin", "aarch64-apple-darwin"),
+        "url": "https://github.com/prefix-dev/pixi/releases/download/v{version}/pixi-{target}.tar.gz.sha256",
+    },
+    "chezmoi": {
+        "targets": ("linux_amd64", "linux_arm64", "darwin_amd64", "darwin_arm64"),
+        "url": "https://github.com/twpayne/chezmoi/releases/download/v{version}/chezmoi_{version}_checksums.txt",
+        "match": "chezmoi_{version}_{target}.tar.gz",
+    },
+    "rustup": {
+        "targets": ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu",
+                    "x86_64-apple-darwin", "aarch64-apple-darwin"),
+        "url": "https://static.rust-lang.org/rustup/archive/{version}/{target}/rustup-init.sha256",
+    },
+}
+MANAGER_ROW_RE = re.compile(
+    r"^(?P<head>\s*[^)]*\)\s+target=(?P<target>[^\s;]+);\s+digest=)[0-9a-f]{64}(?P<tail>\s+;;\s*)$")
 WINDOWS_ASSETS = {
     "pixi": "pixi", "chezmoi": "chezmoi", "rustup": "rustup",
     "bun": "bun", "atuin": "atuin", "git-bash": "git-bash",
@@ -68,6 +92,128 @@ def common_versions(root: Path) -> dict[str, str]:
                 raise VersionError(f"common package {package!r} has inconsistent pins")
             versions[package] = version
     return versions
+
+
+def _read_constant(path: Path, name: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    match = re.search(rf"^{re.escape(name)}=([^\r\n]+)$", text, re.MULTILINE)
+    if not match:
+        raise VersionError(f"cannot read {name} from {path}")
+    return match.group(1)
+
+
+def manager_digest_rows(text: str) -> dict[str, dict[str, tuple[int, str]]]:
+    """Read the pinned target digests of every bootstrap manager."""
+    found: dict[str, dict[str, tuple[int, str]]] = {}
+    current = None
+    for number, line in enumerate(text.splitlines()):
+        function = re.match(r"^install_(pixi|chezmoi|rustup)\(\)", line)
+        if function:
+            current = function.group(1)
+            continue
+        if current is None:
+            continue
+        row = MANAGER_ROW_RE.match(line)
+        if row:
+            found.setdefault(current, {})[row.group("target")] = (number, line)
+    return found
+
+
+def _fetch_text(url: str, context: str) -> str:
+    try:
+        with urlopen(url, timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except HTTPError as error:
+        raise VersionError(f"upstream returned HTTP {error.code} for {context}") from error
+    except URLError as error:
+        raise VersionError(f"upstream unavailable for {context} ({type(error.reason).__name__})") from error
+    except TimeoutError as error:
+        raise VersionError(f"upstream timed out for {context}") from error
+
+
+def manager_digests(manager: str, version: str) -> dict[str, str]:
+    """Read the digests upstream publishes for one manager release."""
+    source = MANAGER_DIGEST_SOURCES[manager]
+    digests: dict[str, str] = {}
+    for target in source["targets"]:
+        url = source["url"].format(version=version, target=target)
+        text = _fetch_text(url, f"{manager} {version} {target}")
+        wanted = source.get("match")
+        digest = None
+        for line in text.splitlines():
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            if wanted and parts[1].lstrip("*") != wanted.format(version=version, target=target):
+                continue
+            digest = parts[0]
+            break
+        if digest is None or not SHA256_RE.fullmatch(digest):
+            raise VersionError(f"upstream published no SHA-256 digest for {manager} {version} {target}")
+        digests[target] = digest
+    return digests
+
+
+def rewrite_manager_digests(path: Path, versions: dict[str, str]) -> list[str]:
+    """Move the pinned digests with the manager versions they verify."""
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    changed: list[str] = []
+    pinned = manager_digest_rows("".join(lines))
+    for manager, version in versions.items():
+        digests = manager_digests(manager, version)
+        for target, (number, line) in pinned.get(manager, {}).items():
+            if target not in digests:
+                raise VersionError(f"{manager} {version} publishes no digest for {target}")
+            pattern = re.compile(
+                rf"^(?P<head>\s*[^)]*\)\s+target={re.escape(target)};\s+digest=)[0-9a-f]{{64}}"
+                rf"(?P<tail>\s+;;\s*)$")
+            updated, count = pattern.subn(
+                lambda match: f"{match.group('head')}{digests[target]}{match.group('tail')}", line)
+            if count != 1:
+                raise VersionError(f"cannot rewrite the {manager} digest for {target}")
+            if updated != line:
+                changed.append(f"{manager} {target}")
+            lines[number] = updated + "\n"
+    path.write_text("".join(lines), encoding="utf-8")
+    return changed
+
+
+def verify_manager_digests(root: Path) -> None:
+    """Check that every pinned manager digest matches its pinned version."""
+    managers = root / "deployment/managers.sh"
+    pinned = manager_digest_rows(managers.read_text(encoding="utf-8"))
+    versions = {
+        "pixi": _read_constant(root / "deployment/common.sh", "PIXI_VERSION"),
+        "chezmoi": _read_constant(root / "deployment/managers.sh", "CHEZMOI_VERSION"),
+        "rustup": _read_constant(root / "deployment/common.sh", "RUSTUP_VERSION"),
+    }
+    for manager, version in versions.items():
+        rows = pinned.get(manager, {})
+        if set(rows) != set(MANAGER_DIGEST_SOURCES[manager]["targets"]):
+            raise VersionError(f"{manager} digest rows do not cover every supported target")
+        published = manager_digests(manager, version)
+        for target, (_, line) in rows.items():
+            digest = re.search(r"digest=([0-9a-f]{64})", line).group(1)
+            if digest != published[target]:
+                raise VersionError(
+                    f"{manager} {version} digest for {target} does not match the published release")
+
+
+def _python_constant(path: Path, name: str) -> str:
+    text = path.read_text(encoding="utf-8")
+    match = re.search(rf'^{re.escape(name)} = "([^"]+)"$', text, re.MULTILINE)
+    if not match:
+        raise VersionError(f"cannot read {name} from {path}")
+    return match.group(1)
+
+
+def _set_python_constant(path: Path, name: str, value: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(rf'^{re.escape(name)} = "[^"]+"$', re.MULTILINE)
+    updated, count = pattern.subn(f'{name} = "{value}"', text)
+    if count != 1:
+        raise VersionError(f"expected one {name} pin in {path}")
+    path.write_text(updated, encoding="utf-8")
 
 
 def bundle_versions(root: Path) -> dict[tuple[str, str], str]:
@@ -252,6 +398,16 @@ def check(root: Path) -> dict[str, int]:
     for asset_name, package in common_asset_pairs.items():
         if assets[asset_name]["version"] != common.get(package):
             raise VersionError(f"Windows {asset_name} exception and common {package} pins disagree")
+    history_module = root / "dot_local/lib/dotfiles/history.py"
+    history_pin = _python_constant(history_module, "ATUIN_PIN")
+    if history_pin != common.get("atuin"):
+        raise VersionError(
+            f"Atuin history importer pin {history_pin} and common atuin pin {common.get('atuin')} disagree")
+    pinned_digests = manager_digest_rows((root / "deployment/managers.sh").read_text(encoding="utf-8"))
+    for manager, source in MANAGER_DIGEST_SOURCES.items():
+        manager_rows = pinned_digests.get(manager, {})
+        if set(manager_rows) != set(source["targets"]):
+            raise VersionError(f"{manager} digest rows do not cover every supported target")
     for asset_name, constant, file_name in (
         ("pixi", "PIXI_VERSION", "common.sh"),
         ("rustup", "RUSTUP_VERSION", "common.sh"),
@@ -547,6 +703,15 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
         staged_deployment = stage / "deployment"
         _rewrite_tsv_pins(staged_deployment / "common-tools.tsv", proposal.get("common", {}), 1, "common")
         _rewrite_bundle_pins(staged_deployment / "bundle-tools.tsv", proposal.get("bundles", {}))
+        # The history importer verifies the storage layout of one Atuin release,
+        # so its pin follows the common catalog instead of drifting from it.
+        staged_history = stage / "dot_local/lib/dotfiles/history.py"
+        staged_history.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(root / "dot_local/lib/dotfiles/history.py", staged_history)
+        candidate_atuin = common_versions(stage).get("atuin")
+        if candidate_atuin is None:
+            raise VersionError("candidate common catalog is missing the Atuin pin")
+        _set_python_constant(staged_history, "ATUIN_PIN", candidate_atuin)
 
         manager_constants = {"pixi": ("PIXI_VERSION", "common.sh"),
                              "rustup": ("RUSTUP_VERSION", "common.sh"),
@@ -554,6 +719,9 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
         for manager, version in proposal.get("managers", {}).items():
             constant, filename = manager_constants[manager]
             _set_constant(staged_deployment / filename, constant, version)
+        # The version and the per-target digests are one pin: the digests move
+        # with the version they verify.
+        rewrite_manager_digests(staged_deployment / "managers.sh", proposal.get("managers", {}))
 
         assets_path = staged_deployment / "windows-assets.json"
         assets = json.loads(assets_path.read_text(encoding="utf-8"))
@@ -637,6 +805,9 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
             destination = root / relative
             if not destination.is_file() or candidate.read_bytes() != destination.read_bytes():
                 changed.append(relative)
+        history_relative = staged_history.relative_to(stage)
+        if staged_history.read_bytes() != (root / history_relative).read_bytes():
+            changed.append(history_relative)
         for relative in changed:
             source = stage / relative
             destination = root / relative
@@ -798,6 +969,7 @@ def main(argv: list[str] | None = None) -> int:
             check(root)
             if not arguments.bun:
                 raise VersionError("verify requires --bun /absolute/path/to/pinned-bun")
+            verify_manager_digests(root)
             verify_agent_engines(root)
             verify_bun_locks(root, arguments.bun.resolve())
             run_schema_tests(root)

@@ -108,6 +108,11 @@ explains every changed pair.
 - **macOS runs Zsh, not Bash**: macOS applies no Bash startup file and installs
   no managed Bash runtime. `dot_zprofile` is the Zsh login file and shares
   `~/.profile` with Bash's, because Zsh never reads `~/.profile` itself.
+- **A pinned version has one owner**: the catalog owns the version and the
+  digests that verify it move with it. `deployment/update_versions.py` refreshes
+  the manager digests when it bumps a manager version, and `check` fails when a
+  pinned target is missing. A version bump that leaves a digest, a runtime
+  version check, or a second catalog behind breaks the deployment.
 - **The exec-nu guard** in `dot_profile`/`dot_bashrc` stays POSIX-safe and
   fires only for a real interactive TTY outside a Claude Code session
   (rationale: `docs/CLAUDE_SETUP_T9K.md`).

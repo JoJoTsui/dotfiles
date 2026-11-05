@@ -30,10 +30,10 @@ install_pixi() {
     if [ -x "$DEPLOY_PIXI" ] && [ "$("$DEPLOY_PIXI" --version)" = "pixi $PIXI_VERSION" ]; then return; fi
     local target digest scratch
     case "$DEPLOY_PLATFORM-$DEPLOY_ARCH" in
-        linux-x86_64|wsl-x86_64) target=x86_64-unknown-linux-musl; digest=7aa3ec39aecceff9062fa2ed4d42cbaa0bdc25ddea727d048e061cf188d434f6 ;;
-        linux-aarch64|wsl-aarch64) target=aarch64-unknown-linux-musl; digest=9f8d2113fe9dc01788a65f5c2acec34fa56b1193461a5c3e9a775d6d2d621bcb ;;
-        macos-x86_64) target=x86_64-apple-darwin; digest=9859588ba57f390b5c77d56b2654fab37bc00e10952da25e3efd6e3434557e5a ;;
-        macos-aarch64) target=aarch64-apple-darwin; digest=f4e32ea91970d4e11739488817979a5f2c6ebbb9cedb0d6dea74b2b790b272dc ;;
+        linux-x86_64|wsl-x86_64) target=x86_64-unknown-linux-musl; digest=064f371e692aaa3400ac581c89da2843c91437f20c2d9155395a5d0037f33551 ;;
+        linux-aarch64|wsl-aarch64) target=aarch64-unknown-linux-musl; digest=d08403d8f048626ec93ba7b7c56e3b747a5f3a95c4e6e0c815ceb264f5f0b9ce ;;
+        macos-x86_64) target=x86_64-apple-darwin; digest=145e26ba860b5a08a2904ca4354cdfdcec1332a8f1d09ea08f1ec663c08e3ac8 ;;
+        macos-aarch64) target=aarch64-apple-darwin; digest=b46066fbaf931284a3f4a61d68e0eb352295f4b3ce4330315a3de3dc5da5736c ;;
         *) fail 'native Windows Pixi provisioning requires the PowerShell adapter' ;;
     esac
     scratch=$(mktemp -d "$TMPDIR/pixi.XXXXXX")
@@ -56,10 +56,10 @@ install_chezmoi() {
     if [ -x "$DEPLOY_CHEZMOI" ] && [[ "$("$DEPLOY_CHEZMOI" --version)" = *"v$CHEZMOI_VERSION,"* ]]; then return; fi
     local target digest scratch
     case "$DEPLOY_PLATFORM-$DEPLOY_ARCH" in
-        linux-x86_64|wsl-x86_64) target=linux_amd64; digest=b597729b687af4488a848240134cb633de8ca0f04e0d26d48f400ee2ac338ffa ;;
-        linux-aarch64|wsl-aarch64) target=linux_arm64; digest=abcb840401d3c1f2356e0f53f5d52aa10d10f572654d9626db9ad0ca4dc03355 ;;
-        macos-x86_64) target=darwin_amd64; digest=55e7b0823b40966a239cb418b37201c5f0961bab1b797c933550c97b1ab08221 ;;
-        macos-aarch64) target=darwin_arm64; digest=246679a0b200e7e8be4a951be3b95d37c33ecb87eaab5af6f4949f7d0317bcc1 ;;
+        linux-x86_64|wsl-x86_64) target=linux_amd64; digest=6e5827598cbfc02d132b04f95b5ea10efb5b79230e2a4a0e52df4af144a8ee9f ;;
+        linux-aarch64|wsl-aarch64) target=linux_arm64; digest=c9e6a6e71eb5291018e161a8426d7c313cd2e8553c2ca4029511fec2a33bc28c ;;
+        macos-x86_64) target=darwin_amd64; digest=d865487d6669243c948ee5542087bd95f4ad4ecb5a1311b85cf19f557694fe03 ;;
+        macos-aarch64) target=darwin_arm64; digest=ec2d0005f369c912ee9891a26c30d65dc0eda51708f06948e5f7a43db69e1aa7 ;;
         *) fail 'native Windows provisioning requires the PowerShell adapter' ;;
     esac
     scratch=$(mktemp -d "$TMPDIR/chezmoi.XXXXXX")
@@ -74,10 +74,10 @@ install_rustup() {
     local rustup="$CARGO_HOME/bin/rustup" target digest scratch
     if [ -x "$rustup" ] && [[ "$("$rustup" --version 2>/dev/null)" = "rustup $RUSTUP_VERSION "* ]]; then return; fi
     case "$DEPLOY_PLATFORM-$DEPLOY_ARCH" in
-        linux-x86_64|wsl-x86_64) target=x86_64-unknown-linux-gnu; digest=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71 ;;
-        linux-aarch64|wsl-aarch64) target=aarch64-unknown-linux-gnu; digest=15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433 ;;
-        macos-x86_64) target=x86_64-apple-darwin; digest=259e2b84274434085163fe8d556510571772cda2aa6d87ca6aa664f57bc644e3 ;;
-        macos-aarch64) target=aarch64-apple-darwin; digest=ec1b9233e7f72990ecd8e62063fa7f6c3dfc2bec8e97f88bff165f9100ac696a ;;
+        linux-x86_64|wsl-x86_64) target=x86_64-unknown-linux-gnu; digest=5be191e8c70a5007074254cb74d78dbfdd25cd5a61c27de7b8e5410122ec24f4 ;;
+        linux-aarch64|wsl-aarch64) target=aarch64-unknown-linux-gnu; digest=a9c168dbea81a84671c6b7a5c1795cb0eb699020110d107ddfca427bd797e697 ;;
+        macos-x86_64) target=x86_64-apple-darwin; digest=b9610730ddeef52765723847866fd1e3540b2bf7d5ab0c324aa143a5edf25ba0 ;;
+        macos-aarch64) target=aarch64-apple-darwin; digest=f7c7e11eb2e07f006e532a8aaac77b32f4527d305ac386c0c633ca6133d35ca9 ;;
         *) fail 'native Windows rustup provisioning requires the PowerShell adapter' ;;
     esac
     scratch=$(mktemp -d "$TMPDIR/rustup.XXXXXX")

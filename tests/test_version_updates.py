@@ -8,10 +8,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from deployment.update_versions import (
+    MANAGER_DIGEST_SOURCES,
     VersionError,
     agent_rows,
     check,
     common_versions,
+    manager_digest_rows,
     native_agent_rows,
     node_satisfies,
     propose_agents,
@@ -28,6 +30,10 @@ class VersionUpdateTests(unittest.TestCase):
         self.root = Path(self.temporary.name) / "repo"
         shutil.copytree(SOURCE / "deployment", self.root / "deployment",
                         ignore=shutil.ignore_patterns("agent-payload"))
+        # The catalog owns the Atuin pin the history importer verifies.
+        history = self.root / "dot_local/lib/dotfiles/history.py"
+        history.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / "dot_local/lib/dotfiles/history.py", history)
 
     def proposal(self, value):
         path = Path(self.temporary.name) / "proposal.json"
@@ -103,6 +109,32 @@ class VersionUpdateTests(unittest.TestCase):
         self.assertEqual(native_agent_rows(self.root)[name]["version"], "99.1.0")
         self.assertFalse((self.root / "deployment/agents/qoder").exists())
 
+    def test_manager_refresh_moves_the_digests_with_the_version(self):
+        digests = {target: "a" * 64 for target in MANAGER_DIGEST_SOURCES["chezmoi"]["targets"]}
+        with patch("deployment.update_versions.manager_digests", return_value=digests) as published:
+            candidate = self.proposal({
+                "managers": {"chezmoi": "99.1.0"},
+                "windowsAssets": {"chezmoi": {
+                    "version": "99.1.0", "url": "https://example.invalid/chezmoi-99.1.0.zip",
+                    "sha256": "a" * 64,
+                }},
+            })
+            changed = refresh(self.root, candidate, Path("unused"))
+        self.assertIn(Path("deployment/managers.sh"), changed)
+        published.assert_called_once_with("chezmoi", "99.1.0")
+        rows = manager_digest_rows((self.root / "deployment/managers.sh").read_text(encoding="utf-8"))
+        self.assertEqual(set(rows["chezmoi"]), set(digests))
+        for line in rows["chezmoi"].values():
+            self.assertIn("a" * 64, line[1])
+
+    def test_a_manager_without_every_target_digest_is_rejected(self):
+        managers = self.root / "deployment/managers.sh"
+        text = managers.read_text(encoding="utf-8")
+        managers.write_text(text.replace(
+            "        macos-aarch64) target=aarch64-apple-darwin; digest=", "        macos-aarch64) target=aarch64-apple-darwin; skipped=", 1))
+        with self.assertRaisesRegex(VersionError, "digest rows do not cover every supported target"):
+            check(self.root)
+
     def test_propose_agents_reports_only_changed_pins(self):
         def latest(package):
             if package == "@moonshot-ai/kimi-code":
@@ -126,7 +158,9 @@ class VersionUpdateTests(unittest.TestCase):
                 "sha256": "a" * 64,
             }},
         })
-        changed = refresh(self.root, proposal, Path("unused"))
+        digests = {target: "b" * 64 for target in MANAGER_DIGEST_SOURCES["pixi"]["targets"]}
+        with patch("deployment.update_versions.manager_digests", return_value=digests):
+            changed = refresh(self.root, proposal, Path("unused"))
         self.assertIn(Path("deployment/common.sh"), changed)
         self.assertIn(Path("deployment/windows-assets.json"), changed)
         self.assertIn("PIXI_VERSION=0.82.0", (self.root / "deployment/common.sh").read_text())

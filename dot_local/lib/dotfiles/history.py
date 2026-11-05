@@ -17,6 +17,11 @@ import time
 import tomllib
 import uuid
 
+# The Atuin release whose storage layout the importer below is verified
+# against. The deployment catalog owns this version; deployment/update_versions.py
+# keeps the two in step so a catalog bump cannot leave the importer behind.
+ATUIN_PIN = "18.24.1"
+
 
 class HistoryError(Exception):
     pass
@@ -311,8 +316,8 @@ def import_history(atuin, kind, source):
             print(f"history: {kind} already imported; no changes")
             return
         version = run_atuin(atuin, ["--version"]).strip()
-        if version.split()[:2] != ["atuin", "18.23.0"]:
-            raise HistoryError("migration requires the verified Atuin 18.23.0 pin")
+        if version.split()[:2] != ["atuin", ATUIN_PIN]:
+            raise HistoryError(f"migration requires the verified Atuin {ATUIN_PIN} pin")
         config_file = Path(os.environ["ATUIN_CONFIG_DIR"]) / "config.toml"
         settings = tomllib.loads(config_file.read_text())
         with tempfile.TemporaryDirectory(prefix=".import-", dir=data) as temporary:
