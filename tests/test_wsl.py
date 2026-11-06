@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -163,7 +164,7 @@ class WSLDeploymentTests(unittest.TestCase):
                                               cwd=self.home, capture_output=True, text=True, timeout=30)
                     self.assertEqual(prepared.returncode, 0, prepared.stderr)
                 report = self.root / f"nu-startup-{role}.json"
-                probe = subprocess.run(["python3", str(SOURCE / "tests/native/wsl.py"), "--probe-nu",
+                probe = subprocess.run([sys.executable, str(SOURCE / "tests/native/wsl.py"), "--probe-nu",
                                         "--home", str(self.home), "--role", role, "--report", str(report)],
                                        env=environment, cwd=self.home, capture_output=True, text=True, timeout=30)
                 self.assertEqual(probe.returncode, 0, probe.stderr)
@@ -223,7 +224,7 @@ class WSLNativeBoundaryTests(unittest.TestCase):
             self.skipTest("this check demonstrates that ordinary Linux cannot establish a WSL pass")
         home = self.root / "validation-home"
         report = self.root / "native-wsl.json"
-        result = subprocess.run(["python3", str(SOURCE / "tests/native/wsl.py"), "--verify",
+        result = subprocess.run([sys.executable, str(SOURCE / "tests/native/wsl.py"), "--verify",
                                  "--home", str(home), "--report", str(report)],
                                 env={"HOME": str(self.root), "PATH": "/usr/bin:/bin"},
                                 capture_output=True, text=True, timeout=30)
