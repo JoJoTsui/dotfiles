@@ -3,9 +3,11 @@ FROM ${BASE_IMAGE}
 
 ARG UBUNTU_RELEASE
 ENV DEBIAN_FRONTEND=noninteractive
+# System Python/Zsh support isolated fixture scripts; the controller and the
+# deployment under test still provision their own catalog-pinned runtimes.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        bash ca-certificates curl git bzip2 xz-utils unzip procps util-linux iproute2 ruby \
+        bash ca-certificates curl git bzip2 xz-utils unzip procps util-linux iproute2 ruby python3 zsh \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --uid 10001 --create-home --shell /bin/bash verifier
 

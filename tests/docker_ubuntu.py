@@ -156,7 +156,7 @@ def main():
                            '--env', 'DOTFILES_TEST_EXECUTION_MODE=' + execution,
                            '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
                            '--mount', 'type=volume,source=' + volume + ',target=/home/verifier',
-                           '--tmpfs', '/tmp:rw,nosuid,nodev,size=2g', image],
+                           '--tmpfs', '/tmp:rw,exec,nosuid,nodev,size=2g', image],
                           case / 'container.log', env=env, timeout=14400)
             row.update(exit_code=code, elapsed_seconds=round(time.monotonic() - started, 3))
             if code == 124:
