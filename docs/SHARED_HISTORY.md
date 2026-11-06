@@ -77,8 +77,9 @@ format leaves history unchanged. If local record initialization fails after
 accepted entries transfer, the failure is visible and `dotfiles-history sync`
 can finish Atuin's automatic store initialization without importing again.
 
-The transfer is deliberately tied to the Atuin pin in the common catalog and
-verified importer. It refuses other versions
+The transfer reads the catalog-owned Atuin pin rendered into
+`$XDG_CONFIG_HOME/dotfiles/profile.json` as `atuinVersion`. Migration requires
+this deployed metadata and refuses other versions
 and unequal native history schemas. This small SQLite transfer is needed to
 retain metadata because the public command-text export cannot do so. An Atuin
 update must rerun migration and encrypted sync tests before changing this pin.

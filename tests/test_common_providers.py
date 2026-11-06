@@ -1,5 +1,5 @@
 """Common command adoption, isolation, and transitions back to Pixi."""
-import ast
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -175,16 +175,15 @@ class CommonProviderTests(unittest.TestCase):
         components = pin.split(".")
         older = ".".join(components[:-1] + [str(int(components[-1]) - 1)])
         newer = ".".join(components[:-1] + [str(int(components[-1]) + 1)])
+        profile = self.home / ".config/dotfiles/profile.json"
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_text(json.dumps({"atuinVersion": pin}))
         return pin, older, newer
 
     def assert_history_compatible_atuin(self):
         # The consumer's schema guard is intentionally exact. Check the actual
         # selected launcher against it without importing or reading any history.
-        tree = ast.parse((SOURCE / "dot_local/lib/dotfiles/history.py").read_text())
-        importer_pin = next(ast.literal_eval(node.value) for node in tree.body
-                            if isinstance(node, ast.Assign)
-                            and any(isinstance(target, ast.Name) and target.id == "ATUIN_PIN"
-                                    for target in node.targets))
+        importer_pin = json.loads((self.home / ".config/dotfiles/profile.json").read_text())["atuinVersion"]
         diagnostic = subprocess.check_output(
             [str(self.home / ".local/bin/atuin"), "--version"], text=True)
         self.assertEqual(diagnostic.split()[:2], ["atuin", importer_pin])

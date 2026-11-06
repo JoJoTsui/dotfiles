@@ -1,6 +1,8 @@
 """Local tests for the proposal-driven version refresh transaction."""
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -30,10 +32,6 @@ class VersionUpdateTests(unittest.TestCase):
         self.root = Path(self.temporary.name) / "repo"
         shutil.copytree(SOURCE / "deployment", self.root / "deployment",
                         ignore=shutil.ignore_patterns("agent-payload"))
-        # The catalog owns the Atuin pin the history importer verifies.
-        history = self.root / "dot_local/lib/dotfiles/history.py"
-        history.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(SOURCE / "dot_local/lib/dotfiles/history.py", history)
 
     def proposal(self, value):
         path = Path(self.temporary.name) / "proposal.json"
@@ -64,6 +62,48 @@ class VersionUpdateTests(unittest.TestCase):
         self.assertNotEqual(original, common_versions(self.root)["uv"])
         self.assertEqual(check(self.root)["commonPins"], check(SOURCE)["commonPins"])
         self.assertEqual(refresh(self.root, self.proposal({"common": {"uv": "99.1.0"}}), Path("unused")), [])
+
+    def test_atuin_refresh_changes_catalogs_without_an_importer_source(self):
+        self.assertFalse((self.root / "dot_local/lib/dotfiles/history.py").exists())
+        candidate = self.proposal({
+            "common": {"atuin": "99.1.0"},
+            "windowsAssets": {"atuin": {
+                "version": "99.1.0", "url": "https://example.invalid/atuin-99.1.0.zip",
+                "sha256": "a" * 64,
+            }},
+        })
+        changed = refresh(self.root, candidate, Path("unused"))
+        self.assertEqual(set(changed), {Path("deployment/common-tools.tsv"),
+                                        Path("deployment/windows-assets.json")})
+        self.assertEqual(common_versions(self.root)["atuin"], "99.1.0")
+        self.assertEqual(refresh(self.root, candidate, Path("unused")), [])
+
+    def test_profile_renders_catalog_atuin_pin_for_every_platform(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("profile rendering requires chezmoi")
+        catalog = self.root / "deployment/common-tools.tsv"
+        original = common_versions(self.root)["atuin"]
+        catalog.write_text(catalog.read_text().replace(f"atuin=={original}", "atuin==99.1.0"))
+        config = self.root / "chezmoi.toml"
+        config.write_text("")
+        template = (SOURCE / "dot_config/dotfiles/profile.json.tmpl").read_text()
+        importer = SOURCE / "dot_local/lib/dotfiles/history.py"
+        before = importer.read_bytes()
+        for platform in ("linux", "macos", "windows"):
+            with self.subTest(platform=platform):
+                result = subprocess.run([
+                    chezmoi, "--source", str(self.root), "--destination", str(self.root / "home"),
+                    "--config", str(config), "--cache", str(self.root / "cache"),
+                    "--persistent-state", str(self.root / "state.boltdb"),
+                    "--override-data", json.dumps({"platform": platform, "role": "workstation",
+                                                     "arch": "aarch64", "bundles": []}),
+                    "execute-template", template,
+                ], env={"HOME": str(self.root / "original"), "PATH": os.defpath},
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)["atuinVersion"], "99.1.0")
+        self.assertEqual(importer.read_bytes(), before)
 
     def test_agent_refresh_updates_catalog_manifest_and_lock_using_isolated_bun(self):
         name = "pi"

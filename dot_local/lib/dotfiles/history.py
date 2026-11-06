@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -16,11 +17,6 @@ import tempfile
 import time
 import tomllib
 import uuid
-
-# The Atuin release whose storage layout the importer below is verified
-# against. The deployment catalog owns this version; deployment/update_versions.py
-# keeps the two in step so a catalog bump cannot leave the importer behind.
-ATUIN_PIN = "18.24.1"
 
 
 class HistoryError(Exception):
@@ -326,9 +322,19 @@ def import_history(atuin, kind, source):
         if marker.exists():
             print(f"history: {kind} already imported; no changes")
             return
+        # Deployment renders the catalog-owned schema pin for this device.
+        # Account setup, status and source listing do not require this metadata.
+        profile = Path(os.environ["XDG_CONFIG_HOME"]) / "dotfiles/profile.json"
+        reject_symlinks(profile)
+        try:
+            pin = json.loads(profile.read_text())["atuinVersion"]
+        except (OSError, ValueError, KeyError, TypeError):
+            raise HistoryError("deployed Atuin version is missing or invalid; reapply dotfiles") from None
+        if not isinstance(pin, str) or not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+_~-]*", pin):
+            raise HistoryError("deployed Atuin version is missing or invalid; reapply dotfiles")
         version = run_atuin(atuin, ["--version"]).strip()
-        if version.split()[:2] != ["atuin", ATUIN_PIN]:
-            raise HistoryError(f"migration requires the verified Atuin {ATUIN_PIN} pin")
+        if version.split()[:2] != ["atuin", pin]:
+            raise HistoryError(f"migration requires the verified Atuin {pin} pin")
         config_file = Path(os.environ["ATUIN_CONFIG_DIR"]) / "config.toml"
         settings = tomllib.loads(config_file.read_text())
         with tempfile.TemporaryDirectory(prefix=".import-", dir=data) as temporary:

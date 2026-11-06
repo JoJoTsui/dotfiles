@@ -1,8 +1,17 @@
+{{- $atuinVersion := "" -}}
+{{- range splitList "\n" (include "deployment/common-tools.tsv") -}}
+{{- $fields := splitList "|" . -}}
+{{- if eq (index $fields 0) "atuin" -}}
+{{- $atuinVersion = trimPrefix "atuin==" (index $fields 1) -}}
+{{- end -}}
+{{- end -}}
+{{- if eq $atuinVersion "" }}{{ fail "common catalog is missing the Atuin pin" }}{{ end -}}
 {
   "platform": {{ .platform | toJson }},
   "role": {{ .role | toJson }},
   "arch": {{ .arch | toJson }},
   "profile": {{ printf "%s-%s" .platform .role | toJson }},
   "bundles": {{ .bundles | toJson }},
+  "atuinVersion": {{ $atuinVersion | toJson }},
   "mode": "copy"
 }

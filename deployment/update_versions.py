@@ -199,23 +199,6 @@ def verify_manager_digests(root: Path) -> None:
                     f"{manager} {version} digest for {target} does not match the published release")
 
 
-def _python_constant(path: Path, name: str) -> str:
-    text = path.read_text(encoding="utf-8")
-    match = re.search(rf'^{re.escape(name)} = "([^"]+)"$', text, re.MULTILINE)
-    if not match:
-        raise VersionError(f"cannot read {name} from {path}")
-    return match.group(1)
-
-
-def _set_python_constant(path: Path, name: str, value: str) -> None:
-    text = path.read_text(encoding="utf-8")
-    pattern = re.compile(rf'^{re.escape(name)} = "[^"]+"$', re.MULTILINE)
-    updated, count = pattern.subn(f'{name} = "{value}"', text)
-    if count != 1:
-        raise VersionError(f"expected one {name} pin in {path}")
-    path.write_text(updated, encoding="utf-8")
-
-
 def bundle_versions(root: Path) -> dict[tuple[str, str], str]:
     versions: dict[tuple[str, str], str] = {}
     for row in rows(root / "deployment/bundle-tools.tsv", 6):
@@ -398,11 +381,6 @@ def check(root: Path) -> dict[str, int]:
     for asset_name, package in common_asset_pairs.items():
         if assets[asset_name]["version"] != common.get(package):
             raise VersionError(f"Windows {asset_name} exception and common {package} pins disagree")
-    history_module = root / "dot_local/lib/dotfiles/history.py"
-    history_pin = _python_constant(history_module, "ATUIN_PIN")
-    if history_pin != common.get("atuin"):
-        raise VersionError(
-            f"Atuin history importer pin {history_pin} and common atuin pin {common.get('atuin')} disagree")
     pinned_digests = manager_digest_rows((root / "deployment/managers.sh").read_text(encoding="utf-8"))
     for manager, source in MANAGER_DIGEST_SOURCES.items():
         manager_rows = pinned_digests.get(manager, {})
@@ -703,16 +681,6 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
         staged_deployment = stage / "deployment"
         _rewrite_tsv_pins(staged_deployment / "common-tools.tsv", proposal.get("common", {}), 1, "common")
         _rewrite_bundle_pins(staged_deployment / "bundle-tools.tsv", proposal.get("bundles", {}))
-        # The history importer verifies the storage layout of one Atuin release,
-        # so its pin follows the common catalog instead of drifting from it.
-        staged_history = stage / "dot_local/lib/dotfiles/history.py"
-        staged_history.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(root / "dot_local/lib/dotfiles/history.py", staged_history)
-        candidate_atuin = common_versions(stage).get("atuin")
-        if candidate_atuin is None:
-            raise VersionError("candidate common catalog is missing the Atuin pin")
-        _set_python_constant(staged_history, "ATUIN_PIN", candidate_atuin)
-
         manager_constants = {"pixi": ("PIXI_VERSION", "common.sh"),
                              "rustup": ("RUSTUP_VERSION", "common.sh"),
                              "chezmoi": ("CHEZMOI_VERSION", "managers.sh")}
@@ -805,9 +773,6 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
             destination = root / relative
             if not destination.is_file() or candidate.read_bytes() != destination.read_bytes():
                 changed.append(relative)
-        history_relative = staged_history.relative_to(stage)
-        if staged_history.read_bytes() != (root / history_relative).read_bytes():
-            changed.append(history_relative)
         for relative in changed:
             source = stage / relative
             destination = root / relative

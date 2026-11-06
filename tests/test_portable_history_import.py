@@ -1,4 +1,5 @@
 """Explicit-file history migration observed through the public CLI and Atuin."""
+import json
 import os
 from contextlib import closing
 from pathlib import Path
@@ -8,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from pins import common_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
 ATUIN = os.environ.get('DOTFILES_TEST_ATUIN')
@@ -24,6 +26,12 @@ class PortableHistoryImportTests(unittest.TestCase):
         self.config = self.home / '.config/atuin'
         self.config.mkdir(parents=True)
         shutil.copyfile(SOURCE / 'dot_config/atuin/config.toml', self.config / 'config.toml')
+        self.profile = self.home / '.config/dotfiles/profile.json'
+        self.profile.parent.mkdir(parents=True)
+        self.profile.write_text(json.dumps({'atuinVersion': common_pin('atuin')}))
+        self.module = self.home / '.local/lib/dotfiles/history.py'
+        self.module.parent.mkdir(parents=True)
+        shutil.copyfile(SOURCE / 'dot_local/lib/dotfiles/history.py', self.module)
         self.env = {key: value for key, value in os.environ.items() if not key.startswith(('ATUIN_', 'XDG_', 'DOTFILES_'))}
         self.env.update(HOME=str(self.home), USERPROFILE=str(self.home), APPDATA=str(self.home / 'AppData/Roaming'),
                         LOCALAPPDATA=str(self.home / 'AppData/Local'), XDG_CONFIG_HOME=str(self.home / '.config'),
@@ -43,12 +51,54 @@ class PortableHistoryImportTests(unittest.TestCase):
         self.atuin = binary
 
     def history(self, *arguments):
-        return subprocess.run([PYTHON, str(SOURCE / 'dot_local/lib/dotfiles/history.py'), *arguments],
+        return subprocess.run([PYTHON, str(self.module), *arguments],
                               env=self.env, capture_output=True, text=True, timeout=60)
 
     def search(self, token):
         return subprocess.run([str(self.atuin), 'search', '--cmd-only', '--search-mode', 'fulltext', token],
                               env=self.env, capture_output=True, text=True, timeout=30)
+
+    def test_import_reads_deployed_pin_and_checks_actual_version(self):
+        selected = self.root / 'selected-history.txt'
+        selected.write_text('echo deployed-pin-token\n')
+        self.profile.write_text(json.dumps({'atuinVersion': '99.1.0'}))
+        result = self.history('import', 'nu-file', '--file', str(selected))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('verified Atuin 99.1.0 pin', result.stderr)
+        self.assertFalse((self.home / '.local/share/atuin/history.db').exists())
+        self.assertFalse((self.home / '.local/share/atuin/dotfiles-imports/nu.json').exists())
+        self.assertEqual(selected.read_text(), 'echo deployed-pin-token\n')
+        self.profile.write_text(json.dumps({'atuinVersion': common_pin('atuin')}))
+        result = self.history('import', 'nu-file', '--file', str(selected))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('deployed-pin-token', self.search('deployed-pin-token').stdout)
+
+    def test_import_rejects_missing_or_malformed_deployed_pin(self):
+        selected = self.root / 'selected-history.txt'
+        selected.write_text('echo unverified-pin-token\n')
+        for metadata in (None, 'not JSON', '[]', '{}', '{"atuinVersion": null}',
+                         '{"atuinVersion": 18}', '{"atuinVersion": ""}',
+                         '{"atuinVersion": "not a version"}'):
+            with self.subTest(metadata=metadata):
+                if metadata is None:
+                    self.profile.unlink()
+                else:
+                    self.profile.write_text(metadata)
+                result = self.history('import', 'nu-file', '--file', str(selected))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('deployed Atuin version', result.stderr)
+                self.assertNotIn('Traceback', result.stderr)
+                self.assertFalse((self.home / '.local/share/atuin/history.db').exists())
+                self.assertFalse((self.home / '.local/share/atuin/dotfiles-imports/nu.json').exists())
+                self.assertEqual(selected.read_text(), 'echo unverified-pin-token\n')
+
+    def test_non_migration_commands_do_not_require_deployed_pin(self):
+        self.profile.unlink()
+        for arguments in (('check',), ('status',), ('import',)):
+            with self.subTest(command=arguments):
+                result = self.history(*arguments)
+                self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.home / '.local/share/atuin/history.db').exists())
 
     def nu_source(self, directory, kind, token):
         directory.mkdir(parents=True, exist_ok=True)
