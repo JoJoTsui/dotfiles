@@ -93,8 +93,14 @@ def default_sources():
     home = Path(os.environ["HOME"])
     config = Path(os.environ["XDG_CONFIG_HOME"])
     nu_config = Path(os.environ.get("APPDATA", str(config))) if os.name == "nt" else config
-    return {"bash": home / ".bash_history", "zsh": home / ".zsh_history",
-            "nu": nu_config / "nushell/history.txt", "nu-db": nu_config / "nushell/history.sqlite3"}
+    nu_roots = [nu_config / "nushell"]
+    if sys.platform == "darwin":
+        # Existing histories can predate the managed XDG startup boundary.
+        nu_roots.append(home / "Library/Application Support/nushell")
+    nu_roots = tuple(dict.fromkeys(nu_roots))
+    return {"bash": (home / ".bash_history",), "zsh": (home / ".zsh_history",),
+            "nu": tuple(root / "history.txt" for root in nu_roots),
+            "nu-db": tuple(root / "history.sqlite3" for root in nu_roots)}
 
 
 def status(atuin):
@@ -285,8 +291,9 @@ def import_nu_file(atuin, kind, source, database, environment):
 def import_history(atuin, kind, source):
     if kind is None:
         print("Choose an explicit one-time import: dotfiles-history import FORMAT [--file PATH]")
-        for name, path in default_sources().items():
-            print(f"{name}: {'available' if path.is_file() else 'not found'} ({path})")
+        for name, candidates in default_sources().items():
+            for path in candidates:
+                print(f"{name}: {'available' if path.is_file() else 'not found'} ({path})")
         print("Nothing imported. Nu text and SQLite use different importers; select each needed format.")
         return
     portable_nu = kind in ("nu-file", "nu-db-file") or (os.name == "nt" and kind in ("nu", "nu-db"))
@@ -302,9 +309,13 @@ def import_history(atuin, kind, source):
     if marker.exists():
         print(f"history: {kind} already imported; no changes")
         return
-    source = Path(source) if source else default_sources()[kind]
-    if not source.is_file():
+    candidates = (Path(source),) if source else default_sources()[kind]
+    available = [path for path in candidates if path.is_file()]
+    if len(available) > 1:
+        raise HistoryError(f"multiple history files found for {kind}; select --file PATH")
+    if not available:
         raise HistoryError(f"history file not found for {kind}; select --file PATH")
+    source = available[0]
     lock = imports / f"{kind}.lock"
     reject_symlinks(lock)
     try:

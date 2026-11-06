@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -48,6 +49,58 @@ class PortableHistoryImportTests(unittest.TestCase):
     def search(self, token):
         return subprocess.run([str(self.atuin), 'search', '--cmd-only', '--search-mode', 'fulltext', token],
                               env=self.env, capture_output=True, text=True, timeout=30)
+
+    def nu_source(self, directory, kind, token):
+        directory.mkdir(parents=True, exist_ok=True)
+        source = directory / ('history.txt' if kind == 'nu' else 'history.sqlite3')
+        if kind == 'nu':
+            source.write_text(f'echo {token}\n')
+        else:
+            with closing(sqlite3.connect(source)) as connection:
+                with connection:
+                    connection.execute('CREATE TABLE history(id INTEGER, command_line BLOB, start_timestamp INTEGER, '
+                                       'session_id INTEGER, hostname BLOB, cwd BLOB, duration_ms INTEGER, exit_status INTEGER, more_info BLOB)')
+                    connection.execute('INSERT INTO history VALUES(1, ?, 1700000000123, 1, ?, ?, 42, 0, ?)',
+                                       (f'echo {token}'.encode(), b'fixture-host', b'/fixture', b''))
+        return source
+
+    def assert_default_nu_imports(self, directory):
+        for kind in ('nu', 'nu-db'):
+            with self.subTest(format=kind):
+                token = f'default-{kind}-token'
+                source = self.nu_source(directory, kind, token)
+                original = source.read_bytes()
+                imported = self.history('import', kind)
+                self.assertEqual(imported.returncode, 0, imported.stderr)
+                self.assertIn(f'imported 1 filtered {kind} entries', imported.stdout)
+                self.assertIn(token, self.search(token).stdout)
+                self.assertEqual(source.read_bytes(), original)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'native macOS history discovery')
+    def test_macos_nu_defaults_import_the_only_native_history(self):
+        self.assert_default_nu_imports(self.home / 'Library/Application Support/nushell')
+
+    @unittest.skipUnless(os.name == 'posix', 'Windows Nu migration requires explicit --file')
+    def test_nu_defaults_import_the_only_xdg_history(self):
+        self.assert_default_nu_imports(self.home / '.config/nushell')
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'native macOS history discovery')
+    def test_macos_explicit_nu_file_selects_one_of_two_default_histories(self):
+        for kind in ('nu', 'nu-db'):
+            with self.subTest(format=kind):
+                selected = self.nu_source(self.home / 'Library/Application Support/nushell', kind, f'selected-{kind}-token')
+                other = self.nu_source(self.home / '.config/nushell', kind, f'unselected-{kind}-token')
+                originals = {path: path.read_bytes() for path in (selected, other)}
+                ambiguous = self.history('import', kind)
+                self.assertNotEqual(ambiguous.returncode, 0)
+                self.assertIn('select --file PATH', ambiguous.stderr)
+                imported = self.history('import', kind, '--file', str(selected))
+                self.assertEqual(imported.returncode, 0, imported.stderr)
+                self.assertIn(f'imported 1 filtered {kind} entries', imported.stdout)
+                self.assertIn(f'echo selected-{kind}-token', self.search(f'selected-{kind}-token').stdout)
+                self.assertEqual(self.search(f'unselected-{kind}-token').stdout, '')
+                for path, original in originals.items():
+                    self.assertEqual(path.read_bytes(), original)
 
     def test_explicit_nu_text_uses_only_selected_file_and_filters_before_activation(self):
         selected = self.root / 'selected-history.txt'

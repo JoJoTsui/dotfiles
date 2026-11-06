@@ -54,6 +54,12 @@ dotfiles-history import nu --file /path/to/history.txt
 dotfiles-history import nu-db --file /path/to/history.sqlite3
 ```
 
+On macOS, Nu discovery checks both the configured XDG location and
+`~/Library/Application Support/nushell`. A format can use its default when
+exactly one source exists. If both locations contain that format, select
+`--file PATH`; the helper does not choose between them. An explicit file also
+supports custom Nu history locations.
+
 The explicit format selects Atuin's native importer; Nu SQLite uses
 `nu-hist-db`. The pinned Nu importers ignore `HISTFILE`, so the helper snapshots
 only the selected file into isolated native discovery paths. SQLite backup
