@@ -120,7 +120,8 @@ class LinuxSnapshotAndVersionTests(unittest.TestCase):
             for path in (metadata, skill):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("fixture")
-            with mock.patch.object(native_linux, "snapshot_fingerprint", return_value={"sha256": "fixture"}):
+            with mock.patch.object(native_linux, "source_managed_paths", return_value=set()), \
+                    mock.patch.object(native_linux, "snapshot_fingerprint", return_value={"sha256": "fixture"}):
                 snapshot = native_linux.snapshot(home, {"packages": [{"exposed": {"nu": "nu"}}], "agentPackages": []})
             self.assertNotIn(str(metadata.relative_to(home)), snapshot)
             self.assertIn(".pixi/bin/nu", snapshot)
@@ -177,6 +178,87 @@ class LinuxSnapshotAndVersionTests(unittest.TestCase):
                     metadata.write_text(json.dumps(values))
                     with self.assertRaisesRegex(RuntimeError, "outside its owned prefix"):
                         native_linux.trampoline_metadata(home, plan)
+
+
+class LinuxOwnedSnapshotTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="dotfiles-owned-snapshot-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.home = self.root / "device with spaces"
+        self.source = self.root / "source"
+        payload = self.source / "deployment/agent-payload/targets.tsv"
+        payload.parent.mkdir(parents=True)
+        payload.write_text("file|RTK.md|.agents/RTK.md\nfile|CLIENTS.md|.agents/CLIENTS.md\n"
+                           "block|AGENTS.md|.codex/AGENTS.md\nretire|AGENTS.md|.retired/AGENTS.md\n"
+                           "tree|skills|.agents/skills\n")
+        clients = self.source / "deployment/client-settings/targets.tsv"
+        clients.parent.mkdir(parents=True)
+        clients.write_text("yaml|client.yaml|.caveman/caveman.yaml|client\n")
+        self.source_patch = mock.patch.object(native_linux, "SOURCE", self.source)
+        self.source_patch.start()
+        self.addCleanup(self.source_patch.stop)
+        self.owned = tuple(str(Path(name)) for name in (
+            ".config/atuin/config.toml", ".gitconfig", ".agents/RTK.md", ".agents/CLIENTS.md",
+            ".codex/AGENTS.md", ".caveman/caveman.yaml", ".agents/skills/demo/SKILL.md"))
+        for relative in self.owned:
+            path = self.home / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("original configuration\n")
+        binary = self.home / ".local/bin/chezmoi"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("fixture manager")
+        query = mock.patch.object(native_linux.subprocess, "run", return_value=mock.Mock(
+            stdout=b".config/atuin/config.toml\0.gitconfig\0"))
+        self.query = query.start()
+        self.addCleanup(query.stop)
+        self.plan = {"packages": [], "agentPackages": []}
+
+    def test_source_inventory_uses_the_isolated_boundary_and_lists_missing_targets(self):
+        target = self.home / ".config/atuin/config.toml"
+        target.unlink()
+        self.assertIn(target, native_linux.source_managed_paths(self.home))
+        arguments = self.query.call_args.args[0]
+        for flag, expected in (("--source", self.source), ("--destination", self.home),
+                               ("--config", self.home / ".config/chezmoi/chezmoi.toml"),
+                               ("--cache", self.home / ".cache/chezmoi"),
+                               ("--persistent-state", self.home / ".config/chezmoi/chezmoistate.boltdb")):
+            self.assertEqual(arguments[arguments.index(flag) + 1], str(expected))
+        self.assertEqual(arguments[-4:], ["managed", "--include=files", "--path-style=relative", "--nul-path-separator"])
+
+    def test_changes_to_source_payload_and_merged_owned_configuration_change_snapshot(self):
+        before = native_linux.snapshot(self.home, self.plan)
+        self.assertTrue(set(self.owned).issubset(before))
+        self.assertNotIn(str(Path(".retired/AGENTS.md")), before)
+        for relative in self.owned:
+            with self.subTest(path=relative):
+                path = self.home / relative
+                original = path.read_bytes()
+                path.write_text("altered configuration\n")
+                after = native_linux.snapshot(self.home, self.plan)
+                self.assertNotEqual(before[relative], after[relative])
+                path.write_bytes(original)
+
+    def test_removed_source_owned_configuration_fails_instead_of_disappearing_from_snapshot(self):
+        (self.home / ".config/atuin/config.toml").unlink()
+        with self.assertRaises(RuntimeError) as caught:
+            native_linux.snapshot(self.home, self.plan)
+        self.assertIn(str(Path(".config/atuin/config.toml")), str(caught.exception))
+
+    def test_owned_configuration_mode_changes_are_recorded(self):
+        path = self.home / ".agents/RTK.md"
+        path.chmod(0o600)
+        before = native_linux.snapshot(self.home, self.plan)
+        path.chmod(0o644)
+        after = native_linux.snapshot(self.home, self.plan)
+        self.assertNotEqual(before[str(Path(".agents/RTK.md"))], after[str(Path(".agents/RTK.md"))])
+
+    def test_source_inventory_rejects_paths_outside_the_selected_home(self):
+        for name in (b"../outside\0", b"/outside\0"):
+            with self.subTest(name=name):
+                self.query.return_value.stdout = name
+                with self.assertRaisesRegex(RuntimeError, "invalid source-owned path"):
+                    native_linux.source_managed_paths(self.home)
 
 
 class LinuxIsolationTests(unittest.TestCase):

@@ -325,30 +325,47 @@ def trampoline_metadata(home, plan):
     return captured
 
 
-def snapshot(home, plan):
+def source_managed_paths(home):
+    # Chezmoi owns source-name mapping, ignore rules and profile selection.
+    # Its inventory lists desired paths even when a target has been removed.
+    result = subprocess.run([
+        str(home / ".local/bin/chezmoi"), "--source", str(SOURCE), "--destination", str(home),
+        "--config", str(home / ".config/chezmoi/chezmoi.toml"),
+        "--cache", str(home / ".cache/chezmoi"),
+        "--persistent-state", str(home / ".config/chezmoi/chezmoistate.boltdb"),
+        "--no-tty", "managed", "--include=files", "--path-style=relative", "--nul-path-separator",
+    ], env=managed_environment(home, home / ".cache/tmp"), capture_output=True, check=True, timeout=30)
     paths = set()
+    for name in result.stdout.split(b"\0"):
+        if not name:
+            continue
+        relative = Path(os.fsdecode(name))
+        require(not relative.anchor and relative.parts and ".." not in relative.parts,
+                "Chezmoi returned an invalid source-owned path")
+        paths.add(home / relative)
+    return paths
+
+
+def snapshot(home, plan):
+    paths = source_managed_paths(home)
     trees = {".config/nushell", ".local/share/nushell/vendor", ".local/bin", ".local/lib/dotfiles"}
     for line in (SOURCE / "deployment/agent-payload/targets.tsv").read_text().splitlines():
         if line and not line.startswith("#"):
-            kind, source, destination = line.split("|")
-            if kind == "tree" and source == "skills":
+            kind, _source, destination = line.split("|")
+            if kind == "tree":
                 trees.add(destination)
+            elif kind in {"file", "block"}:
+                paths.add(home / destination)
+    # Runtime client settings are intentionally excluded from Chezmoi and
+    # merged by the adapter; its target catalog remains their ownership source.
+    for line in (SOURCE / "deployment/client-settings/targets.tsv").read_text().splitlines():
+        if line and not line.startswith("#"):
+            _format, _source, destination, _policy = line.split("|")
+            paths.add(home / destination)
     for relative in trees:
         paths.update(path for path in (home / relative).rglob("*") if path.is_file())
-    for relative in (".env_core", ".profile", ".bashrc", ".zshenv", ".zprofile", ".zshrc",
-                     ".config/dotfiles/profile.json", ".vscode-server/data/Machine/settings.json",
-                     ".claude/settings.json", ".claude.json", ".claude/CLAUDE.md",
-                     ".codex/config.toml", ".codex/AGENTS.md",
-                     ".kimi-code/config.toml", ".kimi-code/tui.toml", ".kimi-code/mcp.json",
-                     ".pi/agent/settings.json", ".pi/agent/models-store.json", ".pi/agent/mcp.json",
-                     ".pi/agent/AGENTS.md", ".config/opencode/opencode.jsonc", ".config/opencode/AGENTS.md",
-                     ".minimax/mcp.json", ".minimax/AGENTS.md", ".qoder/settings.json", ".qoder/AGENTS.md",
-                     ".agents/AGENTS.md"):
-        paths.add(home / relative)
     for package in plan["packages"]:
-        for command in package["exposed"]:
-            path = home / ".pixi/bin" / command
-            paths.add(path)
+        paths.update(home / ".pixi/bin" / command for command in package["exposed"])
     for package in plan["agentPackages"]:
         paths.update(home / ".local/bin" / command for command in package["commands"])
     return {str(path.relative_to(home)): snapshot_fingerprint(path, home) for path in sorted(paths)}

@@ -26,6 +26,16 @@ The fixture-suite evidence remains in
 `/private/tmp/dotfiles-discovery-proof-n04m9jmy/artifacts/fixture-suite.json`,
 alongside the preserved initial OpenCode API-assertion failure.
 
+The snapshot coverage fix passed 21 focused verifier tests and fresh simulated
+`t9k`/`linux` applies and reapplies using the real Chezmoi CLI. The snapshots
+contained 100 and 99 files respectively, including owned source configuration,
+payload files/blocks, and merged client settings. Changes to RTK, CLIENTS,
+Atuin, Git, pip, and Caveman configuration changed the fingerprints; deletion
+of the owned Atuin configuration failed verification. This configuration-only
+proof used fixture skills and did not repeat tool installation. Its report is
+`/private/tmp/dotfiles-owned-snapshot-proof-kntuu136/report.json`, SHA-256
+`fc06c233a428970aad9f175eb695adc28fba6d64ae1e3566d04ed1130001382d`.
+
 ## Agreed scope
 
 The target is the T9K profile, `linux-remote-compute`, on Ubuntu x86_64.
@@ -182,6 +192,9 @@ than replacing them with later successful results.
    activation settings before and after reapplication separately: their values
    depend on the install environment. Validate their executable targets and
    rerun inventory, version, command-path and runtime checks after reapplication.
+   Snapshot ownership comes from Chezmoi's selected managed-file inventory,
+   payload file/block/tree targets, and the client-settings target catalog;
+   source-owned files remain required even when their target has been deleted.
 7. Record value-free reports and checksums outside the source. Keep repository
    documentation/tests and any necessary fixes reviewable in focused local
    commits; publishing changes remains a separate action.
