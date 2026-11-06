@@ -75,7 +75,20 @@ A disposable home used to validate a deployment without changing the current
 device's home or settings.
 
 **Native validation**:
-Verification of a deployment using its target platform's actual runtime.
+Verification of a deployment on its target operating system and processor
+architecture without processor emulation.
+
+**Container validation**:
+Verification of a deployment within a disposable container. The container's
+operating environment and execution limits are part of the result.
+
+**Emulated validation**:
+Verification of a deployment while its target processor architecture is
+translated. The result establishes behavior under that translation.
+
+**T9K profile**:
+The Linux remote-compute deployment used for T9K. It is distinct from the legacy
+T9K installation and that device's existing state.
 
 **Migration rehearsal**:
 Verification of a deployment starting from an existing device's configuration
