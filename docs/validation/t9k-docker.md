@@ -113,3 +113,19 @@ Its report is `/private/tmp/dotfiles-ubuntu.f6YTGZ/run/docker-report.json`.
 
 Failed containers and home volumes are stopped and retained for diagnosis.
 No baseline is recorded as passed yet.
+
+The second attempt tested source `88b46aa7b845a361f6d9842ff15a16503815a042`.
+Its report is `/private/tmp/dotfiles-ubuntu-rerun-88b46aa/docker-report.json`.
+Fresh installation, all 50 declared commands, full reapplication and synthetic
+preservation passed on both baselines. Ubuntu 20.04 passed 37 runtime tests but
+stopped at a relocated Atuin test executable: its `$ORIGIN/../lib` OpenSSL
+dependencies were missing. A read-only follow-up confirmed the loader error;
+the prefix-preserving fixture then passed all six applicable importer tests.
+
+Ubuntu 24.04 passed all five required runtime suites (43 applicable tests and
+two named macOS-only exclusions). The remaining 324-test suite then reported
+45 failures and five errors. Diagnosed harness issues included an executable
+path containing spaces in generated shebangs, Docker's default `noexec` tmpfs,
+missing system Python/Zsh fixture prerequisites, an omitted Worktrunk fixture
+tool and Psych's changed alias default. These results remain failed attempts;
+the corrected harness must pass before either baseline receives a full pass.

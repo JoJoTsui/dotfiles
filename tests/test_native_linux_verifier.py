@@ -235,6 +235,29 @@ class LinuxIsolationTests(unittest.TestCase):
         self.assertEqual(environment["HTTP_PROXY"], "http://example.invalid:9000")
         self.assertEqual(environment["HOME"], "/task/home")
 
+    def test_deterministic_environment_borrows_tools_without_device_state_or_install_opt_ins(self):
+        tools = {
+            "HOME": "/task/installed home", "PATH": "/task/installed home/.bun/bin:/usr/bin",
+            "PIXI_HOME": "/task/installed home/.pixi", "BUN_INSTALL": "/task/installed home/.bun",
+            "CARGO_HOME": "/task/installed home/.cargo", "RUSTUP_HOME": "/task/installed home/.rustup",
+            "XDG_CONFIG_HOME": "/task/installed home/.config", "ATUIN_CONFIG_DIR": "/task/installed home/.config/atuin",
+            "CODEX_HOME": "/task/installed home/.codex", "LD_LIBRARY_PATH": "/task/installed home/lib",
+            "DOTFILES_TEST_NODE": "/task/installed home/.pixi/bin/node",
+            "DOTFILES_TEST_ZSH": "/task/installed home/.pixi/bin/zsh",
+            "DOTFILES_TEST_TOOL_HOME": "/task/installed home",
+            "DOTFILES_TEST_ROLE": "remote-compute", "DOTFILES_TEST_PLATFORM": "linux",
+            "DOTFILES_TEST_INSTALL": "1", "DOTFILES_TEST_AGENT_INSTALL": "1",
+        }
+        with mock.patch.dict(os.environ, tools, clear=True):
+            environment = native_linux.deterministic_environment(Path("/task/control"), Path("/task/tmp"), tools)
+        self.assertEqual(environment["HOME"], "/task/control")
+        self.assertEqual(environment["PATH"], "/usr/bin:/bin:/usr/sbin:/sbin")
+        self.assertEqual({name: value for name, value in environment.items() if name.startswith("DOTFILES_TEST_")},
+                         {name: tools[name] for name in ("DOTFILES_TEST_NODE", "DOTFILES_TEST_ZSH", "DOTFILES_TEST_TOOL_HOME")})
+        for name in ("PIXI_HOME", "BUN_INSTALL", "CARGO_HOME", "RUSTUP_HOME", "XDG_CONFIG_HOME",
+                     "ATUIN_CONFIG_DIR", "CODEX_HOME", "LD_LIBRARY_PATH"):
+            self.assertNotIn(name, environment)
+
 
 @unittest.skipUnless(os.name == "posix", "Linux gate process groups require POSIX")
 class LinuxCommandBoundsTests(unittest.TestCase):

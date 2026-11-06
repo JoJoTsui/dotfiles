@@ -139,6 +139,18 @@ def managed_environment(home, temporary):
     return environment
 
 
+def deterministic_environment(home, temporary, tools):
+    environment = clean_environment(home, temporary)
+    # These tests own their HOME, state roots, PATH and fake executables. Borrow
+    # only explicitly requested read-only tools, never the installed device env.
+    for name in ("DOTFILES_TEST_CHEZMOI", "DOTFILES_TEST_TOOL_HOME", "DOTFILES_TEST_NODE",
+                 "DOTFILES_TEST_NU", "DOTFILES_TEST_MAMBA", "DOTFILES_TEST_BASH", "DOTFILES_TEST_ZSH",
+                 "DOTFILES_TEST_KIMI", "DOTFILES_TEST_OPENCODE", "DOTFILES_TEST_POWERSHELL", "DOTFILES_TEST_PWSH"):
+        if name in tools:
+            environment[name] = tools[name]
+    return environment
+
+
 def run(command, *, env, cwd, timeout, log, records):
     """Bound output and stop the entire subprocess group on timeout."""
     command = [str(part) for part in command]
@@ -448,6 +460,8 @@ def main():
     try:
         def preflight():
             require(sys.version_info >= (3, 11), "controller Python 3.11 or newer is required")
+            require(not any(character.isspace() for character in sys.executable),
+                    "controller Python path must contain no whitespace for deterministic fixture shebangs")
             require(sys.platform == "linux" and platform.machine() == "x86_64", "Linux x86_64 execution is required")
             require(os.geteuid() != 0, "Linux acceptance must run as an unprivileged user")
             release = {}
@@ -580,6 +594,7 @@ def main():
         test_env = dict(managed, DOTFILES_TEST_PLATFORM="linux", DOTFILES_TEST_ROLE="remote-compute",
                         DOTFILES_TEST_CHEZMOI=str(args.home / ".local/bin/chezmoi"), DOTFILES_TEST_TOOL_HOME=str(args.home),
                         DOTFILES_TEST_NODE=str(args.home / ".pixi/bin/node"), DOTFILES_TEST_NU=str(args.home / ".pixi/bin/nu"),
+                        DOTFILES_TEST_BASH=str(args.home / ".pixi/bin/bash"), DOTFILES_TEST_ZSH=str(args.home / ".pixi/bin/zsh"),
                         DOTFILES_TEST_MAMBA=str(args.home / ".pixi/bin/micromamba"),
                         DOTFILES_TEST_ATUIN=str(args.home / ".pixi/envs/atuin/bin/atuin"),
                         DOTFILES_TEST_PYTHON=str(args.home / ".pixi/envs/python/bin/python"),
@@ -593,12 +608,24 @@ def main():
         for pattern in (*REQUIRED_SUITES, "test*.py"):
             def behavior(pattern=pattern):
                 destination = args.artifacts / (pattern.replace("*", "-deterministic") + ".json")
-                arguments = [python, SOURCE / "tests/native_linux.py", "--run-suite", pattern, destination]
+                suite_python, suite_env = python, test_env
+                if pattern == "test*.py":
+                    control_home = args.artifacts / "deterministic-home"
+                    control_home.mkdir()
+                    suite_env = deterministic_environment(control_home, temporary, test_env)
+                    # Fixture executables embed sys.executable in a shebang;
+                    # the deployed home deliberately contains spaces, so keep
+                    # that runtime proof in the five required suites above.
+                    suite_python = Path(sys.executable)
+                    report["deterministic_context"] = {
+                        "python": str(suite_python), "home": str(control_home), "path": suite_env["PATH"],
+                        "borrowed_prerequisites": sorted(name for name in suite_env if name.startswith("DOTFILES_TEST_"))}
+                arguments = [suite_python, SOURCE / "tests/native_linux.py", "--run-suite", pattern, destination]
                 if pattern == "test*.py":
                     arguments.append("--exclude-required")
                 summary = None
                 try:
-                    command(pattern.replace("*", "-deterministic"), arguments, env=test_env, timeout=args.suite_timeout)
+                    command(pattern.replace("*", "-deterministic"), arguments, env=suite_env, timeout=args.suite_timeout)
                 finally:
                     if destination.exists():
                         summary = json.loads(destination.read_text())
@@ -607,7 +634,8 @@ def main():
                 audited = audit_suite(summary)
                 report["suites"][-1] = audited
                 return {"tests_run": audited["tests_run"], "classified_skips": len(audited["skipped"]), "unexpected_skips": 0}
-            check("actual installed runtime: " + pattern, behavior)
+            label = "remaining deterministic acceptance" if pattern == "test*.py" else "actual installed runtime: " + pattern
+            check(label, behavior)
         check("source remains unchanged", lambda: require(source_identity() == report["source"], "source changed during acceptance"))
         report["status"] = "passed"
         report["unexpected_required_skips"] = 0
