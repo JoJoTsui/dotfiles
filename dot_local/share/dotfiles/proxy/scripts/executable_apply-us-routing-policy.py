@@ -137,15 +137,12 @@ def find_block(lines: list[str], key: str) -> tuple[int, int] | None:
         match = re.match(rf"^{re.escape(key)}:[ \t]*(.*)", line)
         if match is not None:
             value = match.group(1).strip()
-            opener = "[" if key == "rules" else "{"
-            if value and not value.startswith((opener, "#")):
-                raise ValueError(f"unsupported {key}: value; expected a block or flow collection")
-            # Multiline flow mappings can contain unindented keys that look
-            # like neighboring blocks. Leave those profiles unchanged rather
-            # than guessing at their boundary with this line-based rewriter.
-            closer = "]" if key == "rules" else "}"
-            if value.startswith(opener) and not re.search(rf"{re.escape(closer)}[ \t]*(?:#.*)?$", value):
-                raise ValueError(f"unsupported multiline {key}: flow collection")
+            empty = "[]" if key == "rules" else "{}"
+            # Only empty inline collections have an unambiguous boundary
+            # without parsing flow syntax, quoted strings, and comments.
+            if (value and not value.startswith("#")
+                    and re.fullmatch(rf"{re.escape(empty)}(?:[ \t]+#.*)?", value) is None):
+                raise ValueError(f"unsupported {key}: value; expected a block collection or {empty}")
             start = index
             break
     if start is None:

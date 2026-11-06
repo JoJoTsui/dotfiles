@@ -40,8 +40,8 @@ class ProxyPolicyTests(unittest.TestCase):
         variants = (
             ("rules:\n  - MATCH,AUTO\n", "rule-providers:\n  old: {type: http}\n"),
             ("rules:\n- MATCH,AUTO\n", "rule-providers: # old providers\n  old: {type: http}\n"),
-            ("rules: # provider rules\n- MATCH,AUTO\n", "rule-providers: {old: {type: http}}\n"),
-            ("rules: ['MATCH,AUTO']\n", "rule-providers: {old: {type: http}} # old providers\n"),
+            ("rules: # provider rules\n- MATCH,AUTO\n", "rule-providers: {}\n"),
+            ("rules: [] # provider rules\n", "rule-providers: {} # old providers\n"),
         )
         with tempfile.TemporaryDirectory(prefix="dotfiles-proxy-routing-", dir="/tmp") as temporary:
             profile = Path(temporary) / "profile.yaml"
@@ -78,6 +78,10 @@ class ProxyPolicyTests(unittest.TestCase):
             "rule-providers: {\nold: {type: http}\n}\nrules: []\n",
             "rules: &shared ['MATCH,AUTO']\ncustom-rules: *shared\n",
             "rules:\n- MATCH,AUTO\ncustom:tag: keep\n",
+            "rules: ['MATCH,AUTO']\n",
+            "rule-providers: {old: {type: http}}\nrules: []\n",
+            "rule-providers: { # }\nold: {type: http}\n}\nrules: []\n",
+            "rule-providers: { # }\n  old: {type: http}\n}\nrules: []\n",
         )
         with tempfile.TemporaryDirectory(prefix="dotfiles-proxy-routing-", dir="/tmp") as temporary:
             profile = Path(temporary) / "profile.yaml"
