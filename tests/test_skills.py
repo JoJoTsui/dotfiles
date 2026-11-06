@@ -40,11 +40,26 @@ class SkillFetchTests(unittest.TestCase):
         return subprocess.run(["/bin/bash", str(script)], env=environment,
                               capture_output=True, text=True, timeout=120)
 
-    def write_catalog(self, *rows):
+    def write_catalog(self, *rows, reviewed=True):
         # The catalog carries a selection column; these rows are automatic
         # unless a test names its own selection.
         rows = [row if len(row.split('|')) >= 6 else row + '|auto' for row in rows]
         self.catalog.write_text("# name|kind|source|ref|path|selection\n" + "\n".join(rows) + "\n")
+        if reviewed:
+            # Fetch fixtures pin the actual local bytes. Catalog-validation and
+            # hermetic-library cases do not need an upstream lock.
+            pins = []
+            for row in rows:
+                name, kind, source, ref, _, selection = row.split('|')
+                if kind == "git":
+                    pin = subprocess.check_output(
+                        ["git", "-C", source, "rev-parse", ref], text=True).strip()
+                else:
+                    self.assertTrue(source.startswith("file://"))
+                    pin = hashlib.sha256(Path(source[7:]).read_bytes()).hexdigest()
+                pins.append(f"{name}|{kind}|{source}|{pin}|{selection}")
+            (self.catalog.parent / "skills.lock.tsv").write_text(
+                "# name|kind|source|resolved|selection\n" + "\n".join(pins) + "\n")
 
     def make_git_repo(self, name, path="skills/demo"):
         repo = self.root / name
@@ -201,7 +216,10 @@ class SkillFetchTests(unittest.TestCase):
         self.assertEqual(state.stat().st_mode & 0o777, 0o600)
         self.assertIn("arc|tarball|", state.read_text())
         before = state.read_bytes()
-        self.write_catalog("broken|tarball|file:///nonexistent-skill-archive||")
+        self.write_catalog("broken|tarball|file:///nonexistent-skill-archive||", reviewed=False)
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        (self.catalog.parent / "skills.lock.tsv").write_text(
+            f"broken|tarball|file:///nonexistent-skill-archive|{digest}|auto\n")
         result = self.run_script("sleep() { :; }\nprepare_skill_library")
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(state.read_bytes(), before)
@@ -225,46 +243,91 @@ class SkillFetchTests(unittest.TestCase):
         self.assertFalse((home / ".config").exists())
 
     def test_failed_refresh_reuses_cache_without_advancing_timestamp(self):
-        repo = self.make_git_repo('demo-repo')
-        self.write_catalog(f'demo|git|{repo}|main|skills/demo')
+        archive = self.make_tarball('arc')
+        self.write_catalog(f'arc|tarball|file://{archive}||')
         first = self.run_script('prepare_skill_library')
         self.assertEqual(first.returncode, 0, first.stderr)
         marker = self.root / 'xdg-cache/dotfiles/skills/.refreshed'
         marker.write_text('1\n')
-        repo.rename(self.root / 'offline-repo')
-        result = self.run_script('prepare_skill_library', env={'DOTFILES_SKILLS_REFRESH': '1'})
+        archive.rename(self.root / 'offline-archive')
+        result = self.run_script('sleep() { :; }\nprepare_skill_library',
+                                 env={'DOTFILES_SKILLS_REFRESH': '1'})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(marker.read_text(), '1\n')
 
     def test_catalog_rejects_duplicates_and_unsafe_paths(self):
-        self.write_catalog("demo|git|https://example.invalid/r|main|/absolute")
+        self.write_catalog("demo|git|https://example.invalid/r|main|/absolute", reviewed=False)
         result = self.run_script("validate_skill_catalog")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("relative", result.stderr)
         self.write_catalog("demo|git|https://example.invalid/r|main|skills/demo",
-                           "demo|git|https://example.invalid/r2|main|skills/demo")
+                           "demo|git|https://example.invalid/r2|main|skills/demo", reviewed=False)
         result = self.run_script("validate_skill_catalog")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("duplicate", result.stderr)
 
+    def test_missing_skill_lock_is_rejected_before_fetching(self):
+        repo = self.make_git_repo("demo-repo")
+        archive = self.make_tarball("arc")
+        for kind, row in (("git", f"demo|git|{repo}|main|skills/demo"),
+                          ("tarball", f"arc|tarball|file://{archive}||")):
+            for override in (False, True):
+                with self.subTest(kind=kind, override=override):
+                    self.write_catalog(row)
+                    lock = self.catalog.parent / "skills.lock.tsv"
+                    env = {}
+                    if override:
+                        env["DOTFILES_SKILLS_LOCK"] = str(self.root / "missing.lock.tsv")
+                    else:
+                        lock.unlink()
+                    home = self.root / f"missing-{kind}-{override}"
+                    result = self.run_script("prepare_skill_library", env=env, home=home)
+                    self.assertNotEqual(result.returncode, 0, result.stderr)
+                    self.assertIn("skill lock", result.stderr)
+                    self.assertFalse((home / "xdg-cache").exists())
+                    self.assertFalse((home / "xdg-state").exists())
+                    self.assertEqual(list(self.tmp.iterdir()), [])
+
+    def test_invalid_skill_lock_pins_are_rejected(self):
+        repo = self.make_git_repo("demo-repo")
+        self.write_catalog(f"demo|git|{repo}|main|skills/demo")
+        lock = self.catalog.parent / "skills.lock.tsv"
+        valid = lock.read_text()
+        for content, expected in (("# no matching entry\n", "missing skill pin"),
+                                  (f"demo|git|{repo}|not-a-pin|auto\n", "invalid"),
+                                  (valid + valid, "duplicate"),
+                                  (valid.replace(str(repo), "different-source"), "source mismatch")):
+            with self.subTest(content=content):
+                lock.write_text(content)
+                result = self.run_script("prepare_skill_library")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+                self.assertFalse((self.root / "xdg-state").exists())
+
+    def test_explicit_reviewed_skill_lock_is_supported(self):
+        archive = self.make_tarball("arc")
+        self.write_catalog(f"arc|tarball|file://{archive}||")
+        lock = self.root / "reviewed.lock.tsv"
+        (self.catalog.parent / "skills.lock.tsv").rename(lock)
+        result = self.run_script("prepare_skill_library",
+                                 env={"DOTFILES_SKILLS_LOCK": str(lock)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_git_lock_keeps_reviewed_revision_after_upstream_changes(self):
         repo = self.make_git_repo('demo-repo')
-        revision = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
         self.write_catalog(f'demo|git|{repo}|main|skills/demo')
-        (self.catalog.parent / 'skills.lock.tsv').write_text(f'demo|git|{repo}|{revision}\n')
         (repo / 'skills/demo/note.md').write_text('unreviewed update\n')
         subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
         subprocess.run(['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@example.invalid',
                         'commit', '-qm', 'update'], check=True)
-        result = self.run_script('prepare_skill_library\ncat "$PAYLOAD_SKILLS_DIR/demo/note.md"\n')
+        result = self.run_script('prepare_skill_library\ncat "$PAYLOAD_SKILLS_DIR/demo/note.md"\n',
+                                 env={"DOTFILES_SKILLS_REFRESH": "1"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, 'note\n')
 
     def test_archive_checksum_mismatch_preserves_verified_cache(self):
         archive = self.make_tarball('arc')
         self.write_catalog(f'arc|tarball|file://{archive}||')
-        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-        (self.catalog.parent / 'skills.lock.tsv').write_text(f'arc|tarball|file://{archive}|{digest}\n')
         result = self.run_script('prepare_skill_library')
         self.assertEqual(result.returncode, 0, result.stderr)
         archive.write_bytes(b'unreviewed archive')
@@ -281,12 +344,26 @@ class SkillFetchTests(unittest.TestCase):
         repo = self.make_git_repo('demo-repo')
         archive = self.make_tarball('arc')
         self.write_catalog(f'demo|git|{repo}|main|skills/demo', f'arc|tarball|file://{archive}||')
+        catalog_before = self.catalog.read_bytes()
         lock = self.catalog.parent / 'skills.lock.tsv'
+        # Explicit updates may create a lock; deployment must require it.
+        lock.unlink()
         import sys
         command = [sys.executable, str(SOURCE / 'deployment/update_skills.py'), 'refresh',
                    '--catalog', str(self.catalog), '--lock', str(lock)]
         result = subprocess.run(command, capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stderr)
+        old = lock.read_bytes()
+        (repo / 'skills/demo/note.md').write_text('reviewed update\n')
+        subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@example.invalid',
+                        'commit', '-qm', 'update'], check=True)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotEqual(lock.read_bytes(), old)
+        revision = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+        self.assertIn(revision, lock.read_text())
+        self.assertEqual(self.catalog.read_bytes(), catalog_before)
         old = lock.read_bytes()
         archive.write_bytes(b'broken archive')
         result = subprocess.run(command, capture_output=True, text=True, timeout=60)
@@ -332,10 +409,12 @@ class SkillFetchTests(unittest.TestCase):
         library = self.root / "override"
         (library / "demo").mkdir(parents=True)
         (library / "demo/SKILL.md").write_text("---\nname: demo\ndescription: demo\n---\n")
-        self.write_catalog("demo|git|https://example.invalid/r|main|skills/demo")
+        self.write_catalog("demo|git|https://example.invalid/r|main|skills/demo", reviewed=False)
         result = self.run_script('prepare_skill_library && test "$PAYLOAD_SKILLS_DIR" = "' + str(library) + '"',
                                  env={"DOTFILES_SKILLS_DIR": str(library)})
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((self.catalog.parent / "skills.lock.tsv").exists())
+        self.assertFalse((self.root / "xdg-cache").exists())
 
 
 class SkillCollisionTests(unittest.TestCase):

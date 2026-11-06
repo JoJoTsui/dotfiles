@@ -53,11 +53,8 @@ skill_sha256() {
 }
 
 skill_pin_for() {
-    local name=$1 kind=$2 source=$3 entry entry_kind entry_source revision
-    local lock=${DOTFILES_SKILLS_LOCK:-$DEPLOY_SOURCE/deployment/skills.lock.tsv}
+    local name=$1 kind=$2 source=$3 lock=$4 entry entry_kind entry_source revision
     SKILL_PIN=''
-    [ -f "$lock" ] || return 0
-    [ ! -L "$lock" ] || fail 'skill lock is a symlink'
     while IFS=$'|\r' read -r entry entry_kind entry_source revision entry_selection; do
         [ "$entry" = "$name" ] || continue
         [ "$entry_kind" = "$kind" ] && [ "$entry_source" = "$source" ] || fail "skill lock source mismatch: $name"
@@ -223,6 +220,7 @@ skill_fetch_tarball() {
 # DOTFILES_SKILLS_DIR wins, which keeps tests and air-gapped hosts hermetic.
 prepare_skill_library() {
     local catalog="$DEPLOY_SOURCE/deployment/skills.tsv"
+    local lock=${DOTFILES_SKILLS_LOCK:-$DEPLOY_SOURCE/deployment/skills.lock.tsv}
     local cache name kind source ref path index state staged_state
     local root="$TMPDIR/skills.$$"
     validate_skill_catalog
@@ -232,6 +230,8 @@ prepare_skill_library() {
         export PAYLOAD_SKILLS_DIR
         return 0
     fi
+    [ ! -L "$lock" ] || fail 'skill lock is a symlink'
+    [ -f "$lock" ] || fail "skill lock is missing or not a regular file: $lock"
     state="$XDG_STATE_HOME/dotfiles/skills.lock.tsv"
     validate_skill_state "$state"
     cache=$(skills_cache_root)
@@ -250,7 +250,7 @@ prepare_skill_library() {
     while IFS=$'|\r' read -r name kind source ref path selection; do
         case "$name" in ''|\#*) continue ;; esac
         skill_selected "$name" "$selection" || continue
-        skill_pin_for "$name" "$kind" "$source"
+        skill_pin_for "$name" "$kind" "$source" "$lock"
         case "$kind" in
             git)
                 skill_fetch_git "$name" "$source" "$ref" "$path" "$cache" "$root" "$index" ||

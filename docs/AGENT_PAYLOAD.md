@@ -37,6 +37,8 @@ lark-im|tarball|https://open.feishu.cn/.../lark-im.tar.gz||
 ```
 
 `deployment/skills.lock.tsv` pins Git commits and archive SHA-256 values.
+A missing or invalid lock stops fetching; `DOTFILES_SKILLS_DIR` remains the
+hermetic bypass.
 
 The catalog's last column is the selection: `auto` skills are deployed by
 every host, and a tagged skill is not deployed automatically. The Lark skills
