@@ -108,3 +108,12 @@ class ProxyBootstrapHelperTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.home / "selection-env").read_text().splitlines(),
                          ["http://127.0.0.1:7891", "http://127.0.0.1:9092"])
+
+    def test_direct_section_clears_every_supported_proxy_variable(self):
+        variables = ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY",
+                     "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy")
+        self.env.update({name: "socks5h://127.0.0.1:19999" for name in variables})
+        result = self.run_proxy('deploy_proxy_env_off\nenv\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        environment = dict(line.split("=", 1) for line in result.stdout.splitlines())
+        self.assertTrue(set(variables).isdisjoint(environment), result.stdout)

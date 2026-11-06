@@ -426,7 +426,7 @@ deploy_proxy_env_on() {
 }
 
 deploy_proxy_env_off() {
-    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY
+    unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy no_proxy NO_PROXY
 }
 
 install_proxy() {
