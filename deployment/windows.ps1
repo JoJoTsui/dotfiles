@@ -351,11 +351,13 @@ function Merge-ClientSettings {
             $key = $row.columns[2] -replace '[/.]', '_'
             foreach ($kind in @('config', 'baseline')) {
                 $env:DOTFILES_SETTINGS_OUTPUT = $kind
+                $rendered = Join-Path $stage "$key.$kind"
                 try {
-                    $text = Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('execute-template', '--file', (Join-Path $Source 'deployment/client-settings/merge.tmpl'))) -Quiet
+                    # Chezmoi writes exact bytes; PowerShell's native stdout
+                    # pipeline normalizes line endings and the final newline.
+                    Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('--output', $rendered, 'execute-template', '--file', (Join-Path $Source 'deployment/client-settings/merge.tmpl'))) -Quiet | Out-Null
                 } catch { Stop-Deployment "cannot merge client config ($($row.columns[0])): $($row.columns[2]); check its syntax" }
-                Write-Utf8 (Join-Path $stage "$key.$kind") $text
-                Set-Private (Join-Path $stage "$key.$kind")
+                Set-Private $rendered
             }
         }
         foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
@@ -364,7 +366,12 @@ function Merge-ClientSettings {
             $key = $row.columns[2] -replace '[/.]', '_'
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
             [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($baseline)) | Out-Null
-            Move-Item -LiteralPath (Join-Path $stage "$key.config") -Destination $destination -Force
+            $rendered = Join-Path $stage "$key.config"
+            # Preserve the device file and its mtime when the merge is a no-op.
+            if (-not [IO.File]::Exists($destination) -or
+                (Get-FileHash -LiteralPath $rendered -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash) {
+                Move-Item -LiteralPath $rendered -Destination $destination -Force
+            }
             Move-Item -LiteralPath (Join-Path $stage "$key.baseline") -Destination $baseline -Force
             Set-Private $destination; Set-Private $baseline
         }

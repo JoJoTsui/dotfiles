@@ -854,6 +854,54 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assert_original_profile_unchanged()
         self.assertFalse((self.home / '.config').exists())
 
+    def test_unchanged_codex_hooks_keep_exact_bytes_and_modification_time(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual hook preservation requires Chezmoi')
+        hooks = self.home / '.codex/hooks.json'
+        hooks.parent.mkdir(parents=True)
+        fixtures = (
+            b'{"hooks":{}}',
+            '{\r\n\t"device": "caf\u00e9 \u4fdd\u7559",\r\n\t"hooks": {"Stop": []}\r\n}\r\n'.encode('utf-8'),
+            b'{\n  // device formatting survives\n  "hooks": {"PreToolUse": []}\n}\n\n',
+        )
+        for original in fixtures:
+            with self.subTest(original=original):
+                hooks.write_bytes(original)
+                os.utime(hooks, ns=(1_700_000_000_123_456_789, 1_700_000_000_123_456_789))
+                modified = hooks.stat().st_mtime_ns
+                result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(hooks.read_bytes(), original)
+                self.assertEqual(hooks.stat().st_mtime_ns, modified)
+
+    def test_codex_hook_migration_deploys_changes_then_preserves_result(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual hook migration requires Chezmoi')
+        hooks = self.home / '.codex/hooks.json'
+        hooks.parent.mkdir(parents=True)
+        device = {'type': 'command', 'command': 'device-policy', 'timeout': 5}
+        original = {'hooks': {'PreToolUse': [
+            {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'rtk hook claude'}]},
+            {'matcher': 'Bash', 'hooks': [device]},
+        ]}}
+        hooks.write_text(json.dumps(original), encoding='utf-8')
+        result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        expected = {'hooks': {'PreToolUse': [
+            {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'exit 0'}]},
+            {'matcher': 'Bash', 'hooks': [device]},
+        ]}}
+        self.assertEqual(json.loads(hooks.read_bytes()), expected)
+        migrated = hooks.read_bytes()
+        os.utime(hooks, ns=(1_700_000_000_123_456_789, 1_700_000_000_123_456_789))
+        modified = hooks.stat().st_mtime_ns
+        result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(hooks.read_bytes(), migrated)
+        self.assertEqual(hooks.stat().st_mtime_ns, modified)
+
     def test_invalid_client_syntax_preserves_every_client_and_hides_values(self):
         chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
         if not chezmoi:
@@ -864,12 +912,26 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         kimi = self.home / '.kimi-code/config.toml'
         kimi.parent.mkdir()
         kimi.write_text('password = "synthetic-private-parser-value\n')
+        hooks = self.home / '.codex/hooks.json'
+        hooks.parent.mkdir()
+        hooks.write_text('{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"rtk hook claude"}]}]}}\n')
+        managed_paths = set()
+        for row in (SOURCE / 'deployment/client-settings/targets.tsv').read_text().splitlines():
+            if row and not row.startswith('#'):
+                _, _, target, policy = row.split('|')
+                managed_paths.add(self.home / target)
+                managed_paths.add(self.home / f'.local/state/dotfiles/client-settings/{policy}.json')
+
+        def snapshot():
+            return {path: (path.read_bytes(), path.stat().st_mtime_ns) if path.exists() else None
+                    for path in managed_paths}
+
+        before = snapshot()
         result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('.kimi-code/config.toml', result.stderr)
         self.assertNotIn('synthetic-private-parser-value', result.stderr + result.stdout)
-        self.assertEqual(claude.read_text(), '{"deviceOnly":true}\n')
-        self.assertEqual(kimi.read_text(), 'password = "synthetic-private-parser-value\n')
+        self.assertEqual(snapshot(), before)
 
 
 @unittest.skipUnless(os.name == 'nt' and os.environ.get('DOTFILES_TEST_NATIVE_WINDOWS_INSTALL') == '1',
