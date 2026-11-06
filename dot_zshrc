@@ -20,8 +20,6 @@ if [ -z "${_dotfiles_atuin_loaded:-}" ] && command -v atuin >/dev/null 2>&1; the
     unset _dotfiles_atuin_setup
 fi
 
-[ ! -f "$HOME/.config/dotfiles/zsh.local.zsh" ] || . "$HOME/.config/dotfiles/zsh.local.zsh"
-
 # Herdr panes use the in-process Codex app server so hooks inherit the pane
 # identity. Outside Herdr, keep the shared daemon.
 codex() {
@@ -31,3 +29,5 @@ codex() {
         command codex "$@"
     fi
 }
+
+[ ! -f "$HOME/.config/dotfiles/zsh.local.zsh" ] || . "$HOME/.config/dotfiles/zsh.local.zsh"

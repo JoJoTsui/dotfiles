@@ -14,6 +14,91 @@ HOOK = SOURCE / "dot_codex/executable_herdr-codex-resume.sh"
 INSTALLER = SOURCE / "dot_local/bin/executable_dotfiles-codex-herdr"
 
 
+@unittest.skipUnless(os.name == "posix", "Unix shell startup; Windows has a native adapter suite")
+class ShellCodexRoutingTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="dotfiles-codex-shell-")
+        self.addCleanup(temporary.cleanup)
+        self.home = Path(temporary.name) / "device with spaces"
+        self.bin = self.home / "bin"
+        self.bin.mkdir(parents=True)
+        self.local = self.home / ".config/dotfiles"
+        self.local.mkdir(parents=True)
+        self.env = {
+            "HOME": str(self.home), "PATH": f"{self.bin}:/usr/bin:/bin",
+            "TERM": "xterm-256color", "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "XDG_DATA_HOME": str(self.home / ".local/share"),
+            "XDG_CACHE_HOME": str(self.home / ".cache"),
+        }
+        (self.home / ".env_core").write_text(
+            'export MAMBA_EXE="$HOME/missing-mamba"\n'
+            'export DOTFILES_COMMON_BIN="$HOME/missing-bin"\n', encoding="utf-8")
+        for command in ("codex", "codex-herdr"):
+            executable = self.bin / command
+            executable.write_text(
+                f'#!/bin/sh\nprintf "%s\\n" {command} "$@"\n', encoding="utf-8")
+            executable.chmod(0o755)
+
+    def shell(self, name, *, herdr=None, native_copy=False):
+        executable = os.environ.get(f"DOTFILES_TEST_{name.upper()}") or shutil.which(name)
+        if not executable:
+            self.skipTest(f"{name} is not installed")
+        command = 'codex --version "path with spaces"'
+        if name == "nu":
+            # Native adapters copy the complete adjacent resource directory to
+            # their discovery location; no resource may assume .config/nushell.
+            config = self.home / ("native/nushell" if native_copy else ".config/nushell")
+            config.mkdir(parents=True, exist_ok=True)
+            for resource in (SOURCE / "dot_config/nushell").glob("*.nu"):
+                shutil.copyfile(resource, config / resource.name)
+            (config / "proxy.nu").write_text("# No proxy needed in this routing fixture.\n")
+            arguments = [executable, "--env-config", "/dev/null", "--config", str(config / "config.nu"),
+                         "-c", command]
+        elif name == "bash":
+            arguments = [executable, "--noprofile", "--norc", "-ic",
+                         f'. {json.dumps(str(SOURCE / "dot_bashrc"))}; {command}']
+        else:
+            arguments = [executable, "-f", "-ic",
+                         f'. "$HOME/.env_core"; . {json.dumps(str(SOURCE / "dot_zshrc"))}; {command}']
+        env = dict(self.env)
+        if herdr is not None:
+            env["HERDR_ENV"] = herdr
+        return subprocess.run(arguments, env=env, cwd=self.home,
+                              capture_output=True, text=True, timeout=20)
+
+    def test_managed_codex_routes_only_herdr_panes_and_forwards_arguments(self):
+        for name in ("bash", "zsh", "nu"):
+            for herdr in (None, "0", "1"):
+                with self.subTest(shell=name, herdr=herdr):
+                    result = self.shell(name, herdr=herdr)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(),
+                                     ["codex-herdr" if herdr == "1" else "codex",
+                                      "--version", "path with spaces"])
+
+    def test_device_local_codex_overrides_managed_command_in_every_shell(self):
+        for name in ("bash.local.sh", "zsh.local.zsh"):
+            (self.local / name).write_text(
+                'codex() { printf "%s\\n" device-local-codex "$@"; }\n', encoding="utf-8")
+        (self.local / "nu.local.nu").write_text(
+            'def --wrapped codex [...args] { print device-local-codex ...$args }\n', encoding="utf-8")
+        for name in ("bash", "zsh", "nu"):
+            for herdr in (None, "1"):
+                with self.subTest(shell=name, herdr=herdr):
+                    result = self.shell(name, herdr=herdr)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(result.stdout.splitlines(),
+                                     ["device-local-codex", "--version", "path with spaces"])
+
+    def test_native_nu_resource_copy_keeps_local_command_precedence(self):
+        (self.local / "nu.local.nu").write_text(
+            'def --wrapped codex [...args] { print device-local-codex ...$args }\n', encoding="utf-8")
+        result = self.shell("nu", herdr="1", native_copy=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.splitlines(),
+                         ["device-local-codex", "--version", "path with spaces"])
+
+
 class AgentHerdrTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-herdr-")
