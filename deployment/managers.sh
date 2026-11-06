@@ -75,7 +75,8 @@ install_chezmoi() {
     if [ -x "$DEPLOY_CHEZMOI" ] && [[ "$("$DEPLOY_CHEZMOI" --version)" = *"v$CHEZMOI_VERSION,"* ]]; then return; fi
     local target digest scratch
     case "$DEPLOY_PLATFORM-$DEPLOY_ARCH" in
-        linux-x86_64|wsl-x86_64) target=linux_amd64; digest=6e5827598cbfc02d132b04f95b5ea10efb5b79230e2a4a0e52df4af144a8ee9f ;;
+        # Upstream links the musl amd64 build statically, avoiding a host glibc floor.
+        linux-x86_64|wsl-x86_64) target=linux-musl_amd64; digest=f2fbda5a865e2725adc42090ea6deabf3e1a4d40bfd59a8942c3ad20284b39cb ;;
         linux-aarch64|wsl-aarch64) target=linux_arm64; digest=c9e6a6e71eb5291018e161a8426d7c313cd2e8553c2ca4029511fec2a33bc28c ;;
         macos-x86_64) target=darwin_amd64; digest=d865487d6669243c948ee5542087bd95f4ad4ecb5a1311b85cf19f557694fe03 ;;
         macos-aarch64) target=darwin_arm64; digest=ec2d0005f369c912ee9891a26c30d65dc0eda51708f06948e5f7a43db69e1aa7 ;;

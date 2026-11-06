@@ -5,6 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from pins import manager_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -87,6 +88,38 @@ exit 0
         result = self.run_download(failures=0, verify=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("SHA-256 mismatch", result.stderr)
+
+    def test_linux_and_wsl_chezmoi_select_the_verified_static_archive(self):
+        for platform in ("linux", "wsl"):
+            with self.subTest(platform=platform):
+                home = self.root / platform
+                (home / ".local/bin").mkdir(parents=True)
+                scratch = self.root / (platform + "-tmp")
+                scratch.mkdir()
+                request = self.root / (platform + "-request")
+                script = self.root / (platform + "-install.sh")
+                script.write_text(
+                    "set -euo pipefail\n"
+                    "fail() { printf 'dotfiles: %s\\n' \"$*\" >&2; exit 1; }\n"
+                    f". '{SOURCE}/deployment/managers.sh'\n"
+                    "download_verified() { printf '%s\\n' \"$1\" \"$3\" > \"$REQUEST_LOG\"; : > \"$2\"; }\n"
+                    "tar() { printf 'synthetic-chezmoi' > \"$4/chezmoi\"; }\n"
+                    "install_chezmoi\n",
+                    encoding="utf-8")
+                result = subprocess.run(
+                    ["/bin/bash", str(script)],
+                    env={"HOME": str(home), "PATH": "/usr/bin:/bin", "TMPDIR": str(scratch),
+                         "REQUEST_LOG": str(request), "DEPLOY_PLATFORM": platform, "DEPLOY_ARCH": "x86_64"},
+                    capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                url, digest = request.read_text().splitlines()
+                version = manager_pin("CHEZMOI_VERSION")
+                self.assertEqual(url, f"https://github.com/twpayne/chezmoi/releases/download/v{version}/"
+                                      f"chezmoi_{version}_linux-musl_amd64.tar.gz")
+                self.assertRegex(digest, r"^[0-9a-f]{64}$")
+                target = home / ".local/bin/chezmoi"
+                self.assertEqual(target.read_text(), "synthetic-chezmoi")
+                self.assertTrue(os.access(target, os.X_OK))
 
     def test_the_download_needs_no_command_besides_curl(self):
         self.assertTrue(shutil.which("curl"))

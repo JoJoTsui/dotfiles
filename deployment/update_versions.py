@@ -35,7 +35,7 @@ MANAGER_DIGEST_SOURCES = {
         "url": "https://github.com/prefix-dev/pixi/releases/download/v{version}/pixi-{target}.tar.gz.sha256",
     },
     "chezmoi": {
-        "targets": ("linux_amd64", "linux_arm64", "darwin_amd64", "darwin_arm64"),
+        "targets": ("linux-musl_amd64", "linux_arm64", "darwin_amd64", "darwin_arm64"),
         "url": "https://github.com/twpayne/chezmoi/releases/download/v{version}/chezmoi_{version}_checksums.txt",
         "match": "chezmoi_{version}_{target}.tar.gz",
     },

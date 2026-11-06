@@ -90,6 +90,11 @@ Chezmoi assets. Chezmoi's one intended owner is the bootstrap binary under
 explicitly supply Pixi at its required pin for isolated boundary checks.
 `--apply-only` provisions/uses Chezmoi without provisioning Pixi.
 
+Linux and WSL x86_64 use the official statically linked musl Chezmoi archive,
+avoiding a host glibc dependency during source application. The upstream
+[release build configuration](https://github.com/twpayne/chezmoi/blob/v2.73.3/.config/goreleaser.yaml)
+declares static linking for that asset.
+
 The macOS installer resolves common providers before common installation.
 Accepted device or Homebrew groups are recorded in installer state and
 excluded from new Pixi desired entries at merge time. Existing registry entries
