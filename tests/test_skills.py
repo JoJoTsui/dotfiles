@@ -67,7 +67,10 @@ class SkillFetchTests(unittest.TestCase):
         skill.mkdir(parents=True)
         (skill / "SKILL.md").write_text("---\nname: demo\ndescription: demo\n---\nbody\n")
         (skill / "note.md").write_text("note\n")
-        subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        subprocess.run(["git", "-C", str(repo), "symbolic-ref", "HEAD", "refs/heads/main"], check=True)
+        # Model upstreams that serve a locked ancestor after the branch advances.
+        subprocess.run(["git", "-C", str(repo), "config", "uploadpack.allowReachableSHA1InWant", "true"], check=True)
         subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
         subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
                         "commit", "-qm", "init"], check=True)
