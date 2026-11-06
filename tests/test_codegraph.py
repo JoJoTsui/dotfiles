@@ -207,7 +207,8 @@ class CodeGraphTests(unittest.TestCase):
         with (self.root / "mcp.log").open("w") as log:
             process = subprocess.Popen([command["command"], *command["args"]], cwd=project,
                                        env=environment, stdin=subprocess.PIPE,
-                                       stdout=subprocess.PIPE, stderr=log, text=True)
+                                       stdout=subprocess.PIPE, stderr=log, text=True,
+                                       start_new_session=os.name != "nt")
             inbox = queue.Queue()
             def collect():
                 for line in process.stdout:
@@ -299,7 +300,8 @@ class CodeGraphTests(unittest.TestCase):
                         request.add_header("Authorization", "Basic " + base64.b64encode(b"opencode:synthetic-codegraph-test").decode())
                     return json.loads(opener.open(request, timeout=5).read())
                 with (self.root / f"{client}-mcp.log").open("w") as log:
-                    process = subprocess.Popen(command, cwd=project, env=environment, stdout=log, stderr=log)
+                    process = subprocess.Popen(command, cwd=project, env=environment, stdout=log, stderr=log,
+                                               start_new_session=os.name != "nt")
                     try:
                         deadline = time.monotonic() + 30
                         server = None
