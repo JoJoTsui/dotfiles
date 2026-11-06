@@ -23,13 +23,14 @@ class SkillFetchTests(unittest.TestCase):
         self.tmp = self.root / "tmp"
         self.tmp.mkdir()
 
-    def run_script(self, body, env=None):
+    def run_script(self, body, env=None, home=None):
+        home = home or self.root
         script = self.root / "run.sh"
         script.write_text(
             "set -e\n"
             f"DEPLOY_SOURCE='{self.source}'\n"
-            f"DEPLOY_HOME='{self.root}'\n"
-            f"export XDG_CACHE_HOME='{self.root}/xdg-cache' XDG_STATE_HOME='{self.root}/xdg-state' TMPDIR='{self.tmp}'\n"
+            f"DEPLOY_HOME='{home}'\n"
+            f"export XDG_CACHE_HOME='{home}/xdg-cache' XDG_STATE_HOME='{home}/xdg-state' TMPDIR='{self.tmp}'\n"
             "fail() { echo \"$*\" >&2; exit 1; }\n"
             f"source '{SOURCE}/deployment/skills.sh'\n"
             f"source '{SOURCE}/deployment/payload.sh'\n"
@@ -111,6 +112,80 @@ class SkillFetchTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("symlink", result.stderr)
         self.assertEqual(outside.read_text(), "preserve outside\n")
+        self.assertFalse((self.root / "xdg-cache").exists())
+
+    def test_skill_cache_symlinks_are_rejected_before_writes(self):
+        self.write_catalog()
+        for index, relative in enumerate((
+                "xdg-cache", "xdg-cache/dotfiles", "xdg-cache/dotfiles/skills",
+                "xdg-cache/dotfiles/skills/git", "xdg-cache/dotfiles/skills/tarballs",
+                "xdg-cache/dotfiles/skills/.refreshed")):
+            with self.subTest(path=relative):
+                home = self.root / f"home-{index}"
+                outside = self.root / f"outside-{index}"
+                outside.mkdir()
+                sentinel = outside / "preserve"
+                sentinel.write_text("preserve outside\n")
+                target = home / relative
+                target.parent.mkdir(parents=True)
+                target.symlink_to(sentinel if relative.endswith(".refreshed") else outside)
+                result = self.run_script("prepare_skill_library", home=home)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn("symlink", result.stderr)
+                self.assertEqual(sentinel.read_text(), "preserve outside\n")
+                self.assertEqual(sorted(path.name for path in outside.iterdir()), ["preserve"])
+                self.assertEqual(list(self.tmp.iterdir()), [])
+
+    def test_nested_git_cache_symlink_is_rejected_before_fetching(self):
+        repo = self.make_git_repo("demo-repo")
+        self.write_catalog(f"demo|git|{repo}|main|skills/demo")
+        result = self.run_script("prepare_skill_library\ncleanup_skill_library")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        cached_repo = next((self.root / "xdg-cache/dotfiles/skills/git").iterdir())
+        config = cached_repo / ".git/config"
+        outside = self.root / "outside-config"
+        outside.write_bytes(config.read_bytes())
+        config.unlink()
+        config.symlink_to(outside)
+        before = outside.read_bytes()
+        result = self.run_script("prepare_skill_library")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr)
+        self.assertEqual(outside.read_bytes(), before)
+        self.assertEqual(list(self.tmp.iterdir()), [])
+
+    def test_archive_cache_and_download_symlinks_are_rejected(self):
+        archive = self.make_tarball("arc")
+        self.write_catalog(f"arc|tarball|file://{archive}||")
+        outside = self.root / "outside-archive"
+        outside.write_bytes(archive.read_bytes())
+        before = outside.read_bytes()
+        for suffix in ("", ".part.$$"):
+            with self.subTest(suffix=suffix):
+                home = self.root / ("archive-home" if not suffix else "download-home")
+                result = self.run_script(
+                    'cache=$(skills_cache_root)\n'
+                    'mkdir -p "$cache/tarballs"\n'
+                    f"slug=$(skill_slug 'file://{archive}')\n"
+                    f'ln -s \'{outside}\' "$cache/tarballs/$slug.tgz{suffix}"\n'
+                    'prepare_skill_library', home=home)
+                self.assertNotEqual(result.returncode, 0, result.stderr)
+                self.assertIn("symlink", result.stderr)
+                self.assertEqual(outside.read_bytes(), before)
+                self.assertEqual(list(self.tmp.iterdir()), [])
+
+    def test_explicit_external_skill_cache_is_supported(self):
+        archive = self.make_tarball("arc")
+        self.write_catalog(f"arc|tarball|file://{archive}||")
+        # /tmp is a system symlink on macOS, above this deliberately chosen
+        # cache root. It does not turn the cache itself into a symlink.
+        external = tempfile.TemporaryDirectory(prefix="dotfiles-skills-cache-", dir="/tmp")
+        self.addCleanup(external.cleanup)
+        cache = Path(external.name) / "skills"
+        result = self.run_script("prepare_skill_library", env={"DOTFILES_SKILLS_CACHE": str(cache)})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((cache / ".refreshed").is_file())
+        self.assertEqual(len(list((cache / "tarballs").glob("*.tgz"))), 1)
         self.assertFalse((self.root / "xdg-cache").exists())
 
     def test_skill_state_replacement_is_regular_private_and_preserves_failed_fetch(self):

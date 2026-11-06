@@ -27,6 +27,18 @@ skills_cache_root() {
     fi
 }
 
+# Git and curl can write below source-specific cache directories. Inspect the
+# existing tree before either runs, including dotfiles and dangling symlinks.
+validate_skill_cache_tree() {
+    local target=$1 entry
+    [ ! -L "$target" ] || fail "skill cache path is a symlink: $target"
+    [ -d "$target" ] || return 0
+    for entry in "$target"/* "$target"/.[!.]* "$target"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        validate_skill_cache_tree "$entry"
+    done
+}
+
 validate_skill_state() {
     payload_safe_destination "$1"
     [ ! -e "$1" ] || [ -f "$1" ] || fail "skill state must be a regular file: $1"
@@ -223,6 +235,12 @@ prepare_skill_library() {
     state="$XDG_STATE_HOME/dotfiles/skills.lock.tsv"
     validate_skill_state "$state"
     cache=$(skills_cache_root)
+    # An explicit cache may live outside the selected home. Its own tree must
+    # still be regular; system aliases above it (such as macOS /tmp) are valid.
+    if [ -z "${DOTFILES_SKILLS_CACHE:-}" ]; then
+        payload_safe_destination "$cache"
+    fi
+    validate_skill_cache_tree "$cache"
     index="$root.index"
     rm -rf "$root" "$index"
     mkdir -p "$root" "$cache/git" "$cache/tarballs"
