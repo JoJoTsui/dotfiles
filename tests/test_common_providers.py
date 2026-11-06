@@ -57,7 +57,7 @@ class CommonProviderTests(unittest.TestCase):
             f"DEPLOY_HOME='{self.home}'\nexport HOME='{self.home}'\n"
             f"export PIXI_HOME='{self.home / '.pixi'}'\n"
             f"export XDG_STATE_HOME='{self.home / '.local/state'}'\n"
-            f"export PATH='{self.tools}:/usr/bin:/bin'\n"
+            f"export PATH='{self.home / '.local/bin'}:{self.home / '.pixi/bin'}:{self.tools}:/usr/bin:/bin'\n"
             f"DOTFILES_HOMEBREW_BIN='{self.brew}'\n"
             "fail() { echo \"$*\" >&2; exit 1; }\n"
             "bundle_selected() { return 1; }\n"

@@ -170,7 +170,8 @@ installer_owned_launcher() {
 # Resolve every exposure together. Formula libexec/bin contains Python's
 # unversioned commands and may also contain npm/npx.
 installer_common_paths() {
-    local mappings=$1 prefix=$2 mapping command target primary='' pip_version
+    local mappings=$1 prefix=$2 mapping command target primary='' pip_version directory candidate
+    local search_paths=()
     local saved_ifs=$IFS
     INSTALLER_COMMANDS=()
     INSTALLER_PATHS=()
@@ -181,13 +182,20 @@ installer_common_paths() {
             target="$prefix/bin/${mapping#*=}"
             [ -x "$target" ] || target="$prefix/libexec/bin/${mapping#*=}"
         else
-            target=$(command -v "${mapping#*=}" 2>/dev/null) || { IFS=$saved_ifs; return 1; }
-            # Prior managed launchers must be re-resolved, otherwise reapply
-            # can produce a launcher which executes itself.
-            case "$target" in "$PIXI_HOME/bin/"*) IFS=$saved_ifs; return 1 ;; esac
-            if installer_owned_launcher "$target"; then
-                IFS=$saved_ifs; return 1
-            fi
+            # Bootstrap prepends managed launchers. Continue past them to the
+            # device provider instead of treating reapply as a missing command.
+            target=''
+            IFS=: read -r -a search_paths <<< "$PATH"
+            for directory in "${search_paths[@]}"; do
+                case "$directory" in /*) ;; *) continue ;; esac
+                candidate="$directory/${mapping#*=}"
+                case "$candidate" in "$PIXI_HOME/bin/"*) continue ;; esac
+                [ -f "$candidate" ] && [ -x "$candidate" ] || continue
+                if installer_owned_launcher "$candidate"; then continue; fi
+                target=$candidate
+                break
+            done
+            [ -n "$target" ] || { IFS=$saved_ifs; return 1; }
             if [ -n "$primary" ] && [ "$(dirname "$target")" != "$(dirname "$primary")" ]; then
                 IFS=$saved_ifs; return 1
             fi
