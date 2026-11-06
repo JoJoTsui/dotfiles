@@ -127,7 +127,7 @@ def main():
         row = {'ubuntu_release': release, 'status': 'running', 'container': name, 'volume': volume, 'image': image}
         report['baselines'].append(row)
         if abort_remaining:
-            row.update(status='blocked', failure='previous task container could not be stopped', retained_runtime=False)
+            row.update(status='blocked', failure='previous task container was not confirmed stopped', retained_runtime=False)
             atomic_json(output, report)
             continue
         atomic_json(output, report)
@@ -151,26 +151,34 @@ def main():
             row['volume_created'] = True
             print(f'Ubuntu {release}: full remote-compute deployment and behavior checks', flush=True)
             started = time.monotonic()
-            code = logged([docker, 'run', '--name', name, '--label', 'io.dotfiles.verification.task=' + task,
-                           '--platform', 'linux/amd64', '--init', '--cpus', '4', '--memory', '8g', '--pids-limit', '512',
-                           '--env', 'DOTFILES_TEST_EXECUTION_MODE=' + execution,
-                           '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-                           '--mount', 'type=volume,source=' + volume + ',target=/home/verifier',
-                           '--tmpfs', '/tmp:rw,exec,nosuid,nodev,size=2g', image],
-                          case / 'container.log', env=env, timeout=14400)
-            row.update(exit_code=code, elapsed_seconds=round(time.monotonic() - started, 3))
-            if code == 124:
-                stopped = logged([docker, 'stop', '--time', '10', name], case / 'stop.log', env=env, timeout=30)
-                if stopped:
-                    stopped = logged([docker, 'kill', name], case / 'kill.log', env=env, timeout=30)
-                if stopped:
+            code = None
+            try:
+                code = logged([docker, 'run', '--name', name, '--label', 'io.dotfiles.verification.task=' + task,
+                               '--platform', 'linux/amd64', '--init', '--cpus', '4', '--memory', '8g', '--pids-limit', '512',
+                               '--env', 'DOTFILES_TEST_EXECUTION_MODE=' + execution,
+                               '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
+                               '--mount', 'type=volume,source=' + volume + ',target=/home/verifier',
+                               '--tmpfs', '/tmp:rw,exec,nosuid,nodev,size=2g', image],
+                              case / 'container.log', env=env, timeout=14400)
+                row.update(exit_code=code, elapsed_seconds=round(time.monotonic() - started, 3))
+            finally:
+                if code != 0:
+                    # The CLI can disconnect while its daemon-owned container
+                    # keeps running. Block later baselines until state is known.
                     abort_remaining = True
-                    raise RuntimeError('timed-out task container could not be stopped; remaining baselines blocked')
-                abort_remaining = True
-                running = query([docker, 'inspect', '--format', '{{.State.Running}}', name], env=env)
-                if running != 'false':
-                    raise RuntimeError('timed-out task container remains running; remaining baselines blocked')
-                abort_remaining = False
+                    exists = query([docker, 'ps', '--all', '--filter', 'name=^/' + name + '$',
+                                    '--format', '{{.ID}}'], env=env)
+                    if exists:
+                        running = query([docker, 'inspect', '--format', '{{.State.Running}}', name], env=env)
+                        require(running in ('true', 'false'), 'task container state is unknown; remaining baselines blocked')
+                        if running == 'true':
+                            stopped = logged([docker, 'stop', '--time', '10', name], case / 'stop.log', env=env, timeout=30)
+                            if stopped:
+                                stopped = logged([docker, 'kill', name], case / 'kill.log', env=env, timeout=30)
+                            require(stopped == 0, 'failed task container could not be stopped; remaining baselines blocked')
+                            require(query([docker, 'inspect', '--format', '{{.State.Running}}', name], env=env) == 'false',
+                                    'failed task container was not confirmed stopped; remaining baselines blocked')
+                    abort_remaining = False
             copied = logged([docker, 'cp', name + ':/home/verifier/artifacts', str(case / 'gate')],
                             case / 'copy.log', env=env, timeout=120)
             row['artifacts_copied'] = copied == 0

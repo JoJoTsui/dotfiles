@@ -143,6 +143,8 @@ than replacing them with later successful results.
    processor emulation and the actual engine kernel.
 2. Run one baseline at a time, initially capped at four CPUs and 8 GiB of memory.
    Measure container cgroup limits and cap child parallelism within that grant.
+   After any Docker client failure, confirm its container is absent or stopped
+   before advancing. Uncertain state or failed shutdown blocks later baselines.
 3. Supply a read-only, identified source export containing no ignored device
    files. Start with a fresh non-root test account and empty managed-tool caches
    on each baseline. Retain subsequent cache use and failed attempts explicitly.
