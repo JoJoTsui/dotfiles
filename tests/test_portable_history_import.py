@@ -46,8 +46,12 @@ class PortableHistoryImportTests(unittest.TestCase):
                 (self.home / relative).mkdir(parents=True, exist_ok=True)
         binary = self.home / ('.pixi/bin/atuin.exe' if os.name == 'nt' else '.pixi/bin/atuin')
         binary.parent.mkdir(parents=True)
-        shutil.copyfile(ATUIN, binary)
-        binary.chmod(0o755)
+        if os.name == 'nt':
+            shutil.copyfile(ATUIN, binary)
+            binary.chmod(0o755)
+        else:
+            # Borrow the installed prefix so relative ELF/Mach-O libraries resolve.
+            binary.symlink_to(Path(ATUIN).resolve())
         self.atuin = binary
 
     def history(self, *arguments):
