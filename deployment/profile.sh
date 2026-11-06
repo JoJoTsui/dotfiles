@@ -37,16 +37,22 @@ detect_platform() {
 resolve_profile() {
     DEPLOY_PLATFORM=''
     DEPLOY_ROLE=workstation
-    if [ -n "${DOTFILES_CLASS:-}" ]; then
-        parse_class "$DOTFILES_CLASS"
-        DEPLOY_PLATFORM=$PROFILE_PLATFORM; DEPLOY_ROLE=$PROFILE_ROLE
-    fi
-    if [ -n "${DOTFILES_PROFILE:-}" ]; then
-        parse_profile "$DOTFILES_PROFILE"
-        if [ -n "${DOTFILES_CLASS:-}" ] && [ "$DEPLOY_PLATFORM-$DEPLOY_ROLE" != "$PROFILE_PLATFORM-$PROFILE_ROLE" ]; then
-            fail 'conflicting DOTFILES_PROFILE and DOTFILES_CLASS'
+    # A CLI preset owns both dimensions. Component flags only suppress the
+    # inherited dimension they replace; unresolved environment conflicts fail.
+    if [ -z "$CLI_CLASS$CLI_PROFILE" ] && { [ -z "$CLI_PLATFORM" ] || [ -z "$CLI_ROLE" ]; }; then
+        if [ -n "${DOTFILES_CLASS:-}" ]; then
+            parse_class "$DOTFILES_CLASS"
+            DEPLOY_PLATFORM=$PROFILE_PLATFORM; DEPLOY_ROLE=$PROFILE_ROLE
         fi
-        DEPLOY_PLATFORM=$PROFILE_PLATFORM; DEPLOY_ROLE=$PROFILE_ROLE
+        if [ -n "${DOTFILES_PROFILE:-}" ]; then
+            parse_profile "$DOTFILES_PROFILE"
+            if [ -n "${DOTFILES_CLASS:-}" ] &&
+                [[ ( -z "$CLI_PLATFORM" && "$DEPLOY_PLATFORM" != "$PROFILE_PLATFORM" ) ||
+                   ( -z "$CLI_ROLE" && "$DEPLOY_ROLE" != "$PROFILE_ROLE" ) ]]; then
+                fail 'conflicting DOTFILES_PROFILE and DOTFILES_CLASS'
+            fi
+            DEPLOY_PLATFORM=$PROFILE_PLATFORM; DEPLOY_ROLE=$PROFILE_ROLE
+        fi
     fi
     DEPLOY_PLATFORM="${DOTFILES_PLATFORM:-$DEPLOY_PLATFORM}"
     DEPLOY_ROLE="${DOTFILES_ROLE:-$DEPLOY_ROLE}"

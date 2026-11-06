@@ -66,6 +66,29 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(self.plan("--profile", "macos-workstation", env=legacy)["profile"], "macos-workstation")
         self.assertEqual(self.plan()["role"], "workstation")
 
+    def test_explicit_cli_target_overrides_conflicting_inherited_presets(self):
+        environment = dict(self.env, DOTFILES_CLASS="t9k", DOTFILES_PROFILE="linux-workstation")
+        for arguments in (("--profile", "macos-workstation"),
+                          ("--platform", "macos", "--role", "workstation")):
+            with self.subTest(arguments=arguments):
+                plan = self.plan(*arguments, "--arch", "aarch64", env=environment)
+                self.assertEqual(plan["profile"], "macos-workstation")
+                self.assertFalse(self.home.exists())
+        self.assertEqual(list(self.original_home.iterdir()), [])
+
+    def test_cli_component_only_ignores_the_inherited_dimension_it_overrides(self):
+        role_conflict = dict(self.env, DOTFILES_CLASS="t9k", DOTFILES_PROFILE="linux-workstation")
+        self.assertEqual(self.plan("--role", "workstation", env=role_conflict)["profile"],
+                         "linux-workstation")
+        platform_conflict = dict(self.env, DOTFILES_CLASS="linux", DOTFILES_PROFILE="macos-workstation")
+        self.assertEqual(self.plan("--platform", "wsl", env=platform_conflict)["profile"],
+                         "wsl-workstation")
+        unresolved = dict(self.env, DOTFILES_CLASS="t9k", DOTFILES_PROFILE="macos-workstation")
+        result = self.deploy("--plan", "--role", "workstation", env=unresolved)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("conflicting DOTFILES_PROFILE and DOTFILES_CLASS", result.stderr)
+        self.assertFalse(self.home.exists())
+
     def test_common_plan_names_default_tools_and_exact_package_owners(self):
         plan = self.plan("--platform", "linux")
         for command in ("pixi", "uv", "bun", "node", "nu", "bash", "zsh",
