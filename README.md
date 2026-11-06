@@ -345,6 +345,11 @@ DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest discover -s test
 DOTFILES_TEST_INSTALL=1 python3 -m unittest discover -s tests -p test_common_install.py -v
 ```
 
+The [Ubuntu Docker gate](docs/validation/t9k-docker.md) verifies the full default
+remote-compute stack on Ubuntu 20.04 and 24.04, including fresh installation,
+reapplication, real runtime checks and a skip audit. Its recorded results label
+amd64 emulation and distinguish Docker compatibility from native T9K evidence.
+
 ## Maintenance
 
 Optional [device-local hooks and mirrors](docs/SHARED_SHELL_SETTINGS.md) preserve
