@@ -95,6 +95,43 @@ class CodeGraphTests(unittest.TestCase):
         self.assertFalse((SOURCE / ".codegraph").exists())
         self.assertFalse((self.home / ".codex/auth.json").exists())
 
+    def test_codex_retires_only_incompatible_claude_rtk_hook(self):
+        path = self.home / ".codex/hooks.json"
+        path.parent.mkdir(parents=True)
+        rtk = {"type": "command", "command": "rtk hook claude"}
+        device = {"type": "command", "command": "device-policy", "timeout": 5}
+        data = {"device": True, "hooks": {
+            "PreToolUse": [
+                {"matcher": "Bash", "hooks": [rtk]},
+                {"matcher": "Bash", "hooks": [rtk, device]},
+                {"hooks": [{"type": "command", "command": "rtk hook codex"}]},
+            ],
+            "Stop": [{"hooks": [device]}],
+        }}
+        path.write_text(json.dumps(data))
+        expected = json.loads(json.dumps(data))
+        expected["hooks"]["PreToolUse"][0]["hooks"] = []
+        expected["hooks"]["PreToolUse"][1]["hooks"] = [device]
+        for _ in range(2):
+            result = self.deploy()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(path.read_text()), expected)
+        before = path.stat().st_mtime_ns
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(path.stat().st_mtime_ns, before)
+
+    def test_invalid_codex_hooks_fail_before_replacing_client_settings(self):
+        path = self.home / ".codex/hooks.json"
+        path.parent.mkdir(parents=True)
+        original = '{"hooks":{"PreToolUse":"invalid"}}\n'
+        path.write_text(original)
+        result = self.deploy()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(".codex/hooks.json", result.stderr)
+        self.assertEqual(path.read_text(), original)
+        self.assertFalse((self.home / ".codex/config.toml").exists())
+
     def test_registration_preserves_existing_client_settings_and_authentication(self):
         if tomllib is None:
             self.skipTest("TOML preservation checks require Python 3.11+")

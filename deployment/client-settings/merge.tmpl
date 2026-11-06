@@ -74,6 +74,30 @@
 {{- template "client-defaults" (list $host $desired $previous) -}}
 {{- $policies := include "deployment/client-settings/policies.json" | fromJson -}}
 {{- $policy := env "DOTFILES_SETTINGS_POLICY" -}}
+{{- /* Retire the legacy Claude RTK adapter only. Codex rejects its updatedInput
+      without permissionDecision:allow; shared instructions use explicit RTK.
+      Other commands, matchers, events and device metadata remain device-owned. */ -}}
+{{- if and (eq $policy "codex-hooks") (hasKey $host "hooks") -}}
+{{- $hooks := get $host "hooks" -}}
+{{- if not (kindIs "map" $hooks) -}}{{- fail "Codex hooks must be an object" -}}{{- end -}}
+{{- if hasKey $hooks "PreToolUse" -}}
+{{- $groups := get $hooks "PreToolUse" -}}
+{{- if not (kindIs "slice" $groups) -}}{{- fail "Codex PreToolUse must be an array" -}}{{- end -}}
+{{- range $group := $groups -}}
+{{- $commands := get $group "hooks" -}}
+{{- if not (kindIs "slice" $commands) -}}{{- fail "Codex hook group must contain a hooks array" -}}{{- end -}}
+{{- $remaining := list -}}
+{{- $removed := false -}}
+{{- range $hook := $commands -}}
+{{- if and (eq (get $hook "type") "command") (eq (get $hook "command") "rtk hook claude") -}}
+{{- $removed = true -}}
+{{- else -}}{{- $remaining = append $remaining $hook -}}{{- end -}}
+{{- end -}}
+{{- if $removed -}}{{- $_ := set $group "hooks" $remaining -}}{{- end -}}
+{{- end -}}
+{{- /* Keep empty groups: Codex hook trust records include group positions. */ -}}
+{{- end -}}
+{{- end -}}
 {{- /* The pinned Claude client can migrate plain opus to opus[1m] while
       initializing plugins. Preserve only the installer's exact prior choice;
       explicit context/custom models and all runtime metadata stay client-owned. */ -}}
@@ -97,6 +121,10 @@
 {{ $host | toYaml }}
 {{- end -}}
 {{- else -}}
+{{- if and (eq $policy "codex-hooks") (lstat $target) (deepEqual $host (include $target | fromJsonc)) -}}
+{{ include $target }}
+{{- else -}}
 {{ $host | toPrettyJson }}
+{{- end -}}
 {{- end -}}
 {{- end -}}

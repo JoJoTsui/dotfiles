@@ -13,6 +13,14 @@ CodeGraph server entries and the clients' disabled self-updaters. Other defaults
 fill missing fields. Existing device values, including false values, custom
 providers, hooks, MCP servers, project trust, and authentication survive.
 
+Codex's `.codex/hooks.json` has one compatibility migration: remove the exact
+`rtk hook claude` command from `PreToolUse`. Empty groups remain so later groups
+keep their positions in Codex's hook trust records. The Claude adapter emits `updatedInput` without Codex's
+required `permissionDecision: "allow"`, causing a hook failure. All other hook
+entries and metadata survive, and an unchanged file retains its bytes and mtime.
+Fresh homes receive an empty hook configuration; bootstrap installs no RTK hook.
+Use explicit RTK commands as described in `~/.agents/RTK.md`.
+
 An existing value matching the last managed default follows later source
 changes. A device override survives instead. This updates OpenCode's watcher
 settings when changing host role without freezing the old managed profile.

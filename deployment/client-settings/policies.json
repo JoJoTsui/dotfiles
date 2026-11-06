@@ -2,6 +2,7 @@
   "codegraph-mcp": [["mcpServers", "codegraph"]],
   "claude-settings": [["env", "DISABLE_AUTOUPDATER"]],
   "codex": [["mcp_servers", "codegraph"], ["check_for_update_on_startup"]],
+  "codex-hooks": [],
   "kimi": [],
   "kimi-tui": [["upgrade", "auto_install"]],
   "opencode": [["mcp", "servers", "codegraph"], ["update"]],

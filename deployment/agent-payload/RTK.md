@@ -15,3 +15,7 @@ provides a recovery hint.
 
 Use `rtk gain` to inspect recorded savings. These instructions do not install
 client hooks, rewrite commands automatically, or change command permissions.
+
+Do not register `rtk hook claude` in Codex: its rewrite response lacks Codex's
+required permission decision and causes `PreToolUse` failures. Bootstrap retires
+that exact legacy entry from Codex while preserving other device hooks.
