@@ -79,6 +79,92 @@ $asset | ConvertTo-Json -Compress
         self.assertTrue(asset["url"].startswith("https://"))
         self.assertRegex(asset["sha256"], r"^[a-f0-9]{64}$")
 
+    def asset_version_fixture(self, name, *, cached=None, downloaded=None):
+        asset = windows_assets()[name]
+        target = self.home / asset['target']
+        diagnostic = target / 'bin/git.exe' if name == 'git-bash' else target / 'hx.exe' if name == 'helix' else target
+        diagnostic.parent.mkdir(parents=True, exist_ok=True)
+
+        def payload(output):
+            return (f'import sys\nassert sys.argv[1:] == ["--version"]\nprint({output!r})\n').encode()
+
+        if cached is None:
+            if diagnostic.exists():
+                diagnostic.unlink()
+        else:
+            diagnostic.write_bytes(payload(cached))
+        archive = self.root / 'asset-payload.py'
+        archive.write_bytes(payload(downloaded or 'unexpected download'))
+        temporary = self.home / '.cache/tmp'
+        temporary.mkdir(parents=True, exist_ok=True)
+        script = self.root / 'asset-version.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2.0
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+$exceptions = @([IO.File]::ReadAllText((Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows-assets.json')) | ConvertFrom-Json)
+$script:FixtureDownloads = 0
+function Download-Verified($Asset, [string]$Destination) {
+    $script:FixtureDownloads++
+    if ($env:DOTFILES_TEST_ALLOW_DOWNLOAD -ne '1') { throw 'unexpected download' }
+    [IO.File]::Copy($env:DOTFILES_TEST_PAYLOAD, $Destination)
+}
+# Use synthetic diagnostic payloads on either OS while retaining the real
+# subprocess runner, Install-Asset control flow, and output propagation.
+$script:FixtureInvokeTool = ${function:Invoke-Tool}
+function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet) {
+    & $script:FixtureInvokeTool $env:DOTFILES_TEST_PYTHON (@($Executable) + $Arguments) -Quiet:$Quiet
+}
+Install-Asset $env:DOTFILES_TEST_ASSET
+@{ downloads = $script:FixtureDownloads } | ConvertTo-Json -Compress
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(self.home),
+                           DOTFILES_TEST_PYTHON=sys.executable, DOTFILES_TEST_ASSET=name,
+                           DOTFILES_TEST_ALLOW_DOWNLOAD='1' if downloaded is not None else '0',
+                           DOTFILES_TEST_PAYLOAD=str(archive), TEMP=str(temporary))
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=environment, capture_output=True, text=True, timeout=30)
+        return result, diagnostic, archive.read_bytes()
+
+    def test_asset_reuses_exact_tool_versions_with_native_build_metadata(self):
+        pins = windows_assets()
+        # These are native --version formats, including ChezMoi's fields,
+        # Atuin/Helix build IDs, and Rustup's additional informational lines.
+        diagnostics = {
+            'pixi': f"pixi {pins['pixi']['version']}",
+            'chezmoi': f"chezmoi version v{pins['chezmoi']['version']}, commit abc123, built by goreleaser",
+            'bun': pins['bun']['version'],
+            'atuin': f"atuin {pins['atuin']['version']} (NO_GIT)",
+            'git-bash': f"git version {pins['git-bash']['version']}",
+            'helix': f"helix {pins['helix']['version']} (a05c151b)",
+            'jq': f"jq-{pins['jq']['version']}",
+            'rustup': f"rustup {pins['rustup']['version']} (d8c92c676 2026-10-21)\ninfo: no rustc is currently active",
+        }
+        for name, diagnostic in diagnostics.items():
+            with self.subTest(asset=name):
+                result, _, _ = self.asset_version_fixture(name, cached=diagnostic)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['downloads'], 0)
+
+    def test_asset_repairs_cached_version_prefix_and_tool_name_collisions(self):
+        pin = windows_assets()['jq']['version']
+        for diagnostic in (f'jq-{pin}0', f'jq-{pin}-dev', f'other-tool {pin}', f'jq-0.0.0 (wanted {pin})'):
+            with self.subTest(diagnostic=diagnostic):
+                result, target, replacement = self.asset_version_fixture('jq', cached=diagnostic, downloaded=f'jq-{pin}')
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['downloads'], 1)
+                self.assertEqual(target.read_bytes(), replacement)
+
+    def test_asset_rejects_downloaded_version_prefix_and_tool_name_collisions(self):
+        pin = windows_assets()['jq']['version']
+        for diagnostic in (f'jq-{pin}0', f'jq-{pin}-dev', f'other-tool {pin}', f'jq-0.0.0 (wanted {pin})'):
+            with self.subTest(diagnostic=diagnostic):
+                result, _, _ = self.asset_version_fixture('jq', downloaded=diagnostic)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('did not report its pinned version', result.stderr)
+
     def test_payload_preflight_defers_unfetched_skills_without_creating_home(self):
         script = self.root / 'payload-preflight.ps1'
         script.write_text(r'''$ErrorActionPreference = 'Stop'

@@ -484,6 +484,19 @@ function Expand-VerifiedZip([string]$Archive, [string]$Directory) {
         }
     } finally { $zip.Dispose() }
 }
+function Test-AssetVersion($Asset, [string]$Diagnostic) {
+    $prefix = switch ($Asset.name) {
+        'bun' { '' }
+        'jq' { 'jq-' }
+        'git-bash' { 'git version ' }
+        'chezmoi' { 'chezmoi version v' }
+        default { $Asset.name + ' ' }
+    }
+    # Match the tool's complete version token. Comma/whitespace delimit native
+    # build metadata; a longer version or prerelease must not satisfy the pin.
+    $pattern = '(?m)^' + [regex]::Escape($prefix + $Asset.version) + '(?=[\s,]|$)'
+    return $Diagnostic.Trim() -cmatch $pattern
+}
 function Install-Asset([string]$Name) {
     $asset = Get-Asset $Name
     $assetTarget = [string]$asset.target
@@ -494,7 +507,7 @@ function Install-Asset([string]$Name) {
     if ($Name -eq 'helix') { $diagnostic = Join-Path $target 'hx.exe' }
     if ([IO.File]::Exists($diagnostic)) {
         $version = Invoke-Tool $diagnostic @('--version') -Quiet
-        if ($version.Contains($asset.version)) { return }
+        if (Test-AssetVersion $asset $version) { return }
     }
     $script:Step = "install-managers.$Name"
     $scratch = Get-Scratch $Name
@@ -522,7 +535,7 @@ function Install-Asset([string]$Name) {
         else { Stop-Deployment 'unknown Windows asset type' }
         $script:Step = "install-managers.$Name.verify"
         $version = Invoke-Tool $diagnostic @('--version') -Quiet
-        if (-not $version.Contains($asset.version)) { Stop-Deployment "installed $Name did not report its pinned version" }
+        if (-not (Test-AssetVersion $asset $version)) { Stop-Deployment "installed $Name did not report its pinned version" }
     } finally { Remove-Item -LiteralPath $scratch -Recurse -Force }
 }
 function Install-Managers {
