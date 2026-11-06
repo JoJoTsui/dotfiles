@@ -110,8 +110,10 @@ class CodeGraphTests(unittest.TestCase):
         }}
         path.write_text(json.dumps(data))
         expected = json.loads(json.dumps(data))
-        expected["hooks"]["PreToolUse"][0]["hooks"] = []
-        expected["hooks"]["PreToolUse"][1]["hooks"] = [device]
+        expected["hooks"]["PreToolUse"][0]["hooks"] = [
+            {"type": "command", "command": "exit 0"}]
+        expected["hooks"]["PreToolUse"][1]["hooks"] = [
+            {"type": "command", "command": "exit 0"}, device]
         for _ in range(2):
             result = self.deploy()
             self.assertEqual(result.returncode, 0, result.stderr)
@@ -120,6 +122,38 @@ class CodeGraphTests(unittest.TestCase):
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(path.stat().st_mtime_ns, before)
+
+    def test_codex_retirement_preserves_surviving_command_trust_positions(self):
+        if tomllib is None:
+            self.skipTest("TOML preservation checks require Python 3.11+")
+        path = self.home / ".codex/hooks.json"
+        path.parent.mkdir(parents=True)
+        commands = [
+            {"type": "command", "command": "rtk hook claude"},
+            {"type": "command", "command": "device-policy", "timeout": 5},
+            {"type": "command", "command": "rtk hook claude"},
+            {"type": "command", "command": "device-audit"},
+        ]
+        path.write_text(json.dumps({"hooks": {"PreToolUse": [
+            {"matcher": "Bash", "hooks": commands}]}}))
+        trusted = {f"{path}:pre_tool_use:0:{index}": {
+            "trusted_hash": f"synthetic-trust-{index}"} for index in (1, 3)}
+        config = self.home / ".codex/config.toml"
+        config.write_text("".join(
+            f'[hooks.state.{json.dumps(key)}]\ntrusted_hash = {json.dumps(value["trusted_hash"])}\n'
+            for key, value in trusted.items()))
+        for _ in range(2):
+            result = self.deploy()
+            self.assertEqual(result.returncode, 0, result.stderr)
+            deployed = json.loads(path.read_text())["hooks"]["PreToolUse"][0]["hooks"]
+            self.assertEqual(len(deployed), len(commands))
+            for index in (1, 3):
+                self.assertEqual(deployed[index], commands[index])
+            self.assertEqual(tomllib.loads(config.read_text())["hooks"]["state"], trusted)
+            for index in (0, 2):
+                retired = subprocess.run(["/bin/sh", "-c", deployed[index]["command"]],
+                                         capture_output=True, text=True, timeout=5)
+                self.assertEqual((retired.returncode, retired.stdout, retired.stderr), (0, "", ""))
 
     def test_invalid_codex_hooks_fail_before_replacing_client_settings(self):
         path = self.home / ".codex/hooks.json"
