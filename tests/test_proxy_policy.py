@@ -16,7 +16,9 @@ class ProxyPolicyTests(unittest.TestCase):
     def parse_yaml(self, profile):
         result = subprocess.run(
             [shutil.which("ruby"), "-rjson", "-ryaml", "-e",
-             "puts JSON.generate(YAML.load_file(ARGV.fetch(0)))", str(profile)],
+             # Aliases are valid fixture YAML even though the rewriter rejects
+             # anchored headers. Psych 4+ disables aliases by default.
+             "puts JSON.generate(YAML.safe_load(File.read(ARGV.fetch(0)), aliases: true))", str(profile)],
             capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
