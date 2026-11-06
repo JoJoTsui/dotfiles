@@ -108,6 +108,11 @@ The routing policy follows the source project: local and China destinations go
 direct, advertising domains are rejected, and everything
 else uses the pinned US leaf. Loopback traffic never reaches the proxy.
 
+The policy rewriter accepts block collections (including indentless rule lists)
+and single-line flow collections for `rules` and `rule-providers`. Anchored or
+aliased headers, multiline flow collections, and unsupported complex keys report
+an error and leave that file unchanged.
+
 ## Checks
 
 ```bash

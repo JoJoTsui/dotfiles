@@ -26,6 +26,7 @@ re-running is a no-op.
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -133,7 +134,18 @@ def find_block(lines: list[str], key: str) -> tuple[int, int] | None:
     """
     start = None
     for index, line in enumerate(lines):
-        if line.rstrip("\n") == f"{key}:":
+        match = re.match(rf"^{re.escape(key)}:[ \t]*(.*)", line)
+        if match is not None:
+            value = match.group(1).strip()
+            opener = "[" if key == "rules" else "{"
+            if value and not value.startswith((opener, "#")):
+                raise ValueError(f"unsupported {key}: value; expected a block or flow collection")
+            # Multiline flow mappings can contain unindented keys that look
+            # like neighboring blocks. Leave those profiles unchanged rather
+            # than guessing at their boundary with this line-based rewriter.
+            closer = "]" if key == "rules" else "}"
+            if value.startswith(opener) and not re.search(rf"{re.escape(closer)}[ \t]*(?:#.*)?$", value):
+                raise ValueError(f"unsupported multiline {key}: flow collection")
             start = index
             break
     if start is None:
@@ -141,9 +153,15 @@ def find_block(lines: list[str], key: str) -> tuple[int, int] | None:
     end = len(lines)
     for index in range(start + 1, len(lines)):
         line = lines[index]
-        if line.strip() and not line[0].isspace():
+        # YAML permits a sequence at the same indentation as its key. Only
+        # another mapping key ends the block; comments do not end it.
+        if (not line.strip() or line[0].isspace() or line.startswith(("#", "- ", "-\t"))
+                or line.rstrip() == "-"):
+            continue
+        if re.match(r"^[^\s#][^:]*:(?:\s|$)", line):
             end = index
             break
+        raise ValueError(f"unsupported top-level line following {key}:")
     return start, end
 
 
@@ -178,13 +196,17 @@ def main() -> int:
 
     lines = profile.read_text().splitlines(keepends=True)
 
-    # Drop a rule-providers block left by an earlier run.
-    providers_block = find_block(lines, "rule-providers")
-    if providers_block is not None:
-        start, end = providers_block
-        lines = lines[:start] + lines[end:]
+    try:
+        # Drop a rule-providers block left by an earlier run.
+        providers_block = find_block(lines, "rule-providers")
+        if providers_block is not None:
+            start, end = providers_block
+            lines = lines[:start] + lines[end:]
 
-    rules_block = find_block(lines, "rules")
+        rules_block = find_block(lines, "rules")
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 1
     if rules_block is None:
         print("profile has no rules: block", file=sys.stderr)
         return 1
@@ -195,7 +217,7 @@ def main() -> int:
     lines = (
         lines[:rules_start]
         + render_providers()
-        + lines[rules_start : rules_start + 1]
+        + ["rules:\n"]
         + render(rules)
         + lines[rules_end:]
     )
