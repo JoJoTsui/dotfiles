@@ -2,19 +2,13 @@
 import json
 import os
 from pathlib import Path
-import queue
 import shutil
-import socket
 import subprocess
 import tempfile
-import threading
 import time
-import urllib.request
-import base64
 import errno
-from collections import Counter
-from urllib.parse import unquote, urlencode, urlparse
-from fixtures.processes import stop_client
+from urllib.parse import unquote, urlparse
+from fixtures.skill_discovery import codex_prompt, command_catalog, opencode_skills, pi_resources, resolve_skill_path
 from fixtures.skills import write_skill_library
 from fixtures.shell_env import managed_shell_environment
 
@@ -92,31 +86,7 @@ class AgentPayloadTests(unittest.TestCase):
         return managed
 
     def local_skill_path(self, value):
-        raw_value = str(value)
-        # On Windows urlparse treats a drive letter as a URI scheme, so accept
-        # native absolute paths before attempting URI decoding.
-        if Path(raw_value).is_absolute():
-            return Path(raw_value).resolve()
-        parsed = urlparse(raw_value)
-        if parsed.scheme not in ("", "file"):
-            return None
-        if parsed.scheme == "file":
-            if unquote(parsed.netloc) == "~":
-                raw = "~" + unquote(parsed.path)
-            elif parsed.netloc in ("", "localhost"):
-                raw = unquote(parsed.path)
-            else:
-                return None
-        else:
-            raw = str(value)
-        if raw.startswith("/~/"):
-            raw = raw[1:]
-        if raw == "~":
-            return self.home.resolve()
-        path = self.home / raw[2:] if raw.startswith("~/") else Path(raw)
-        if not path.is_absolute():
-            path = self.home / path
-        return path.resolve()
+        return resolve_skill_path(value, self.home)
 
     def skill_path_is_in_home(self, value):
         path = self.local_skill_path(value)
@@ -331,73 +301,24 @@ class AgentPayloadTests(unittest.TestCase):
             self.skipTest("requires the pinned OpenCode CLI")
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stderr)
-        with socket.socket() as listener:
-            listener.bind(("127.0.0.1", 0))
-            port = listener.getsockname()[1]
-        environment = dict(self.diagnostic_env(),
-                           OPENCODE_TEST_HOME=str(self.home),
-                           OPENCODE_CONFIG_DIR=str(self.home / ".config/opencode"),
-                           OPENCODE_CONFIG=str(self.home / ".config/opencode/opencode.jsonc"),
-                           OPENCODE_SERVER_PASSWORD="synthetic-payload-test")
-        target_skill_root = str(self.home / ".agents/skills")
-        config_lines = (self.home / ".config/opencode/opencode.jsonc").read_text().splitlines()
-        config = json.loads("\n".join(line for line in config_lines if not line.lstrip().startswith("//")))
-        config_has_target_skill_root = target_skill_root in config.get("skills", [])
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        location = urlencode({"location[directory]": str(self.home)})
-        request = urllib.request.Request(f"http://127.0.0.1:{port}/api/skill?{location}")
-        request.add_header("Authorization", "Basic " + base64.b64encode(b"opencode:synthetic-payload-test").decode())
-        with (self.root / "opencode.log").open("w") as log:
-            process = subprocess.Popen([opencode, "serve", "--hostname", "127.0.0.1", "--port", str(port)],
-                                       cwd=self.home, env=environment, stdout=log, stderr=log,
-                                       start_new_session=os.name != "nt")
-            try:
-                deadline = time.monotonic() + 12
-                data = []
-                while time.monotonic() < deadline:
-                    try:
-                        data = json.loads(opener.open(request, timeout=2).read())["data"]
-                        if any(item["id"] == "tdd" for item in data):
-                            break
-                    except OSError:
-                        pass
-                    time.sleep(0.1)
-                skills = {item["id"]: item for item in data}
-                self.assertIn("tdd", skills)
-                self.assertIn("implement-spec", skills)
-                self.assertFalse(skills["implement-spec"]["autoinvoke"])
-                managed = [skill for skill in data if self.skill_path_is_in_home(skill["path"])]
-                expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
-                path_kinds = Counter(self.skill_path_kind(skill["path"]) for skill in data)
-                path_scopes = Counter(self.skill_path_scope(skill["path"]) for skill in data)
-                self.assertEqual({skill["id"] for skill in managed}, expected,
-                                 f"managed={len(managed)}; home_matches={environment.get('HOME') == str(self.home)}; "
-                                 f"config_has_target_skill_root={config_has_target_skill_root}; "
-                                 f"path_kinds={dict(path_kinds)}; path_scopes={dict(path_scopes)}")
-                self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
-            finally:
-                stop_client(process)
+        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
+        data = opencode_skills(opencode, home=self.home, cwd=self.home,
+                               env=dict(self.diagnostic_env(), OPENCODE_TEST_HOME=str(self.home)),
+                               log=self.root / "opencode.log", expected=expected)
+        skills = {item["id"]: item for item in data}
+        self.assertIn("tdd", skills)
+        self.assertIn("implement-spec", skills)
+        self.assertFalse(skills["implement-spec"]["autoinvoke"])
+        managed = [skill for skill in data if self.skill_path_is_in_home(skill["path"])]
+        self.assertEqual({skill["id"] for skill in managed}, expected)
+        self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
 
     def test_pinned_codex_reads_shared_instructions_and_automatic_skills(self):
         codex = os.environ.get("DOTFILES_TEST_CODEX")
         if not codex:
             self.skipTest("requires the pinned Codex CLI")
         self.assertEqual(self.deploy().returncode, 0)
-        with tempfile.TemporaryFile(mode="w+b") as stdout, tempfile.TemporaryFile(mode="w+b") as stderr:
-            process = subprocess.Popen([codex, "debug", "prompt-input"], cwd=self.home,
-                                       env=self.diagnostic_env(), stdout=stdout, stderr=stderr,
-                                       start_new_session=os.name != "nt")
-            try:
-                process.wait(timeout=30)
-            finally:
-                stop_client(process)
-            stdout.seek(0)
-            stderr.seek(0)
-            diagnostic_stdout = stdout.read().decode("utf-8", errors="replace")
-            diagnostic_stderr = stderr.read().decode("utf-8", errors="replace")
-        self.assertEqual(process.returncode, 0, diagnostic_stderr)
-        messages = json.loads(diagnostic_stdout)
-        text = "\n".join(part.get("text", "") for message in messages for part in message.get("content", []))
+        text = codex_prompt(codex, cwd=self.home, env=self.diagnostic_env(), log=self.root / "codex.log")
         self.assertIn("~/.agents/RTK.md", text)
         self.assertIn("<!-- DOTFILES_AGENT_START -->", text)
         self.assertIn("- tdd:", text)
@@ -410,91 +331,14 @@ class AgentPayloadTests(unittest.TestCase):
         if not module or not node:
             self.skipTest("requires the pinned Pi SDK module and managed Node")
         self.assertEqual(self.deploy().returncode, 0)
-        script = """
-const {DefaultResourceLoader,SettingsManager,formatSkillsForPrompt} = await import(process.argv[1]);
-import {existsSync,realpathSync} from "node:fs";
-import {homedir} from "node:os";
-import {fileURLToPath} from "node:url";
-import path from "node:path";
-const settingsManager = SettingsManager.create(process.cwd(),process.env.PI_CODING_AGENT_DIR);
-const loader = new DefaultResourceLoader({cwd:process.cwd(),agentDir:process.env.PI_CODING_AGENT_DIR,settingsManager,
-  noExtensions:true,noThemes:true,noPromptTemplates:true});
-await loader.reload();
-const skills=loader.getSkills().skills;
-const roots=[path.join(process.env.PI_CODING_AGENT_DIR,"skills"),path.join(process.env.HOME,".agents/skills")]
-  .filter(root=>existsSync(root)).map(root=>realpathSync(root));
-const scopeRoots=[
-  ["device-home",process.env.DOTFILES_TEST_HOME],
-  ["test-temp",process.env.DOTFILES_TEST_TEMP_ROOT],
-  ["source-tree",process.env.DOTFILES_TEST_SOURCE],
-  ["runner-home",process.env.DOTFILES_TEST_RUNNER_HOME]
-].filter(([,root])=>root&&existsSync(root)).map(([name,root])=>[name,realpathSync(root)]);
-function resolveSkillFile(value) {
-  let raw=String(value);
-  if (raw.startsWith("file://~/")) raw=path.join(process.env.HOME,decodeURIComponent(raw.slice("file://~/".length)));
-  else if (raw.startsWith("file:///~/")) raw=path.join(process.env.HOME,decodeURIComponent(raw.slice("file:///~/".length)));
-  else if (raw.startsWith("~/")) raw=path.join(process.env.HOME,raw.slice(2));
-  else if (raw.startsWith("file:")) raw=fileURLToPath(new URL(raw));
-  return realpathSync(raw);
-}
-const comparablePath=value=>{
-  let resolved=path.resolve(value);
-  if (process.platform==="win32") resolved=resolved.toLowerCase();
-  return resolved.replace(/[\\/]+$/,"");
-};
-const isWithin=(file,root)=>{
-  const candidate=comparablePath(file),base=comparablePath(root);
-  return candidate===base||candidate.startsWith(base+path.sep);
-};
-const pathKind=value=>{
-  const raw=String(value);
-  if (path.isAbsolute(raw)) return "absolute";
-  if (raw.startsWith("file://~/") || raw.startsWith("file:///~/")) return "file-home-uri";
-  if (raw.startsWith("~/")) return "home-relative";
-  if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(raw)) return raw.startsWith("file:") ? "file-uri" : "other-uri";
-  return "relative";
-};
-const managed=skills.filter(skill=>{
-  try {
-    const file=resolveSkillFile(skill.filePath);
-    return roots.some(root=>isWithin(file,root));
-  }
-  catch { return false; }
-});
-const pathKinds=skills.reduce((counts,skill)=>{const kind=pathKind(skill.filePath); counts[kind]=(counts[kind]||0)+1; return counts;},{});
-const pathScopes=skills.reduce((counts,skill)=>{
-  let scope="unresolved";
-  try {
-    const file=resolveSkillFile(skill.filePath);
-    scope=scopeRoots.find(([,root])=>isWithin(file,root))?.[0]||"outside";
-  } catch {}
-  counts[scope]=(counts[scope]||0)+1; return counts;
-},{});
-console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.disableModelInvocation).length,
-  pathKinds,pathScopes,rootCount:roots.length,homeMatches:process.env.HOME===process.env.DOTFILES_TEST_HOME,
-  osHomeMatchesTarget:homedir()===process.env.DOTFILES_TEST_HOME,
-  skillPaths:settingsManager.getSkillPaths(),
-  rootPaths:roots,scopeRootPaths:scopeRoots,
-  skillPathSamples:skills.slice(0,3).map(skill=>String(skill.filePath)),
-  resolvedSkillPathSamples:skills.slice(0,3).map(skill=>{try{return resolveSkillFile(skill.filePath)}catch(error){return String(error)}}),
-  agentDirMatchesTarget:path.resolve(process.env.PI_CODING_AGENT_DIR)===path.join(process.env.DOTFILES_TEST_HOME,".pi/agent"),
-  targetSkillsExist:existsSync(process.env.DOTFILES_TEST_HOME+"/.agents/skills"),
-  prompt:formatSkillsForPrompt(skills),instructions:loader.getAgentsFiles().agentsFiles}));
-"""
-        diagnostic = subprocess.run([node, "--input-type=module", "-e", script, Path(module).as_uri()],
-                                    cwd=self.home, env=self.diagnostic_env(), capture_output=True,
-                                    text=True, timeout=30)
-        self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
-        data = json.loads(diagnostic.stdout)
+        data = pi_resources(node, module, cwd=self.home, env=self.diagnostic_env(), log=self.root / "pi.log")
+        roots = [(self.home / relative).resolve() for relative in (".agents/skills", ".pi/agent/skills")]
+        managed = [skill for skill in data["skills"]
+                   if (path := self.local_skill_path(skill["filePath"])) is not None
+                   and any(path.is_relative_to(root) for root in roots)]
         expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
-        self.assertEqual((data["count"], data["explicit"]), (len(expected), 1),
-                         f"root_count={data['rootCount']}; home_matches={data['homeMatches']}; "
-                         f"os_home_matches_target={data['osHomeMatchesTarget']}; "
-                         f"skill_paths={data['skillPaths']}; agent_dir_matches_target={data['agentDirMatchesTarget']}; "
-                         f"target_skills_exist={data['targetSkillsExist']}; "
-                          f"path_kinds={data['pathKinds']}; path_scopes={data['pathScopes']}; "
-                          f"roots={data['rootPaths']}; scopes={data['scopeRootPaths']}; "
-                          f"file_samples={data['skillPathSamples']}; resolved_samples={data['resolvedSkillPathSamples']}")
+        self.assertEqual((len(managed), sum(skill["disableModelInvocation"] for skill in managed)),
+                         (len(expected), 1), data.get("diagnostics"))
         self.assertIn("<name>tdd</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])
         self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
@@ -520,67 +364,18 @@ console.log(JSON.stringify({count:managed.length,explicit:managed.filter(s=>s.di
 
     def test_pinned_claude_and_kimi_advertise_manual_and_automatic_skill_commands(self):
         for client in ("claude", "kimi"):
-            binary = os.environ.get("DOTFILES_TEST_" + client.upper())
-            if not binary:
+            if not os.environ.get("DOTFILES_TEST_" + client.upper()):
                 self.skipTest("requires both pinned Claude and Kimi CLIs")
         self.assertEqual(self.deploy().returncode, 0)
+        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
         for client in ("claude", "kimi"):
             with self.subTest(client=client):
-                binary = os.environ["DOTFILES_TEST_" + client.upper()]
-                if client == "claude":
-                    environment = dict(self.diagnostic_env(), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1",
-                                       DISABLE_TELEMETRY="1", DISABLE_AUTOUPDATER="1")
-                    command = [binary, "--print", "--input-format", "stream-json", "--output-format", "stream-json",
-                               "--verbose", "--no-session-persistence", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-                               "--settings", '{"env":{"ANTHROPIC_BASE_URL":"http://127.0.0.1:9","ANTHROPIC_AUTH_TOKEN":"synthetic"}}']
-                else:
-                    environment = self.diagnostic_env()
-                    command = [binary, "acp"]
-                with (self.root / f"{client}.log").open("w") as log:
-                    process = subprocess.Popen(command, cwd=self.home, env=environment, stdin=subprocess.PIPE,
-                                               stdout=subprocess.PIPE, stderr=log, text=True,
-                                               start_new_session=os.name != "nt")
-                    inbox = queue.Queue()
-                    def collect():
-                        for line in process.stdout:
-                            inbox.put(json.loads(line))
-                    reader = threading.Thread(target=collect, daemon=True)
-                    reader.start()
-                    def send(message):
-                        process.stdin.write(json.dumps(message) + "\n")
-                        process.stdin.flush()
-                    try:
-                        if client == "claude":
-                            send({"type": "control_request", "request_id": "discovery", "request": {"subtype": "initialize"}})
-                            message = inbox.get(timeout=30)
-                            self.assertEqual(message["type"], "control_response", message)
-                            names = {item["name"] for item in message["response"]["response"]["commands"]}
-                            self.assertIn("tdd", names)
-                            self.assertIn("implement-spec", names)
-                        else:
-                            send({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                                  "params": {"protocolVersion": 1, "clientCapabilities": {}}})
-                            self.assertIn("result", inbox.get(timeout=30))
-                            send({"jsonrpc": "2.0", "id": 2, "method": "session/new",
-                                  "params": {"cwd": str(self.home), "mcpServers": []}})
-                            deadline = time.monotonic() + 30
-                            names = set()
-                            while time.monotonic() < deadline:
-                                message = inbox.get(timeout=max(0.1, deadline-time.monotonic()))
-                                update = message.get("params", {}).get("update", {})
-                                if update.get("sessionUpdate") == "available_commands_update":
-                                    names = {item["name"] for item in update["availableCommands"]}
-                                    break
-                            self.assertIn("skill:tdd", names)
-                            self.assertIn("skill:implement-spec", names)
-                        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
-                        advertised = {name.removeprefix("skill:") for name in names}
-                        self.assertTrue(expected.issubset(advertised), expected - advertised)
-                    finally:
-                        stop_client(process)
-                        process.stdin.close()
-                        reader.join(timeout=5)
-                        process.stdout.close()
+                names = command_catalog(client, os.environ["DOTFILES_TEST_" + client.upper()], cwd=self.home,
+                                        env=self.diagnostic_env(), log=self.root / f"{client}.log")
+                self.assertIn("tdd" if client == "claude" else "skill:tdd", names)
+                self.assertIn("implement-spec" if client == "claude" else "skill:implement-spec", names)
+                advertised = {name.removeprefix("skill:") for name in names}
+                self.assertTrue(expected.issubset(advertised), expected - advertised)
 
 
 if __name__ == "__main__":

@@ -553,6 +553,22 @@ def main():
             return {"commands": len(versions), "installed_environments": len(installed)}
         check("regular managed files, installed pins, and executable commands", pinned_commands)
 
+        def installed_skills(stage):
+            destination = args.artifacts / ("installed-skills-" + stage)
+            summary = None
+            try:
+                command("installed-skills-" + stage,
+                        [args.home / ".pixi/envs/python/bin/python", SOURCE / "tests/installed_skill_discovery.py",
+                         "--home", args.home, "--artifacts", destination], env=managed, timeout=300)
+            finally:
+                if (destination / "report.json").is_file():
+                    summary = json.loads((destination / "report.json").read_text())
+                    report.setdefault("installed_skill_discovery", {})[stage] = summary
+            require(summary is not None and summary["status"] == "passed",
+                    "installed selected skill discovery did not pass")
+            return {"selected_skills": summary["selected_count"], "clients": len(summary["clients"])}
+        check("actual fetched default skill discovery after fresh installation", lambda: installed_skills("fresh"))
+
         def reapplication():
             originals = seed_device(args.home)
             history_env = dict(managed)
@@ -590,6 +606,7 @@ def main():
                     "generated_metadata_changed": len(metadata_changed)}
         check("full default reapplication and synthetic device preservation", reapplication)
         check("installed inventory, exact pins, and executable commands after reapplication", pinned_commands)
+        check("actual fetched default skill discovery after reapplication", lambda: installed_skills("reapplied"))
 
         test_env = dict(managed, DOTFILES_TEST_PLATFORM="linux", DOTFILES_TEST_ROLE="remote-compute",
                         DOTFILES_TEST_CHEZMOI=str(args.home / ".local/bin/chezmoi"), DOTFILES_TEST_TOOL_HOME=str(args.home),

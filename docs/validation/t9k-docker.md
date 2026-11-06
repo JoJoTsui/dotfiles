@@ -4,6 +4,28 @@ Status: both Ubuntu compatibility baselines passed. These are emulated amd64
 userspace results, not native T9K or Windows results. Failed attempts remain
 preserved separately from the completed evidence below.
 
+Those historical runs used a three-skill synthetic library for the client
+discovery suites. They establish fixture behavior, not discovery of every
+fetched default skill. The current native Linux gate separately requires the
+actual selected library to be discovered after fresh install and reapply;
+new reports are required to establish that additional coverage.
+
+The review fix was checked against the preserved Ubuntu 24.04 installation,
+with its home mounted read-only and networking disabled. Pi, OpenCode, Claude,
+Kimi, and Qoder discovered all 98 selected skills; Codex's prompt diagnostic
+included the 73 automatic skills. Pi preserved the 25 manual-only flags, and
+OpenCode exposed their explicit `autoinvoke: false` flags while omitting that
+optional field for automatic skills. All 12 payload fixture tests and 10
+focused discovery regressions also passed without skips. This was a runtime
+verification of the fix, not a new fresh-install or reapplication matrix.
+The frozen source overlays and artifact hashes are recorded in
+`/private/tmp/dotfiles-discovery-proof-u1nogt1t/inputs.json`; its installed
+discovery report SHA-256 is
+`fb823f27b7173ebaf9fe04c42c6f7d15ca57922b289636892c3b87ecd4c7e274`.
+The fixture-suite evidence remains in
+`/private/tmp/dotfiles-discovery-proof-n04m9jmy/artifacts/fixture-suite.json`,
+alongside the preserved initial OpenCode API-assertion failure.
+
 ## Agreed scope
 
 The target is the T9K profile, `linux-remote-compute`, on Ubuntu x86_64.

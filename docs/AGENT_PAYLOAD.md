@@ -148,3 +148,16 @@ when `DOTFILES_TEST_CODEX`, `DOTFILES_TEST_CLAUDE`, `DOTFILES_TEST_KIMI`,
 identify the pinned installed clients. All diagnostic roots remain temporary.
 These checks send no model prompts or authentication requests. Foreign native
 execution remains part of the platform/matrix gates.
+
+The native Linux gate additionally runs `tests/installed_skill_discovery.py`
+after fresh installation and reapplication. It reads the deployed default lock,
+checks the real fetched files and copy adapters, and parses their frontmatter
+independently before comparing the selected names and invocation flags with
+Pi, OpenCode, Codex, Claude, Kimi, and Qoder. Codex's prompt diagnostic covers
+the automatic subset; the other diagnostics also enumerate manual skills.
+OpenCode must expose `autoinvoke: false` for manual-only skills. Its optional
+flag is absent for ordinary automatic skills; the report records those names
+without treating registry discovery as proof of automatic invocation.
+Client state and rendered configuration copies stay in private scratch, while
+the discovered skill paths must point to the installed library. MiniMax's
+adapter is checked for byte parity; its native discovery remains unverified.
