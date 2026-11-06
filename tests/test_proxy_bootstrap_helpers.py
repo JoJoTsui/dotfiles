@@ -71,3 +71,28 @@ class ProxyBootstrapHelperTests(unittest.TestCase):
         self.assertNotIn("HK-1", group)
         self.assertFalse((root / "profiles/config.yaml").exists())
         self.assertEqual((root / "subscription-url").read_bytes(), b"https://fixture.invalid/profile\n")
+
+    def test_detected_user_client_is_not_reused_by_deployment(self):
+        root = self.home / ".local/share/mihomo"
+        (root / "bin").mkdir(parents=True)
+        binary = root / "bin/mihomo"
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
+        result = self.run_proxy(
+            'DEPLOY_PROXY_PORTS="7890 7891"\n'
+            'deploy_proxy_client_running() { return 0; }\n'
+            'deploy_proxy_port_free() { [ "$1" != 7890 ] && [ ! -e "$HOME/listening" ]; }\n'
+            'deploy_proxy_answers() { return 0; }\n'
+            'deploy_proxy_subscription() { printf fixture; }\n'
+            'install_proxy_binary() { :; }\n'
+            'deploy_proxy_scripts() { printf fixture; }\n'
+            'deploy_proxy_profile() { touch "$HOME/profile-built"; printf fixture.yaml; }\n'
+            'deploy_proxy_select_us_node() { touch "$HOME/us-node-selected"; }\n'
+            'sleep() { touch "$HOME/listening"; }\n'
+            'deploy_proxy_ensure\n'
+            'printf "selected=%s\\n" "$DEPLOY_PROXY_URL"\n'
+            'stop_deployment_proxy\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("selected=http://127.0.0.1:7891", result.stdout)
+        self.assertTrue((self.home / "profile-built").exists())
+        self.assertTrue((self.home / "us-node-selected").exists())

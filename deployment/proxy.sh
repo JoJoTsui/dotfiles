@@ -341,20 +341,18 @@ deploy_proxy_ensure() {
     local root binary profile port attempt secret
     [ -n "$DEPLOY_PROXY_URL" ] && return 0
     root=$(proxy_root)
-    # An existing proxy answers on the first candidate port. Reusing it keeps
-    # the deployment off the port a proxy client already owns.
-    for port in $DEPLOY_PROXY_PORTS; do
-        if ! deploy_proxy_port_free "$port" && deploy_proxy_answers "$port"; then
-            DEPLOY_PROXY_PORT="$port"
-            DEPLOY_PROXY_URL="http://127.0.0.1:$port"
-            if deploy_proxy_client_running; then
-                deploy_proxy_report "a proxy client is already running on 127.0.0.1:$port; the deployment uses it"
-            else
+    # A detected user client keeps its own routing and profile. Only reuse a
+    # generic proxy when no such client is running.
+    if ! deploy_proxy_client_running; then
+        for port in $DEPLOY_PROXY_PORTS; do
+            if ! deploy_proxy_port_free "$port" && deploy_proxy_answers "$port"; then
+                DEPLOY_PROXY_PORT="$port"
+                DEPLOY_PROXY_URL="http://127.0.0.1:$port"
                 deploy_proxy_report "a proxy is already running on 127.0.0.1:$port; the deployment uses it"
+                return 0
             fi
-            return 0
-        fi
-    done
+        done
+    fi
     secret=$(deploy_proxy_subscription) || {
         deploy_proxy_report 'no proxy subscription; the deployment downloads directly'
         return 0
