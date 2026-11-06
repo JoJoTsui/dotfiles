@@ -332,6 +332,7 @@ deploy_proxy_profile() {
 deploy_proxy_select_us_node() {
     local scripts=$1
     MIHOMO_CONTROLLER="http://127.0.0.1:$DEPLOY_PROXY_CONTROLLER_PORT" \
+    PROXY_HTTP="http://127.0.0.1:$DEPLOY_PROXY_PORT" \
     MIHOMO_MODE=rule MIHOMO_PREFER_REGION=us MIHOMO_PREFER_SELECTOR=GLOBAL \
         python3 "$scripts/configure-mihomo.py" >/dev/null 2>&1
 }

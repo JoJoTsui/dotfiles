@@ -96,3 +96,15 @@ class ProxyBootstrapHelperTests(unittest.TestCase):
         self.assertIn("selected=http://127.0.0.1:7891", result.stdout)
         self.assertTrue((self.home / "profile-built").exists())
         self.assertTrue((self.home / "us-node-selected").exists())
+
+    def test_node_selection_probes_the_owned_http_port(self):
+        python = self.tools / "python3"
+        python.write_text('#!/bin/sh\nprintf "%s\\n%s\\n" "$PROXY_HTTP" "$MIHOMO_CONTROLLER" > "$HOME/selection-env"\n')
+        python.chmod(0o755)
+        self.env["PROXY_HTTP"] = "http://127.0.0.1:19999"
+        result = self.run_proxy(
+            'DEPLOY_PROXY_PORT=7891\nDEPLOY_PROXY_CONTROLLER_PORT=9092\n'
+            'deploy_proxy_select_us_node fixture\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.home / "selection-env").read_text().splitlines(),
+                         ["http://127.0.0.1:7891", "http://127.0.0.1:9092"])
