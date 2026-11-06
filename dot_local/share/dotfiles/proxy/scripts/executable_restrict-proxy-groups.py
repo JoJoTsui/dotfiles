@@ -22,6 +22,8 @@ Usage::
     ./scripts/restrict-proxy-groups.py us /path/to/config.yaml
 """
 
+from __future__ import annotations
+
 import os
 import re
 import sys
