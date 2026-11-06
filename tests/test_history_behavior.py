@@ -8,6 +8,7 @@ import shutil
 import sqlite3
 import struct
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -155,7 +156,10 @@ class HistoryBehaviorTests(unittest.TestCase):
                 readable, _, _ = select.select([primary], [], [], 0.05)
                 if readable:
                     try:
-                        output.extend(os.read(primary, 65536))
+                        chunk = os.read(primary, 65536)
+                        if not chunk:
+                            break
+                        output.extend(chunk)
                     except OSError:
                         break
                 text = output.decode(errors="replace")
@@ -165,7 +169,12 @@ class HistoryBehaviorTests(unittest.TestCase):
                 if process.poll() is not None:
                     break
             self.assertEqual(pending, [], output.decode(errors="replace"))
-            self.assertEqual(process.poll(), 0, output.decode(errors="replace"))
+            # Closing the PTY can precede a waitable registration-process exit.
+            try:
+                process.wait(timeout=max(0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                self.fail(output.decode(errors="replace"))
+            self.assertEqual(process.returncode, 0, output.decode(errors="replace"))
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -357,6 +366,31 @@ class HistoryBehaviorTests(unittest.TestCase):
         self.assertNotEqual(rejected.returncode, 0)
         self.assertIn("symlink", rejected.stderr)
         self.assertEqual(list(outside.iterdir()), [sentinel])
+
+
+@unittest.skipUnless(os.name == "posix", "history setup driver requires a POSIX PTY")
+class HistorySetupTerminalLifecycleTests(unittest.TestCase):
+    def test_setup_waits_for_the_child_after_prompt_completion_and_terminal_eof(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-history-setup-terminal-") as temporary:
+            home = Path(temporary)
+            child = home / "setup-child.py"
+            child.write_text(
+                "import os, sys, time\n"
+                "os.write(1, b'Username: ')\n"
+                "assert sys.stdin.readline().strip() == 'fixture-user'\n"
+                "os.write(1, b'Registration successful\\n')\n"
+                "os.closerange(0, 3)\n"
+                "time.sleep(0.7)\n")
+            launcher = home / ".local/bin/dotfiles-history"
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text('#!/bin/sh\nexec "$HISTORY_TEST_PYTHON" "$HOME/setup-child.py" "$@"\n')
+            launcher.chmod(0o755)
+            driver = HistoryBehaviorTests()
+            driver.home = home
+            driver.env = {"HOME": str(home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color",
+                          "HISTORY_TEST_PYTHON": sys.executable}
+            output = driver.setup_device("first-device", [("Username: ", "fixture-user")])
+            self.assertIn("Registration successful", output)
 
 
 if __name__ == "__main__":
