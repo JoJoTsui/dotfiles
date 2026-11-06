@@ -1,7 +1,8 @@
 # Ubuntu container deployment verification
 
 Status: shared plan confirmed; implementation and execution in progress.
-Only an amd64 environment probe has run so far; no deployment result is recorded.
+The first full attempt failed on both baselines; corrected-source verification
+is pending. Installation success alone is not a deployment-gate pass.
 
 ## Agreed scope
 
@@ -77,8 +78,11 @@ than replacing them with later successful results.
    CodeGraph/MCP and synthetic encrypted-history suites using the installed
    runtimes. Audit required skips separately from foreign-platform exclusions.
 6. Verify regular files, command versions, remote editor settings, isolated state
-   roots and reapplication stability. Compare generated structured runtime data
-   by its parsed values when serialization order is not part of its behavior.
+   roots and reapplication stability. Require repository-owned configuration,
+   skills, helpers and executable bytes to remain stable. Record Pixi's generated
+   activation settings before and after reapplication separately: their values
+   depend on the install environment. Validate their executable targets and
+   rerun inventory, version, command-path and runtime checks after reapplication.
 7. Record value-free reports and checksums outside the source. Keep repository
    documentation/tests and any necessary fixes reviewable in focused local
    commits; publishing changes remains a separate action.
@@ -90,4 +94,22 @@ visible rather than being counted as a successful deployment.
 The shared plan was confirmed before image pulls and execution. It does not
 authorize application to the real T9K or Mac account.
 
-No result is recorded as passed at this planning stage.
+## Preserved attempts
+
+The first attempt tested source `8ea9debe698dbcfa913ac228777904610fbec40a`.
+Its report is `/private/tmp/dotfiles-ubuntu.f6YTGZ/run/docker-report.json`.
+
+- Ubuntu 20.04 stopped at source application: the standard Chezmoi 2.73.3 amd64
+  archive requires glibc 2.32/2.34, above this baseline's glibc 2.31. The
+  same-version official static musl archive replaces it in source; runtime
+  verification of that fix is pending.
+- Ubuntu 24.04 completed both full bootstraps, inventory and version checks.
+  The verifier then rejected changed Pixi activation metadata before runtime
+  suites ran. Pixi regenerates `exe`, `env` and `path_diff` from its activation
+  context; all three affect launch behavior. Initial values were not retained,
+  so this attempt does not establish semantic equality or behavioral success.
+  The corrected verifier records those values separately and repeats command
+  checks after reapplication, while retaining strict source-file stability.
+
+Failed containers and home volumes are stopped and retained for diagnosis.
+No baseline is recorded as passed yet.

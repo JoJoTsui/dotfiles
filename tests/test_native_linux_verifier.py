@@ -93,7 +93,7 @@ class LinuxSnapshotAndVersionTests(unittest.TestCase):
             with self.subTest(output=output):
                 self.assertFalse(native_linux.first_line_version_matches(output, "2.73.3"))
 
-    def test_jsonc_and_managed_json_keep_bytes_but_pixi_metadata_ignores_key_order(self):
+    def test_jsonc_configs_and_generated_metadata_fingerprints_retain_exact_bytes(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             settings = home / "settings.json"
@@ -110,9 +110,9 @@ class LinuxSnapshotAndVersionTests(unittest.TestCase):
             trampoline.write_text('{"a":1,"b":2}')
             first = native_linux.snapshot_fingerprint(trampoline, home)
             trampoline.write_text('{"b":2, "a":1}\n')
-            self.assertEqual(first, native_linux.snapshot_fingerprint(trampoline, home))
+            self.assertNotEqual(first, native_linux.snapshot_fingerprint(trampoline, home))
 
-    def test_snapshot_enumerates_pixi_metadata_subdirectory_and_declared_minimax_skills(self):
+    def test_strict_snapshot_keeps_executable_bytes_and_skills_but_excludes_generated_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
             metadata = home / ".pixi/bin/trampoline_configuration/nu.json"
@@ -122,8 +122,61 @@ class LinuxSnapshotAndVersionTests(unittest.TestCase):
                 path.write_text("fixture")
             with mock.patch.object(native_linux, "snapshot_fingerprint", return_value={"sha256": "fixture"}):
                 snapshot = native_linux.snapshot(home, {"packages": [{"exposed": {"nu": "nu"}}], "agentPackages": []})
-            self.assertIn(str(metadata.relative_to(home)), snapshot)
+            self.assertNotIn(str(metadata.relative_to(home)), snapshot)
+            self.assertIn(".pixi/bin/nu", snapshot)
             self.assertIn(str(skill.relative_to(home)), snapshot)
+            executable = home / ".pixi/bin/nu"
+            executable.write_bytes(b"first executable bytes")
+            first = native_linux.snapshot_fingerprint(executable, home)
+            executable.write_bytes(b"changed executable bytes")
+            self.assertNotEqual(first, native_linux.snapshot_fingerprint(executable, home))
+
+    def trampoline_fixture(self, home):
+        registry = home / ".pixi/manifests/pixi-global.toml"
+        registry.parent.mkdir(parents=True)
+        registry.write_text('version = 1\n[envs.nushell]\nexposed = { nu = "nu" }\n')
+        executable = home / ".pixi/envs/nushell/bin/nu"
+        executable.parent.mkdir(parents=True)
+        executable.write_text("synthetic executable")
+        executable.chmod(0o755)
+        metadata = home / ".pixi/bin/trampoline_configuration/nu.json"
+        metadata.parent.mkdir(parents=True)
+        values = {"exe": str(executable), "env": {"NU_LIB_DIRS": "initial"}, "path_diff": "initial-path"}
+        metadata.write_text(json.dumps(values))
+        plan = {"packages": [{"environment": "nushell", "exposed": {"nu": "nu"}}]}
+        return metadata, values, plan
+
+    def test_generated_activation_changes_are_captured_without_requiring_identity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary).resolve()
+            metadata, values, plan = self.trampoline_fixture(home)
+            key = str(metadata.relative_to(home))
+            before = native_linux.trampoline_metadata(home, plan)
+            values["env"]["NU_LIB_DIRS"] = "reapplied"
+            values["path_diff"] = "reapplied-path"
+            metadata.write_text(json.dumps(values))
+            after = native_linux.trampoline_metadata(home, plan)
+            self.assertEqual(after[key]["values"], values)
+            self.assertNotEqual(before[key]["values"], after[key]["values"])
+            self.assertNotEqual(before[key]["sha256"], after[key]["sha256"])
+
+    def test_generated_metadata_rejects_wrong_owned_prefix_missing_and_nonexecutable_targets(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary).resolve()
+            metadata, values, plan = self.trampoline_fixture(home)
+            other = home / ".pixi/envs/other/bin/nu"
+            other.parent.mkdir(parents=True)
+            other.write_text("another environment")
+            other.chmod(0o755)
+            nonexecutable = home / ".pixi/envs/nushell/bin/no-execute"
+            nonexecutable.write_text("not executable")
+            nonexecutable.chmod(0o644)
+            for target in (other, nonexecutable, nonexecutable.with_name("missing")):
+                with self.subTest(target=target):
+                    values["exe"] = str(target)
+                    metadata.write_text(json.dumps(values))
+                    with self.assertRaisesRegex(RuntimeError, "outside its owned prefix"):
+                        native_linux.trampoline_metadata(home, plan)
 
 
 class LinuxIsolationTests(unittest.TestCase):

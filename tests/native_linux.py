@@ -283,11 +283,34 @@ def first_line_version_matches(output, pin):
 def snapshot_fingerprint(path, home):
     require(path.is_file() and not path.is_symlink(), f"managed file must be regular: {path.relative_to(home)}")
     contents = path.read_bytes()
-    if path.parent == home / ".pixi/bin/trampoline_configuration":
-        # Only Pixi's generated trampoline map permits serialization drift.
-        # Managed settings named .json may contain JSONC and remain byte-exact.
-        contents = json.dumps(json.loads(contents), sort_keys=True, separators=(",", ":")).encode()
     return {"sha256": hashlib.sha256(contents).hexdigest(), "mode": path.stat().st_mode & 0o777}
+
+
+def trampoline_metadata(home, plan):
+    registry = tomllib.loads((home / ".pixi/manifests/pixi-global.toml").read_text())
+    owners = {command: name for name, environment in registry["envs"].items()
+              for command in environment.get("exposed", {})}
+    expected = {command: package["environment"] for package in plan["packages"]
+                for command in package["exposed"]}
+    directory = home / ".pixi/bin/trampoline_configuration"
+    for command, owner in expected.items():
+        require(owners.get(command) == owner, f"Pixi exposure has an unexpected owner: {command}")
+        require((directory / (command + ".json")).is_file(), f"missing Pixi trampoline metadata: {command}")
+    captured = {}
+    for path in sorted(directory.glob("*.json")):
+        fingerprint = snapshot_fingerprint(path, home)
+        values = json.loads(path.read_bytes())
+        require(isinstance(values, dict) and isinstance(values.get("exe"), str),
+                f"Pixi trampoline metadata has no executable: {path.name}")
+        require(path.stem in owners, f"Pixi trampoline metadata has no registry owner: {path.name}")
+        executable = Path(values["exe"])
+        prefix = home / ".pixi/envs" / owners[path.stem]
+        require(executable.is_absolute() and executable.resolve().is_relative_to(prefix)
+                and executable.is_file() and os.access(executable, os.X_OK),
+                f"Pixi trampoline executable is missing, not executable, or outside its owned prefix: {path.name}")
+        captured[str(path.relative_to(home))] = {**fingerprint, "values": values,
+                                               "resolved_executable": str(executable.resolve())}
+    return captured
 
 
 def snapshot(home, plan):
@@ -314,9 +337,6 @@ def snapshot(home, plan):
         for command in package["exposed"]:
             path = home / ".pixi/bin" / command
             paths.add(path)
-            configuration = path.parent / "trampoline_configuration" / (command + ".json")
-            if configuration.exists():
-                paths.add(configuration)
     for package in plan["agentPackages"]:
         paths.update(home / ".local/bin" / command for command in package["commands"])
     return {str(path.relative_to(home)): snapshot_fingerprint(path, home) for path in sorted(paths)}
@@ -478,6 +498,7 @@ def main():
         managed = managed_environment(args.home, temporary)
 
         def pinned_commands():
+            trampoline_metadata(args.home, plan)
             inventory = json.loads(command("pixi-inventory", [args.home / ".pixi/bin/pixi", "global", "list", "--json"], env=managed))
             installed = {item["name"]: item for item in inventory}
             for package in plan["packages"]:
@@ -514,7 +535,7 @@ def main():
                             f"command differs from its catalog version: {exposed}")
                 versions[exposed] = output.strip().splitlines()[0]
             report["versions"] = versions
-            report["managed_snapshot"] = snapshot(args.home, plan)
+            report.setdefault("managed_snapshot", snapshot(args.home, plan))
             return {"commands": len(versions), "installed_environments": len(installed)}
         check("regular managed files, installed pins, and executable commands", pinned_commands)
 
@@ -526,9 +547,18 @@ def main():
             record = command("history-start", [args.home / ".pixi/bin/atuin", "history", "start", "--", token], env=history_env).strip()
             command("history-end", [args.home / ".pixi/bin/atuin", "history", "end", "--exit", "0", record], env=history_env)
             before = snapshot(args.home, plan)
+            metadata_before = trampoline_metadata(args.home, plan)
+            report["trampoline_metadata"] = {"before": metadata_before}
             command("bootstrap-reapply", full, timeout=args.install_timeout)
             check_preservation(args.home, originals)
             after = snapshot(args.home, plan)
+            metadata_after = trampoline_metadata(args.home, plan)
+            # Activation env/path_diff depend on the installer's current PATH.
+            # Preserve their full values as evidence; runtime checks establish
+            # the resulting behavior instead of requiring generated identity.
+            metadata_changed = sorted(path for path in metadata_before.keys() | metadata_after.keys()
+                                      if metadata_before.get(path) != metadata_after.get(path))
+            report["trampoline_metadata"].update(after=metadata_after, changed=metadata_changed)
             changed = sorted(path for path in before.keys() | after.keys() if before.get(path) != after.get(path))
             require(not changed, "managed reapplication changed files: " + ", ".join(changed[:20]))
             require("synthetic-linux-preserved-history" in command("history-preserved", [args.home / ".pixi/bin/atuin", "search", "--cmd-only", "synthetic-linux-preserved-history"], env=history_env),
@@ -542,8 +572,10 @@ def main():
                     "ordinary deployment indexed a source or device home")
             report["reapplication_snapshot"] = after
             return {"synthetic_auth": "preserved", "settings": "preserved", "history": "preserved",
-                    "pixi_and_bun_inventory": "preserved", "managed_files": "stable", "sync": "pending activation"}
+                    "pixi_and_bun_inventory": "preserved", "managed_files": "stable", "sync": "pending activation",
+                    "generated_metadata_changed": len(metadata_changed)}
         check("full default reapplication and synthetic device preservation", reapplication)
+        check("installed inventory, exact pins, and executable commands after reapplication", pinned_commands)
 
         test_env = dict(managed, DOTFILES_TEST_PLATFORM="linux", DOTFILES_TEST_ROLE="remote-compute",
                         DOTFILES_TEST_CHEZMOI=str(args.home / ".local/bin/chezmoi"), DOTFILES_TEST_TOOL_HOME=str(args.home),
