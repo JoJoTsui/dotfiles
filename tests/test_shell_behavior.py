@@ -11,6 +11,7 @@ from pathlib import Path
 import select
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -248,12 +249,19 @@ class ShellBehaviorTests(unittest.TestCase):
                 readable, _, _ = select.select([primary], [], [], 0.1)
                 if readable:
                     try:
-                        output.extend(os.read(primary, 65536))
+                        chunk = os.read(primary, 65536)
+                        if not chunk:
+                            break
+                        output.extend(chunk)
                     except OSError:
                         break
                 elif process.poll() is not None:
                     break
-            self.assertIsNotNone(process.poll(), output.decode(errors="replace"))
+            # PTY EOF can arrive before the child exit becomes waitable.
+            try:
+                process.wait(timeout=max(0, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                self.fail(output.decode(errors="replace"))
             self.assertEqual(process.returncode, 0, output.decode(errors="replace"))
         finally:
             if process.poll() is None:
@@ -377,6 +385,20 @@ source ''' + json.dumps(str(artifact)) + '\nsource ' + json.dumps(str(artifact))
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(result.stdout.strip(), "standalone-ok")
                 self.assertEqual(result.stderr.strip(), "")
+
+
+@unittest.skipUnless(os.name == "posix", "shell terminal driver requires a POSIX PTY")
+class ShellTerminalLifecycleTests(unittest.TestCase):
+    def test_terminal_eof_waits_for_the_child_exit_within_the_original_deadline(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-shell-terminal-") as temporary:
+            driver = ShellBehaviorTests()
+            driver.home = Path(temporary)
+            driver.env = {"HOME": str(driver.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color"}
+            # Close the PTY while the child remains alive beyond the helper's
+            # initial 0.3-second drain delay; no managed shell is required.
+            output = driver.terminal([sys.executable, "-c",
+                                      "import os,time; os.closerange(0,3); time.sleep(0.7)"], "")
+            self.assertEqual(output, "")
 
 
 if __name__ == "__main__":
