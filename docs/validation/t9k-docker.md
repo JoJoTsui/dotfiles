@@ -129,3 +129,26 @@ path containing spaces in generated shebangs, Docker's default `noexec` tmpfs,
 missing system Python/Zsh fixture prerequisites, an omitted Worktrunk fixture
 tool and Psych's changed alias default. These results remain failed attempts;
 the corrected harness must pass before either baseline receives a full pass.
+
+The third attempt tested source `3565dbcbbe9499b6863896670d5d0257d72afe79`.
+Its report is `/private/tmp/dotfiles-ubuntu-final-3565dbc/docker-report.json`.
+Both fresh installations, all 50 commands and reapplications passed. A PTY
+fixture then observed EOF before the child exit was waitable, despite receiving
+the expected shell output. A controlled child reproduced that fixture race;
+the fix waits within the original deadline.
+
+The separate continuation at test source
+`ebd356123e6bb0e55f71421c23ff84f15043641e` preserved the old report and mounted
+the deployment read-only. Its report is
+`/private/tmp/dotfiles-ubuntu-final-3565dbc/continuations-ebd3561/completion-report.json`.
+Ubuntu 20.04 passed all 44 applicable runtime tests, then the 325-case broader
+suite found nine errors in Git fixtures and one proxy-helper failure. The
+continuation stopped before Ubuntu 24.04 and remains a failed attempt.
+
+Focused Focal checks identified Git 2.25 fixture assumptions and eager generic
+annotations in the proxy helper before managed Python exists. Portable fixture
+initialization and explicit reachable-ancestor serving fix the Git tests;
+postponed annotations fix the helper on Python 3.8.10. The original helper's
+TypeError was reproduced, and all 28 affected skill/helper cases then passed
+with Focal's actual Git 2.25.1 and Python 3.8.10. Because a deployed helper
+changed, the next full verification uses fresh homes again.
