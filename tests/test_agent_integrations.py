@@ -180,8 +180,10 @@ class AgentIntegrationTests(unittest.TestCase):
         alias.symlink_to(original_target)
         result = self.run_policy("--apply")
         self.assertEqual(result.returncode, 0, result.stderr)
-        backups = list((self.live / ".local/state/dotfiles/disabled-integrations").glob(
-            "skills.*/.claude/skills/pubmed-database"))
+        # Python 3.10's literal-ending glob omits dangling backup symlinks.
+        backups = [batch / ".claude/skills/pubmed-database"
+                   for batch in (self.live / ".local/state/dotfiles/disabled-integrations").glob("skills.*")
+                   if (batch / ".claude/skills/pubmed-database").is_symlink()]
         self.assertEqual(len(backups), 1)
         self.assertTrue(backups[0].is_symlink())
         self.assertEqual(os.readlink(backups[0]), str(original_target))
