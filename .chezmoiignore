@@ -63,6 +63,8 @@ clash
 **/*keys.json
 **/auth.json
 **/credentials*
+**/__pycache__
+**/*.pyc
 .atuin
 .local/share/atuin
 
