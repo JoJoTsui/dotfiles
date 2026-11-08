@@ -99,27 +99,78 @@ agent history hooks or command-output capture.
 
 ## Legacy restart recovery
 
-On the persistent T9K filesystem, a notebook restart can leave an Atuin SQLite
-WAL shared-memory index stale. The observed `locking protocol` error caused
-roughly three-second history-hook timeouts and prevented Up/Ctrl-R from
-opening the history picker. Rebuilding that derived index restored command
-latency to about 0.1 seconds in a fresh interactive Nushell.
+Atuin's SQLite WAL stores repeatedly failed on this notebook's Ceph mount:
+even a fresh synthetic store failed during repeated command cycles. The
+`locking protocol` / connection-pool timeout caused approximately three seconds
+of delay **before** command output and prevented Up/Ctrl-R history search.
+Rebuilding the shared-memory index gave temporary relief but did not fix it.
+The older `recover-history.py` remains an explicit fallback for unmigrated
+legacy homes; it is not the migrated host's storage strategy.
 
-The legacy `dotfiles-host-up up` preparation calls
-`deployment/legacy/recover-history.py --repair` before agents are prepared.
-Only the exact `locking protocol` failure qualifies. The adapter backs up the
-database and WAL/index sidecars in a private
-`~/.local/state/dotfiles/history-recovery/wal-index.*` directory, independently
-validates a database-plus-WAL copy, and moves only the stale shared-memory index.
-SQLite rebuilds it; integrity and per-table row counts must then pass. Busy
-databases and other errors stop preparation. Authentication files, including
-`meta.db`, are excluded. Database and sidecar symlinks are refused, and resolved
-data/backup roots must remain within the explicitly selected legacy tree.
+The authorized migration uses `deployment/legacy/local-history.py`:
 
-The check does not request recovery without `--repair`; SQLite itself can
-checkpoint while opening a database. Backups contain private history and must
-remain outside git. This adapter does not delete history, recreate an empty
-database, or initialize projects.
+```bash
+python3 -B deployment/legacy/local-history.py \
+  --home "$HOME" --live-root /t9k/mnt/joey/SHELL migrate
+```
+
+It installs a regular `~/.local/bin/atuin` launcher, ahead of Pixi on the managed
+PATH. The native Pixi executable is retained. Active `history.db`, `records.db`,
+and `meta.db` live in private `/tmp/dotfiles-atuin-<uid>/active` storage. Their
+paths are passed through Atuin's supported environment settings. Explicit
+database-path overrides in `config.toml` are rejected rather than silently
+writing to Ceph. Encryption keys and non-SQLite identity/session files remain
+at their original persistent paths; metadata is copied opaquely without
+querying authentication values. Original databases and WALs remain unchanged
+for rollback.
+
+After each non-static Atuin invocation, the launcher uses SQLite's backup API
+to create consistent local images, verifies integrity and per-table counts,
+then writes and fsyncs the inactive one of two pre-created persistent files,
+`snapshot.0.zip` and `snapshot.1.zip`, under
+`~/.local/state/dotfiles/history-local/`. Each archive contains the complete
+database set, a generation number, checksums and counts; `meta.db` values/counts
+are not queried. The last committed slot remains intact during the next write.
+Fixed slots avoid a per-command Ceph directory fsync, measured at 2–5 seconds.
+The file entries are created and directory-flushed during migration. All snapshots are private and excluded
+from source control. No live SQLite or WAL is opened on Ceph.
+
+History-start identifiers are returned only after persistence succeeds. Other
+panes can record while a picker is open; local SQLite handles concurrent
+writes and a local lock serializes snapshot publication. A failed snapshot
+returns a failure and retains the active data. An operation interrupted before
+its snapshot finishes is not acknowledged as persisted; the last completed
+snapshot survives even if the inactive slot contains an interrupted ZIP write.
+Direct invocation of the native Pixi binary bypasses this
+guarantee. Use `atuin` or `dotfiles-history`, not its package-internal path.
+Existing Bash sessions with a cached native command need `hash -r`; a fresh SSH
+session uses the launcher automatically.
+
+After notebook-local storage disappears, the launcher and
+`dotfiles-host-up up` restore and validate the snapshot before any database
+operation or agent preparation. Restore stages the complete set and publishes
+the active directory atomically. It chooses the newest fully verified slot and
+warns about an incomplete slot. No valid snapshot, or conflicting unprepared
+local data, fails closed; it never initializes empty history. Checksums detect
+media corruption, but this restart guarantee is not a substitute for independent
+backups against storage loss. The existing `.local` home link includes
+both the launcher and persistent snapshots, so ordinary link-home restores
+their reachability. No shutdown hook, background copy timer, or service is
+required. `dotfiles-host-up status` validates local and snapshot health without
+restoring missing local data.
+
+For rollback, first preserve the newest snapshot and validate its contents on
+local storage. The retained original database is a migration-time baseline,
+not the current history. Do not remove the launcher and resume that old database
+without reconciling newer history. Rollback is a separate explicit operation.
+
+Verified on T9K Linux x86_64 with Atuin 18.24.5, an overlayfs runtime and Ceph
+snapshots: 40 real start/end cycles followed by deletion of the synthetic runtime
+restored all 40 rows. Separate tests cover concurrent panes, a torn inactive
+snapshot, committed WAL migration and preservation of original resources.
+A fresh Bash-login-to-Nu PTY verified Up/Ctrl-R and fzf; repeated live command
+round trips measured 0.24–0.28 seconds including synchronous persistence.
+The notebook itself was not restarted during verification.
 
 ## Validation boundary
 

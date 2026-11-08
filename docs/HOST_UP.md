@@ -18,11 +18,12 @@ runs the dependency health preflight with `--before-restore` (skipping only
 the Herdr server check). Any failed dependency or missing/failing preflight
 stops bring-up before Herdr starts.
 
-On the legacy home, history checks run before agent preparation. `up` can
-recover a restart-stale Atuin WAL index after backing up and validating the
-history; `status` reports this condition without requesting recovery. Both
-use SQLite integrity checks, which can perform ordinary engine checkpointing.
-A failed history check stops preparation before agent restore. See
+On the migrated legacy home, history checks run before agent preparation.
+`up` restores notebook-local Atuin SQLite stores from the persistent snapshot
+when local storage has disappeared; `status` validates without restoring.
+Both verify local integrity and snapshot checksums/counts. An unmigrated
+legacy home retains the older WAL-index recovery adapter. A failed history
+check stops preparation before agent restore. See
 [shared history recovery](SHARED_HISTORY.md#legacy-restart-recovery).
 
 `--restore` additionally starts Herdr and lets `session.json` restore the

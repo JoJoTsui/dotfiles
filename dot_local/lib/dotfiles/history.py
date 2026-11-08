@@ -32,6 +32,11 @@ class PrivateArgumentParser(argparse.ArgumentParser):
 
 def reject_symlinks(path):
     home = Path(os.environ["HOME"])
+    marker = home / '.local/state/dotfiles/history-local/enabled.json'
+    if marker.is_file():
+        settings = json.loads(marker.read_text())
+        if any(path.resolve().is_relative_to(Path(settings[key]).resolve()) for key in ('live_root', 'runtime')):
+            return
     for component in (path, *path.parents):
         if component.is_symlink() or getattr(component, "is_junction", lambda: False)():
             raise HistoryError(f"history state path is a symlink or junction: {component}")
@@ -40,6 +45,16 @@ def reject_symlinks(path):
 
 
 def validate_roots():
+    # The explicitly migrated legacy host has symlinked XDG roots. Its storage
+    # adapter owns confinement and integrity; ordinary managed homes retain the
+    # strict copy-mode checks below.
+    local = Path(os.environ['HOME']) / '.local/state/dotfiles/history-local/enabled.json'
+    if local.is_file():
+        result = subprocess.run([str(Path(os.environ['HOME']) / '.local/bin/atuin'), '--version'],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if result.returncode:
+            raise HistoryError('local history storage is not prepared')
+        return
     for name in ("XDG_CONFIG_HOME", "XDG_DATA_HOME", "ATUIN_CONFIG_DIR", "ATUIN_DATA_DIR"):
         path = Path(os.environ[name])
         if not path.is_absolute():
@@ -337,7 +352,11 @@ def import_history(atuin, kind, source):
             raise HistoryError(f"migration requires the verified Atuin {pin} pin")
         config_file = Path(os.environ["ATUIN_CONFIG_DIR"]) / "config.toml"
         settings = tomllib.loads(config_file.read_text())
-        with tempfile.TemporaryDirectory(prefix=".import-", dir=data) as temporary:
+        staging_root = data
+        marker = Path(os.environ['HOME']) / '.local/state/dotfiles/history-local/enabled.json'
+        if marker.is_file():
+            staging_root = Path(json.loads(marker.read_text())['runtime'])
+        with tempfile.TemporaryDirectory(prefix=".import-", dir=staging_root) as temporary:
             staging = Path(temporary)
             stage_config = staging / ".config"
             stage_atuin = stage_config / "atuin"
@@ -359,7 +378,8 @@ def import_history(atuin, kind, source):
                              XDG_DATA_HOME=str(staging / ".local/share"),
                              XDG_CACHE_HOME=str(staging / ".cache"),
                              ATUIN_CONFIG_DIR=str(stage_atuin), ATUIN_DATA_DIR=str(stage_data),
-                             ATUIN_SESSION="0123456789abcdef0123456789abcdef")
+                             ATUIN_SESSION="0123456789abcdef0123456789abcdef",
+                             DOTFILES_ATUIN_ISOLATED="1")
             if os.name == "nt":
                 # Native Atuin resolves its home through the Windows Known Folder
                 # for the roaming profile, so this isolated staging profile needs
@@ -446,6 +466,8 @@ def main():
     os.environ.setdefault("ATUIN_SESSION", uuid.uuid4().hex)
     common_bin = Path(os.environ.get("DOTFILES_COMMON_BIN", str(Path(os.environ["PIXI_HOME"]) / "bin")))
     atuin = common_bin / ("atuin.exe" if os.name == "nt" else "atuin")
+    if (Path(os.environ['HOME']) / '.local/state/dotfiles/history-local/enabled.json').is_file():
+        atuin = Path(os.environ['HOME']) / '.local/bin/atuin'
     if not atuin.is_file():
         raise HistoryError("managed Atuin is not installed")
     if arguments.command == "import":

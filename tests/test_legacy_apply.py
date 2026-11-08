@@ -16,7 +16,7 @@ class LegacyApplyTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.home = self.root / "home"
         self.live = self.root / "live"
-        for directory in (self.home, self.live / ".local/bin", self.live / ".config/herdr", self.live / ".codex"):
+        for directory in (self.home, self.live / ".local/bin", self.live / ".local/lib/dotfiles", self.live / ".config/herdr", self.live / ".codex"):
             directory.mkdir(parents=True)
         (self.home / ".local").symlink_to(self.live / ".local")
         (self.home / ".config").symlink_to(self.live / ".config")

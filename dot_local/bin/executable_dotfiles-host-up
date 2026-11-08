@@ -191,6 +191,18 @@ ensure_caveman() {
 }
 
 ensure_history() {
+    local storage=$source_dir/deployment/legacy/local-history.py
+    if [ -f "$HOME/.local/state/dotfiles/history-local/enabled.json" ]; then
+        local operation=check
+        [ "$action" != up ] || operation=prepare
+        if python3 "$storage" --home "$HOME" --live-root "$live_root" "$operation"; then
+            ok "local shell history and persistent snapshot"
+        else
+            fail "local shell history; restore withheld"
+            return 1
+        fi
+        return 0
+    fi
     local adapter=$source_dir/deployment/legacy/recover-history.py
     local repair=()
     [ -f "$adapter" ] || return 0

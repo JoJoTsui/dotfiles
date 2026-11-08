@@ -7,5 +7,6 @@ agent|dot_local/bin/executable_codex-herdr|.local/bin/codex-herdr|0755
 agent|dot_local/bin/executable_dotfiles-codex-herdr|.local/bin/dotfiles-codex-herdr|0755
 agent|dot_local/bin/executable_dotfiles-host-up|.local/bin/dotfiles-host-up|0755
 agent|dot_local/bin/executable_nu-login|.local/bin/nu-login|0755
+agent|dot_local/lib/dotfiles/history.py|.local/lib/dotfiles/history.py|0644
 agent|dot_codex/executable_herdr-codex-resume.sh|.codex/herdr-codex-resume.sh|0755
 config|dot_config/herdr/config.toml|.config/herdr/config.toml|0644

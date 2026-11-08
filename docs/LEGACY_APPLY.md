@@ -11,6 +11,8 @@ files listed in `deployment/legacy/apply.tsv`:
 
 - agent-stack executables: health, `codex-herdr`, the hook installer, the
   host-up command, `nu-login`, and the custom Codex resume hook;
+- the shared history action helper, whose legacy opt-in routes through the
+  local-storage launcher;
 - the Herdr config.
 
 It deliberately excludes client settings, agent instruction blocks, shell rc,

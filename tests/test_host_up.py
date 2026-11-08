@@ -291,6 +291,35 @@ touch "{marker}"
         self.assertFalse(self.herdr_state.exists())
         self.assertFalse(self.herdr_log.exists())
 
+    def test_local_history_restores_before_agents_and_checks_without_restore(self):
+        marker = self.home / '.local/state/dotfiles/history-local/enabled.json'
+        marker.parent.mkdir(parents=True)
+        marker.write_text('{}')
+        adapter = self.repo / 'deployment/legacy/local-history.py'
+        adapter.parent.mkdir(parents=True)
+        log = self.root / 'history-actions'
+        adapter.write_text('import sys\nfrom pathlib import Path\n'
+                           f'with Path({str(log)!r}).open("a") as stream: stream.write(sys.argv[-1] + "\\n")\n')
+        result = self.run_host_up('up')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        result = self.run_host_up('status')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(log.read_text().splitlines(), ['prepare', 'check'])
+
+    def test_failed_local_history_restore_withholds_agents(self):
+        marker = self.home / '.local/state/dotfiles/history-local/enabled.json'
+        marker.parent.mkdir(parents=True)
+        marker.write_text('{}')
+        adapter = self.repo / 'deployment/legacy/local-history.py'
+        adapter.parent.mkdir(parents=True)
+        adapter.write_text('raise SystemExit(1)\n')
+        self.herdr_state.unlink()
+        result = self.run_host_up('up')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('stopped at ensure_history', result.stderr)
+        self.assertFalse(self.herdr_state.exists())
+        self.assertFalse(self.herdr_log.exists())
+
     def test_invalid_saved_session_withholds_restore(self):
         self.herdr_state.unlink()
         path = self.home / ".config/herdr/session.json"

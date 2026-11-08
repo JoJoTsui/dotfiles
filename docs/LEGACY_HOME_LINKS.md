@@ -21,6 +21,10 @@ A full link pass targeting the account's own `$HOME` also loads the linked
 `.env_core` and runs `dotfiles-host-up up`: Mihomo first, then agent dependencies
 and saved-session preparation. Herdr startup is left to the laptop's remote
 attach. The helper must already be installed through the approved legacy apply.
+On a migrated history host, preparation also restores the notebook-local
+SQLite databases from the persistent history snapshot. The `.local` link
+preserves the launcher and snapshots, not the active SQLite/WAL files; see
+[shared history](SHARED_HISTORY.md#legacy-restart-recovery).
 Use `--links-only` for topology maintenance without preparation. `--check`,
 `--list`, `--dry-run`, partial group selections, and simulated homes never load
 the environment or start processes. See [host bring-up](HOST_UP.md).
