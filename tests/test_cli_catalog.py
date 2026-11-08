@@ -58,7 +58,7 @@ version = 1
 [envs.uutils-coreutils]
 channels = ["device-channel", "conda-forge"]
 dependencies = { uutils-coreutils = "==0.11.0", device-library = "==1.0" }
-exposed = { coreutils = "coreutils", cp = "cp", rm = "rm", stat = "stat", ls = "ls", cat = "custom-cat", date = "custom-date", device-copy = "cp", device-command = "device-command" }
+exposed = { coreutils = "coreutils", cp = "cp", rm = "rm", stat = "stat", ls = "ls", "libstdbuf.so" = "libstdbuf.so", cat = "custom-cat", date = "custom-date", device-copy = "cp", device-command = "device-command" }
 [envs.device]
 channels = ["device-channel"]
 dependencies = { device = "==1.0" }
