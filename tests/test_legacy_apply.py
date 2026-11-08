@@ -73,6 +73,22 @@ class LegacyApplyTests(unittest.TestCase):
         self.assertTrue((self.live / ".config/herdr/config.toml").is_file())
         self.assertFalse((self.live / ".local/bin/nu-login").exists())
 
+    def test_target_selection_preserves_unselected_legacy_shell(self):
+        shell = self.live / ".local/bin/nu-login"
+        shell.write_text("legacy shell\n")
+        selected = ".local/bin/dotfiles-host-up,.local/bin/dotfiles-agent-health,.config/herdr/config.toml"
+        applied = self.run_apply("--apply", "--targets", selected)
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertEqual(shell.read_text(), "legacy shell\n")
+        checked = self.run_apply("--check", "--targets", selected)
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_unknown_target_fails_before_any_write(self):
+        result = self.run_apply("--apply", "--targets", ".local/bin/dotfiles-host-up,typo")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown manifest target", result.stderr)
+        self.assertFalse((self.live / ".local/bin/dotfiles-host-up").exists())
+
     def test_symlink_target_is_refused(self):
         target = self.live / ".local/bin/codex-herdr"
         target.symlink_to(self.root / "elsewhere")

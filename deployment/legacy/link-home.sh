@@ -32,6 +32,7 @@ MODE='link'
 DRY_RUN=false
 STRICT=false
 SYSTEM=false
+LINKS_ONLY=false
 RUN_STAMP=$(date +%Y%m%d-%H%M%S)
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != dumb ]; then
@@ -70,6 +71,7 @@ Options:
   --list          list selected manifest entries and exit
   --system        also relink /etc/bash.bashrc through sudo (legacy hosts)
   --strict        fail if any selected source path is missing
+  --links-only    only relink; skip environment and agent-stack preparation
   -h, --help      show this help
 
 Examples:
@@ -126,6 +128,9 @@ while [ "$#" -gt 0 ]; do
             ;;
         --strict)
             STRICT=true
+            ;;
+        --links-only)
+            LINKS_ONLY=true
             ;;
         --system)
             SYSTEM=true
@@ -554,3 +559,21 @@ if [ "$DRY_RUN" = true ]; then
 fi
 
 log_success "link pass complete: $LINK_COUNT linked, $BACKUP_COUNT backed up, $OK_COUNT already correct, $MISSING_SOURCES source missing"
+
+# Full linking of the account home is the notebook preparation entry point.
+# Checks, dry runs, partial selections, and simulated homes never start services.
+if [ "$LINKS_ONLY" = false ] &&
+    { [ -z "$GROUP_FILTER" ] || [ "$GROUP_FILTER" = all ]; } &&
+    [ "$TARGET_HOME" = "$(physical_dir "${HOME:-}")" ]; then
+    [ -f "$TARGET_HOME/.env_core" ] || die "missing .env_core; cannot prepare the agent stack"
+    helper=$TARGET_HOME/.local/bin/dotfiles-host-up
+    [ -x "$helper" ] || die "missing $helper; apply the approved legacy agent files first"
+    log_info "loading .env_core and preparing Mihomo and agent dependencies for remote Herdr startup"
+    (
+        # Older live environments need optional variables to be unset safely.
+        set +u
+        . "$TARGET_HOME/.env_core" || exit 1
+        export DOTFILES_SOURCE="$REPO_ROOT" DOTFILES_LIVE_ROOT="$SOURCE"
+        exec "$helper" up
+    ) || die "agent preparation failed; do not attach remote Herdr yet"
+fi

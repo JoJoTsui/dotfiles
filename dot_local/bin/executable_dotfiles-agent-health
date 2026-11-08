@@ -3,7 +3,7 @@
 #
 # Checks the dependency chain that fails silently after a reboot: Mihomo, its
 # U.S. egress, the Caveman gateway, the Codex app-server daemon, the Herdr
-# server, and (in the full check) the CodeGraph binary. The Codex launcher runs
+# server, and (in the full check) the CodeGraph and Graphify binaries. The Codex launcher runs
 # the narrow `--codex` set; `--probe` adds one real model round trip.
 set -u
 
@@ -11,19 +11,22 @@ quiet=false
 probe=false
 codex_only=false
 clients=false
+before_restore=false
 for argument in "$@"; do
     case "$argument" in
         -q|--quiet) quiet=true ;;
         --probe) probe=true ;;
         --codex) codex_only=true ;;
         --clients) clients=true ;;
+        --before-restore) before_restore=true ;;
         -h|--help)
             cat <<'EOF'
-usage: dotfiles-agent-health [--quiet] [--codex] [--clients] [--probe]
+usage: dotfiles-agent-health [--quiet] [--codex] [--clients] [--before-restore] [--probe]
 
   --quiet    print failures only
-  --codex    check only what a Herdr Codex launch needs (no CodeGraph)
+  --codex    check only what a Herdr Codex launch needs (skip graph tools)
   --clients  report client binaries and config paths (diagnostic)
+  --before-restore  check dependencies before starting Herdr (skip Herdr only)
   --probe    also run one Codex model round trip (uses the active provider)
 EOF
             exit 0
@@ -139,9 +142,12 @@ else
 fi
 
 if [ "$daemon_stack" = true ]; then
-    # Herdr server. The socket API is the structured check; the human status
+    # Herdr server. Before restore it must not be started until dependencies pass.
+    # The socket API is the structured check; the human status
     # text is not a stable contract.
-    if command -v herdr >/dev/null 2>&1; then
+    if [ "$before_restore" = true ]; then
+        ok "Herdr check deferred until restore"
+    elif command -v herdr >/dev/null 2>&1; then
         if herdr api snapshot >/dev/null 2>&1; then
             ok "herdr server"
         else
@@ -155,9 +161,22 @@ fi
 # CodeGraph is a client MCP, not a Codex-launch dependency.
 if [ "$codex_only" = false ]; then
     if command -v codegraph >/dev/null 2>&1; then
-        ok "codegraph $(codegraph --version 2>/dev/null | head -1)"
+        if version=$(run_with_limit 10 codegraph --version 2>/dev/null); then
+            ok "codegraph $version"
+        else
+            fail "codegraph cannot execute"
+        fi
     else
         fail "codegraph not found on PATH"
+    fi
+    if command -v graphify >/dev/null 2>&1; then
+        if run_with_limit 10 graphify --help >/dev/null 2>&1; then
+            ok "graphify"
+        else
+            fail "graphify cannot execute"
+        fi
+    else
+        fail "graphify not found on PATH (install the developer bundle)"
     fi
 fi
 

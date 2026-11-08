@@ -63,6 +63,48 @@ class LegacyLinkTests(unittest.TestCase):
     def backups(self):
         return sorted(set(self.home.glob("*.bak.*")) | set(self.home.glob(".*.bak.*")))
 
+    def preparation_fixture(self, exit_code=0):
+        self.env["HOME"] = str(self.home)
+        self.env["PREP_LOG"] = str(self.root / "preparation.log")
+        (self.source / ".env_core").write_text('export PREP_ENV=loaded\n')
+        helper = self.source / ".local/bin/dotfiles-host-up"
+        helper.parent.mkdir(parents=True)
+        helper.write_text('#!/bin/sh\nprintf "%s %s %s\\n" "$PREP_ENV" "$*" "$DOTFILES_LIVE_ROOT" >> "$PREP_LOG"\n'
+                          f'exit {exit_code}\n')
+        helper.chmod(0o755)
+        return self.root / "preparation.log"
+
+    def test_full_account_link_loads_environment_then_prepares_without_restore(self):
+        log = self.preparation_fixture()
+        result = self.run_link()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(log.read_text().strip(), f"loaded up {self.source}")
+
+    def test_read_only_and_links_only_modes_never_prepare(self):
+        log = self.preparation_fixture()
+        for arguments in (("--check",), ("--list",), ("--dry-run",), ("--links-only",)):
+            with self.subTest(arguments=arguments):
+                self.run_link(*arguments)
+                self.assertFalse(log.exists())
+
+    def test_simulated_and_partial_links_never_prepare(self):
+        log = self.preparation_fixture()
+        self.env["HOME"] = str(self.root / "unrelated-home")
+        result = self.run_link()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(log.exists())
+        self.env["HOME"] = str(self.home)
+        result = self.run_link(groups="config")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(log.exists())
+
+    def test_preparation_failure_keeps_links_and_withholds_readiness(self):
+        self.preparation_fixture(exit_code=1)
+        result = self.run_link()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("do not attach remote Herdr yet", result.stderr)
+        self.assertTrue((self.home / ".env_core").is_symlink())
+
     def test_manifest_is_well_formed_and_covers_agent_roots(self):
         rows = manifest_rows()
         groups = {group for group, _path in rows}

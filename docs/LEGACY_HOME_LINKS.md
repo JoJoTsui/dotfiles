@@ -17,6 +17,14 @@ The live tree is the **parent of the repository checkout**, not the chezmoi
 source state. The script never runs `chezmoi`, and running it on a managed host
 would replace copy-mode files with symlinks. Do not do that.
 
+A full link pass targeting the account's own `$HOME` also loads the linked
+`.env_core` and runs `dotfiles-host-up up`: Mihomo first, then agent dependencies
+and saved-session preparation. Herdr startup is left to the laptop's remote
+attach. The helper must already be installed through the approved legacy apply.
+Use `--links-only` for topology maintenance without preparation. `--check`,
+`--list`, `--dry-run`, partial group selections, and simulated homes never load
+the environment or start processes. See [host bring-up](HOST_UP.md).
+
 ## Usage
 
 From the repository root:

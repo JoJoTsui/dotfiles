@@ -49,6 +49,10 @@ if [ -n "${DOTFILES_SOURCE:-}" ]; then
 elif [ -f "$default_live_root/dotfiles/deployment/legacy/link-home.sh" ]; then
     live_root=$default_live_root
     source_dir=$default_live_root/dotfiles
+elif [ -f "$(dirname "$default_live_root")/dotfiles/deployment/legacy/link-home.sh" ]; then
+    # Installed legacy path: <live>/.local/bin/dotfiles-host-up.
+    live_root=$(dirname "$default_live_root")
+    source_dir=$live_root/dotfiles
 elif [ -f "$(dirname "$default_live_root")/deployment/legacy/link-home.sh" ]; then
     source_dir=$(dirname "$default_live_root")
     live_root=$(dirname "$source_dir")
@@ -132,7 +136,7 @@ ensure_links() {
         return 0
     fi
     warn "links drifted; repairing through link-home"
-    if bash "$link_home" >/dev/null; then ok "links repaired"; else fail "links"; fi
+    if bash "$link_home" --links-only >/dev/null; then ok "links repaired"; else fail "links"; fi
 }
 
 ensure_mihomo() {
@@ -186,6 +190,17 @@ ensure_caveman() {
     fi
 }
 
+ensure_agent_integrations() {
+    local adapter=$source_dir/deployment/legacy/agent-integrations.sh
+    [ -f "$adapter" ] || return 0
+    if bash "$adapter" --apply --home "$HOME" --live-root "$live_root"; then
+        ok "global agent integrations"
+    else
+        fail "global agent integrations; run the approved adapter --fetch before reboot"
+        return 1
+    fi
+}
+
 ensure_codex() {
     [ -n "$codex" ] || { fail "codex not found"; return 1; }
     [ -x "$with_proxy" ] || { fail "with-proxy not found"; return 1; }
@@ -211,7 +226,7 @@ ensure_codex() {
     fi
 }
 
-ensure_herdr() {
+prepare_herdr_restore() {
     [ -n "$herdr" ] || { fail "herdr not found"; return 1; }
     if herdr_running; then
         ok "herdr server"
@@ -220,6 +235,70 @@ ensure_herdr() {
         fi
         return 0
     fi
+    if ! herdr_restore_enabled; then
+        fail "Herdr agent restore is not enabled in $HOME/.config/herdr/config.toml"
+        return 1
+    fi
+    # Herdr 0.9.4 deduplicates custom argv and native session references with
+    # different keys. A stale shell reference can otherwise resume a repaired
+    # Codex conversation twice. Only normalize while the server is down.
+    if ! python3 - "$HOME/.config/herdr/session.json" <<'PY'
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import time
+
+path = Path(sys.argv[1])
+if not path.exists():
+    raise SystemExit(0)
+data = json.loads(path.read_bytes())
+panes = [pane for workspace in data["workspaces"]
+         for tab in workspace["tabs"] for pane in tab["panes"].values()]
+# Explicit repaired resume commands win over stale native-only references.
+panes.sort(key=lambda pane: not bool(pane.get("agent_resume")))
+seen = set()
+removed = 0
+for pane in panes:
+    session = pane.get("agent_session")
+    if not session:
+        continue
+    key = tuple(session[field] for field in ("source", "agent", "kind", "value"))
+    if key in seen:
+        pane.pop("agent_session", None)
+        pane.pop("agent_resume", None)
+        removed += 1
+    else:
+        seen.add(key)
+if removed:
+    backup = path.with_name(f"{path.name}.pre-restore.{time.time_ns()}.bak")
+    shutil.copy2(path, backup)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as handle:
+            temporary = handle.name
+            json.dump(data, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(temporary, path.stat().st_mode & 0o777)
+        os.replace(temporary, path)
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+    print(f"Removed {removed} duplicate agent reference(s); backup: {backup}")
+PY
+    then
+        fail "saved Herdr session validation"
+        return 1
+    fi
+    ok "saved Herdr session prepared for remote startup"
+}
+
+ensure_herdr() {
+    herdr_running && return 0
     mkdir -p "$HOME/.config/herdr"
     setsid nohup "$herdr" server >>"$HOME/.config/herdr/herdr-server.log" 2>&1 </dev/null &
     local attempt=0
@@ -243,13 +322,13 @@ ensure_herdr() {
 
 run_health() {
     if [ ! -x "$health" ]; then
-        warn "health preflight is missing: $health"
-        return 0
+        fail "health preflight is missing: $health"
+        return 1
     fi
     if [ "$quiet" = true ]; then
-        if "$health" --quiet; then return 0; else fail "health preflight"; return 1; fi
+        if "$health" --quiet "$@"; then return 0; else fail "health preflight"; return 1; fi
     fi
-    if "$health"; then return 0; else fail "health preflight"; return 1; fi
+    if "$health" "$@"; then return 0; else fail "health preflight"; return 1; fi
 }
 
 show_status() {
@@ -286,12 +365,25 @@ case "$action" in
         show_status
         ;;
     up)
-        ensure_links
-        ensure_mihomo
-        ensure_caveman
-        ensure_codex
-        [ "$restore" = true ] && ensure_herdr
-        run_health
+        # Some helpers accumulate failures; inspect both status and that count.
+        # No later dependency (especially Herdr) may start after a failure.
+        for step in ensure_links ensure_mihomo ensure_agent_integrations ensure_caveman ensure_codex; do
+            if ! "$step" || [ "$failures" -ne 0 ]; then
+                printf 'host bring-up stopped at %s; Herdr restore withheld\n' "$step" >&2
+                exit 1
+            fi
+        done
+        if ! run_health --before-restore; then
+            printf 'Herdr restore withheld: dependency preflight failed\n' >&2
+            exit 1
+        fi
+        prepare_herdr_restore || exit 1
+        if [ "$restore" = true ]; then
+            ensure_herdr || exit 1
+            run_health
+        else
+            ok "dependencies ready; Herdr startup is left to the remote client"
+        fi
         ;;
 esac
 

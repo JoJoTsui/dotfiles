@@ -14,11 +14,12 @@ HOME_DIR=${HOME:-}
 LIVE_ROOT=
 LIVE_ROOT_SET=false
 GROUP_FILTER=
+TARGET_FILTER=
 MODE=check
 
 usage() {
     cat <<'EOF'
-Usage: apply.sh [--checkout DIR] [--home DIR] [--live-root DIR] [--groups LIST]
+Usage: apply.sh [--checkout DIR] [--home DIR] [--live-root DIR] [--groups LIST] [--targets LIST]
                 [--check | --dry-run | --apply]
 
 Apply repo-owned files to a legacy symlink home. The default is --check.
@@ -28,6 +29,7 @@ Apply repo-owned files to a legacy symlink home. The default is --check.
   --live-root DIR  persistent tree that symlinked home entries resolve to
                    (default: parent of --checkout)
   --groups LIST    comma-separated manifest groups (default: all)
+  --targets LIST   comma-separated manifest target paths (default: all)
   --check          report OK/DRIFT/MISSING/FOREIGN/CONFLICT; exit 1 on drift
   --dry-run        print planned changes and diffs; write nothing
   --apply          back up and replace the selected files
@@ -63,6 +65,7 @@ while [ $# -gt 0 ]; do
         --home) HOME_DIR=$2; shift 2 ;;
         --live-root) LIVE_ROOT=$2; LIVE_ROOT_SET=true; shift 2 ;;
         --groups) GROUP_FILTER=$2; shift 2 ;;
+        --targets) TARGET_FILTER=$2; shift 2 ;;
         --check) MODE=check; shift ;;
         --dry-run) MODE=dry-run; shift ;;
         --apply) MODE=apply; shift ;;
@@ -73,6 +76,14 @@ done
 
 [ -n "$HOME_DIR" ] || fail 'home is empty'
 [ -f "$MANIFEST" ] || fail "manifest missing: $MANIFEST"
+# Validate the entire selection before any write; typos must not silently skip.
+remaining=$TARGET_FILTER
+while [ -n "$remaining" ]; do
+    target_name=${remaining%%,*}
+    awk -F '|' -v target="$target_name" '$3 == target { found=1 } END { exit !found }' "$MANIFEST" ||
+        fail "unknown manifest target: $target_name"
+    case "$remaining" in *,*) remaining=${remaining#*,} ;; *) remaining= ;; esac
+done
 [ "$LIVE_ROOT_SET" = true ] || LIVE_ROOT=$(dirname "$CHECKOUT")
 LIVE_REAL=$(realpath_py "$LIVE_ROOT") || fail "cannot resolve live root: $LIVE_ROOT"
 FAILURES=0
@@ -90,6 +101,9 @@ backup_target() {
 while IFS='|' read -r group source_rel target_rel mode; do
     case "$group" in ''|\#*) continue ;; esac
     group_selected "$group" || continue
+    if [ -n "$TARGET_FILTER" ]; then
+        case ",$TARGET_FILTER," in *",$target_rel,"*) ;; *) continue ;; esac
+    fi
     case "$source_rel$target_rel" in *..*) printf 'CONFLICT %s\n' "$target_rel" >&2; FAILURES=$((FAILURES + 1)); continue ;; esac
     case "$source_rel" in /*) printf 'CONFLICT %s\n' "$source_rel" >&2; FAILURES=$((FAILURES + 1)); continue ;; esac
     case "$target_rel" in /*) printf 'CONFLICT %s\n' "$target_rel" >&2; FAILURES=$((FAILURES + 1)); continue ;; esac
