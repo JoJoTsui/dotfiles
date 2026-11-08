@@ -219,6 +219,57 @@ class HistoryBehaviorTests(unittest.TestCase):
         state = self.history("status")
         self.assertIn("pending activation", state.stdout)
 
+    def test_nu_up_and_ctrl_r_open_real_history_picker(self):
+        prepared = subprocess.run([str(self.home / '.local/bin/dotfiles-history-prepare')],
+                                  env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        primary, secondary = pty.openpty()
+        fcntl.ioctl(secondary, termios.TIOCSWINSZ, struct.pack('HHHH', 24, 120, 0, 0))
+
+        def session():
+            os.setsid()
+            fcntl.ioctl(0, termios.TIOCSCTTY, 0)
+
+        process = subprocess.Popen([self.shells['nu'], '--execute',
+            '$env.PROMPT_COMMAND = {|| "HISTORY_READY> "}; $env.PROMPT_COMMAND_RIGHT = {|| ""}; $env.PROMPT_INDICATOR = ""'],
+            env=self.env, cwd=self.home, stdin=secondary, stdout=secondary, stderr=secondary,
+            preexec_fn=session)
+        os.close(secondary)
+
+        def receive(marker, *, after=b'', timeout=4):
+            output = b''
+            deadline = time.monotonic() + timeout
+            while time.monotonic() < deadline:
+                if not select.select([primary], [], [], 0.05)[0]:
+                    continue
+                try:
+                    chunk = os.read(primary, 65536)
+                except OSError:
+                    break
+                output += chunk
+                if b'\x1b[6n' in chunk:
+                    os.write(primary, b'\x1b[1;1R')
+                if marker in output and (not after or after in output and output.rfind(marker) > output.find(after)):
+                    return output
+            self.fail('history picker/prompt did not respond within the interactive deadline')
+
+        try:
+            receive(b'HISTORY_READY> ')
+            os.write(primary, b'echo ("HISTORY" + "_KEY_FIX_9281")\r')
+            receive(b'HISTORY_READY> ', after=b'HISTORY_KEY_FIX_9281\r\n')
+            for key in (b'\x1b[A', b'\x12'):
+                with self.subTest(key=key):
+                    os.write(primary, key)
+                    ui = receive(b'\x1b[?1049h')
+                    self.assertNotIn(b'^[[A', ui)
+                    os.write(primary, b'\x03')
+                    receive(b'HISTORY_READY> ')
+        finally:
+            if process.poll() is None:
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
+            os.close(primary)
+
     def test_bash_migration_is_explicit_filtered_and_one_time(self):
         # The Bash format is imported from an explicit file on every platform,
         # including the ones that manage no Bash history of their own.

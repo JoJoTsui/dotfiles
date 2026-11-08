@@ -190,6 +190,19 @@ ensure_caveman() {
     fi
 }
 
+ensure_history() {
+    local adapter=$source_dir/deployment/legacy/recover-history.py
+    local repair=()
+    [ -f "$adapter" ] || return 0
+    [ "$action" != up ] || repair=(--repair)
+    if python3 "$adapter" --home "$HOME" --live-root "$live_root" "${repair[@]}"; then
+        ok "shell history database"
+    else
+        fail "shell history database; recovery withheld"
+        return 1
+    fi
+}
+
 ensure_agent_integrations() {
     local adapter=$source_dir/deployment/legacy/agent-integrations.sh
     [ -f "$adapter" ] || return 0
@@ -332,6 +345,7 @@ run_health() {
 }
 
 show_status() {
+    ensure_history
     if [ ! -f "$link_home" ]; then
         ok "links (not a legacy home)"
     elif bash "$link_home" --check >/dev/null 2>&1; then
@@ -367,7 +381,7 @@ case "$action" in
     up)
         # Some helpers accumulate failures; inspect both status and that count.
         # No later dependency (especially Herdr) may start after a failure.
-        for step in ensure_links ensure_mihomo ensure_agent_integrations ensure_caveman ensure_codex; do
+        for step in ensure_links ensure_mihomo ensure_history ensure_agent_integrations ensure_caveman ensure_codex; do
             if ! "$step" || [ "$failures" -ne 0 ]; then
                 printf 'host bring-up stopped at %s; Herdr restore withheld\n' "$step" >&2
                 exit 1

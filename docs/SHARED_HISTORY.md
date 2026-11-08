@@ -97,6 +97,30 @@ Only shell command history is shared. Coding-agent conversations, sessions,
 credentials and trust data are not imported. This deployment does not enable
 agent history hooks or command-output capture.
 
+## Legacy restart recovery
+
+On the persistent T9K filesystem, a notebook restart can leave an Atuin SQLite
+WAL shared-memory index stale. The observed `locking protocol` error caused
+roughly three-second history-hook timeouts and prevented Up/Ctrl-R from
+opening the history picker. Rebuilding that derived index restored command
+latency to about 0.1 seconds in a fresh interactive Nushell.
+
+The legacy `dotfiles-host-up up` preparation calls
+`deployment/legacy/recover-history.py --repair` before agents are prepared.
+Only the exact `locking protocol` failure qualifies. The adapter backs up the
+database and WAL/index sidecars in a private
+`~/.local/state/dotfiles/history-recovery/wal-index.*` directory, independently
+validates a database-plus-WAL copy, and moves only the stale shared-memory index.
+SQLite rebuilds it; integrity and per-table row counts must then pass. Busy
+databases and other errors stop preparation. Authentication files, including
+`meta.db`, are excluded. Database and sidecar symlinks are refused, and resolved
+data/backup roots must remain within the explicitly selected legacy tree.
+
+The check does not request recovery without `--repair`; SQLite itself can
+checkpoint while opening a database. Backups contain private history and must
+remain outside git. This adapter does not delete history, recreate an empty
+database, or initialize projects.
+
 ## Validation boundary
 
 [The Linux evidence](verification/shared-history.md) covers actual Nu/Bash/Zsh

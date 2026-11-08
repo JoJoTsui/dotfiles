@@ -280,6 +280,17 @@ touch "{marker}"
         self.assertFalse(self.herdr_state.exists())
         self.assertFalse(self.herdr_log.exists())
 
+    def test_failed_history_recovery_stops_before_agent_startup(self):
+        self.herdr_state.unlink()
+        adapter = self.repo / "deployment/legacy/recover-history.py"
+        adapter.parent.mkdir(parents=True)
+        adapter.write_text("raise SystemExit(1)\n")
+        result = self.run_host_up("up")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stopped at ensure_history", result.stderr)
+        self.assertFalse(self.herdr_state.exists())
+        self.assertFalse(self.herdr_log.exists())
+
     def test_invalid_saved_session_withholds_restore(self):
         self.herdr_state.unlink()
         path = self.home / ".config/herdr/session.json"

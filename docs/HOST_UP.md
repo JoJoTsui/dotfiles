@@ -4,7 +4,7 @@
 each daemon by hand:
 
 ```bash
-dotfiles-host-up status      # read-only report
+dotfiles-host-up status      # check dependencies without starting services
 dotfiles-host-up up          # repair links, start what is down, run health
 dotfiles-host-up up --restore # optional local Herdr startup; not the T9K laptop flow
 ```
@@ -17,6 +17,13 @@ compress mode), starts the Codex daemon under `with-proxy` when absent, and
 runs the dependency health preflight with `--before-restore` (skipping only
 the Herdr server check). Any failed dependency or missing/failing preflight
 stops bring-up before Herdr starts.
+
+On the legacy home, history checks run before agent preparation. `up` can
+recover a restart-stale Atuin WAL index after backing up and validating the
+history; `status` reports this condition without requesting recovery. Both
+use SQLite integrity checks, which can perform ordinary engine checkpointing.
+A failed history check stops preparation before agent restore. See
+[shared history recovery](SHARED_HISTORY.md#legacy-restart-recovery).
 
 `--restore` additionally starts Herdr and lets `session.json` restore the
 workspace, panes, and agents, only after the dependency preflight passes and
