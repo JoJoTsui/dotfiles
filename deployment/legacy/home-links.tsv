@@ -9,6 +9,10 @@ config|.Rprofile
 config|.profile
 config|.condarc
 config|.bash_profile
+config|.bash_logout
+config|.zprofile
+config|.zshenv
+config|.zshrc
 config|.claude.json
 runtime|.config
 runtime|.local

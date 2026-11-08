@@ -122,8 +122,8 @@ class AgentTests(unittest.TestCase):
                       'import json, os, pathlib\n'
                       'path = pathlib.Path(os.environ["HOME"]) / ".claude/settings.json"\n'
                       'settings = json.loads(path.read_text())\n'
-                      'if "enabledPlugins" not in settings:\n'
-                      '    settings["enabledPlugins"] = {"worktrunk@worktrunk": True}\n'
+                      'if "worktrunk@worktrunk" not in settings.get("enabledPlugins", {}):\n'
+                      '    settings.setdefault("enabledPlugins", {})["worktrunk@worktrunk"] = True\n'
                       '    path.write_text(json.dumps(settings, indent=2) + "\\n")\n')
         wt.chmod(0o755)
         environment = dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi,
@@ -134,6 +134,7 @@ class AgentTests(unittest.TestCase):
             result = self.deploy("--agents-only", "--agents", "claude", env=environment)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertTrue(json.loads(settings.read_text())["enabledPlugins"]["worktrunk@worktrunk"])
+            self.assertFalse(json.loads(settings.read_text())["enabledPlugins"]["serena@claude-plugins-official"])
             if before is not None:
                 self.assertEqual(settings.read_bytes(), before)
             before = settings.read_bytes()

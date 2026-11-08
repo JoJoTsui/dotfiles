@@ -83,3 +83,31 @@ resources again. Interrupted applications retain their backups and can be retrie
 Thus `link-home` reasserts the policy before the laptop starts Herdr. Missing
 cached source or a policy failure stops preparation. Running clients retain
 their existing skill catalogs until they restart; this adapter never restarts them.
+
+The same adapter enforces the source-owned Claude, Codex and Kimi updater
+controls without applying provider defaults or replacing device authentication.
+
+## Rehearsed shell migration
+
+`deployment/legacy/migrate-shell.py` accepts a separately rendered and tested
+home through `--rendered-home`, plus explicit `--home` and `--live-root` paths.
+Its default validates the complete fixed destination set without applying it;
+`--apply` requires the same prior owner authorization as other legacy adapters.
+Use both simulated profiles and the native shell checks before applying.
+
+It copies prepared Nu modules, generated resources, helpers and desired-state
+metadata. The old POSIX environment remains opaque and gets an idempotent
+rendered managed block; the old Nu environment becomes a private device hook,
+with its missing JOEY/JSHELL bootstrap supplied first. Extra btm/curl completion
+imports and existing device hooks survive. Existing Bash startup customization,
+Git settings, account state, credentials, history and proxy service layout stay
+device-owned. It never starts a shell, service or agent itself.
+
+Destinations and recovery state must resolve inside the explicit live tree.
+Each changed file receives an atomic replacement and a private recovery entry
+under `.local/state/dotfiles/host-alignment/shell.*/restore.json`, recording its
+old bytes and mode or `NEW`. Link the new Zsh/logout top-level files afterward
+with `link-home.sh --groups config --links-only`. This leaves strict public
+copy-mode guards intact; ordinary shell/history preparation commands still
+reject symlink homes. Regenerate their resources in an isolated home and use
+this explicit adapter for the legacy tree.
