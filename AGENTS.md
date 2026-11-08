@@ -192,6 +192,12 @@ explains every changed pair.
   skill rows, the shell integration, or the plugin step.
 - **Client settings merge through bootstrap**: defaults under ignored
   `deployment/client-settings/` merge into runtime paths excluded from Chezmoi.
+  The explicit legacy `deployment/legacy/agent-integrations.sh` adapter reuses
+  the public copier/codec with canonical live-tree confinement and backups;
+  it reconciles only global skills, owned instructions, and disabled integrations.
+  `deployment/disabled-skills.tsv` resources stay outside discovery and cannot
+  return through an override library. The Graphify skill uses reviewed upstream
+  bytes through `deployment/skill-layouts.tsv`; initialization remains explicit.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,
   ownership, or preservation. Index creation stays an explicit project action.
 - **Caveman provider mounts are repository-owned**: `deployment/client-settings/

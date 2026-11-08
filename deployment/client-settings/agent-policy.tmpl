@@ -1,0 +1,5 @@
+{{ if ne (env "DOTFILES_SETTINGS_FORMAT") "toml" -}}
+{{ if contains "/.claude/settings" (env "DOTFILES_SETTINGS_TARGET") -}}
+{"enabledPlugins":{"serena@claude-plugins-official":false}}
+{{ else -}}{}{{ end }}
+{{- end }}

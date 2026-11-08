@@ -284,6 +284,26 @@ function Import-SkillLibrary {
             & tar -xf $archive -C $destination --strip-components=$depth
             if ($LASTEXITCODE -ne 0) { Stop-Deployment "cannot extract skill $name" }
             Remove-Item -LiteralPath $archive -Force
+            $layouts = @()
+            if (Test-Path -LiteralPath (Join-Path $Source 'deployment/skill-layouts.tsv')) {
+                $layouts = @(Read-Catalog 'deployment/skill-layouts.tsv' | Where-Object { $_.columns[0] -eq $name })
+            }
+            if ($layouts.Count) {
+                $mapped = Join-Path $stage "$name.layout"
+                [IO.Directory]::CreateDirectory($mapped) | Out-Null
+                foreach ($layout in $layouts) {
+                    $from = [string]$layout.columns[1]; $to = [string]$layout.columns[2]
+                    foreach ($relative in @($from, $to)) {
+                        if (-not $relative -or [IO.Path]::IsPathRooted($relative) -or ($relative -split '[/\\]') -contains '..') { Stop-Deployment "unsafe skill layout: $name" }
+                    }
+                    $inputPath = Join-Path $destination $from
+                    $outputPath = Join-Path $mapped $to
+                    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($outputPath)) | Out-Null
+                    Copy-Item -LiteralPath $inputPath -Destination $outputPath -Recurse
+                }
+                Remove-Item -LiteralPath $destination -Recurse -Force
+                Move-Item -LiteralPath $mapped -Destination $destination
+            }
             if (-not (Test-Path -LiteralPath (Join-Path $destination 'SKILL.md'))) { Stop-Deployment "skill $name has no SKILL.md" }
             $lockRows += "$name|git|$sourceUrl|$resolved"
         } elseif ($kind -eq 'tarball') {
@@ -326,11 +346,38 @@ function Import-SkillLibrary {
 }
 function Copy-AgentPayload {
     $script:Step = 'apply-source.agent-payload'
+    $disabled = @()
+    if (Test-Path -LiteralPath (Join-Path $Source 'deployment/disabled-skills.tsv')) {
+        $disabled = @(Read-Catalog 'deployment/disabled-skills.tsv' | ForEach-Object { $_.columns[0] })
+    }
+    $backup = $null
+    foreach ($row in (Read-Catalog 'deployment/agent-payload/discovery-roots.tsv')) {
+        $root = [string]$row.columns[0]; Assert-Relative $root
+        foreach ($name in $disabled) {
+            Assert-Relative $name
+            $target = Join-Path $TargetHome "$root/$name"
+            Assert-SafePath $target
+            if (-not (Test-Path -LiteralPath $target)) { continue }
+            if (-not $backup) { $backup = Join-Path $TargetHome ('.local/state/dotfiles/disabled-integrations/skills.' + [Guid]::NewGuid().ToString('N')) }
+            $saved = Join-Path $backup "$root/$name"
+            Assert-SafePath $saved
+            [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($saved)) | Out-Null
+            Move-Item -LiteralPath $target -Destination $saved
+            Add-Content -LiteralPath (Join-Path $backup 'restore.tsv') -Value "$root/$name|$saved"
+        }
+    }
     foreach ($row in (Read-Catalog 'deployment/agent-payload/targets.tsv')) {
         $from = Join-Path $Source "deployment/agent-payload/$($row.columns[1])"; $to = Join-Path $TargetHome $row.columns[2]
         if ($row.columns[1] -eq 'skills' -and $script:SkillLibrary) { $from = $script:SkillLibrary }
         if ($row.columns[0] -eq 'block') { Copy-InstructionBlock $from $to }
         elseif ($row.columns[0] -eq 'retire') { Remove-InstructionBlock $to }
+        elseif ($row.columns[0] -eq 'tree' -and $row.columns[1] -eq 'skills') {
+            [IO.Directory]::CreateDirectory($to) | Out-Null
+            foreach ($entry in (Get-ChildItem -LiteralPath $from -Force)) {
+                if ($disabled -contains $entry.Name) { continue }
+                Copy-RegularTree $entry.FullName (Join-Path $to $entry.Name)
+            }
+        }
         elseif ($row.columns[0] -in @('file', 'tree')) { Copy-RegularTree $from $to }
         else { Stop-Deployment 'unknown agent payload kind' }
     }

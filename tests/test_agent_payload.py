@@ -150,15 +150,19 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         shared = self.home / ".agents/skills"
         claude = self.home / ".claude/skills"
-        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
+        disabled = {line.split('|')[0] for line in (SOURCE / "deployment/disabled-skills.tsv").read_text().splitlines()
+                    if line and not line.startswith('#')}
+        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")} - disabled
         self.assertEqual({path.parent.name for path in shared.glob("*/SKILL.md")}, expected)
         self.assertEqual(len([p for p in shared.rglob("*") if p.is_file()]),
-                         len([p for p in self.skills_fixture.rglob("*") if p.is_file()]))
-        self.assertEqual(len([p for p in shared.rglob("*") if p.is_file() and p.stat().st_mode & 0o111]), 1)
+                          len([p for p in self.skills_fixture.rglob("*") if p.is_file()
+                               and p.relative_to(self.skills_fixture).parts[0] not in disabled]))
         self.assertEqual((shared / "tdd/SKILL.md").read_bytes(), (claude / "tdd/SKILL.md").read_bytes())
         self.assertIn("disable-model-invocation: true", (shared / "implement-spec/SKILL.md").read_text())
-        self.assertTrue((shared / "scienceskillscommon/pyproject.toml").is_file())
-        self.assertTrue((shared / "clinical-trials-database/scripts/clinical_trials_api.py").stat().st_mode & 0o111)
+        self.assertFalse((shared / "scienceskillscommon").exists())
+        self.assertFalse((shared / "clinical-trials-database").exists())
+        self.assertEqual((shared / "graphify/references/query.md").read_bytes(),
+                         (claude / "graphify/references/query.md").read_bytes())
         self.assertFalse(any(p.is_symlink() for directory in (shared, claude) for p in directory.rglob("*")))
         self.assertFalse((self.home / ".kimi-code/AGENTS.md").exists(),
                          "the retired Kimi brand file must not be recreated")
@@ -179,6 +183,23 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertNotIn("/t9k/", (self.home / ".agents/RTK.md").read_text())
         self.assertFalse((self.home / ".codegraph").exists())
         self.assertFalse((self.home / ".codex/auth.json").exists())
+
+    def test_disabled_skills_are_quarantined_and_not_restored_from_an_override(self):
+        old = self.home / ".agents/skills/pubmed-database/SKILL.md"
+        old.parent.mkdir(parents=True)
+        old.write_text("preserve disabled device bytes\n")
+        result = self.deploy("--agents", "none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(old.exists())
+        backups = list((self.home / ".local/state/dotfiles/disabled-integrations").glob(
+            "skills.*/.agents/skills/pubmed-database/SKILL.md"))
+        self.assertEqual([p.read_text() for p in backups], ["preserve disabled device bytes\n"])
+        self.assertTrue((self.home / ".agents/skills/graphify/SKILL.md").is_file())
+        again = self.deploy("--agents", "none")
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertFalse(old.exists())
+        state = self.home / ".local/state/dotfiles/disabled-integrations"
+        self.assertEqual(len(list(state.glob("skills.*"))), 1)
 
     def test_platform_overlay_replaces_only_the_managed_instruction_block(self):
         target = self.home / ".claude/CLAUDE.md"

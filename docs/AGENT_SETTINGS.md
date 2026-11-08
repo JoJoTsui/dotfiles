@@ -26,6 +26,11 @@ Use explicit RTK commands as described in `~/.agents/RTK.md`.
 An existing value matching the last managed default follows later source
 changes. A device override survives instead. This updates OpenCode's watcher
 settings when changing host role without freezing the old managed profile.
+The explicit disabled-integration policy removes Serena registrations from
+known MCP objects and retains existing Serena plugin-enable entries as false.
+Other server entries and device values are preserved. The approved legacy
+integration adapter uses the same settings codec without replacing defaults.
+
 Private baselines under `~/.local/state/dotfiles/client-settings/` omit token,
 API-key, password, authorization, and secret fields; authentication is never
 used as a replacement baseline.

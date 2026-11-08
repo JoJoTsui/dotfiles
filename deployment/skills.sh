@@ -88,6 +88,19 @@ skill_selected() {
     return 1
 }
 
+# Some upstreams publish a portable skill under another filename. Map only
+# declared resources, keeping their bytes and relative references unchanged.
+skill_layout_rows() {
+    local file="$DEPLOY_SOURCE/deployment/skill-layouts.tsv"
+    if [ -f "$file" ]; then
+        awk -F '|' -v name="$1" '$1 == name { print $2 "|" $3 }' "$file"
+    fi
+}
+
+skill_layout_path_safe() {
+    case "$1" in ''|/*|..|../*|*/../*|*/..) return 1 ;; esac
+}
+
 validate_skill_catalog() {
     local catalog="$DEPLOY_SOURCE/deployment/skills.tsv" name kind source ref path seen=' '
     [ -f "$catalog" ] || fail 'skill catalog is missing'
@@ -159,7 +172,7 @@ skill_retry() {
 
 skill_fetch_git() {
     local name=$1 source=$2 ref=$3 path=$4 cache=$5 destination=$6 index=$7
-    local slug repo resolved depth
+    local slug repo resolved depth mappings from to object archive
     slug=$(skill_slug "$source")
     repo="$cache/git/$slug"
     if [ -n "$SKILL_PIN" ]; then
@@ -181,7 +194,33 @@ skill_fetch_git() {
     fi
     depth=$(printf '%s' "$path" | awk -F/ '{print NF}')
     mkdir -p "$destination/$name"
-    git -C "$repo" archive "$resolved" "$path" 2>/dev/null | tar -x -C "$destination/$name" --strip-components="$depth" 2>/dev/null || return 1
+    mappings=$(skill_layout_rows "$name")
+    if [ -n "$mappings" ]; then
+        while IFS='|' read -r from to; do
+            skill_layout_path_safe "$from" && skill_layout_path_safe "$to" || return 1
+            object=$(git -C "$repo" cat-file -t "$resolved:$path/$from") || return 1
+            case "$object" in
+                blob)
+                    mkdir -p "$(dirname "$destination/$name/$to")"
+                    git -C "$repo" show "$resolved:$path/$from" > "$destination/$name/$to" || return 1
+                    ;;
+                tree)
+                    archive=$(mktemp "$TMPDIR/skill-layout.XXXXXX") || return 1
+                    git -C "$repo" archive --format=tar.gz "$resolved" "$path/$from" > "$archive" || return 1
+                    skill_archive_is_safe "$archive" || return 1
+                    depth=$(printf '%s' "$path/$from" | awk -F/ '{print NF}')
+                    mkdir -p "$destination/$name/$to"
+                    tar -xzf "$archive" -C "$destination/$name/$to" --strip-components="$depth" || return 1
+                    rm -f "$archive"
+                    ;;
+                *) return 1 ;;
+            esac
+        done <<EOF
+$mappings
+EOF
+    else
+        git -C "$repo" archive "$resolved" "$path" 2>/dev/null | tar -x -C "$destination/$name" --strip-components="$depth" 2>/dev/null || return 1
+    fi
     [ -f "$destination/$name/SKILL.md" ] || return 1
     printf '%s|git|%s|%s\n' "$name" "$source" "$resolved" >> "$index"
 }

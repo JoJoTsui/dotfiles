@@ -70,6 +70,18 @@ _Avoid_: Adopted command
 The personal operating rules that apply to coding agents across projects and
 devices. A project's own instructions describe that project's separate contract.
 
+**Global agent integration**:
+Skills and guidance available to a coding agent across projects on one device.
+It does not imply that a particular project has been initialized.
+
+**Project initialization**:
+The deliberate creation of a tool's working state for a selected project.
+It is separate from making the tool available to coding agents.
+
+**Disabled integration**:
+An integration unavailable to agent discovery and automatic invocation, with
+its previous configuration and resources retained so it can be restored.
+
 **Simulated home**:
 A disposable home used to validate a deployment without changing the current
 device's home or settings.

@@ -29,6 +29,31 @@
 {{- end -}}
 {{- end -}}
 {{- end -}}
+{{- define "disabled-agent-integrations" -}}
+{{- $host := . -}}
+{{- $containers := list -}}
+{{- range $key := list "mcpServers" "mcp_servers" "mcp" -}}
+{{- if and (hasKey $host $key) (kindIs "map" (get $host $key)) -}}
+{{- $node := get $host $key -}}
+{{- $containers = append $containers $node -}}
+{{- if and (hasKey $node "servers") (kindIs "map" (get $node "servers")) -}}
+{{- $containers = append $containers (get $node "servers") -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- range $node := $containers -}}
+{{- range $name, $definition := $node -}}
+{{- if eq (lower $name) "serena" -}}{{- $_ := unset $node $name -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if and (hasKey $host "enabledPlugins") (kindIs "map" (get $host "enabledPlugins")) -}}
+{{- range $name, $enabled := get $host "enabledPlugins" -}}
+{{- if regexMatch "(?i)(^|/)serena(@|$)" $name -}}
+{{- $_ := set (get $host "enabledPlugins") $name false -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- $format := env "DOTFILES_SETTINGS_FORMAT" -}}
 {{- $target := env "DOTFILES_SETTINGS_TARGET" -}}
 {{- $baseline := env "DOTFILES_SETTINGS_BASELINE" -}}
@@ -112,6 +137,7 @@
 {{- range $part := $path -}}{{- $value = get $value $part -}}{{- end -}}
 {{- $_ := setValueAtPath $path $value $host -}}
 {{- end -}}
+{{- template "disabled-agent-integrations" $host -}}
 {{- if eq $format "toml" -}}
 {{ $host | toToml }}
 {{- else if eq $format "yaml" -}}

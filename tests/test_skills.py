@@ -102,6 +102,33 @@ class SkillFetchTests(unittest.TestCase):
         self.assertIn("arc|tarball|", result.stdout)
         self.assertIn("|main|", self.catalog.read_text())
 
+    def test_portable_layout_keeps_upstream_bytes_and_relative_references(self):
+        repo = self.make_git_repo("portable-repo", "graphify")
+        skill = repo / "graphify"
+        (skill / "SKILL.md").rename(skill / "skill-agents.md")
+        refs = skill / "skills/agents/references"
+        refs.mkdir(parents=True)
+        (refs / "query.md").write_text("official reference bytes\n")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "commit", "-qm", "portable layout"], check=True)
+        self.write_catalog(f"graphify|git|{repo}|main|graphify")
+        (self.catalog.parent / "skill-layouts.tsv").write_text(
+            "graphify|skill-agents.md|SKILL.md\ngraphify|skills/agents/references|references\n")
+        result = self.run_script('prepare_skill_library\n'
+                                 f'cmp "{skill}/skill-agents.md" "$PAYLOAD_SKILLS_DIR/graphify/SKILL.md"\n'
+                                 f'cmp "{refs}/query.md" "$PAYLOAD_SKILLS_DIR/graphify/references/query.md"\n'
+                                 'test ! -e "$PAYLOAD_SKILLS_DIR/graphify/note.md"\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_layout_cannot_escape_its_destination(self):
+        repo = self.make_git_repo("unsafe-layout")
+        self.write_catalog(f"demo|git|{repo}|main|skills/demo")
+        (self.catalog.parent / "skill-layouts.tsv").write_text("demo|SKILL.md|../escaped\n")
+        result = self.run_script('prepare_skill_library')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.tmp / "escaped").exists())
+
     def test_cached_library_is_reused_without_network(self):
         repo = self.make_git_repo("demo-repo")
         self.write_catalog(f"demo|git|{repo}|main|skills/demo")

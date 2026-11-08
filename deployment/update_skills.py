@@ -30,6 +30,9 @@ def rows(path: Path, width: int) -> list[list[str]]:
 def check(catalog: Path, lock: Path) -> None:
     declarations = {row[0]: row for row in rows(catalog, 6)}
     pins = {row[0]: row for row in rows(lock, 5)}
+    disabled = catalog.with_name("disabled-skills.tsv")
+    if disabled.is_file() and declarations.keys() & {row[0] for row in rows(disabled, 2)}:
+        raise ValueError("disabled skills must not be in the active catalog")
     if declarations.keys() != pins.keys():
         raise ValueError("skill catalog and lock names differ; refresh the lock")
     for name, declaration in declarations.items():
@@ -41,6 +44,23 @@ def check(catalog: Path, lock: Path) -> None:
         pattern = r"[a-f0-9]{40}" if pin[1] == "git" else r"[a-f0-9]{64}"
         if pin[1] not in ("git", "tarball") or not re.fullmatch(pattern, pin[3]):
             raise ValueError(f"invalid skill pin: {name}")
+
+
+def layout_paths(catalog: Path, name: str, path: str) -> list[str]:
+    layout = catalog.with_name("skill-layouts.tsv")
+    mapped = []
+    if layout.is_file():
+        for line in layout.read_text().splitlines():
+            if not line or line.startswith("#"):
+                continue
+            skill, source, target = line.split("|")
+            if skill != name:
+                continue
+            for value in (source, target):
+                if not value or PurePosixPath(value).is_absolute() or ".." in PurePosixPath(value).parts:
+                    raise ValueError(f"unsafe skill layout: {name}")
+            mapped.append(f"{path}/{source}")
+    return mapped or [f"{path}/SKILL.md"]
 
 
 def refresh(catalog: Path, lock: Path) -> None:
@@ -61,8 +81,9 @@ def refresh(catalog: Path, lock: Path) -> None:
                 if PurePosixPath(path).is_absolute() or ".." in PurePosixPath(path).parts:
                     raise ValueError(f"unsafe skill path: {name}")
                 # A removed upstream skill must fail before replacing the lock.
-                subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{revision}:{path}/SKILL.md"],
-                               check=True, timeout=30)
+                for resource in layout_paths(catalog, name, path):
+                    subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{revision}:{resource}"],
+                                   check=True, timeout=30)
             elif kind == "tarball":
                 archive = root / "download.tgz"
                 with urllib.request.urlopen(source, timeout=90) as response, archive.open("wb") as output:

@@ -36,6 +36,28 @@ tdd|git|https://github.com/mattpocock/skills|main|skills/engineering/tdd
 lark-im|tarball|https://open.feishu.cn/.../lark-im.tar.gz||
 ```
 
+Graphify uses the official portable skill from the reviewed release commit.
+`deployment/skill-layouts.tsv` maps upstream `skill-agents.md` to `SKILL.md` and
+its eight reference files to `references/`, preserving upstream bytes. The
+shared tree and existing client adapters expose it to all seven clients. The
+upstream installer is not run: its optional search-reminder plugins, project
+instruction edits, hooks, and index creation are outside this global integration.
+Shared guidance retains CodeGraph priority and explicit project initialization.
+
+`deployment/disabled-skills.tsv` excludes the complete Google DeepMind group:
+36 catalog skills and the installed `scienceskillscommon` helper. They cannot
+be selected from the active catalog, even by name. Deployment moves installed
+entries from known discovery roots into private recovery directories under
+`~/.local/state/dotfiles/disabled-integrations/`. Override libraries are filtered
+too. Packages and unrelated skills remain installed; the `uv` executable is
+independent of its disabled DeepMind skill.
+
+On the legacy T9K home, use the explicit
+[agent integration adapter](LEGACY_APPLY.md#global-agent-integrations). It reuses
+the public instruction copier and settings codec while validating canonical
+destinations inside the persistent tree. Ordinary bootstrap keeps its stricter
+symlink refusal.
+
 `deployment/skills.lock.tsv` pins Git commits and archive SHA-256 values.
 A missing or invalid lock stops fetching; `DOTFILES_SKILLS_DIR` remains the
 hermetic bypass.

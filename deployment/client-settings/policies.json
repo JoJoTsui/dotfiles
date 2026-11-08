@@ -1,6 +1,7 @@
 {
+  "agent-integrations-only": [],
   "codegraph-mcp": [["mcpServers", "codegraph"]],
-  "claude-settings": [["env", "DISABLE_AUTOUPDATER"]],
+  "claude-settings": [["env", "DISABLE_AUTOUPDATER"], ["enabledPlugins", "serena@claude-plugins-official"]],
   "codex": [["mcp_servers", "codegraph"], ["check_for_update_on_startup"]],
   "codex-hooks": [],
   "kimi": [],

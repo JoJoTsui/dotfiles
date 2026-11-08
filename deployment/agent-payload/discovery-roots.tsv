@@ -1,0 +1,11 @@
+# Known user skill roots, including optional client-owned roots.
+.agents/skills
+.claude/skills
+.codex/skills
+.config/opencode/skills
+.opencode/skills
+.pi/agent/skills
+.kimi-code/skills
+.qoder/skills
+.minimax/skills
+.gemini/skills

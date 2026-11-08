@@ -1,0 +1,12 @@
+# format|user config relative to home (existing files only)
+toml|.codex/config.toml
+json|.claude.json
+json|.claude/settings.json
+json|.claude/settings.oc-cc.json
+jsonc|.config/opencode/opencode.jsonc
+json|.config/opencode/opencode.json
+json|.pi/agent/mcp.json
+json|.kimi-code/mcp.json
+json|.qoder/settings.json
+json|.minimax/mcp.json
+json|.gemini/settings.json

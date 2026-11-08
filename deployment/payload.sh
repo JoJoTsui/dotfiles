@@ -105,7 +105,7 @@ payload_instruction() {
 # remains. Idempotent: a target without the markers is left alone.
 payload_retire_block() {
     local target=$1 existing prefix suffix remaining result
-    local start='<!-- DOTFILES_AGENT_START -->' end='<!-- DOTFILES_AGENT_END -->'
+    local start=${2:-'<!-- DOTFILES_AGENT_START -->'} end=${3:-'<!-- DOTFILES_AGENT_END -->'}
     [ -f "$target" ] || return 0
     existing=$(cat "$target"; printf '.')
     existing=${existing%.}
@@ -123,9 +123,12 @@ payload_retire_block() {
             return 0
             ;;
     esac
-    # The deploy step inserted one newline between device text and the block.
-    case "$prefix" in *$'\n') prefix=${prefix%$'\n'} ;; esac
-    case "$suffix" in $'\n'*) suffix=${suffix#$'\n'} ;; esac
+    # Only our managed block adds separators. A legacy marker block may sit
+    # inside personal text; removing it must preserve surrounding whitespace.
+    if [ "$#" -eq 1 ]; then
+        case "$prefix" in *$'\n') prefix=${prefix%$'\n'} ;; esac
+        case "$suffix" in $'\n'*) suffix=${suffix#$'\n'} ;; esac
+    fi
     result="${prefix}${suffix}"
     case "$result" in
         *[![:space:]]*) printf '%s' "$result" > "$target"; chmod 644 "$target" ;;
@@ -133,16 +136,72 @@ payload_retire_block() {
     esac
 }
 
+payload_skill_disabled() {
+    local catalog="$DEPLOY_SOURCE/deployment/disabled-skills.tsv"
+    [ -f "$catalog" ] || return 1
+    awk -F '|' -v name="$1" '$1 == name { found=1 } END { exit !found }' "$catalog"
+}
+
+payload_copy_skills() {
+    local origin=$1 target=$2 entry
+    mkdir -p "$target"
+    for entry in "$origin"/* "$origin"/.[!.]* "$origin"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        payload_skill_disabled "${entry##*/}" && continue
+        cp -Rp "$entry" "$target/"
+    done
+}
+
+# Additive payload copies cannot retire an installed skill. Move disabled
+# entries out of every discovery root; retain an exact, reversible copy.
+payload_quarantine_disabled() {
+    local catalog="$DEPLOY_SOURCE/deployment/disabled-skills.tsv"
+    local roots="$DEPLOY_SOURCE/deployment/agent-payload/discovery-roots.tsv"
+    local root name source target batch='' state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/disabled-integrations"
+    [ -f "$catalog" ] && [ -f "$roots" ] || return 0
+    while IFS= read -r root; do
+        case "$root" in ''|\#*) continue ;; /*|..|../*|*/../*|*/..) fail 'unsafe skill discovery root' ;; esac
+        [ -e "$HOME/$root" ] || [ -L "$HOME/$root" ] || continue
+        payload_safe_destination "$HOME/$root"
+    done < "$roots"
+    payload_safe_destination "$state"
+    while IFS='|' read -r name source; do
+        case "$name" in ''|\#*) continue ;; */*|*..*) fail 'unsafe disabled skill name' ;; esac
+    done < "$catalog"
+    [ "${1:-}" != --validate ] || return 0
+    while IFS= read -r root; do
+        case "$root" in ''|\#*) continue ;; esac
+        [ -e "$HOME/$root" ] || [ -L "$HOME/$root" ] || continue
+        while IFS='|' read -r name source; do
+            case "$name" in ''|\#*) continue ;; */*|*..*) fail 'unsafe disabled skill name' ;; esac
+            target="$HOME/$root/$name"
+            [ -e "$target" ] || [ -L "$target" ] || continue
+            if [ -z "$batch" ]; then
+                mkdir -p "$state"
+                batch=$(mktemp -d "$state/skills.XXXXXX") || fail 'cannot create disabled skill backup'
+            fi
+            mkdir -p "$batch/$root"
+            mv "$target" "$batch/$root/$name" || fail "cannot quarantine disabled skill: $name"
+            printf '%s|%s\n' "$root/$name" "$batch/$root/$name" >> "$batch/restore.tsv"
+        done < "$catalog"
+    done < "$roots"
+}
+
 deploy_agent_payload() {
     local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target origin
     validate_agent_payload
+    payload_quarantine_disabled
     while IFS=$'|\r' read -r kind source target; do
         case "$kind" in
             ''|\#*) continue ;;
             tree)
                 mkdir -p "$HOME/$target"
                 origin=$(payload_source_path "$source")
-                cp -Rp "$origin/." "$HOME/$target/"
+                if [ "$source" = skills ]; then
+                    payload_copy_skills "$origin" "$HOME/$target"
+                else
+                    cp -Rp "$origin/." "$HOME/$target/"
+                fi
                 ;;
             file)
                 mkdir -p "$HOME/${target%/*}"

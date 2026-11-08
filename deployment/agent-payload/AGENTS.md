@@ -6,13 +6,22 @@ graph before text search. Prefer CodeGraph when both exist: its MCP tool
 `codegraph_explore`, or `codegraph explore "<question>"`, answers symbol, file,
 and call-path questions. Use Graphify (`graphify query`, `graphify path`,
 `graphify explain`) when only its graph exists. Refresh an existing graph only
-when the answer depends on recent edits and the user allows it. Graphify's MCP
-server takes an absolute graph path, so register it per project.
+when the answer depends on recent edits and the user allows it. The official
+`graphify` skill is globally available; use it for an explicit `/graphify`
+request. Project initialization and MCP registration remain project actions.
 
 If the index directory exists but `codegraph status` reports it uninitialized,
 or the graph tool is unavailable, fall back to bounded text search. Never create
 a new index unless the user asks. Do not query both graphs for one question.
 <!-- CODEGRAPH_END -->
+
+## Disabled integrations
+
+Serena and the Google DeepMind science-skills library are disabled on this
+deployment. Use the available graph tools, ordinary search, or other installed
+skills. Keep disabled resources outside discovery; an old session's advertised
+skill list does not authorize loading or invoking them. The `uv` executable
+remains available; only the DeepMind-provided `uv` skill is disabled.
 
 ## Completion
 
