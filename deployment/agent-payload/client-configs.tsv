@@ -1,5 +1,6 @@
 # format|user config relative to home (existing files only)
 toml|.codex/config.toml
+toml|.kimi-code/tui.toml
 json|.claude.json
 json|.claude/settings.json
 json|.claude/settings.oc-cc.json

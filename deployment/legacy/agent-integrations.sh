@@ -135,7 +135,13 @@ while IFS='|' read -r format relative; do
     payload_safe_destination "$HOME/$relative"
     i=$((i + 1))
     file=$stage/config.$i
-    if ! DOTFILES_SETTINGS_FORMAT="$format" DOTFILES_SETTINGS_POLICY=agent-integrations-only DOTFILES_SETTINGS_OUTPUT=config \
+    policy=agent-integrations-only
+    case "$relative" in
+        .claude/settings*.json) policy=claude-settings ;;
+        .codex/config.toml) policy=codex-update-only ;;
+        .kimi-code/tui.toml) policy=kimi-tui ;;
+    esac
+    if ! DOTFILES_SETTINGS_FORMAT="$format" DOTFILES_SETTINGS_POLICY="$policy" DOTFILES_SETTINGS_OUTPUT=config \
         DOTFILES_SETTINGS_TARGET="$HOME/$relative" DOTFILES_SETTINGS_BASELINE="$stage/no-baseline" \
         DOTFILES_SETTINGS_SOURCE="$ROOT/deployment/client-settings/agent-policy.tmpl" \
         "$chezmoi" --source "$ROOT" --config /dev/null --config-format toml --override-data '{"platform":"linux"}' \

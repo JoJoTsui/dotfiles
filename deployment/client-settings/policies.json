@@ -1,5 +1,7 @@
 {
   "agent-integrations-only": [],
+  "codex-update-only": [["check_for_update_on_startup"]],
+  "legacy-vscode": [["python.condaPath"], ["python.venvPath"], ["http.proxy"]],
   "codegraph-mcp": [["mcpServers", "codegraph"]],
   "claude-settings": [["env", "DISABLE_AUTOUPDATER"], ["enabledPlugins", "serena@claude-plugins-official"]],
   "codex": [["mcp_servers", "codegraph"], ["check_for_update_on_startup"]],

@@ -1,5 +1,10 @@
-{{ if ne (env "DOTFILES_SETTINGS_FORMAT") "toml" -}}
+{{ if contains "/.codex/config.toml" (env "DOTFILES_SETTINGS_TARGET") -}}
+check_for_update_on_startup = false
+{{ else if contains "/.kimi-code/tui.toml" (env "DOTFILES_SETTINGS_TARGET") -}}
+[upgrade]
+auto_install = false
+{{ else if ne (env "DOTFILES_SETTINGS_FORMAT") "toml" -}}
 {{ if contains "/.claude/settings" (env "DOTFILES_SETTINGS_TARGET") -}}
-{"enabledPlugins":{"serena@claude-plugins-official":false}}
+{"enabledPlugins":{"serena@claude-plugins-official":false},"env":{"DISABLE_AUTOUPDATER":"1"}}
 {{ else -}}{}{{ end }}
 {{- end }}

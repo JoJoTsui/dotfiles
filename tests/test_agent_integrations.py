@@ -39,8 +39,9 @@ class AgentIntegrationTests(unittest.TestCase):
         (self.live / ".kimi-code/AGENTS.md").write_text(
             "<!-- DOTFILES_AGENT_START -->\nretired Kimi block\n<!-- DOTFILES_AGENT_END -->\n")
         (self.live / ".codex/config.toml").write_text(
-            '[mcp_servers.serena]\ncommand="uvx"\n[mcp_servers.keep]\ncommand="true"\n'
+            'check_for_update_on_startup=true\n[mcp_servers.serena]\ncommand="uvx"\n[mcp_servers.keep]\ncommand="true"\n'
             '[model_providers.keep]\nenv_key="FIXTURE_KEY_NAME"\n')
+        (self.live / ".kimi-code/tui.toml").write_text('theme="personal"\n[upgrade]\nauto_install=true\n')
         settings = self.live / ".claude/settings.json"
         settings.write_text(json.dumps({"env": {"ANTHROPIC_AUTH_TOKEN": "fixture-preserved"},
                                        "enabledPlugins": {"serena@official": True, "keep@official": True}}))
@@ -91,6 +92,7 @@ class AgentIntegrationTests(unittest.TestCase):
             self.assertFalse((self.home / root / "pubmed-database").exists())
         settings = json.loads((self.home / ".claude/settings.json").read_text())
         self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "fixture-preserved")
+        self.assertEqual(settings["env"]["DISABLE_AUTOUPDATER"], "1")
         self.assertEqual(settings["enabledPlugins"], {"serena@official": False, "keep@official": True,
                                                     "serena@claude-plugins-official": False})
         self.assertTrue((self.home / ".claude.json").is_symlink())
@@ -103,6 +105,10 @@ class AgentIntegrationTests(unittest.TestCase):
         codex = (self.home / ".codex/config.toml").read_text()
         self.assertNotIn("mcp_servers.serena", codex)
         self.assertIn("FIXTURE_KEY_NAME", codex)
+        self.assertIn("check_for_update_on_startup = false", codex)
+        tui = (self.home / ".kimi-code/tui.toml").read_text()
+        self.assertIn("auto_install = false", tui)
+        self.assertIn('theme = "personal"', tui)
         self.assertFalse((self.home / ".kimi-code/AGENTS.md").exists())
         instructions = (self.home / ".codex/AGENTS.md").read_text()
         self.assertIn("personal rules", instructions)
