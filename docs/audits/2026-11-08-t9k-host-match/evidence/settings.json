@@ -1,0 +1,1153 @@
+{
+  "profile": "linux-remote-compute/x86_64",
+  "home": "/t9k/mnt",
+  "target_count": 14,
+  "credential_values": "excluded from comparison/output; standalone auth files not read",
+  "baseline": "private prior managed baselines not read; differing non-owned defaults are provisional compatible overrides",
+  "native_loading": "UNTESTED for every client",
+  "items": [
+    {
+      "target": "/t9k/mnt/.claude.json",
+      "source": "deployment/client-settings/claude-mcp.json",
+      "policy": "codegraph-mcp",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.claude.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "mcpServers/codegraph/alwaysLoad": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcpServers/codegraph/args": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcpServers/codegraph/command": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcpServers/codegraph/type": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "mcpServers/codegraph": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "exact"
+    },
+    {
+      "target": "/t9k/mnt/.claude/settings.json",
+      "source": "deployment/client-settings/claude-settings.json.tmpl",
+      "policy": "claude-settings",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.claude/settings.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "alwaysThinkingEnabled": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "enabledPlugins/serena@claude-plugins-official": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "env/ANTHROPIC_BASE_URL": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_DEFAULT_FABLE_MODEL": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_DEFAULT_HAIKU_MODEL": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_DEFAULT_OPUS_MODEL": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_DEFAULT_OPUS_MODEL_NAME": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_DEFAULT_SONNET_MODEL": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_MODEL": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/ANTHROPIC_SMALL_FAST_MODEL": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/API_TIMEOUT_MS": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "env/CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "env/CLAUDE_CODE_SUBAGENT_MODEL": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "env/DISABLE_AUTOUPDATER": {
+          "equal": false,
+          "present": false,
+          "status": "missing",
+          "reason": "public merge would fill missing default"
+        },
+        "ignorePatterns": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "enabledPlugins/serena@claude-plugins-official": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "env/DISABLE_AUTOUPDATER": {
+          "equal": false,
+          "present": false,
+          "status": "missing",
+          "reason": "public merge would fill missing default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "missing"
+    },
+    {
+      "target": "/t9k/mnt/.codex/config.toml",
+      "source": "deployment/client-settings/codex.toml",
+      "policy": "codex",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.codex/config.toml",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "approvals_reviewer": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "check_for_update_on_startup": {
+          "equal": false,
+          "present": false,
+          "status": "missing",
+          "reason": "public merge would fill missing default"
+        },
+        "features/context_management/experimental_mode": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "features/hooks": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "forced_login_method": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcp_servers/codegraph/args": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcp_servers/codegraph/command": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "model_provider": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "model_providers/custom/base_url": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/custom/name": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/custom/requires_openai_auth": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/custom/wire_api": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/deepseek/base_url": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/deepseek/env_key": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/deepseek/name": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/deepseek/wire_api": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/omniroute/base_url": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/omniroute/env_key": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "model_providers/omniroute/name": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_providers/omniroute/wire_api": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "model_reasoning_effort": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "tui/status_line": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "tui/status_line_use_colors": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "check_for_update_on_startup": {
+          "equal": false,
+          "present": false,
+          "status": "missing",
+          "reason": "public merge would fill missing default"
+        },
+        "mcp_servers/codegraph": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "missing"
+    },
+    {
+      "target": "/t9k/mnt/.codex/hooks.json",
+      "source": "deployment/client-settings/codex-hooks.json",
+      "policy": "codex-hooks",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.codex/hooks.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {},
+      "legacy_codex_rtk_hook": false,
+      "owned": {},
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "hook_migration_status": "exact",
+      "status": "exact"
+    },
+    {
+      "target": "/t9k/mnt/.kimi-code/config.toml",
+      "source": "deployment/client-settings/kimi.toml.tmpl",
+      "policy": "kimi",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.kimi-code/config.toml",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "default_model": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "models/kimi-code/k3-256k/capabilities": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3-256k/default_effort": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3-256k/display_name": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3-256k/max_context_size": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3-256k/model": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3-256k/provider": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3-256k/support_efforts": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3/capabilities": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3/default_effort": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3/display_name": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3/max_context_size": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3/model": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3/provider": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/k3/support_efforts": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding-highspeed/capabilities": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding-highspeed/display_name": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding-highspeed/max_context_size": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding-highspeed/model": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding-highspeed/provider": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding/capabilities": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding/default_effort": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding/display_name": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding/max_context_size": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding/model": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding/provider": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "models/kimi-code/kimi-for-coding/support_efforts": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "providers/managed:kimi-code/base_url": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "providers/managed:kimi-code/type": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "services/moonshot_fetch/base_url": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "services/moonshot_search/base_url": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "thinking/effort": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "thinking/enabled": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {},
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "compatible"
+    },
+    {
+      "target": "/t9k/mnt/.kimi-code/tui.toml",
+      "source": "deployment/client-settings/kimi-tui.toml",
+      "policy": "kimi-tui",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.kimi-code/tui.toml",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "cache_expiry_hint": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "disable_paste_burst": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "editor/command": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "notifications/enabled": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "notifications/notification_condition": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "render_latex": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "theme": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "upgrade/auto_install": {
+          "equal": false,
+          "present": true,
+          "status": "drift",
+          "reason": "enforced policy differs"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "upgrade/auto_install": {
+          "equal": false,
+          "present": true,
+          "status": "drift",
+          "reason": "enforced policy differs"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "drift"
+    },
+    {
+      "target": "/t9k/mnt/.kimi-code/mcp.json",
+      "source": "deployment/client-settings/mcp-codegraph.json",
+      "policy": "codegraph-mcp",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.kimi-code/mcp.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "mcpServers/codegraph/args": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcpServers/codegraph/command": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "mcpServers/codegraph": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "exact"
+    },
+    {
+      "target": "/t9k/mnt/.pi/agent/mcp.json",
+      "source": "deployment/client-settings/mcp-codegraph.json",
+      "policy": "codegraph-mcp",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.pi/agent/mcp.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "mcpServers/codegraph/args": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcpServers/codegraph/command": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "mcpServers/codegraph": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "exact"
+    },
+    {
+      "target": "/t9k/mnt/.minimax/mcp.json",
+      "source": "deployment/client-settings/mcp-codegraph.json",
+      "policy": "codegraph-mcp",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.minimax/mcp.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "mcpServers/codegraph/args": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcpServers/codegraph/command": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "mcpServers/codegraph": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "exact"
+    },
+    {
+      "target": "/t9k/mnt/.qoder/settings.json",
+      "source": "deployment/client-settings/mcp-codegraph.json",
+      "policy": "codegraph-mcp",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.qoder/settings.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "mcpServers/codegraph/args": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcpServers/codegraph/command": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "mcpServers/codegraph": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "exact"
+    },
+    {
+      "target": "/t9k/mnt/.config/opencode/opencode.jsonc",
+      "source": "deployment/client-settings/opencode.jsonc.tmpl",
+      "policy": "opencode",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.config/opencode/opencode.jsonc",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "mcp/servers/codegraph/codemode": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcp/servers/codegraph/command": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcp/servers/codegraph/disabled": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "mcp/servers/codegraph/type": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "plugins": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "skills": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "update": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "watcher/ignore": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "mcp/servers/codegraph": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "update": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": true,
+      "serena_status": "exact",
+      "status": "exact"
+    },
+    {
+      "target": "/t9k/mnt/.pi/agent/settings.json",
+      "source": "deployment/client-settings/pi-settings.json.tmpl",
+      "policy": "pi-settings",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.pi/agent/settings.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "defaultModel": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "defaultProvider": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "enableInstallTelemetry": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "lastChangelogVersion": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "modelThinkingLevels/minimax-cn/MiniMax-M2.7": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "modelThinkingLevels/minimax-cn/MiniMax-M2.7-highspeed": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "modelThinkingLevels/minimax-cn/MiniMax-M3": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "skills": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "terminal/showTerminalProgress": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "theme": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        },
+        "tuiMode": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {},
+      "serena_active": false,
+      "shared_skills_present": true,
+      "serena_status": "exact",
+      "status": "compatible"
+    },
+    {
+      "target": "/t9k/mnt/.pi/agent/models-store.json",
+      "source": "deployment/client-settings/pi-models-store.json",
+      "policy": "pi-models-store",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.pi/agent/models-store.json",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "new client session required to verify loaded settings; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "minimax-cn/checkedAt": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "minimax-cn/etag": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "minimax-cn/lastModified": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        },
+        "minimax-cn/models": {
+          "equal": false,
+          "present": true,
+          "status": "compatible",
+          "reason": "device override preserved by public merge; semantic operation untested"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {},
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "compatible"
+    },
+    {
+      "target": "/t9k/mnt/.caveman/caveman.yaml",
+      "source": "deployment/client-settings/caveman.yaml",
+      "policy": "caveman-config",
+      "exists": true,
+      "resolved_path": "/t9k/mnt/joey/SHELL/.caveman/caveman.yaml",
+      "symlink_ancestor": true,
+      "native_loading": "unverified: clients were not launched",
+      "restart_impact": "gateway reads once at startup; config/runtime alignment separately checked; no restart performed",
+      "evidence": "Chezmoi parses in isolated scratch; only default-field paths and boolean equality/presence leave codec; credential keys excluded",
+      "parser_ok": true,
+      "fields": {
+        "compat/minimax-cn/base_url": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "legacy_codex_rtk_hook": false,
+      "owned": {
+        "compat/minimax-cn/base_url": {
+          "equal": true,
+          "present": true,
+          "status": "exact",
+          "reason": "matches source default"
+        }
+      },
+      "serena_active": false,
+      "shared_skills_present": false,
+      "serena_status": "exact",
+      "status": "exact"
+    }
+  ],
+  "source_checksums": {
+    "deployment/client-settings/targets.tsv": "208c9e790c007aba930a145f192755bdd62d17c1ceb32fe025c6f6feea10cd92",
+    "deployment/client-settings/policies.json": "019793d26372dce094ffb54ddc85dccb33702d87a8d8771286fb40106d6a7e3c",
+    "deployment/client-settings/merge.tmpl": "35e99d68ffb22212d57014f513351d74fb96e16b517b8a0ac456dd85e52ca339"
+  },
+  "runtime_integration": {
+    "codex_caveman_mcp_command_path": "/t9k/mnt/.caveman/bin/caveman-mcp",
+    "codex_caveman_mcp_present": true,
+    "codex_caveman_provider_present": true,
+    "codex_caveman_selected": true,
+    "gateway_mount_matches_all_pi_models": true,
+    "pi_default_model_in_catalog": true,
+    "pi_default_provider_matches_catalog": true,
+    "pi_model_count": 4,
+    "runtime_file_exists": true,
+    "runtime_minimax_mount_present": true,
+    "runtime_mount_equals_config": true,
+    "codex_caveman_mcp_executable": true
+  },
+  "codegraph_executable": {
+    "path": "/t9k/mnt/.bun/bin/codegraph",
+    "exists_executable": true,
+    "resolved_path": "/t9k/mnt/joey/SHELL/.bun/install/global/node_modules/@colbymchenry/codegraph/npm-shim.js",
+    "invoked": false
+  },
+  "process_names_present": {
+    "caveman-proxy": true,
+    "caveman-mcp": true,
+    "mihomo": true,
+    "codex": true,
+    "herdr": true,
+    "codegraph": false
+  },
+  "local_http_status": {
+    "caveman": {
+      "status_code": "404",
+      "transport_exit": 0,
+      "body_read_or_saved": false
+    },
+    "mihomo": {
+      "status_code": "200",
+      "transport_exit": 0,
+      "body_read_or_saved": false
+    }
+  },
+  "source_policy_findings": [
+    "Seven CodeGraph entries enforced across Claude, Codex, Kimi, Pi, MiniMax, Qoder, OpenCode.",
+    "Enforced disabled updaters: Claude env/DISABLE_AUTOUPDATER, Codex check_for_update_on_startup, Kimi upgrade/auto_install, OpenCode update.",
+    "Merge removes Serena MCP registrations and forces recognized Serena plugin flags false.",
+    "Codex hooks migration only replaces exact rtk hook claude with exit 0, preserving other hook metadata and positions.",
+    "Shared skill library is appended without removing device skill paths.",
+    "Missing defaults filled; previous managed defaults track source updates; differing device overrides preserved.",
+    "Caveman compat/minimax-cn/base_url enforced; all other gateway fields preserved.",
+    "Deployment proxy policy uses proxy for manager/skill/agent/proxy/installer downloads; local settings/copier/Caveman steps bypass; local loopback excluded."
+  ],
+  "approval": "User explicitly allowed limited in-memory comparison in Q5 after automatic approval review rejected initial parse; standalone auth and .env excluded throughout.",
+  "completeness": {
+    "target_count": 14,
+    "all_parsed": true,
+    "owned_field_count": 13
+  }
+}

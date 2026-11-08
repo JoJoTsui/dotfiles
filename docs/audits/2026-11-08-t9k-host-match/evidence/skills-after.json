@@ -1,0 +1,372 @@
+{
+  "skills": {
+    "codebase-design": {
+      "resources": 4,
+      "manifest_sha256": "9ccdc4a029ab96551e222f00d0ee0528bfdd694ffe320781c9f085e29e755891"
+    },
+    "domain-modeling": {
+      "resources": 4,
+      "manifest_sha256": "169ff4d4557be101e4d129232252ded2380e2e978082eeab5ebfdaf8974bda4a"
+    },
+    "lark-whiteboard": {
+      "resources": 31,
+      "manifest_sha256": "c05cffe733cc8770d2e7ba91f622c40ea0877964e173580ea541090c9de31437"
+    },
+    "lark-openapi-explorer": {
+      "resources": 1,
+      "manifest_sha256": "cb739359ca3a8c1fc0ef58e127e5795691377a45d314edf6c15fffda74a0e16a"
+    },
+    "lark-task": {
+      "resources": 19,
+      "manifest_sha256": "0b2fe85c4eb07c1d0020fd3e4a316a55b0607e778a4a31abbe0f27be11c0dfa9"
+    },
+    "caveman-evidence-review": {
+      "resources": 1,
+      "manifest_sha256": "ed32bd98f7d08fc8598447fb867361fa34688a8d56c47e1aece8b1bdbc5965a1"
+    },
+    "caveman-explore": {
+      "resources": 3,
+      "manifest_sha256": "ec95e7ed894ec9a7519a9ed666c9eb1c8137421e3756fee3d65769625812abe6"
+    },
+    "lark-base": {
+      "resources": 27,
+      "manifest_sha256": "2cdd413a5db7eefa9d85618e62244a793255c73312456b0d1c14ffb690d6a3eb"
+    },
+    "caveman-learn": {
+      "resources": 6,
+      "manifest_sha256": "5199a2901a447918c1c5b274c7f58994c0cd2cdcc13dd730a2f8b06110c25028"
+    },
+    "wayfinder": {
+      "resources": 2,
+      "manifest_sha256": "8451b3c9dff82a71909043766ae252ada6b48d968b8fb005f4e77cb39f323e4d"
+    },
+    "setup-pre-commit": {
+      "resources": 2,
+      "manifest_sha256": "ec35dcaac7a354acf9e8141d826a21b89fd5665d954ca6f005c88bef7ae0f05a"
+    },
+    "scaffold-exercises": {
+      "resources": 2,
+      "manifest_sha256": "db8c6aa7ced0a50a561531e42aa959a430ad7655799856f24db171b283458129"
+    },
+    "caveman-manage": {
+      "resources": 1,
+      "manifest_sha256": "b8dfc9a62b4acf97573e4ba73b6159c14950fb1fcfb8db72652a439b1cf7c382"
+    },
+    "lark-workflow-standup-report": {
+      "resources": 1,
+      "manifest_sha256": "1be46178577c5534ac7f184d8fdf69c5fa6a96f901bc68cbf15fb0c3d9a99279"
+    },
+    "caveman-stats": {
+      "resources": 2,
+      "manifest_sha256": "0cf773e7491d0b88236f71a11644e3e249d83e4482b069f70e984f30f34f4606"
+    },
+    "writing-for-agents": {
+      "resources": 3,
+      "manifest_sha256": "60c6a8e5046e8c01d86ca3b812e82a9b2fe1c76380a8c976ac3824c5457ba786"
+    },
+    "triage": {
+      "resources": 4,
+      "manifest_sha256": "ea211b5b292e5f328a97864d57406574377fbbc8d37ce153de91c5da0b014738"
+    },
+    "lark-skill-maker": {
+      "resources": 1,
+      "manifest_sha256": "567fbe9bfd7ebfaedf5a8d7a394d091ad5bf71ae87bd378c2c665672cc7ab2cb"
+    },
+    "lark-approval": {
+      "resources": 17,
+      "manifest_sha256": "50e3ad4eabe4281d6c83d860bfd960e721fab98df0fe19aa02f8ea8491ad2a2c"
+    },
+    "diagnosing-bugs": {
+      "resources": 3,
+      "manifest_sha256": "d9c2fb5d5c393949c67789e76116e0e995f636d73756294035cbd8d136f11285"
+    },
+    "caveman-compress": {
+      "resources": 10,
+      "manifest_sha256": "ea939cfad74af7bf3b11b9b39792eae1fc5dd759152f1324ea49063663b0945c"
+    },
+    "lark-sheets": {
+      "resources": 30,
+      "manifest_sha256": "ebc998e5da264de463b3fe0684c644298356a8d940d6ac19a1a9ae60175d5ae5"
+    },
+    "grilling": {
+      "resources": 2,
+      "manifest_sha256": "23f88e3d1b951a2af7bc6de1db29c1b043d6f4fa9c2a56f10d6475441a8839e1"
+    },
+    "lark-markdown": {
+      "resources": 6,
+      "manifest_sha256": "e68a2ab8372625293af2d871656ce45bcd47f11b2c38d84e6c48abe14f889b5e"
+    },
+    "implement": {
+      "resources": 2,
+      "manifest_sha256": "021ba23e34a8928edadaa5088a579ce7228835ea6ba177b9dd632d56233ab20c"
+    },
+    "writing-fragments": {
+      "resources": 2,
+      "manifest_sha256": "7a2c3733a1eaf07a90c2937b1582cdf7ba02722a56e8ff3bb001b47dc3cb1972"
+    },
+    "prototype": {
+      "resources": 4,
+      "manifest_sha256": "3138f1aa070ed58b6154fdebd43f798060562038eb9ccea77db8d61b8d1f1a7c"
+    },
+    "lark-mail": {
+      "resources": 36,
+      "manifest_sha256": "82c2d1fe2453006d67142b0dad6b679d4728cb42ee15cbf1afbd27dfa7c64d85"
+    },
+    "caveman-help": {
+      "resources": 2,
+      "manifest_sha256": "cfb6058efb4e6559d76fd8e98b9e98d602f1958b2a407a375b5920e10277f94c"
+    },
+    "lark-slides": {
+      "resources": 50,
+      "manifest_sha256": "f24a7a60fe6c766a8f26df6f1e3e5706c5b83a6ee3486eb6cb41a7e008f990b2"
+    },
+    "wait-what": {
+      "resources": 2,
+      "manifest_sha256": "32d8df32892399b14d08a29c4c35dd7f67eb12e961a95299d4443dd75f5370e9"
+    },
+    "lark-vc": {
+      "resources": 1,
+      "manifest_sha256": "d6e30764257b2723d52bbf3d914353205dc91489b02caa57a7b05c24f2310abf"
+    },
+    "setup-matt-pocock-skills": {
+      "resources": 7,
+      "manifest_sha256": "87ad1a06398390d5ad60cd3b76bef622bcafa87bf823bbd7e2b7da1cce73b3ce"
+    },
+    "teach": {
+      "resources": 6,
+      "manifest_sha256": "f1bbe049c3e21a9ad748a3f74647a6556d1877ea6f1b8602f6b75f6d087761f2"
+    },
+    "lark-event": {
+      "resources": 9,
+      "manifest_sha256": "f0e49c9cbc493e77894fadd7d9d6e8bc160f5749f18c84a25d0dabcf5249032e"
+    },
+    "lark-apps": {
+      "resources": 58,
+      "manifest_sha256": "76cf2be8731b2eb5ddfa8e90694f2dcbb2cacc95681ebaa76618f6bf4f7c28d4"
+    },
+    "lark-im": {
+      "resources": 61,
+      "manifest_sha256": "56c327055b3bde35ca21313edc55e232312db9c16576032a6f23bd576144e918"
+    },
+    "lark-workflow-meeting-summary": {
+      "resources": 1,
+      "manifest_sha256": "184dc82ab7ac822f956494e9c17fc62aed9ab7b93433ed883b2fbf7e39e55120"
+    },
+    "investigate-first": {
+      "resources": 2,
+      "manifest_sha256": "505f02e3c26e9e834cb0888a9d7ffeedc8010c6c4f7d2d1f3d6d95995783795c"
+    },
+    "tdd": {
+      "resources": 4,
+      "manifest_sha256": "f8841953855f8a452db821921fdc3ccefc5e1ead78150e80400c6b7d9afb5d63"
+    },
+    "grill-me": {
+      "resources": 2,
+      "manifest_sha256": "abac7cd6b5615d322e32bb73eb511192feb8c6b0f21af482298407aeabc0c859"
+    },
+    "to-questionnaire": {
+      "resources": 2,
+      "manifest_sha256": "02493d65b8d6ae73e844612b076aa2fe25283920f8f682ffb5791d326febe49e"
+    },
+    "caveman-setup": {
+      "resources": 1,
+      "manifest_sha256": "0ad35f8de5e90bd130574d184df090a9ed0b50c61eac76b35655eb0e2a7dc3cf"
+    },
+    "cavecrew": {
+      "resources": 2,
+      "manifest_sha256": "ef46469b17470b9051e865209d2c1bfd9f0ee74faa514408940f9bb0d3da4588"
+    },
+    "lark-drive": {
+      "resources": 61,
+      "manifest_sha256": "dcac78dd709d5c9c0ab94fd9a95af464c334173eb0b1087d7188835f0983fef2"
+    },
+    "implement-spec": {
+      "resources": 2,
+      "manifest_sha256": "68efddceaa242d419946294558e589b70f9b975ebd1464f6ff85fb73695ffe75"
+    },
+    "lark-shared": {
+      "resources": 7,
+      "manifest_sha256": "98b4f04b43e1bc1cb048be3f6de32ecd9ec2020529b8c76b3ccd48ea67fbcfd2"
+    },
+    "loop-me": {
+      "resources": 2,
+      "manifest_sha256": "9ecfd8706ac1952b9deba5c67e055999947899fb0c0b0c635caa893701e8e39d"
+    },
+    "lark-meeting": {
+      "resources": 30,
+      "manifest_sha256": "98d482320b12ded9f6d694d9b59ac068ef2497707654cfc8efd687f35326a626"
+    },
+    "migrate-to-shoehorn": {
+      "resources": 2,
+      "manifest_sha256": "25d1fdc38022be0e9fab016f86b7267107585e9f608fec1499e7f701cbdb1605"
+    },
+    "safe-refactor": {
+      "resources": 2,
+      "manifest_sha256": "ce7ae47253efc18e08608515cec4724cd624e19f4da7166f3233bf27e2dc21ca"
+    },
+    "verify-and-stop": {
+      "resources": 2,
+      "manifest_sha256": "5c42272f5299d87cdaea9e0cb38cf1b1914236e9b6de89d6556faa71159022c5"
+    },
+    "lean-build": {
+      "resources": 2,
+      "manifest_sha256": "1b2c641d92083ef436e5ef43e9aa4c462bc77628902a2e72d0fe863c79116251"
+    },
+    "setup-ts-deep-modules": {
+      "resources": 3,
+      "manifest_sha256": "93ae0208b2e90627f263b8f6e9432a6d9733fe5f530e7871517ecc3f1e1a70a6"
+    },
+    "writing-beats": {
+      "resources": 2,
+      "manifest_sha256": "1e3bdd264fe2019e7d0efec4671807036237963c0aee46d1200bf61e0eb3d0d3"
+    },
+    "caveman-discover": {
+      "resources": 1,
+      "manifest_sha256": "2d6ef1b73eb6ffd87969a50706c8f581f5d434c453e8ff32ea79740eae75a6f8"
+    },
+    "retro": {
+      "resources": 2,
+      "manifest_sha256": "5b5946e8906bd630db74b973c4c1b761cdb3e76d6e765e2dc6f9cc592c04653c"
+    },
+    "lark-minutes": {
+      "resources": 1,
+      "manifest_sha256": "38aae5f6d62b93319389e14b9a45f2608168b7c9b5f67aac509a5162245d917c"
+    },
+    "lark-doc": {
+      "resources": 16,
+      "manifest_sha256": "b3b4a9bdd36b51855c814c45193cb546a8e2edcbc7b738233ebec50d218039db"
+    },
+    "lark-okr": {
+      "resources": 26,
+      "manifest_sha256": "ca2ee2c4ed6cc4ca8dce207dee0bafdef7e4252ea1ffb6b003422b9a47b10e24"
+    },
+    "handoff": {
+      "resources": 2,
+      "manifest_sha256": "4122f0d8b5e45dacba6d7ea31be39a24569044487cf31df833d1411891dc32de"
+    },
+    "ask-matt": {
+      "resources": 3,
+      "manifest_sha256": "f98b32adbf5820d2ec7d97fb673594cea4df5eae734cdc8766de25672736b218"
+    },
+    "lark-vc-agent": {
+      "resources": 1,
+      "manifest_sha256": "037086b27f0261f34532deec71fa6ef0214c262790ab23749c8c01562308478d"
+    },
+    "worktrunk": {
+      "resources": 17,
+      "manifest_sha256": "7d5b6066825a1757f1778ed7d47078b9875e3f2e7d2d621637d5a5fb53e34f9d"
+    },
+    "claude-handoff": {
+      "resources": 2,
+      "manifest_sha256": "67f24812c4cc2face9651624698c468b82b9263cf24e025d648c707d361209ed"
+    },
+    "ultracave": {
+      "resources": 2,
+      "manifest_sha256": "6779381c98bc21516cd266de6dcd0eb6b64dd39773a782b0f3cc8e444fcd570f"
+    },
+    "wizard": {
+      "resources": 3,
+      "manifest_sha256": "649e8ed36211c809e13a345cd82588d89df8bfcbfb2996d260e35f92abcda6ed"
+    },
+    "caveman-commit": {
+      "resources": 2,
+      "manifest_sha256": "1e158e9e351ee5e6d9ff316231a6b1fbf45355fee1761e742e242c63e4b32a38"
+    },
+    "surgical-patch": {
+      "resources": 2,
+      "manifest_sha256": "70217389d74d576815e7de1393847fb456b41e2c42b8776b56c493c990c0d13f"
+    },
+    "improve-codebase-architecture": {
+      "resources": 3,
+      "manifest_sha256": "29230c4856e81f6cca054a689446239d1024eade8dccb4664c31712f2fb055a0"
+    },
+    "lark-attendance": {
+      "resources": 1,
+      "manifest_sha256": "33f45b94939766c34929b11f96eea2bc3a99ab8162a5a63f5bc688ab4175a2ec"
+    },
+    "graphify": {
+      "resources": 9,
+      "manifest_sha256": "9d0ded439574645bfbb590c652eb4f6ef73c47dd7c17e68cf77e3ad056af4d52"
+    },
+    "pr": {
+      "resources": 3,
+      "manifest_sha256": "2eb497bd1976e1fa600fa9936c3f99459e84c152b231a05ca8e1569d97df48bd"
+    },
+    "lark-wiki": {
+      "resources": 14,
+      "manifest_sha256": "1681233ef4ce0472882403c7ced5487888870c0e9b7c99dbd99424de12e5075b"
+    },
+    "wt-switch-create": {
+      "resources": 2,
+      "manifest_sha256": "2e479d950f79c6a6e545f4b02543a3383dddcf473b9c694f6d9d6a86a2330167"
+    },
+    "to-tickets": {
+      "resources": 2,
+      "manifest_sha256": "c37486a7deff5c011fa93c2ab1f200afa8c8a164afe4b308b075852e9d946736"
+    },
+    "grill-with-docs": {
+      "resources": 2,
+      "manifest_sha256": "751a1da1f71fae09eaa572bc88513235728640a078e0f73c7ca837582cd2aac9"
+    },
+    "megacave": {
+      "resources": 2,
+      "manifest_sha256": "86e9e4fa16b8dfaf40d21a199a5f57444af82032109629b623fc3949187a28ff"
+    },
+    "migration": {
+      "resources": 2,
+      "manifest_sha256": "97e0613d86c8ed31533cdd9442e8780f4173d5b30d48e1459263cfd9c8ea0776"
+    },
+    "lark-calendar": {
+      "resources": 15,
+      "manifest_sha256": "fced606d23981cf9b03fa10cd929f15658e1759169cce80b23dca3332099952f"
+    },
+    "lark-note": {
+      "resources": 1,
+      "manifest_sha256": "53d2f4171f917a685d942a81aa790fda9fb356fb33a71ced9eeb4c46f3d64936"
+    },
+    "caveman-optimize": {
+      "resources": 1,
+      "manifest_sha256": "82f4ebd145907d47970766ab5b1afa462327ac3bea98aff5da40f9d9f535770a"
+    },
+    "caveman": {
+      "resources": 2,
+      "manifest_sha256": "3efd4ae08c0308ff485476d7d7305af27c71f9d9cdc7e6671a66f6a2ab7458a3"
+    },
+    "chief-of-staff": {
+      "resources": 2,
+      "manifest_sha256": "660efe1b02e3a36872c046cc1497c2fb9f8e479aaae2d32c092641cd7c61184e"
+    },
+    "code-review": {
+      "resources": 2,
+      "manifest_sha256": "b10bcd9273f69d14c510e5816129186bec75c85175b4fae31a106838f9907135"
+    },
+    "to-spec": {
+      "resources": 2,
+      "manifest_sha256": "4c8c47d727c25e2f89cf3ec7c35ff23a0bb31e8c27f89cec259af8afc1987327"
+    },
+    "writing-shape": {
+      "resources": 2,
+      "manifest_sha256": "5d9113a1830e998c1d433d5a1684c71a7bb3a197d2b3bd7a5b50da7755dde709"
+    },
+    "lark-contact": {
+      "resources": 4,
+      "manifest_sha256": "8da24b4436eef2e93ab2b112da3418ce14192529dd02ee133062d54eb74e2672"
+    },
+    "git-guardrails-claude-code": {
+      "resources": 3,
+      "manifest_sha256": "0f377ed004c27c1607f026c9b3dc024b8230c89c62ef5d6d5d82a7ff0212d26f"
+    },
+    "caveman-review": {
+      "resources": 2,
+      "manifest_sha256": "f830f1eb755e2bf9415fcea5d3b96b729bce46b30cd765ede83be69786db39d0"
+    },
+    "research": {
+      "resources": 2,
+      "manifest_sha256": "7c3fec346153043a535103d4911e209bbfdfb53cf7d0cec5e678a25d80b9165e"
+    }
+  },
+  "count": 91,
+  "canonical_resources": 709,
+  "adapter_trees_checked": 3,
+  "pi_catalog_duplicates": 0
+}

@@ -102,6 +102,14 @@ translated. The result establishes behavior under that translation.
 The Linux remote-compute deployment used for T9K. It is distinct from the legacy
 T9K installation and that device's existing state.
 
+**Deployment match**:
+Agreement between a device item and the selected deployment's declared version,
+content, or behavior. Exact agreement is distinct from a compatible difference.
+
+**Intentional legacy adaptation**:
+A device-specific difference retained deliberately for an existing installation.
+It is documented separately from accidental deployment drift.
+
 **Migration rehearsal**:
 Verification of a deployment starting from an existing device's configuration
 and preservation constraints.

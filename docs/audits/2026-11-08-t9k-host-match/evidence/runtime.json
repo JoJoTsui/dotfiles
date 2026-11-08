@@ -1,0 +1,151 @@
+{
+  "recorded_at_utc": "2026-11-08T08:12:07Z",
+  "reference_commit": "b7634032e81b56b318aee0af3fbc10b1bdbaf004",
+  "entries": [
+    {
+      "id": "herdr-live-agents",
+      "category": "restart-runtime",
+      "scope": "current legacy notebook",
+      "source": "Herdr read-only socket snapshot",
+      "expected": "all task activity finished before notebook restart",
+      "observed": {
+        "count": 14,
+        "statuses": {
+          "idle": 13,
+          "working": 1
+        },
+        "nonidle": [
+          {
+            "pane_id": "wG:p2",
+            "agent": "codex",
+            "agent_status": "working",
+            "cwd": "/t9k/mnt/joey/SHELL/dotfiles"
+          }
+        ]
+      },
+      "status": "unverified",
+      "alignment": "wait for non-idle work to finish; status alone cannot identify this audit",
+      "restart_impact": "restart interrupt risk while any unrelated work is active"
+    },
+    {
+      "id": "herdr-saved-session",
+      "category": "restart-runtime",
+      "scope": "current legacy notebook",
+      "source": "docs/HOST_UP.md",
+      "expected": "valid persistent snapshot with session restore enabled",
+      "observed": {
+        "workspaces": 15,
+        "panes": 54,
+        "native_references": 15,
+        "explicit_resume_commands": 7,
+        "duplicate_references": 1,
+        "age_seconds": 1031.5,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/herdr/session.json"
+      },
+      "status": "compatible",
+      "alignment": "none; existing host-up normalizes duplicate references while server is stopped",
+      "restart_impact": "saved metadata available; in-flight agent work is not guaranteed resumable"
+    },
+    {
+      "id": "herdr-restore-config",
+      "category": "restart-runtime",
+      "scope": "current legacy notebook",
+      "source": "dot_config/herdr/config.toml",
+      "expected": true,
+      "observed": true,
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "mihomo-listener",
+      "category": "restart-runtime",
+      "scope": "current legacy notebook",
+      "source": "dot_local/bin/executable_dotfiles-host-up",
+      "expected": [
+        200
+      ],
+      "observed": {
+        "http_status": 200,
+        "transport_exit": 0
+      },
+      "status": "compatible",
+      "alignment": "none",
+      "restart_impact": "listener responding; routing/model behavior not exercised"
+    },
+    {
+      "id": "caveman-listener",
+      "category": "restart-runtime",
+      "scope": "current legacy notebook",
+      "source": "dot_local/bin/executable_dotfiles-host-up",
+      "expected": [
+        200,
+        401,
+        403,
+        404
+      ],
+      "observed": {
+        "http_status": 404,
+        "transport_exit": 0
+      },
+      "status": "compatible",
+      "alignment": "none",
+      "restart_impact": "listener responding; routing/model behavior not exercised"
+    },
+    {
+      "id": "repository-persistence-and-push",
+      "category": "restart-runtime",
+      "scope": "current legacy notebook",
+      "source": "git HEAD/origin/main; filesystem metadata",
+      "expected": {
+        "reference_commit": "b7634032e81b56b318aee0af3fbc10b1bdbaf004",
+        "persistent_filesystem": "ceph"
+      },
+      "observed": {
+        "remote_tracking_commit": "b7634032e81b56b318aee0af3fbc10b1bdbaf004",
+        "filesystem": "ceph",
+        "doc_changes_pending": true
+      },
+      "status": "exact",
+      "alignment": "none for existing implementation; audit docs intentionally uncommitted",
+      "restart_impact": "implementation pushed and source persistent"
+    },
+    {
+      "id": "offline-global-integration-prerequisites",
+      "category": "restart-runtime",
+      "scope": "current legacy notebook",
+      "source": "deployment/legacy/agent-integrations.sh",
+      "expected": "pinned Graphify commit and executable settings codec available",
+      "observed": {
+        "pin": "16218bfc80d4ca2799734d045039f7ed1a5fa9fb",
+        "cache_commit_exists": true,
+        "codec_executable": true,
+        "cache_resolved": "/t9k/mnt/joey/SHELL/.local/share/dotfiles/agent-integrations/git/github.com_Graphify-Labs_graphify"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready offline"
+    },
+    {
+      "id": "persistence:.bash_logout",
+      "category": "restart-runtime",
+      "scope": "current legacy notebook",
+      "source": "dot_bash_logout; legacy home-links.tsv omits this target",
+      "expected": "persistent or reconstructible repo-managed home file",
+      "observed": {
+        "filesystem": "overlayfs",
+        "path": "/t9k/mnt/.bash_logout",
+        "repo_source_exists": true
+      },
+      "status": "drift",
+      "alignment": "recommended only if this logout preference must be present immediately after restart",
+      "restart_impact": "overlay copy may disappear; identical repo source survives, no unique configuration identified"
+    }
+  ],
+  "limitations": [
+    "No notebook restart, remote laptop attach, external egress/model probe, or client-native startup performed.",
+    "No source of live .env or standalone auth values; local HTTP bodies discarded.",
+    "Snapshot validates structure, not success of every future resumed provider/API call."
+  ],
+  "mihomo_public_version": "v1.19.29"
+}

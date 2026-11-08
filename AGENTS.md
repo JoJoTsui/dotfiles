@@ -215,6 +215,13 @@ Follow the task mappings and shell-specific rules in
 Check the common/selected bundle catalogs and actual command availability;
 retain POSIX/Bash 3.2 compatibility where this deployment boundary requires it.
 
+## Existing-host audits
+
+Accept installed tool versions newer than the repository pin. A newer version
+alone requires no deployment alignment or downgrade and does not block restart.
+Report older versions, missing commands, configuration drift, and demonstrated
+incompatibilities separately. Keep installation pins unchanged during an audit.
+
 ## Known rough edges
 
 - Nu's vendor autoload runs for interactive sessions and is omitted by ordinary

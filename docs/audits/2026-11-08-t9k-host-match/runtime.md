@@ -1,0 +1,17 @@
+# Runtime audit
+
+Current read-only snapshot, local listener metadata and offline prerequisites. No host-up/link-home application, service/client restart, external egress/model request, project indexing or notebook restart was performed. One saved duplicate native reference is covered by the existing stopped-server preparation logic; the snapshot itself was not modified. A non-idle agent may be this audit, but that identity is not assumed. Wait until unrelated work finishes before restart. Remote-laptop forwarding and post-restart restoration remain untested.
+
+9 item records. Full sanitized observations: [evidence/runtime.json](evidence/runtime.json).
+
+| Item | Scope | Desired | Host observation | Match | Deployment alignment | Restart impact |
+| --- | --- | --- | --- | --- | --- | --- |
+| herdr-live-agents | current legacy notebook | all task activity finished before notebook restart | {"count":14,"nonidle":[{"agent":"codex","agent_status":"working","cwd":"/t9k/mnt/joey/SHELL/dotfiles","pane_id":"wG:p2"}],"statuses":{"idle":13,"working":1}} | unverified | wait for non-idle work to finish; status alone cannot identify this audit | restart interrupt risk while any unrelated work is active |
+| herdr-saved-session | current legacy notebook | valid persistent snapshot with session restore enabled | {"age_seconds":1031.5,"duplicate_references":1,"explicit_resume_commands":7,"native_references":15,"panes":54,"resolved_path":"/t9k/mnt/joey/SHELL/.config/herdr/session.json","workspaces":15} | compatible | none; existing host-up normalizes duplicate references while server is stopped | saved metadata available; in-flight agent work is not guaranteed resumable |
+| herdr-restore-config | current legacy notebook | true | true | exact | none | ready |
+| mihomo-listener | current legacy notebook | [200] | {"http_status":200,"transport_exit":0} | compatible | none | listener responding; routing/model behavior not exercised |
+| caveman-listener | current legacy notebook | [200,401,403,404] | {"http_status":404,"transport_exit":0} | compatible | none | listener responding; routing/model behavior not exercised |
+| repository-persistence-and-push | current legacy notebook | {"persistent_filesystem":"ceph","reference_commit":"b7634032e81b56b318aee0af3fbc10b1bdbaf004"} | {"doc_changes_pending":true,"filesystem":"ceph","remote_tracking_commit":"b7634032e81b56b318aee0af3fbc10b1bdbaf004"} | exact | none for existing implementation; audit docs intentionally uncommitted | implementation pushed and source persistent |
+| offline-global-integration-prerequisites | current legacy notebook | pinned Graphify commit and executable settings codec available | {"cache_commit_exists":true,"cache_resolved":"/t9k/mnt/joey/SHELL/.local/share/dotfiles/agent-integrations/git/github.com_Graphify-Labs_graphify","codec_executable":true,"pin":"16218bfc80d4ca2799734d045039f7ed1a5fa9fb"} | exact | none | ready offline |
+| persistence:.bash_logout | current legacy notebook | persistent or reconstructible repo-managed home file | {"filesystem":"overlayfs","path":"/t9k/mnt/.bash_logout","repo_source_exists":true} | drift | recommended only if this logout preference must be present immediately after restart | overlay copy may disappear; identical repo source survives, no unique configuration identified |
+| mihomo-serving-version | longstanding proxy | 1.19.29 | v1.19.29 | exact | none for serving version; binary path ownership remains unverified | listener and serving version match; private routing profile excluded |

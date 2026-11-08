@@ -1,0 +1,155 @@
+{
+  "reference_commit": "b7634032e81b56b318aee0af3fbc10b1bdbaf004",
+  "created_at_utc": "2026-11-08T08:17:12.670473+00:00",
+  "record_counts": {
+    "tools": 375,
+    "files": 138,
+    "skills": 141,
+    "runtime": 9,
+    "settings": 133
+  },
+  "total_records": 796,
+  "all_files_written_atomically": false,
+  "completeness": "All expected counts and unique item IDs asserted; manifest written last after content/hash verification.",
+  "reference_sha256": {
+    "deployment/common-tools.tsv": "0c1b43df46d248d52ff8d9f6169d81451a488bf96b0888c289fc2854930a2cac",
+    "deployment/bundle-tools.tsv": "eefa234b3e543f6bdd7cf76438d36b005d21a559f7baa0d0f969e4ce66835458",
+    "deployment/bundles.tsv": "948b584e2151f15b119b359280486fc2a33d349e6780425c90bf125aecc72bc5",
+    "deployment/common.sh": "37cf4663912582d7933868a1db1fc49b025b50304ec68be0f80d44d4057aca1c",
+    "deployment/managers.sh": "426b40abb883d56ae9aafb3064952909b4fe3c9d5b2d5127d34397a6f8c8a549",
+    "deployment/agents/catalog.tsv": "d7a9a4b7a6ab78d56156e3ab0c2e8ca24e25c17eaf78b99809cc5b79600c4903",
+    "deployment/agents/native.tsv": "8c1aafe0b619e40adf2040702f3a9efca7dc46a9bf10288042b02d98ef11dc2f",
+    "deployment/client-settings/targets.tsv": "208c9e790c007aba930a145f192755bdd62d17c1ceb32fe025c6f6feea10cd92",
+    "deployment/client-settings/policies.json": "019793d26372dce094ffb54ddc85dccb33702d87a8d8771286fb40106d6a7e3c",
+    "deployment/skills.tsv": "e1269aadc689031928cd67ea77660eb803b34fd783ec55965622f71124e4df06",
+    "deployment/skills.lock.tsv": "35d2870f4b150034ac67459128f22b3aeb1ca2edf537159beac4ef96165cf791",
+    "deployment/skill-layouts.tsv": "146489ee6a91cc77b2af7520b1bddf78429c7ef76c8ee69129315350711fc4c9",
+    "deployment/disabled-skills.tsv": "66e95843f7f564a0d8cd69089dab3bf08929b42cc0dce1a0a34d32ccb65dcb8f",
+    "deployment/agent-payload/targets.tsv": "5700cbcd7c43a207516295e440050d13f014f38693f4286d8855824a84a5efda",
+    "deployment/legacy/home-links.tsv": "55df8ce0d050d0c2df8b99ed9c1a87cef6b01407a24848e5bdc060983b3f4da7",
+    "deployment/legacy/apply.tsv": "54e6e94eee72fe2b773b1a230de4928627d314ab72b29b58bd22b981aa155896",
+    ".chezmoidata.toml": "1271e301daba7b275f3556628023aa9572fabdfae231356996416a498ccb3138",
+    ".chezmoiignore": "70368b81d541b7230039ae372f155a4d650b9d3548cfabef4c94da094d0eb6f5",
+    "deployment/nu-completions.json": "e2fd719f3aee4fd3e79985f2d8ff5503886feff7d72eca309937ebcec31691ab"
+  },
+  "artifacts": {
+    "README.md": {
+      "bytes": 10971,
+      "sha256": "94f723056e020d8508cbc4abc6cef73a825cb1fdca622df1094b7e56bdf8d940"
+    },
+    "evidence/files.json": {
+      "bytes": 92152,
+      "sha256": "b217a4e51518599b81490a6d307d8dca6506f460536e05b09dccaa020bfb9d12"
+    },
+    "evidence/runtime.json": {
+      "bytes": 5334,
+      "sha256": "34d41809cd14682a083ae69b7535038164ab3611d88418e1ccd4d7ccfa335bc3"
+    },
+    "evidence/settings.json": {
+      "bytes": 39777,
+      "sha256": "6cff29b668e9d3f1adb045148f5f4a95120154344a150589dd05d003722c129e"
+    },
+    "evidence/skills.json": {
+      "bytes": 1710018,
+      "sha256": "7bb02119c403bbea17716bdf84a2c966cb1ba6b2708b990acc392f4f59c0f72a"
+    },
+    "evidence/tools.json": {
+      "bytes": 564275,
+      "sha256": "f17866237affe9b6fe7441c80257046146da538f1234821b7f3f4b2ed5f10eca"
+    },
+    "files.md": {
+      "bytes": 32570,
+      "sha256": "258ae776ac65d3da10f7c1dc0803ae0ede10b3be455a8cbadb2713f354ec6da3"
+    },
+    "runtime.md": {
+      "bytes": 3530,
+      "sha256": "498b17e90166af220be5e7136e81c338b8e86938cefea9e459f67a4e5a14ede2"
+    },
+    "settings.md": {
+      "bytes": 30903,
+      "sha256": "7c662acb982d4a4120e94d344cd33e6eeea3985a13b364b0ef1b702d3f6d63d1"
+    },
+    "skills.md": {
+      "bytes": 35995,
+      "sha256": "477c9d5f55869e07afe3e764c00ad05cf44a8ef8fb804ff98204c0415403b3a9"
+    },
+    "tools.md": {
+      "bytes": 150784,
+      "sha256": "38d5abe566a9dc7552e9ce928171572c75e44f952f187135c0354ee385f8815e"
+    },
+    "tools-after.md": {
+      "bytes": 14364,
+      "sha256": "d85be0f94d8263fb631779942f265384f0783327ad108aa524c8d991b41c38f3"
+    },
+    "AFTER.md": {
+      "bytes": 6638,
+      "sha256": "76018723cc19d5f7fd4a7e77f832d2650956c7fe8237648a88cabd8911d47b5d"
+    },
+    "evidence/tools-after.json": {
+      "bytes": 444807,
+      "sha256": "84def66937215ce8db61d932e74aa5383e4ee062695e713d32e9dd4167e35652"
+    },
+    "evidence/qoder-after.json": {
+      "bytes": 196,
+      "sha256": "9ea562b5e34421e0ec1e66007636318469e4100dfeaf0e25c40e180ab26fea37"
+    },
+    "evidence/runtime-after.json": {
+      "bytes": 5289,
+      "sha256": "06026ad45084e1072d2a9a71f7663daca71a6c8859df3e854a9151c2a7a33957"
+    },
+    "evidence/settings-after.json": {
+      "bytes": 37264,
+      "sha256": "7237ddb343de2a0c5a4d753d9277e9b7353209164251a92dcf0a5705ce5ffc0e"
+    },
+    "evidence/skills-after.json": {
+      "bytes": 13204,
+      "sha256": "5d2e751b1cbb729b92b46651bbaf616d8423782b1075791b26d268fd1fa88c76"
+    }
+  },
+  "alignment": {
+    "recorded_at_utc": "2026-11-08T09:29:36.539895+00:00",
+    "source_base_commit": "b7634032e81b56b318aee0af3fbc10b1bdbaf004",
+    "source_working_tree_sha256": {
+      ".chezmoiignore": "d07436526d4e1ec61be888b1f3d4c8c5777b87c616298873c5a234fcbe492a6f",
+      "deployment/agent-payload/client-configs.tsv": "780cbbadc21795d992f60e12a0adfce7acae4fda2a1e4ac4b058c1f49cc5d990",
+      "deployment/client-settings/agent-policy.tmpl": "5f3488f62776e491bff6f699d5e39fbb2377bef512653d151f6468b039c07387",
+      "deployment/client-settings/policies.json": "0b84d273f8446f9bc8067ed035ad868f4d6dcd3051e5e8bd09e370629c1985a2",
+      "deployment/legacy/agent-integrations.sh": "ae86b74712dd37ba1168135b199ee9a06e188f68b39d5e11a59a24354120e5b4",
+      "deployment/legacy/home-links.tsv": "404aeb725d7b1f1792d3d3906b55bf32cdcd370e95adbb4813027d7fdeb9f59e",
+      "deployment/legacy/migrate-shell.py": "fbbf487d30406218929f1a3d2e6f51f1a87de45c4f74bb2d5e040e0bffe89973",
+      "deployment/merge_pixi.py": "c3d725b0096549bd4c5f27171462ad60e9851e3894573b8ad53bca2adb4b29e9",
+      "tests/test_legacy_shell.py": "69e9b31166c58cfe9725d06f01c7e703c927909c83250aa4bcd98e707ea5239d",
+      "tests/test_agent_integrations.py": "242eeb782b1e87c2009f153a562e86ee6588a499054f26eca7d0b4c4faad89a2",
+      "tests/test_agents.py": "201825284cce223652ad73cec981b0836bbe656eeb4b4a5f75f49cfcddd47268",
+      "tests/test_cli_catalog.py": "9fef90142902ef8a906d8ce4e439c949c3f5b72ea9efcf95f678cb1ea08eb0ed",
+      "tests/test_deployment.py": "3e4c7a1caafbb0c4ddd32e4642a56d00e544b1052901e7bfb734732a466c0bc2"
+    },
+    "tool_counts": {
+      "common": {
+        "accepted-newer": 6,
+        "exact": 24
+      },
+      "optional": {
+        "exact": 52,
+        "accepted-newer": 18,
+        "missing": 7
+      },
+      "agent": {
+        "accepted-newer": 5,
+        "exact": 3
+      },
+      "manager": {
+        "exact": 3
+      },
+      "exposure": {
+        "compatible": 133,
+        "missing": 7
+      }
+    },
+    "skill_count": 91,
+    "canonical_skill_resources": 709,
+    "home_links": 54,
+    "legacy_apply_targets": 7,
+    "scope": "common defaults and previously present optional capabilities; seven absent optional capabilities excluded"
+  }
+}

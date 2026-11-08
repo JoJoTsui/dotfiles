@@ -1,0 +1,2515 @@
+{
+  "kind": "files",
+  "reference_commit": "b7634032e81b56b318aee0af3fbc10b1bdbaf004",
+  "recorded_at_utc": "2026-11-08T08:09:06Z",
+  "inventory_count": 63,
+  "entries": [
+    {
+      "id": ".bash_logout",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_bash_logout",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/.bash_logout",
+        "persistent": false,
+        "mode": "0o644",
+        "executable": false
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "26882b79471c25f945c970f8233d8ce29d54e9d5eedcd2884f88affa84a18f56",
+        "observed_sha256": "26882b79471c25f945c970f8233d8ce29d54e9d5eedcd2884f88affa84a18f56"
+      }
+    },
+    {
+      "id": ".bash_profile",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_bash_profile",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.bash_profile",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "378db96c7a9d8396d763e333ca002afd8b30c8ba83123dc3907f17f792289eb8",
+        "observed_sha256": "687cc47fc85e953eaa285210b2e6302c5b2e60e3f7dbef1d7a0fcd1b5b196229"
+      }
+    },
+    {
+      "id": ".bashrc",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_bashrc",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.bashrc",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "43cec87a6876f7ad26a9a0fac7fb36f45cc4c503c76ba0439a052f3ab21f2870",
+        "observed_sha256": "579923957ba679575b1369cc3eab64ace3d895d3bb8d3e8369c61125bc2a75d2"
+      }
+    },
+    {
+      "id": ".cargo/config.toml",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_cargo/config.toml.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.cargo/config.toml",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "1b10ba792b00a355cc3035f69ba8244d035bca4448647a818a69b291968f60b0",
+        "observed_sha256": "1a0db022b3d7bcee77325967e50ffc8b12b3a44ebc005d1f0e15940d141b0be1"
+      }
+    },
+    {
+      "id": ".codex/herdr-codex-resume.sh",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_codex/executable_herdr-codex-resume.sh",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.codex/herdr-codex-resume.sh",
+        "persistent": true,
+        "mode": "0o755",
+        "executable": true
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "a4fca590470f4e32f4f7849ea5c84b987aa9c3ba64772c56de83507b6f8115b6",
+        "observed_sha256": "a4fca590470f4e32f4f7849ea5c84b987aa9c3ba64772c56de83507b6f8115b6"
+      }
+    },
+    {
+      "id": ".condarc",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_condarc.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.condarc",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "5da5e3f65e93970a55976dc6537609cbba58fb795a30eb2fe0c5f46a64780b6b",
+        "observed_sha256": "5da5e3f65e93970a55976dc6537609cbba58fb795a30eb2fe0c5f46a64780b6b"
+      }
+    },
+    {
+      "id": ".config/atuin/config.toml",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/atuin/config.toml",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/atuin/config.toml",
+        "persistent": true,
+        "mode": "0o600",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "c4e88aa7e70ef3dc10fec6b8228a4ef6d843f7fb7489aae67d89bc88cf32359a",
+        "observed_sha256": "2020f5bba2ea32fb023eadf884255240ee1f9d14333ccc3ce23f6ed64cac1ca1"
+      }
+    },
+    {
+      "id": ".config/direnv/direnvrc",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/direnv/direnvrc",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/direnv/direnvrc",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "7d0e70d926295b5357c206efedb790921c5444b493fbbccff0f99fa1f143c6cf",
+        "observed_sha256": "7d0e70d926295b5357c206efedb790921c5444b493fbbccff0f99fa1f143c6cf"
+      }
+    },
+    {
+      "id": ".config/dotfiles/nu-completions.json",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/dotfiles/nu-completions.json.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/dotfiles/nu-completions.json",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "e2fd719f3aee4fd3e79985f2d8ff5503886feff7d72eca309937ebcec31691ab"
+      }
+    },
+    {
+      "id": ".config/dotfiles/pixi-bundles.toml",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/dotfiles/pixi-bundles.toml.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/dotfiles/pixi-bundles.toml",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "ea08854d66aefcba85838fa740d34a9bcfb5945f767f12bddfbce41649207f62"
+      }
+    },
+    {
+      "id": ".config/dotfiles/pixi-global.toml",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/dotfiles/pixi-global.toml.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/dotfiles/pixi-global.toml",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "5c3ec267af2ba328955942939a828d180048a36b88031c3c674ff29b787e945c"
+      }
+    },
+    {
+      "id": ".config/dotfiles/profile.json",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/dotfiles/profile.json.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/dotfiles/profile.json",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "62dc800dec688d5f7b6455f20707c40915b80ab642569f0d9a8d338d1d85e46b"
+      }
+    },
+    {
+      "id": ".config/gh/config.yml",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/gh/config.yml",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/gh/config.yml",
+        "persistent": true,
+        "mode": "0o660",
+        "executable": false
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "8c09fd1cf968d4e2e5456aea12041795a2764269aa4eb867cb0391e51887d94f",
+        "observed_sha256": "8c09fd1cf968d4e2e5456aea12041795a2764269aa4eb867cb0391e51887d94f"
+      }
+    },
+    {
+      "id": ".config/git/ignore",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/git/ignore",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/git/ignore",
+        "persistent": true,
+        "mode": "0o600",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "2381f9a533a226cdf4a7d8896ae8e3b57c9fd37f9502b6254bee13d59c217f6d",
+        "observed_sha256": "ebafad7f650cae8b30d775974886ecc33f093201e1b2f995bd069939621c5d07"
+      }
+    },
+    {
+      "id": ".config/herdr/config.toml",
+      "category": "managed-file",
+      "scope": "optional:developer",
+      "source": "dot_config/herdr/config.toml",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/herdr/config.toml",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "b8bc7a8114e3a1de42c2bfc431009637ff9fab3cfc0e156e4184b1c5ba0d9825",
+        "observed_sha256": "b8bc7a8114e3a1de42c2bfc431009637ff9fab3cfc0e156e4184b1c5ba0d9825"
+      }
+    },
+    {
+      "id": ".config/nushell/config.nu",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/nushell/config.nu",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/nushell/config.nu",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "af8d182d260128e8871af713d28d828e9388144d4786d792e3e5bdb04835ca14",
+        "observed_sha256": "9445f15b21bb0eb4de8a7a5dda63550594f453ab60ece8f54935b5b75bac61cd"
+      }
+    },
+    {
+      "id": ".config/nushell/direnv.nu",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/nushell/direnv.nu",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/nushell/direnv.nu",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "c0fd3eab9f23b9f46d8dbf79ba95988768c431fe7858cc6ffcd51a502afd89aa"
+      }
+    },
+    {
+      "id": ".config/nushell/env.nu",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/nushell/env.nu.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/nushell/env.nu",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "7c36131391c86608ec99c3ddf7f111a67ccbe18c753737250125f3fb23071691",
+        "observed_sha256": "95c57d08457f5308e37811240e6109cc18e260b63c5f362c9ca7fa3341f38f24"
+      }
+    },
+    {
+      "id": ".config/nushell/micromamba.nu",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/nushell/micromamba.nu",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/nushell/micromamba.nu",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "3675a44981dabdddf33a9e4fc36d79ff7c872a62c5842f1c11e95edb2a20d653"
+      }
+    },
+    {
+      "id": ".config/nushell/proxy.nu",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/nushell/proxy.nu.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/nushell/proxy.nu",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "c63a8ef16b148318be2c6adf10d9b4756fa22aaf80fcd70906fb6a24124ad61c"
+      }
+    },
+    {
+      "id": ".config/nushell/zoxide.nu",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/nushell/zoxide.nu",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/nushell/zoxide.nu",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "37d3730ac24222c13ed0e2747da52aaf5532fd8b73730824ed58c0dc2520c9d8"
+      }
+    },
+    {
+      "id": ".config/pip/pip.conf",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/pip/pip.conf.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/pip/pip.conf",
+        "persistent": true,
+        "mode": "0o664",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "48506681b7d70765b906129bb2c026dbd2ba438ddb85686c2a87e4a27218c878",
+        "observed_sha256": "eda9aa54820b1e98af4528aab50fbb835f2fa825391b2a2f572d4a9b82ff8cd4"
+      }
+    },
+    {
+      "id": ".config/starship.toml",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/starship.toml",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/starship.toml",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "8bb2429cd2711ac603d53de6fb59aebc1f1751c8661c52b1ece831b545e1f517",
+        "observed_sha256": "8bb2429cd2711ac603d53de6fb59aebc1f1751c8661c52b1ece831b545e1f517"
+      }
+    },
+    {
+      "id": ".config/systemd/user/mihomo.service",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_config/systemd/user/mihomo.service",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/systemd/user/mihomo.service",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "legacy",
+      "alignment": "none for notebook manual supervisor flow",
+      "restart_impact": "not a blocker: host-up uses supervisor rather than a user systemd unit",
+      "evidence": {
+        "expected_sha256": "ef7db39169cd235e1e0f4efecc734e78388bd5c7b4993f1982cca730cb6d0587"
+      }
+    },
+    {
+      "id": ".config/uv/uv.toml",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_config/uv/uv.toml.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/uv/uv.toml",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "985a37be06c8d71f653e1f273f377a2a81a442581db823f812ff3c551b1b4fbd",
+        "observed_sha256": "7309e84f38b7b06d7c92a2d5b0c43ac610ddeb559533447c21945b6e0f28bdda"
+      }
+    },
+    {
+      "id": ".config/zellij/config.kdl",
+      "category": "managed-file",
+      "scope": "optional:developer",
+      "source": "dot_config/zellij/config.kdl.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config/zellij/config.kdl",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "5c394741ca52d07791b5f1fb4e9067538bcf5d4300ffbfdd81d2cef68ca36818",
+        "observed_sha256": "463f916db54f38c5038bb1e1d462ff4e372ecde3f72bf9cb67314d34eceb019c"
+      }
+    },
+    {
+      "id": ".env_core",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_env_core.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.env_core",
+        "persistent": true,
+        "mode": "0o644",
+        "note": "Sensitive environment/subscription content excluded; existence, persistence, mode only."
+      },
+      "status": "unverified",
+      "alignment": "none if existing startup health remains valid; content not assessed",
+      "restart_impact": "none established",
+      "evidence": {}
+    },
+    {
+      "id": ".gitconfig",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_gitconfig",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.gitconfig",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "1d546a210f68edfc2ee370c9df7c24771457cb202ada3da3d30d729e1db88fa4",
+        "observed_sha256": "6dd55990c459fb274d10b1d3e78f11dffdb222a2c7f3bc55341278e1b4f3838f"
+      }
+    },
+    {
+      "id": ".local/bin/bat-modules",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_bat-modules",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/bat-modules",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "6afe874a3997a5bdad05c4d4304e87132d04ef61e0dc13d317a08d631d48124b"
+      }
+    },
+    {
+      "id": ".local/bin/codex-herdr",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_codex-herdr",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/codex-herdr",
+        "persistent": true,
+        "mode": "0o755",
+        "executable": true,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "ec83169b0f762b406ac99cfb6509284965e3595c57f1c56d07bac93ce826e763",
+        "observed_sha256": "c90688e935fb21fe1fd9011a38ebd42cf4764fc10493c7dbb3475723623590bb"
+      }
+    },
+    {
+      "id": ".local/bin/direct",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_direct",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/clash/scripts/direct",
+        "persistent": true,
+        "mode": "0o755",
+        "executable": true
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "20177b665e310619808137d4e6c1291bc27bd37618ec5a476465443f50e78e12",
+        "observed_sha256": "20177b665e310619808137d4e6c1291bc27bd37618ec5a476465443f50e78e12"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-agent-health",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-agent-health",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-agent-health",
+        "persistent": true,
+        "mode": "0o755",
+        "executable": true
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "19f229c0c6c44c750b1f64f23c52e399321fe4103b7b92c4c11127c51377024e",
+        "observed_sha256": "19f229c0c6c44c750b1f64f23c52e399321fe4103b7b92c4c11127c51377024e"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-agents",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-agents.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-agents",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "d8d311a86099dd5ad30d95aa3701251995101aa1fa464b1d5c7cfa145785e74c"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-agents.cmd",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-agents.cmd",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-agents.cmd",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "none on Linux; foreign-shell helper",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "913fad8f1746c156a456b99ca7f25d8e1786ce0889d394f641514849c31bf7bd"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-agents.ps1",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-agents.ps1.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-agents.ps1",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "none on Linux; foreign-shell helper",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "cdd6cf96cac405b9beabba1af60329bfb7ae40e6fbb2db27602f8ca6b5aa26b0"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-codex-herdr",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-codex-herdr",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-codex-herdr",
+        "persistent": true,
+        "mode": "0o755",
+        "executable": true
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "8f105c3e97cb9b1a33d98eb7386d06cc4fae89af4ecca2d1fe31b5b3cf3dc457",
+        "observed_sha256": "8f105c3e97cb9b1a33d98eb7386d06cc4fae89af4ecca2d1fe31b5b3cf3dc457"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-history",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-history",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-history",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "f15f5392ccb8a4e8c085cfc631a2e6e0daace470302c46d06fe2bd387df9077f"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-history-prepare",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-history-prepare",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-history-prepare",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "9d6018864eb84f50936198d492b525f36e91164993beaf1d3cc5b2634544a459"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-host-up",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-host-up",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-host-up",
+        "persistent": true,
+        "mode": "0o755",
+        "executable": true
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "807c06a9c913cc3a6817897de7fd4a6e4d6b65756c005fafb8e7663519df9feb",
+        "observed_sha256": "807c06a9c913cc3a6817897de7fd4a6e4d6b65756c005fafb8e7663519df9feb"
+      }
+    },
+    {
+      "id": ".local/bin/dotfiles-shell-prepare",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-shell-prepare",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/dotfiles-shell-prepare",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "1f8bc38797816030a003a84c9f6460175e7bce4a724a43357993a8c006c6a5d3"
+      }
+    },
+    {
+      "id": ".local/bin/fetchChromSizes",
+      "category": "managed-file",
+      "scope": "optional:bio",
+      "source": "dot_local/bin/executable_fetchChromSizes",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/fetchChromSizes",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "optional",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "9fca9cdf0d256e95aefc869ee4371564b02a63c8ea38aa35bd167aca88bcfe7a"
+      }
+    },
+    {
+      "id": ".local/bin/firefox",
+      "category": "managed-file",
+      "scope": "optional:desktop",
+      "source": "dot_local/bin/executable_firefox",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/firefox",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "optional",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "a33d0c99a60b1bfa9c55f13c98420b18239dcca6295672c04def20524165e38a"
+      }
+    },
+    {
+      "id": ".local/bin/nu-login",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_nu-login",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/bin/nu-login",
+        "persistent": true,
+        "mode": "0o755",
+        "executable": true,
+        "note": "Documented legacy launcher deliberately retained; managed launcher needs a newer env_core guard."
+      },
+      "status": "legacy",
+      "alignment": "retain until shared environment migration rehearsal",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "0d2f32fab62ed6e125d19cb4908e6acd2eec06c070593f65c05287de4d7f8a51",
+        "observed_sha256": "c9bda2b387d6976d6c1fc0d6a37439d3e93b58fd892361aed5c0fa46fabee4eb"
+      }
+    },
+    {
+      "id": ".local/bin/with-proxy",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/bin/executable_with-proxy",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/clash/scripts/with-proxy",
+        "persistent": true,
+        "mode": "0o755",
+        "executable": true
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "6516cddb31360094b65e2c480cb75ae04033abc720e9333350379fdef8e22ec8",
+        "observed_sha256": "6516cddb31360094b65e2c480cb75ae04033abc720e9333350379fdef8e22ec8"
+      }
+    },
+    {
+      "id": ".local/lib/dotfiles/__pycache__/completions.cpython-313.pyc",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/lib/dotfiles/__pycache__/completions.cpython-313.pyc",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/lib/dotfiles/__pycache__/completions.cpython-313.pyc",
+        "persistent": true,
+        "note": "Untracked bytecode is visible to Chezmoi source inventory; not a declared deployable resource."
+      },
+      "status": "drift",
+      "alignment": "source cleanup recommended",
+      "restart_impact": "not a restart blocker",
+      "evidence": {}
+    },
+    {
+      "id": ".local/lib/dotfiles/__pycache__/completions.cpython-315.pyc",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/lib/dotfiles/__pycache__/completions.cpython-315.pyc",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/lib/dotfiles/__pycache__/completions.cpython-315.pyc",
+        "persistent": true,
+        "note": "Untracked bytecode is visible to Chezmoi source inventory; not a declared deployable resource."
+      },
+      "status": "drift",
+      "alignment": "source cleanup recommended",
+      "restart_impact": "not a restart blocker",
+      "evidence": {}
+    },
+    {
+      "id": ".local/lib/dotfiles/__pycache__/history.cpython-310.pyc",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/lib/dotfiles/__pycache__/history.cpython-310.pyc",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/lib/dotfiles/__pycache__/history.cpython-310.pyc",
+        "persistent": true,
+        "note": "Untracked bytecode is visible to Chezmoi source inventory; not a declared deployable resource."
+      },
+      "status": "drift",
+      "alignment": "source cleanup recommended",
+      "restart_impact": "not a restart blocker",
+      "evidence": {}
+    },
+    {
+      "id": ".local/lib/dotfiles/completions.py",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/lib/dotfiles/completions.py",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/lib/dotfiles/completions.py",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "a3476632cca871af666104900df0b4105c7deb8e26eb0957394ec06340eff9d1"
+      }
+    },
+    {
+      "id": ".local/lib/dotfiles/history.py",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_local/lib/dotfiles/history.py",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/lib/dotfiles/history.py",
+        "persistent": true,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "15d9a6b04ab802f418cfb5a72710b2d32ac727bd77c0d00e7f0d006c3a621d44"
+      }
+    },
+    {
+      "id": ".local/share/dotfiles/proxy/config/startup.env",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_local/share/dotfiles/proxy/config/startup.env",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/dotfiles/proxy/config/startup.env",
+        "persistent": true,
+        "note": "Sensitive environment/subscription content excluded; existence, persistence, mode only."
+      },
+      "status": "missing",
+      "alignment": "optional",
+      "restart_impact": "none established",
+      "evidence": {}
+    },
+    {
+      "id": ".local/share/dotfiles/proxy/scripts/apply-us-routing-policy.py",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_local/share/dotfiles/proxy/scripts/executable_apply-us-routing-policy.py",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/dotfiles/proxy/scripts/apply-us-routing-policy.py",
+        "persistent": true,
+        "note": "No regular target file at the managed path.",
+        "legacy_alternate": "/t9k/mnt/joey/SHELL/clash/scripts/apply-us-routing-policy.py",
+        "legacy_sha256": "574d4b224d6e169cdef0eee003109870467cc370a01f46f260502aed3c59ce2b",
+        "legacy_bytes_match": false
+      },
+      "status": "legacy",
+      "alignment": "retain working legacy supervisor; managed-path migration is optional",
+      "restart_impact": "covered by documented legacy startup; confirm runtime separately",
+      "evidence": {
+        "expected_sha256": "98a02623e28d381bd79eefec6fddbbb23330e9605dcbeb32de2675d302efcf2a"
+      }
+    },
+    {
+      "id": ".local/share/dotfiles/proxy/scripts/configure-mihomo.py",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_local/share/dotfiles/proxy/scripts/executable_configure-mihomo.py",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/dotfiles/proxy/scripts/configure-mihomo.py",
+        "persistent": true,
+        "note": "No regular target file at the managed path.",
+        "legacy_alternate": "/t9k/mnt/joey/SHELL/clash/scripts/configure-mihomo.py",
+        "legacy_sha256": "0f40cb4120f15a83d7e9acf11df410e5cb554d9687e45c577719c4d99e2aa399",
+        "legacy_bytes_match": false
+      },
+      "status": "legacy",
+      "alignment": "retain working legacy supervisor; managed-path migration is optional",
+      "restart_impact": "covered by documented legacy startup; confirm runtime separately",
+      "evidence": {
+        "expected_sha256": "906b86e917f7e79300d3af18b1addecb45fd72af08e5497ea20215fc758d3cb7"
+      }
+    },
+    {
+      "id": ".local/share/dotfiles/proxy/scripts/refresh-profile.sh",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_local/share/dotfiles/proxy/scripts/executable_refresh-profile.sh",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/dotfiles/proxy/scripts/refresh-profile.sh",
+        "persistent": true,
+        "note": "No regular target file at the managed path.",
+        "legacy_alternate": "/t9k/mnt/joey/SHELL/clash/scripts/refresh-profile.sh",
+        "legacy_sha256": "19559058c7942c249ea17a733031b92c5e7fb1f0fabb941814597bf3a932ef5f",
+        "legacy_bytes_match": false
+      },
+      "status": "legacy",
+      "alignment": "retain working legacy supervisor; managed-path migration is optional",
+      "restart_impact": "covered by documented legacy startup; confirm runtime separately",
+      "evidence": {
+        "expected_sha256": "0fcfa5ff43941fead3945c58be27860f1b2ae404f79de01f86c7b2f67ee63c0d"
+      }
+    },
+    {
+      "id": ".local/share/dotfiles/proxy/scripts/restrict-proxy-groups.py",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_local/share/dotfiles/proxy/scripts/executable_restrict-proxy-groups.py",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/dotfiles/proxy/scripts/restrict-proxy-groups.py",
+        "persistent": true,
+        "note": "No regular target file at the managed path.",
+        "legacy_alternate": "/t9k/mnt/joey/SHELL/clash/scripts/restrict-proxy-groups.py",
+        "legacy_sha256": "e979f40f6c5b53c496c51476429645fff8c2c58d3a6f529dd858fb9b9601f6e3",
+        "legacy_bytes_match": false
+      },
+      "status": "legacy",
+      "alignment": "retain working legacy supervisor; managed-path migration is optional",
+      "restart_impact": "covered by documented legacy startup; confirm runtime separately",
+      "evidence": {
+        "expected_sha256": "823ec8466cc0c27ec4ec548136f3532b4955901d2b9bdb951cf8b56f02aa7ae1"
+      }
+    },
+    {
+      "id": ".local/share/dotfiles/proxy/scripts/run-mihomo-supervised.sh",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_local/share/dotfiles/proxy/scripts/executable_run-mihomo-supervised.sh",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/dotfiles/proxy/scripts/run-mihomo-supervised.sh",
+        "persistent": true,
+        "note": "No regular target file at the managed path.",
+        "legacy_alternate": "/t9k/mnt/joey/SHELL/clash/scripts/run-mihomo-supervised.sh",
+        "legacy_sha256": "24de61b30e9415a763ac3ed32e5b199172c1fbfe6a394acc675039d679df8bb0",
+        "legacy_bytes_match": false
+      },
+      "status": "legacy",
+      "alignment": "retain working legacy supervisor; managed-path migration is optional",
+      "restart_impact": "covered by documented legacy startup; confirm runtime separately",
+      "evidence": {
+        "expected_sha256": "a8709e2565fc6ce9394b9b3fefbb4ce29c5127cbf9fd54ec33d7d510e577cea1"
+      }
+    },
+    {
+      "id": ".local/share/dotfiles/proxy/scripts/run-mihomo.sh",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_local/share/dotfiles/proxy/scripts/executable_run-mihomo.sh",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/dotfiles/proxy/scripts/run-mihomo.sh",
+        "persistent": true,
+        "note": "No regular target file at the managed path.",
+        "legacy_alternate": "/t9k/mnt/joey/SHELL/clash/scripts/run-mihomo.sh",
+        "legacy_sha256": "617c04a8af28d3ee62a1de16dd1182391cbb326e722ce30839fe5123f0a8f097",
+        "legacy_bytes_match": true
+      },
+      "status": "legacy",
+      "alignment": "retain working legacy supervisor; managed-path migration is optional",
+      "restart_impact": "covered by documented legacy startup; confirm runtime separately",
+      "evidence": {
+        "expected_sha256": "617c04a8af28d3ee62a1de16dd1182391cbb326e722ce30839fe5123f0a8f097"
+      }
+    },
+    {
+      "id": ".local/share/mihomo/subscription-url",
+      "category": "managed-file",
+      "scope": "optional:proxy",
+      "source": "dot_local/share/mihomo/private_subscription-url.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/mihomo/subscription-url",
+        "persistent": true,
+        "mode": "0o600",
+        "note": "Sensitive environment/subscription content excluded; existence, persistence, mode only."
+      },
+      "status": "unverified",
+      "alignment": "none if existing startup health remains valid; content not assessed",
+      "restart_impact": "none established",
+      "evidence": {}
+    },
+    {
+      "id": ".pixi/config.toml",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_pixi/config.toml.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.pixi/config.toml",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "f06d2646c2164f3df6d543367a51ac6ffbc4058635a5cea69d5df8e50f3b438a",
+        "observed_sha256": "4133c0790eac0d8d6490b7fb91c9fec0f988dd60854a4fc3d8935ed14d4ef6bd"
+      }
+    },
+    {
+      "id": ".profile",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_profile",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.profile",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "0eeab5b39203718fdcb0b237834b1f4d8ff8540898c506e934f61563e2a5a128",
+        "observed_sha256": "10561352b172465d0709d008d1f45d5e9fd4a715e8d67fc8e69135d4011a85ec"
+      }
+    },
+    {
+      "id": ".vscode-server/data/Machine/settings.json",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_vscode-server/data/Machine/settings.json.tmpl",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": true,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.vscode-server/data/Machine/settings.json",
+        "persistent": true,
+        "mode": "0o644",
+        "executable": false,
+        "note": "Whole-file content differs; no semantic equivalence claimed. Device additions may be intentional."
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning legacy file",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "1b5129068fa010607d4ee451213d9949f24777b7f269a0342bde653ada6c4510",
+        "observed_sha256": "189ab71bbc52df84ceabafd140900da8fbe285addd48a8e4514e1c60c14309d8"
+      }
+    },
+    {
+      "id": ".zprofile",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_zprofile",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/.zprofile",
+        "persistent": false,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "fc1aff0a7f64e9ca514cc799c903b2b127d663d94b345093a150ffe831bbc7cb"
+      }
+    },
+    {
+      "id": ".zshenv",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_zshenv",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/.zshenv",
+        "persistent": false,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "db09f7033817b4c3889f7c4766a1daf3d1a664bed713a9013588cd2d3da59b5d"
+      }
+    },
+    {
+      "id": ".zshrc",
+      "category": "managed-file",
+      "scope": "common",
+      "source": "dot_zshrc",
+      "expected": "rendered linux-remote-compute; all optional bundles; placeholder secrets",
+      "observed": {
+        "exists": false,
+        "symlink": false,
+        "resolved_path": "/t9k/mnt/.zshrc",
+        "persistent": false,
+        "note": "No regular target file at the managed path."
+      },
+      "status": "missing",
+      "alignment": "recommended",
+      "restart_impact": "none established",
+      "evidence": {
+        "expected_sha256": "92ec2c54821636fd414ebd3ceb1c1b72d1cc761b17ebcc82309b77938e4a8f6f"
+      }
+    },
+    {
+      "id": ".local/share/nushell/vendor/autoload/starship.nu",
+      "category": "generated-shell",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-shell-prepare",
+      "expected": "generated nonempty resource; native loading separately assessed",
+      "observed": {
+        "exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/nushell/vendor/autoload/starship.nu",
+        "size_bytes": 2325
+      },
+      "status": "unverified",
+      "alignment": "none until a functional mismatch is demonstrated",
+      "restart_impact": "shell feature only; not established blocker",
+      "evidence": {
+        "observed_sha256": "941583675eb406e02d25d948433616e591251353599cf3abadc3b0dbed7df1c8"
+      }
+    },
+    {
+      "id": ".local/share/nushell/vendor/autoload/pixi-completions.nu",
+      "category": "generated-shell",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-shell-prepare",
+      "expected": "generated nonempty resource; native loading separately assessed",
+      "observed": {
+        "exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/nushell/vendor/autoload/pixi-completions.nu",
+        "size_bytes": 265600
+      },
+      "status": "unverified",
+      "alignment": "none until a functional mismatch is demonstrated",
+      "restart_impact": "shell feature only; not established blocker",
+      "evidence": {
+        "observed_sha256": "b3dd944c02ef06c90311ab34bafab377d3beb59f53f2b02c6aed8340f5f1a156"
+      }
+    },
+    {
+      "id": ".local/share/nushell/vendor/autoload/fzf.nu",
+      "category": "generated-shell",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-shell-prepare",
+      "expected": "generated nonempty resource; native loading separately assessed",
+      "observed": {
+        "exists": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/nushell/vendor/autoload/fzf.nu"
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare managed shell resources after authorized migration",
+      "restart_impact": "shell feature only; not established blocker"
+    },
+    {
+      "id": ".local/share/nushell/vendor/autoload/wt.nu",
+      "category": "generated-shell",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-shell-prepare",
+      "expected": "generated nonempty resource; native loading separately assessed",
+      "observed": {
+        "exists": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/nushell/vendor/autoload/wt.nu"
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare managed shell resources after authorized migration",
+      "restart_impact": "shell feature only; not established blocker"
+    },
+    {
+      "id": ".local/share/nushell/vendor/autoload/nu-scripts.nu",
+      "category": "generated-shell",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-shell-prepare",
+      "expected": "generated nonempty resource; native loading separately assessed",
+      "observed": {
+        "exists": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/nushell/vendor/autoload/nu-scripts.nu"
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare managed shell resources after authorized migration",
+      "restart_impact": "shell feature only; not established blocker"
+    },
+    {
+      "id": ".local/share/nushell/vendor/autoload/atuin.nu",
+      "category": "generated-shell",
+      "scope": "common",
+      "source": "dot_local/bin/executable_dotfiles-history-prepare",
+      "expected": "generated nonempty resource; native loading separately assessed",
+      "observed": {
+        "exists": false,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local/share/nushell/vendor/autoload/atuin.nu"
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare managed shell resources after authorized migration",
+      "restart_impact": "shell feature only; not established blocker"
+    },
+    {
+      "id": "community-completion:git",
+      "category": "community-completion",
+      "scope": "common",
+      "source": "deployment/nu-completions.json",
+      "expected": {
+        "sha256": "8495c84c6afe70d2efdbec42c7527607047c1208ec287a151ece2100f74eebb7",
+        "upstream_path": "custom-completions/git/git-completions.nu"
+      },
+      "observed": {
+        "checked_paths": [
+          "/t9k/mnt/.local/share/nushell/vendor/completions/git-completions.nu",
+          "/t9k/mnt/.local/share/nushell/vendor/autoload/git-completions.nu",
+          "/t9k/mnt/.local/share/dotfiles/nu-completions/custom-completions/git/git-completions.nu",
+          "/t9k/mnt/joey/SHELL/nushell/custom-completions/git/git-completions.nu",
+          "/t9k/mnt/joey/gizmo/nu_scripts/custom-completions/git/git-completions.nu"
+        ]
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare completion resources after authorized migration",
+      "restart_impact": "completion only"
+    },
+    {
+      "id": "community-completion:gh",
+      "category": "community-completion",
+      "scope": "common",
+      "source": "deployment/nu-completions.json",
+      "expected": {
+        "sha256": "943a584fbfcd0c199a1425246128e33f4b099c96eb330c9238f3122efd13387c",
+        "upstream_path": "custom-completions/gh/gh-completions.nu"
+      },
+      "observed": {
+        "checked_paths": [
+          "/t9k/mnt/.local/share/nushell/vendor/completions/gh-completions.nu",
+          "/t9k/mnt/.local/share/nushell/vendor/autoload/gh-completions.nu",
+          "/t9k/mnt/.local/share/dotfiles/nu-completions/custom-completions/gh/gh-completions.nu",
+          "/t9k/mnt/joey/SHELL/nushell/custom-completions/gh/gh-completions.nu",
+          "/t9k/mnt/joey/gizmo/nu_scripts/custom-completions/gh/gh-completions.nu"
+        ]
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare completion resources after authorized migration",
+      "restart_impact": "completion only"
+    },
+    {
+      "id": "community-completion:rg",
+      "category": "community-completion",
+      "scope": "common",
+      "source": "deployment/nu-completions.json",
+      "expected": {
+        "sha256": "c7ffbc9fdb05443f23cd78f9e9634892560cd59e27845fdd9cf98263d26316c3",
+        "upstream_path": "custom-completions/rg/rg-completions.nu"
+      },
+      "observed": {
+        "checked_paths": [
+          "/t9k/mnt/.local/share/nushell/vendor/completions/rg-completions.nu",
+          "/t9k/mnt/.local/share/nushell/vendor/autoload/rg-completions.nu",
+          "/t9k/mnt/.local/share/dotfiles/nu-completions/custom-completions/rg/rg-completions.nu",
+          "/t9k/mnt/joey/SHELL/nushell/custom-completions/rg/rg-completions.nu",
+          "/t9k/mnt/joey/gizmo/nu_scripts/custom-completions/rg/rg-completions.nu"
+        ]
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare completion resources after authorized migration",
+      "restart_impact": "completion only"
+    },
+    {
+      "id": "community-completion:bat",
+      "category": "community-completion",
+      "scope": "common",
+      "source": "deployment/nu-completions.json",
+      "expected": {
+        "sha256": "eed3c5f1e8c25021844cd331ff8ae054b4158527d72bd235636da734a0e0756e",
+        "upstream_path": "custom-completions/bat/bat-completions.nu"
+      },
+      "observed": {
+        "checked_paths": [
+          "/t9k/mnt/.local/share/nushell/vendor/completions/bat-completions.nu",
+          "/t9k/mnt/.local/share/nushell/vendor/autoload/bat-completions.nu",
+          "/t9k/mnt/.local/share/dotfiles/nu-completions/custom-completions/bat/bat-completions.nu",
+          "/t9k/mnt/joey/SHELL/nushell/custom-completions/bat/bat-completions.nu",
+          "/t9k/mnt/joey/gizmo/nu_scripts/custom-completions/bat/bat-completions.nu"
+        ]
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare completion resources after authorized migration",
+      "restart_impact": "completion only"
+    },
+    {
+      "id": "community-completion:eza",
+      "category": "community-completion",
+      "scope": "common",
+      "source": "deployment/nu-completions.json",
+      "expected": {
+        "sha256": "e723eaaee865641d1fcb7d04f799e075e6990db3324ad5dcedfa8af5fa989f9d",
+        "upstream_path": "custom-completions/eza/eza-completions.nu"
+      },
+      "observed": {
+        "checked_paths": [
+          "/t9k/mnt/.local/share/nushell/vendor/completions/eza-completions.nu",
+          "/t9k/mnt/.local/share/nushell/vendor/autoload/eza-completions.nu",
+          "/t9k/mnt/.local/share/dotfiles/nu-completions/custom-completions/eza/eza-completions.nu",
+          "/t9k/mnt/joey/SHELL/nushell/custom-completions/eza/eza-completions.nu",
+          "/t9k/mnt/joey/gizmo/nu_scripts/custom-completions/eza/eza-completions.nu"
+        ]
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare completion resources after authorized migration",
+      "restart_impact": "completion only"
+    },
+    {
+      "id": "community-completion:zellij",
+      "category": "community-completion",
+      "scope": "common",
+      "source": "deployment/nu-completions.json",
+      "expected": {
+        "sha256": "e146a138c6de0fbbc858292823ba8b269414233c4e09d3939a4a87976f93164d",
+        "upstream_path": "custom-completions/zellij/zellij-completions.nu"
+      },
+      "observed": {
+        "checked_paths": [
+          "/t9k/mnt/.local/share/nushell/vendor/completions/zellij-completions.nu",
+          "/t9k/mnt/.local/share/nushell/vendor/autoload/zellij-completions.nu",
+          "/t9k/mnt/.local/share/dotfiles/nu-completions/custom-completions/zellij/zellij-completions.nu",
+          "/t9k/mnt/joey/SHELL/nushell/custom-completions/zellij/zellij-completions.nu",
+          "/t9k/mnt/joey/gizmo/nu_scripts/custom-completions/zellij/zellij-completions.nu"
+        ]
+      },
+      "status": "missing",
+      "alignment": "recommended: prepare completion resources after authorized migration",
+      "restart_impact": "completion only"
+    },
+    {
+      "id": "home-link:.env_core",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.env_core",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.env_core"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.bashrc",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.bashrc",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.bashrc"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.gitconfig",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.gitconfig",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.gitconfig"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.netrc",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.netrc",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.netrc"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.Rprofile",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.Rprofile",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.Rprofile"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.profile",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.profile",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.profile"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.condarc",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.condarc",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.condarc"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.bash_profile",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.bash_profile",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.bash_profile"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.claude.json",
+      "category": "home-link",
+      "scope": "legacy:config",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.claude.json",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.claude.json"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.config",
+      "category": "home-link",
+      "scope": "legacy:runtime",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.config",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.config"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.local",
+      "category": "home-link",
+      "scope": "legacy:runtime",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.local",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.local"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.ssh",
+      "category": "home-link",
+      "scope": "legacy:runtime",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.ssh",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.ssh"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.cache",
+      "category": "home-link",
+      "scope": "legacy:runtime",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.cache",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.cache"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.pixi",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.pixi",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.pixi"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.ipython",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.ipython",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.ipython"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.jupyter",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.jupyter",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.jupyter"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.cargo",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.cargo",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.cargo"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.rustup",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.rustup",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.rustup"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.aspera",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.aspera",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.aspera"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.npm",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.npm",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.npm"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.aws",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.aws",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.aws"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.bun",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.bun",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.bun"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.fzf",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.fzf",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.fzf"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.rye",
+      "category": "home-link",
+      "scope": "legacy:dev",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.rye",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.rye"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.vscode-server",
+      "category": "home-link",
+      "scope": "legacy:vscode",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.vscode-server",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.vscode-server"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.vscode-server-insiders",
+      "category": "home-link",
+      "scope": "legacy:vscode",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.vscode-server-insiders",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.vscode-server-insiders"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.trae-aicc",
+      "category": "home-link",
+      "scope": "legacy:trae",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.trae-aicc",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.trae-aicc"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.trae-server",
+      "category": "home-link",
+      "scope": "legacy:trae",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.trae-server",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.trae-server"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:ai_completion",
+      "category": "home-link",
+      "scope": "legacy:trae",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/ai_completion",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/ai_completion"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.claude",
+      "category": "home-link",
+      "scope": "legacy:other",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.claude",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.claude"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.gemini",
+      "category": "home-link",
+      "scope": "legacy:other",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.gemini",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.gemini"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.nextflow",
+      "category": "home-link",
+      "scope": "legacy:other",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.nextflow",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.nextflow"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.kiro-server",
+      "category": "home-link",
+      "scope": "legacy:other",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.kiro-server",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.kiro-server"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.kiro",
+      "category": "home-link",
+      "scope": "legacy:other",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.kiro",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.kiro"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.codex",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.codex",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.codex"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.cc-switch",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.cc-switch",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.cc-switch"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.opencode",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.opencode",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.opencode"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.headroom",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.headroom",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.headroom"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.tokensave",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.tokensave",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.tokensave"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.agents",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.agents",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.agents"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.kimi-code",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.kimi-code",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.kimi-code"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.pi",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.pi",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.pi"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.codegraph",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.codegraph",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.codegraph"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.qoder",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.qoder",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.qoder"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.minimax",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.minimax",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.minimax"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.minimax-code",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.minimax-code",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.minimax-code"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.minimax-code-install-logs",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.minimax-code-install-logs",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.minimax-code-install-logs"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.caveman",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.caveman",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.caveman"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.herdr",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.herdr",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.herdr"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "home-link:.lark-cli",
+      "category": "home-link",
+      "scope": "legacy:agents",
+      "source": "deployment/legacy/home-links.tsv",
+      "expected": "/t9k/mnt/joey/SHELL/.lark-cli",
+      "observed": {
+        "symlink": true,
+        "target_exists": true,
+        "resolved_path": "/t9k/mnt/joey/SHELL/.lark-cli"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready"
+    },
+    {
+      "id": "legacy-apply:.local/bin/dotfiles-agent-health",
+      "category": "legacy-apply",
+      "scope": "legacy:agent",
+      "source": "dot_local/bin/executable_dotfiles-agent-health",
+      "expected": {
+        "mode": "0755",
+        "sha256": "19f229c0c6c44c750b1f64f23c52e399321fe4103b7b92c4c11127c51377024e"
+      },
+      "observed": {
+        "exists": true,
+        "mode": "0o755",
+        "sha256": "19f229c0c6c44c750b1f64f23c52e399321fe4103b7b92c4c11127c51377024e"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready under existing legacy flow"
+    },
+    {
+      "id": "legacy-apply:.local/bin/codex-herdr",
+      "category": "legacy-apply",
+      "scope": "legacy:agent",
+      "source": "dot_local/bin/executable_codex-herdr",
+      "expected": {
+        "mode": "0755",
+        "sha256": "ec83169b0f762b406ac99cfb6509284965e3595c57f1c56d07bac93ce826e763"
+      },
+      "observed": {
+        "exists": true,
+        "mode": "0o755",
+        "sha256": "c90688e935fb21fe1fd9011a38ebd42cf4764fc10493c7dbb3475723623590bb"
+      },
+      "status": "drift",
+      "alignment": "review and rehearse before aligning adapter file",
+      "restart_impact": "inspect adapter behavior; byte drift alone is inconclusive"
+    },
+    {
+      "id": "legacy-apply:.local/bin/dotfiles-codex-herdr",
+      "category": "legacy-apply",
+      "scope": "legacy:agent",
+      "source": "dot_local/bin/executable_dotfiles-codex-herdr",
+      "expected": {
+        "mode": "0755",
+        "sha256": "8f105c3e97cb9b1a33d98eb7386d06cc4fae89af4ecca2d1fe31b5b3cf3dc457"
+      },
+      "observed": {
+        "exists": true,
+        "mode": "0o755",
+        "sha256": "8f105c3e97cb9b1a33d98eb7386d06cc4fae89af4ecca2d1fe31b5b3cf3dc457"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready under existing legacy flow"
+    },
+    {
+      "id": "legacy-apply:.local/bin/dotfiles-host-up",
+      "category": "legacy-apply",
+      "scope": "legacy:agent",
+      "source": "dot_local/bin/executable_dotfiles-host-up",
+      "expected": {
+        "mode": "0755",
+        "sha256": "807c06a9c913cc3a6817897de7fd4a6e4d6b65756c005fafb8e7663519df9feb"
+      },
+      "observed": {
+        "exists": true,
+        "mode": "0o755",
+        "sha256": "807c06a9c913cc3a6817897de7fd4a6e4d6b65756c005fafb8e7663519df9feb"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready under existing legacy flow"
+    },
+    {
+      "id": "legacy-apply:.local/bin/nu-login",
+      "category": "legacy-apply",
+      "scope": "legacy:agent",
+      "source": "dot_local/bin/executable_nu-login",
+      "expected": {
+        "mode": "0755",
+        "sha256": "0d2f32fab62ed6e125d19cb4908e6acd2eec06c070593f65c05287de4d7f8a51"
+      },
+      "observed": {
+        "exists": true,
+        "mode": "0o755",
+        "sha256": "c9bda2b387d6976d6c1fc0d6a37439d3e93b58fd892361aed5c0fa46fabee4eb"
+      },
+      "status": "legacy",
+      "alignment": "retain documented legacy launcher until env migration",
+      "restart_impact": "ready under existing legacy flow"
+    },
+    {
+      "id": "legacy-apply:.codex/herdr-codex-resume.sh",
+      "category": "legacy-apply",
+      "scope": "legacy:agent",
+      "source": "dot_codex/executable_herdr-codex-resume.sh",
+      "expected": {
+        "mode": "0755",
+        "sha256": "a4fca590470f4e32f4f7849ea5c84b987aa9c3ba64772c56de83507b6f8115b6"
+      },
+      "observed": {
+        "exists": true,
+        "mode": "0o755",
+        "sha256": "a4fca590470f4e32f4f7849ea5c84b987aa9c3ba64772c56de83507b6f8115b6"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready under existing legacy flow"
+    },
+    {
+      "id": "legacy-apply:.config/herdr/config.toml",
+      "category": "legacy-apply",
+      "scope": "legacy:config",
+      "source": "dot_config/herdr/config.toml",
+      "expected": {
+        "mode": "0644",
+        "sha256": "b8bc7a8114e3a1de42c2bfc431009637ff9fab3cfc0e156e4184b1c5ba0d9825"
+      },
+      "observed": {
+        "exists": true,
+        "mode": "0o644",
+        "sha256": "b8bc7a8114e3a1de42c2bfc431009637ff9fab3cfc0e156e4184b1c5ba0d9825"
+      },
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "ready under existing legacy flow"
+    },
+    {
+      "id": "environment:EDITOR",
+      "category": "process-environment",
+      "scope": "common",
+      "source": ".chezmoidata.toml",
+      "expected": "hx",
+      "observed": "hx",
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "not established blocker"
+    },
+    {
+      "id": "environment:PAGER",
+      "category": "process-environment",
+      "scope": "common",
+      "source": ".chezmoidata.toml",
+      "expected": "less",
+      "observed": "cat",
+      "status": "legacy",
+      "alignment": "review live startup separately; current agent environment is not a fresh shell",
+      "restart_impact": "not established blocker"
+    },
+    {
+      "id": "environment:UV_PYTHON_PREFERENCE",
+      "category": "process-environment",
+      "scope": "common",
+      "source": ".chezmoidata.toml",
+      "expected": "managed",
+      "observed": "managed",
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "not established blocker"
+    },
+    {
+      "id": "environment:CHOKIDAR_USEPOLLING",
+      "category": "process-environment",
+      "scope": "common",
+      "source": ".chezmoidata.toml",
+      "expected": "1",
+      "observed": "1",
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "not established blocker"
+    },
+    {
+      "id": "environment:MAMBA_EXE",
+      "category": "process-environment",
+      "scope": "common",
+      "source": ".chezmoidata.toml",
+      "expected": "/t9k/mnt/.pixi/bin/micromamba",
+      "observed": "/t9k/mnt/.pixi/bin/micromamba",
+      "status": "exact",
+      "alignment": "none",
+      "restart_impact": "not established blocker"
+    },
+    {
+      "id": "environment:DOTFILES_COMMON_BIN",
+      "category": "process-environment",
+      "scope": "common",
+      "source": ".chezmoidata.toml",
+      "expected": "/t9k/mnt/.pixi/bin",
+      "observed": null,
+      "status": "unverified",
+      "alignment": "review live startup separately; current agent environment is not a fresh shell",
+      "restart_impact": "not established blocker"
+    }
+  ],
+  "method": "Scrubbed isolated Chezmoi init/managed/cat; live target fingerprints and metadata only; sensitive env/subscription contents excluded."
+}

@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "catalog_expected": 91,
+  "catalog_discovered": 91,
+  "missing_catalog_names": [],
+  "duplicate_catalog_names": {},
+  "duplicate_diagnostics": false,
+  "version": "1.1.82"
+}
