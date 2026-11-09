@@ -77,6 +77,7 @@ scaffold-exercises|git|https://github.com/mattpocock/skills|main|skills/misc/sca
 setup-matt-pocock-skills|git|https://github.com/mattpocock/skills|main|skills/engineering/setup-matt-pocock-skills|auto
 setup-pre-commit|git|https://github.com/mattpocock/skills|main|skills/misc/setup-pre-commit|auto
 setup-ts-deep-modules|git|https://github.com/mattpocock/skills|main|skills/in-progress/setup-ts-deep-modules|auto
+show-me|git|https://github.com/humanlayer/skills|main|plugins/show-me/skills/show-me|auto
 surgical-patch|git|https://github.com/JuliusBrussee/caveman|main|skills/surgical-patch|auto
 tdd|git|https://github.com/mattpocock/skills|main|skills/engineering/tdd|auto
 teach|git|https://github.com/mattpocock/skills|main|skills/productivity/teach|auto

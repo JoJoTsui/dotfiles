@@ -44,6 +44,29 @@ upstream installer is not run: its optional search-reminder plugins, project
 instruction edits, hooks, and index creation are outside this global integration.
 Shared guidance retains CodeGraph priority and explicit project initialization.
 
+HumanLayer's `show-me` deploys through the same catalog and pinned lock, with
+its upstream `SKILL.md` and `agents/openai.yaml` unchanged. It is installed by
+default but requires explicit invocation: ask to use `show-me` to explain a
+topic visually (or `/show-me` in Claude Code). Its frontmatter disables model
+invocation, and its Codex policy disables implicit invocation. It provides
+instructions for diagrams, code sketches, and focused HTML files; it installs
+no rendering engine or executable helpers. Opening an HTML artifact uses the
+host's browser (`open` on macOS); other platforms need their native opener.
+For a manual global trial, `bunx skills add humanlayer/skills --skill show-me
+--global --agent codex claude-code --copy --yes` uses the shared discovery root
+and Claude's regular-file adapter. Bootstrap deployment uses the pinned copier,
+not this CLI or the upstream Claude plugin installer.
+
+This default applies to Linux, macOS, WSL, and native Windows, for both
+workstation and remote-compute roles. All seven managed coding agents receive
+`show-me`: Codex, Kimi Code, Pi, OpenCode, and Qoder use the shared tree;
+Claude Code and MiniMax Code use their regular-file adapters listed below.
+No per-platform skill row, Bun package installation, or Claude plugin is needed.
+Herdr is the agent multiplexer; its clients discover the skill through these
+same paths. Client discovery and explicit-only behavior are covered by the
+shared diagnostics where available; MiniMax's native discovery remains
+unverified, as recorded in the client table.
+
 `deployment/disabled-skills.tsv` excludes the complete Google DeepMind group:
 36 catalog skills and the installed `scienceskillscommon` helper. They cannot
 be selected from the active catalog, even by name. Deployment moves installed
