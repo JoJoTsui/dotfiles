@@ -11,6 +11,7 @@ import tarfile
 import unittest
 import zipfile
 from pins import agent_pins, common_pin, native_agent_pins, windows_assets
+from fixtures.skills import STATIC_LIBRARY, assert_skill_copies
 
 SOURCE = Path(__file__).resolve().parents[1]
 POWERSHELL = os.environ.get("DOTFILES_TEST_POWERSHELL") or shutil.which("pwsh") or shutil.which("powershell")
@@ -759,12 +760,8 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
             self.assertIn('## Native Windows specifics', instructions.read_text())
             self.assertEqual(retired.read_text(), 'device kimi instructions\n')
             self.assertEqual(custom_skill.read_text(), 'custom skill\n')
-            for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
-                for resource in ('SKILL.md', 'agents/openai.yaml'):
-                    copied = self.home / root / 'show-me' / resource
-                    self.assertFalse(copied.is_symlink())
-                    self.assertEqual(copied.read_bytes(),
-                                     (SOURCE / 'tests/fixtures/skill-library/show-me' / resource).read_bytes())
+            assert_skill_copies(self, self.home, STATIC_LIBRARY,
+                                ('show-me/SKILL.md', 'show-me/agents/openai.yaml'))
             self.assertEqual(auth.read_text(), '{"synthetic":"device-auth"}\n')
             self.assertEqual(history.read_bytes(), b'synthetic-existing-history')
             self.assertEqual(native_nu_history.read_text(), 'synthetic-existing-native-history\n')
