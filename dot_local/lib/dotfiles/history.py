@@ -4,7 +4,7 @@ Native adapters may invoke this file with the managed Python and the canonical
 HOME/XDG/ATUIN roots. Atuin itself owns shell parsing, filtering and encryption.
 """
 import argparse
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import json
 import os
 from pathlib import Path
@@ -312,6 +312,15 @@ def import_history(atuin, kind, source):
     if portable_nu and not source:
         raise HistoryError("portable Nu migration requires an explicit --file; native Known Folder import is never invoked")
     data = configured_path(atuin, "data_dir")
+    local_state = Path(os.environ['HOME']) / '.local/state/dotfiles/history-local/enabled.json'
+    local_mode = local_state.is_file()
+    local_database = configured_path(atuin, 'db_path') if local_mode else None
+    if local_database and local_database.is_file():
+        with closing(sqlite3.connect(local_database)) as connection:
+            receipts = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='dotfiles_history_imports'").fetchone()
+            if receipts and connection.execute('SELECT 1 FROM dotfiles_history_imports WHERE format = ?', (kind,)).fetchone():
+                print(f'history: {kind} already imported; no changes')
+                return
     imports = data / "dotfiles-imports"
     reject_symlinks(imports)
     imports.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -348,14 +357,16 @@ def import_history(atuin, kind, source):
         if not isinstance(pin, str) or not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z.+_~-]*", pin):
             raise HistoryError("deployed Atuin version is missing or invalid; reapply dotfiles")
         version = run_atuin(atuin, ["--version"]).strip()
-        if version.split()[:2] != ["atuin", pin]:
-            raise HistoryError(f"migration requires the verified Atuin {pin} pin")
+        installed = version.split()
+        releases = [re.fullmatch(r'(\d+)\.(\d+)\.(\d+)(?:\+[-0-9A-Za-z.]+)?', value)
+                    for value in (installed[1] if len(installed) > 1 and installed[0] == 'atuin' else '', pin)]
+        if not all(releases) or tuple(map(int, releases[0].groups())) < tuple(map(int, releases[1].groups())):
+            raise HistoryError(f'migration requires stable Atuin {pin} or newer; transfer schemas must agree')
         config_file = Path(os.environ["ATUIN_CONFIG_DIR"]) / "config.toml"
         settings = tomllib.loads(config_file.read_text())
         staging_root = data
-        marker = Path(os.environ['HOME']) / '.local/state/dotfiles/history-local/enabled.json'
-        if marker.is_file():
-            staging_root = Path(json.loads(marker.read_text())['runtime'])
+        if local_mode:
+            staging_root = Path(json.loads(local_state.read_text())['runtime'])
         with tempfile.TemporaryDirectory(prefix=".import-", dir=staging_root) as temporary:
             staging = Path(temporary)
             stage_config = staging / ".config"
@@ -438,11 +449,21 @@ def import_history(atuin, kind, source):
                     connection.execute(f"INSERT OR IGNORE INTO main.history ({columns}) "
                                        f"SELECT {columns} FROM migration.history WHERE deleted_at IS NULL")
                     imported = connection.total_changes - before
+                    if local_mode:
+                        # The receipt and imported rows commit in the same DB
+                        # transaction, so any concurrent snapshot includes both.
+                        connection.execute('CREATE TABLE IF NOT EXISTS dotfiles_history_imports '
+                                           '(format TEXT PRIMARY KEY, accepted INTEGER NOT NULL)')
+                        connection.execute('INSERT INTO dotfiles_history_imports VALUES (?, ?)', (kind, imported))
             finally:
                 connection.close()
-            # Accepted entries are now local. Persist the one-time marker before
-            # building records, so a record-store error cannot duplicate imports.
-            marker.write_text(json.dumps({"format": kind, "accepted": imported}) + "\n")
+            # Local-mode rows and their transactional receipt must reach the
+            # persistent snapshot together before reporting import completion.
+            # Other homes retain the existing one-time file marker.
+            if local_mode:
+                run_atuin(atuin, ['__dotfiles-persist'])
+            else:
+                marker.write_text(json.dumps({"format": kind, "accepted": imported}) + "\n")
         run_atuin(atuin, ["history", "init-store"], env=dict(os.environ, ATUIN_AUTO_SYNC="false"))
         print(f"history: imported {imported} filtered {kind} entries; original file unchanged")
     finally:

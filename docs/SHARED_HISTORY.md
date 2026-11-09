@@ -79,8 +79,8 @@ can finish Atuin's automatic store initialization without importing again.
 
 The transfer reads the catalog-owned Atuin pin rendered into
 `$XDG_CONFIG_HOME/dotfiles/profile.json` as `atuinVersion`. Migration requires
-this deployed metadata and refuses other versions
-and unequal native history schemas. This small SQLite transfer is needed to
+this deployed metadata and accepts a stable installed version at or above it,
+while refusing unequal native history schemas. This small SQLite transfer is needed to
 retain metadata because the public command-text export cannot do so. An Atuin
 update must rerun migration and encrypted sync tests before changing this pin.
 
@@ -158,6 +158,24 @@ both the launcher and persistent snapshots, so ordinary link-home restores
 their reachability. No shutdown hook, background copy timer, or service is
 required. `dotfiles-host-up status` validates local and snapshot health without
 restoring missing local data.
+
+Moving the Atuin databases does not import Nushell's separate `history.txt`.
+Recover that older history explicitly with
+`dotfiles-history import nu --file ~/.config/nushell/history.txt`. Filtering
+runs in unauthenticated local staging and the source stays unchanged. On this
+local-storage host, a `dotfiles_history_imports` receipt commits in the same
+SQLite transaction as the accepted history rows, and the launcher durably
+snapshots them together before reporting completion. This prevents a notebook
+reset from retaining an import receipt while losing its imported data. The
+local-storage settings file is separate from import receipts. Cross-device
+cloud sync still requires separate account activation.
+
+The T9K native-history recovery imported 42,052 filtered Nu entries while
+retaining all 39 existing Atuin rows. Source-file and storage-settings checksums
+were unchanged. A separate disposable runtime restored all 42,091 rows and the
+import receipt from the persistent snapshot. Metadata-only search verification
+confirmed all 15,174 distinct commands were visible; repeated commands collapse
+in Atuin's normal search results.
 
 For rollback, first preserve the newest snapshot and validate its contents on
 local storage. The retained original database is a migration-time baseline,

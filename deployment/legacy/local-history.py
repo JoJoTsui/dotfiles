@@ -218,10 +218,14 @@ class Store:
         enabled = self.state / 'enabled.json'
         self.environment()
         wrapper = self.home / '.local/bin/atuin'
-        command = ['python3', str(script.resolve()), '--home', str(self.home), '--live-root', str(self.live),
+        interpreter = self.home / '.pixi/bin/python'
+        if not interpreter.is_file():
+            interpreter = Path(sys.executable)
+        command = [str(interpreter), str(script.resolve()), '--home', str(self.home), '--live-root', str(self.live),
                    '--runtime', str(self.runtime), '--native', str(self.native), 'run', '--']
         launcher = ('#!/bin/sh\nexec ' + shlex.join(command) + ' "$@"\n').encode()
-        if wrapper.is_symlink() or (wrapper.exists() and wrapper.read_bytes() != launcher):
+        previous = ('#!/bin/sh\nexec ' + shlex.join(['python3', *command[1:]]) + ' "$@"\n').encode()
+        if wrapper.is_symlink() or (wrapper.exists() and wrapper.read_bytes() not in (launcher, previous)):
             raise ValueError('existing local Atuin launcher; refusing to replace it')
         # New shell hooks now wait on our local lock while migration completes.
         # A failed migration leaves a fail-closed launcher and the originals.
@@ -293,6 +297,9 @@ class Store:
             if not (self.state / 'enabled.json').is_file():
                 raise ValueError('local history migration has not completed')
             self.prepare()
+            if arguments == ['__dotfiles-persist']:
+                self.snapshot()
+                return 0
         env = self.environment()
         # Static CLI helpers neither open the stores nor need a snapshot.
         static = arguments and arguments[0] in ('--version', '-V', '--help', '-h', 'init', 'uuid', 'config', 'completions', 'gen-completions')
