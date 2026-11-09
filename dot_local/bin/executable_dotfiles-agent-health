@@ -2,7 +2,7 @@
 # dotfiles-agent-health — preflight for the local coding-agent stack.
 #
 # Checks the dependency chain that fails silently after a reboot: Mihomo, its
-# U.S. egress, the Caveman gateway, the Codex app-server daemon, the Herdr
+# U.S. egress, the Codex app-server daemon, the Herdr
 # server, and (in the full check) the CodeGraph and Graphify binaries. The Codex launcher runs
 # the narrow `--codex` set; `--probe` adds one real model round trip.
 set -u
@@ -72,7 +72,7 @@ run_with_limit() {
     return "$status"
 }
 
-# The legacy daemon stack (Mihomo, Caveman, Herdr) is deployed on Linux and
+# The legacy daemon stack (Mihomo, Herdr) is deployed on Linux and
 # WSL only. The shared environment names the platform; the kernel name is the
 # fallback for a home that has no environment yet.
 [ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
@@ -106,26 +106,6 @@ if [ "$daemon_stack" = true ]; then
         fi
     else
         fail "with-proxy not found"
-    fi
-fi
-
-if [ "$daemon_stack" = true ]; then
-    # Caveman gateway and its run-file process.
-    code=$(http_code http://127.0.0.1:8787/)
-    case "$code" in
-        200|401|403|404) ok "caveman gateway (127.0.0.1:8787, http $code)" ;;
-        *) fail "caveman gateway (127.0.0.1:8787, http ${code:-none})" ;;
-    esac
-    run_file=$HOME/.caveman/run/8787.json
-    if [ -f "$run_file" ]; then
-        proxy_pid=$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$run_file" | head -1)
-        if [ -n "$proxy_pid" ] && kill -0 "$proxy_pid" 2>/dev/null; then
-            ok "caveman proxy pid $proxy_pid"
-        else
-            fail "caveman run file pid ${proxy_pid:-missing} is not alive"
-        fi
-    else
-        fail "caveman run file $run_file missing"
     fi
 fi
 

@@ -9,11 +9,10 @@ dotfiles-host-up up          # repair links, start what is down, run health
 dotfiles-host-up up --restore # optional local Herdr startup; not the T9K laptop flow
 ```
 
-`status` checks the link manifest, Mihomo `9090`, Caveman `8787`, the Codex
+`status` checks the link manifest, Mihomo `9090`, the Codex
 app-server daemon, Herdr, and the health preflight. `up` repairs links through
 `link-home` (or reports a non-legacy home without failing), starts Mihomo,
-starts Caveman under `with-proxy` (record mode by default; `--compress` selects
-compress mode), starts the Codex daemon under `with-proxy` when absent, and
+starts the Codex daemon under `with-proxy` when absent, and
 runs the dependency health preflight with `--before-restore` (skipping only
 the Herdr server check). Any failed dependency or missing/failing preflight
 stops bring-up before Herdr starts.
@@ -41,8 +40,8 @@ This handles stale shell references left by the shared Codex daemon: Herdr
 0.9.4 uses different deduplication keys for native references and custom resume
 commands. A running server's snapshot is never edited by this helper.
 
-`--restart` recycles Mihomo, Caveman, and the Codex daemon. It never restarts
-Herdr. Use it when the daemon lacks `HTTPS_PROXY` or a mode change is required.
+`--restart` recycles Mihomo and the Codex daemon. It never restarts
+Herdr. Use it when the daemon lacks `HTTPS_PROXY`.
 
 There is no systemd unit and no login-shell hook. Run the command once after a
 reboot; it is deliberately manual because starting or restoring agents is
@@ -58,8 +57,8 @@ bash /t9k/mnt/joey/SHELL/dotfiles/deployment/legacy/link-home.sh
 The approved legacy apply must already have installed the helper and health
 script into the persistent live tree and enabled Herdr agent restore. This
 sequence restores the links, loads `.env_core` inside the preparation process,
-starts the longstanding Mihomo supervisor if absent, starts Caveman and the
-Codex daemon, checks CodeGraph and Graphify, and prepares the saved Herdr session.
+starts the longstanding Mihomo supervisor if absent, starts the Codex daemon,
+checks CodeGraph and Graphify, and prepares the saved Herdr session.
 Between Mihomo and the agent daemons, the offline global integration adapter
 deploys the official Graphify skill/guidance and excludes Serena and the disabled
 DeepMind skill group. Its pinned resources must be fetched once before reboot;

@@ -301,7 +301,10 @@ the name for Windows Terminal and deploys neither the command nor the plugins.
 
 ### Caveman gateway (optional, device-local)
 
-Caveman is a local metering/compression gateway on `127.0.0.1:8787`. Its runtime
+Caveman's standalone skills work without a gateway. The host startup and health
+helpers do not start or require Caveman; agents can reach their providers through
+Mihomo directly. The optional local metering/compression gateway listens on
+`127.0.0.1:8787`. Its runtime
 root (`~/.caveman`), Go binaries, hooks, and generated OpenCode plugin stay
 device-owned; the Codex merge keeps the provider/MCP values because they differ
 from the managed defaults, but drops the comment markers. Start it under
@@ -312,7 +315,7 @@ from the managed defaults, but drops the comment markers. Start it under
 Inside interactive Herdr shells, Codex launches through `codex-herdr` (health
 preflight plus `with-proxy codex --no-daemon`) so its hooks inherit the pane
 identity; non-interactive `with-proxy codex exec` keeps the shared daemon.
-After a reboot, `dotfiles-host-up up` chains links, proxy, Caveman, the Codex
+After a reboot, `dotfiles-host-up up` chains links, proxy, the Codex
 daemon, and health; `up --restore` adds the saved Herdr workspace/agents. See
 [host bring-up](docs/HOST_UP.md).
 See [herdr](docs/HERDR.md).

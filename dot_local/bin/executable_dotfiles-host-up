@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # dotfiles-host-up — bring the local agent stack up after a reboot.
 #
-# It checks/repairs the legacy links, starts Mihomo, Caveman, and the Codex
+# It checks/repairs the legacy links, starts Mihomo and the Codex
 # app-server daemon, then runs the health preflight. Herdr is started only with
 # --restore; it is never restarted here, because that would tear down panes.
 set -uo pipefail
@@ -9,25 +9,22 @@ set -uo pipefail
 action=status
 restore=false
 restart=false
-compress=false
 quiet=false
 for argument in "$@"; do
     case "$argument" in
         status|up) action=$argument ;;
         --restore) restore=true ;;
         --restart) restart=true ;;
-        --compress) compress=true ;;
         -q|--quiet) quiet=true ;;
         -h|--help)
             cat <<'EOF'
-usage: dotfiles-host-up [status|up] [--restore] [--restart] [--compress] [--quiet]
+usage: dotfiles-host-up [status|up] [--restore] [--restart] [--quiet]
 
-  status      report links, Mihomo, Caveman, Codex daemon, Herdr, and health
-  up          repair links and start Mihomo, Caveman, and the Codex daemon
+  status      report links, Mihomo, Codex daemon, Herdr, and health
+  up          repair links and start Mihomo and the Codex daemon
   --restore   also start Herdr and let its saved workspace/agents restore;
               attach afterwards with `herdr`. A running Herdr is never restarted.
-  --restart   recycle Mihomo, Caveman, and the Codex daemon when they are running
-  --compress  start Caveman in compress mode instead of byte-safe record mode
+  --restart   recycle Mihomo and the Codex daemon when they are running
   --quiet     suppress success lines
 EOF
             exit 0
@@ -64,7 +61,6 @@ with_proxy=${DOTFILES_WITH_PROXY:-$HOME/.local/bin/with-proxy}
 curl_bin=${DOTFILES_CURL:-$(command -v curl 2>/dev/null || true)}
 health=${DOTFILES_AGENT_HEALTH:-$HOME/.local/bin/dotfiles-agent-health}
 link_home=${DOTFILES_LINK_HOME:-$source_dir/deployment/legacy/link-home.sh}
-caveman=${DOTFILES_CAVEMAN_BIN:-$HOME/.pixi/envs/nodejs/bin/caveman}
 codex=${DOTFILES_CODEX_BIN:-$(command -v codex 2>/dev/null || true)}
 herdr=${DOTFILES_HERDR_BIN:-$(command -v herdr 2>/dev/null || true)}
 
@@ -84,25 +80,8 @@ wait_http() {
     return 1
 }
 
-caveman_code() {
-    http_code http://127.0.0.1:8787/
-}
-
-caveman_running() {
-    case "$(caveman_code)" in
-        200|401|403|404) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-
 mihomo_running() {
     [ "$(http_code http://127.0.0.1:9090/version)" = 200 ]
-}
-
-caveman_mode() {
-    local run_file=$HOME/.caveman/run/8787.json
-    [ -f "$run_file" ] || return 0
-    sed -n 's/.*"mode":"\([^"]*\)".*/\1/p' "$run_file" | head -1
 }
 
 codex_running() {
@@ -163,31 +142,6 @@ ensure_mihomo() {
     mkdir -p "$live_root/.local/share/mihomo/run"
     setsid nohup "$supervisor" >>"$live_root/.local/share/mihomo/run/supervisor.log" 2>&1 </dev/null &
     if wait_http http://127.0.0.1:9090/version 200 30; then ok "mihomo started"; else fail "mihomo"; fi
-}
-
-ensure_caveman() {
-    if caveman_running && [ "$restart" != true ]; then
-        local mode
-        mode=$(caveman_mode)
-        ok "caveman (${mode:-unknown} mode)"
-        return 0
-    fi
-    if [ "$restart" = true ] && caveman_running; then
-        "$caveman" stop >/dev/null 2>&1 || true
-        sleep 1
-    fi
-    [ -x "$with_proxy" ] || { fail "with-proxy not found"; return 1; }
-    [ -x "$caveman" ] || { fail "caveman not found: $caveman"; return 1; }
-    local mode=record
-    [ "$compress" = true ] && mode=compress
-    mkdir -p "$HOME/.caveman/run"
-    setsid nohup "$with_proxy" env CAVEMAN_MODE="$mode" "$caveman" start \
-        >>"$HOME/.caveman/run/supervisor.log" 2>&1 </dev/null &
-    if wait_http http://127.0.0.1:8787/ "200 401 403 404" 30; then
-        ok "caveman started ($mode)"
-    else
-        fail "caveman"
-    fi
 }
 
 ensure_history() {
@@ -366,13 +320,6 @@ show_status() {
         fail "links drift"
     fi
     if mihomo_running; then ok "mihomo"; else fail "mihomo"; fi
-    if caveman_running; then
-        local mode
-        mode=$(caveman_mode)
-        ok "caveman (${mode:-unknown} mode)"
-    else
-        fail "caveman"
-    fi
     if codex_running; then
         if codex_proxy_ok; then ok "codex app-server daemon (proxy)"; else warn "codex daemon lacks HTTPS_PROXY"; fi
     else
@@ -393,7 +340,7 @@ case "$action" in
     up)
         # Some helpers accumulate failures; inspect both status and that count.
         # No later dependency (especially Herdr) may start after a failure.
-        for step in ensure_links ensure_mihomo ensure_history ensure_agent_integrations ensure_caveman ensure_codex; do
+        for step in ensure_links ensure_mihomo ensure_history ensure_agent_integrations ensure_codex; do
             if ! "$step" || [ "$failures" -ne 0 ]; then
                 printf 'host bring-up stopped at %s; Herdr restore withheld\n' "$step" >&2
                 exit 1

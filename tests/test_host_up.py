@@ -29,13 +29,12 @@ class HostUpTests(unittest.TestCase):
 for argument in "$@"; do
     case "$argument" in
         *9090*) echo 200; exit 0 ;;
-        *8787*) echo 404; exit 0 ;;
     esac
 done
 echo 000
 """)
         self.write_stub("with-proxy", "#!/bin/sh\nexec \"$@\"\n")
-        for name in ("caveman", "codex", "link-home", "mihomo"):
+        for name in ("codex", "link-home", "mihomo"):
             self.write_stub(name, "#!/bin/sh\nexit 0\n")
         self.herdr_state = self.root / "herdr-running"
         self.herdr_state.touch()
@@ -69,7 +68,6 @@ exit ${HEALTH_EXIT:-0}
             "DOTFILES_SOURCE": str(self.repo),
             "DOTFILES_LIVE_ROOT": str(self.live),
             "DOTFILES_WITH_PROXY": str(self.bin / "with-proxy"),
-            "DOTFILES_CAVEMAN_BIN": str(self.bin / "caveman"),
             "DOTFILES_CODEX_BIN": str(self.bin / "codex"),
             "DOTFILES_HERDR_BIN": str(self.bin / "herdr"),
             "DOTFILES_CURL": str(self.bin / "curl"),
@@ -165,15 +163,11 @@ exit ${HEALTH_EXIT:-0}
 for argument in "$@"; do
     case "$argument" in
         *9090*) echo 200; exit 0 ;;
-        *8787*) echo 404; exit 0 ;;
-        *cloudflare*) echo loc=US; exit 0 ;;
+        *cloudflare*) echo "loc=${TEST_EGRESS_COUNTRY:-US}"; exit 0 ;;
     esac
 done
 exit 1
 """)
-        run = self.home / ".caveman/run/8787.json"
-        run.parent.mkdir(parents=True)
-        run.write_text('{"pid":' + str(os.getpid()) + '}')
         result = self.run_host_up("up", "--restore")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Herdr check deferred", result.stdout)
@@ -181,10 +175,13 @@ exit 1
 
         self.herdr_state.unlink()
         self.herdr_log.unlink()
-        run.unlink()
-        failed = self.run_host_up("up", "--restore")
+        environment = self.environment()
+        environment["TEST_EGRESS_COUNTRY"] = "CN"
+        failed = subprocess.run(["/bin/bash", str(SCRIPT), "up", "--restore"],
+                                env=environment, cwd=SOURCE, capture_output=True,
+                                text=True, timeout=60)
         self.assertNotEqual(failed.returncode, 0)
-        self.assertIn("caveman run file", failed.stderr)
+        self.assertIn("proxy egress", failed.stderr)
         self.assertFalse(self.herdr_state.exists())
         self.assertFalse(self.herdr_log.exists())
 
@@ -225,7 +222,6 @@ exit 1
 for argument in "$@"; do
     case "$argument" in
         *9090*) [ -f "{self.root}/mihomo-ready" ] && echo 200 || echo 000; exit 0 ;;
-        *8787*) [ -f "{self.root}/caveman-ready" ] && echo 404 || echo 000; exit 0 ;;
     esac
 done
 ''')
@@ -233,16 +229,11 @@ done
 echo mihomo >> "{events}"
 touch "{self.root}/mihomo-ready"
 ''')
-        self.write_stub("caveman", f'''#!/bin/sh
-[ -f "{self.root}/mihomo-ready" ] || exit 1
-echo caveman >> "{events}"
-touch "{self.root}/caveman-ready"
-''')
         self.write_stub("codex", f'''#!/bin/sh
 case "$*" in
     "app-server daemon version") [ -f "{self.root}/codex-ready" ] ;;
     "app-server daemon start")
-        [ -f "{self.root}/caveman-ready" ] || exit 1
+        [ -f "{self.root}/mihomo-ready" ] || exit 1
         echo codex >> "{events}"
         touch "{self.root}/codex-ready" ;;
     *) exit 1 ;;
@@ -254,7 +245,7 @@ echo health >> "{events}"
 ''')
         result = self.run_host_up("up")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(events.read_text().splitlines(), ["mihomo", "caveman", "codex", "health"])
+        self.assertEqual(events.read_text().splitlines(), ["mihomo", "codex", "health"])
         self.assertFalse(self.herdr_state.exists())
         self.assertNotIn("server", self.herdr_log.read_text().splitlines())
 

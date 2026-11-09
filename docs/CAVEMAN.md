@@ -8,6 +8,57 @@ Caveman on the host. This repository does not vendor them, does not select them
 for any bundle, and does not own the Caveman entries in their configuration
 files.
 
+The host startup and health helpers do not start or require this gateway.
+Standalone voice skills (`caveman`, `ultracave`, `megacave`) need no CLI,
+gateway, hooks, or MCP server. Gateway-backed evidence and optimization skills
+still need their own runtime; keeping a skill installed does not activate it.
+
+## Skills-only operation
+
+Use the native CLI's `caveman disable --all` to restore journaled provider
+routes and withdraw its hooks and generated plugins. The Bun executable may be
+cached rather than installed on PATH; use the already-installed CLI bytes,
+not a fresh `bunx ...@latest` download during removal.
+
+Rehearse against a private isolated copy of the settings and integration
+journals before changing a live host. Keep a private backup of each changed
+file, then inspect all agents for remaining Caveman MCP registrations, hooks,
+provider routes, and auto-loaded extensions. Older installs can leave orphaned
+resources without a journal. Move those recognized resources outside plugin
+and extension discovery instead of deleting them. Preserve unrelated hooks,
+provider settings, authentication, and the standalone skills.
+
+On the legacy T9K host, the 4.0.1 disable operation restores Codex successfully,
+but refuses OpenCode's subsequently merged MCP entry. Remove only the known
+Caveman MCP entries from both `mcp.caveman` and `mcp.servers.caveman`, then retry
+the journaled disable to restore the original provider URLs. Retire the
+orphaned Pi `extensions/caveman-native.js`, OpenCode's older
+`plugins/caveman-blocks.js`, and Claude's `caveman-blocks` hook too. Inspect any
+plugin restored from the journal: an older Caveman plugin is still an active
+integration. Preserve the files and journals in the private recovery batch.
+
+Apply the tested startup and health helpers through the focused legacy apply
+adapter. Verify the direct provider with a new process before stopping the
+gateway. Existing agent processes can retain their previous route, hooks, and
+extensions until restarted; changing their files cannot clear that in-memory
+state. Do not restart Herdr to refresh agents, since it tears down every pane.
+Keep Caveman's binaries, databases, receipts, and backups for rollback.
+
+The 2026-11-09 host migration passed 39 focused startup, launcher, and legacy
+apply tests, both `t9k` and `linux` simulated applies, shell syntax checks,
+and ShellCheck's warning/error gate. All 13 existing global agent config files
+parsed without Caveman runtime references after removal; credential-bearing
+configuration fields and 12 discovered voice-skill copies were unchanged.
+A fresh ephemeral Codex process reported provider `openai` and returned
+`HEALTH_OK` through Mihomo. The shared Codex daemon was restarted and the full
+live health check passed. Recovery files are private under
+`~/.local/state/dotfiles/caveman-retirement/`.
+
+The already-running Herdr agent processes still held their old routes, so the
+gateway was left running for those sessions, including the session performing
+the migration. Relaunch/resume those agents to load the direct configuration,
+then run `caveman stop` using the installed CLI. Startup no longer launches it.
+
 ## Ownership
 
 | Path | Owner |
@@ -167,6 +218,58 @@ caveman status
 cat ~/.caveman/run/8787.json
 ss -ltn | grep 8787
 ```
+
+## Diagnosing upstream stalls
+
+Distinguish request upload, response headers, and response-body progress before
+changing gateway timeouts. `CAVE_GATEWAY_RESPONSE_HEADER_TIMEOUT_MS` bounds the
+wait after the request has been written; it does not bound a stalled upload.
+`CAVE_GATEWAY_UPSTREAM_TIMEOUT_MS` bounds the whole exchange, including a
+healthy SSE response. Shortening that total deadline can truncate a working
+reasoning turn. These are process environment settings, not managed YAML keys.
+
+The 2026-11-09 T9K audit tested the installed `bin-v4.0.1` executable, SHA-256
+`8b1dc0e9bba897aba8c7499affb763998e9aa58291dc4baa6cea818bf1839d59`, on
+Linux using Python's standard-library HTTP/TLS servers and a temporary local CA.
+Each test gateway had a fresh temporary home and loopback listener; its outbound
+proxy was a synthetic local TLS upstream. No account credentials or live
+inference requests were used. The installed binary's behavior is the evidence
+here; a published source tag alone does not establish its effective defaults.
+
+| Local scenario | Settings | Observed result |
+| --- | --- | --- |
+| Upstream accepts the request but sends no headers | No timeout overrides | 502 after 5.02 s |
+| Same header stall | Header 200 ms, total 0 | 502 after 0.21 s |
+| Healthy stream sends data every 50 ms for one second | Header 200 ms, total 0 | Complete response after 1.01 s |
+| Client disconnects before response headers | Header 200 ms, total 0 | Upstream connection closes within 0.01 s |
+| Upstream stops reading an 8 MiB upload, then closes after two seconds | Header 200 ms, total 0 | Waits 2.04 s, then returns 502 |
+| Same stalled upload | Header 200 ms, total 250 ms | 502 after 0.29 s |
+| Same healthy one-second stream | Header 200 ms, total 250 ms | Truncated body after 0.26 s |
+
+The live database recorded two `/responses` failures starting at 01:21:54 and
+01:26:08 UTC that day, lasting 993 and 739 seconds. Both recorded 196,608
+request bytes, zero response bytes, and an incomplete request hash. This is
+consistent with an interrupted upload, rather than proof of a long header wait
+or a particular total timeout. The narrow upstream fix to investigate is a
+stalled-upload write deadline that preserves healthy long response streams.
+The synthetic cancellation result above covers the pre-header wait; it does
+not establish cancellation behavior during every upload or response-body state.
+
+Do not infer a session limit from open tunnel connections. In the recorded
+23:00–02:00 UTC window spanning November 8–9, `/models` had 25 errors in 82
+requests with zero recorded `/responses` overlapping at request start, and
+zero errors in 12 requests with six overlapping. Counts used request start
+timestamps plus latency, with a one-hour lookback for ongoing requests; requests
+still unfinished and absent from the database cannot be counted. This
+observational comparison does not isolate node changes, traffic volume, or
+other tunnel users, and does not establish a useful concurrency threshold.
+Before imposing a cap, compare full model-fetch completion and error rates at
+1–2 versus six active sessions on the same node under comparable conditions.
+
+The audit therefore adds no global concurrency cap or total-timeout override.
+Gateway implementation fixes belong upstream; only verified deployment
+settings belong in this repository. A controlled live concurrency experiment
+and an upstream upload fix remain separate follow-up work.
 
 ## Legacy T9K persistence
 
