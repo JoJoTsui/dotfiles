@@ -299,18 +299,15 @@ client through the shared skill library, and the Claude Code, Codex, opencode
 and pi plugins report which worktree an agent is using. Native Windows keeps
 the name for Windows Terminal and deploys neither the command nor the plugins.
 
-### Caveman gateway (optional, device-local)
+### Caveman skills
 
-Caveman's standalone skills work without a gateway. The host startup and health
-helpers do not start or require Caveman; agents can reach their providers through
-Mihomo directly. The optional local metering/compression gateway listens on
-`127.0.0.1:8787`. Its runtime
-root (`~/.caveman`), Go binaries, hooks, and generated OpenCode plugin stay
-device-owned; the Codex merge keeps the provider/MCP values because they differ
-from the managed defaults, but drops the comment markers. Start it under
-`with-proxy`; it is not a managed service. On the legacy T9K host the
-`agents|.caveman` home link keeps that root on the persistent tree. See
-[caveman](docs/CAVEMAN.md).
+Caveman uses standalone skills without a gateway. The host startup and health
+helpers do not start or require Caveman. Its former proxy hooks, MCP entries,
+provider routes, and generated plugins are retired through the focused
+[device migration](docs/CAVEMAN.md#skills-only-operation), including on macOS.
+Pulling the repository does not remove device-owned integrations. Keep installed
+skills and private recovery files; relaunch existing clients to load their
+direct provider configuration.
 
 Inside interactive Herdr shells, Codex launches through `codex-herdr` (health
 preflight plus `with-proxy codex --no-daemon`) so its hooks inherit the pane

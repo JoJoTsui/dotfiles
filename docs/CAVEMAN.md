@@ -1,12 +1,10 @@
-# Caveman gateway
+# Caveman skills and retired gateway
 
-Caveman is an optional, device-local layer that meters and compresses coding
-agent traffic. `caveman-proxy` listens on `127.0.0.1:8787`; Codex, OpenCode,
-and Claude can be routed through it by their device integration. The CLI, the
-Go binaries, the client integration, and the runtime databases are installed by
-Caveman on the host. This repository does not vendor them, does not select them
-for any bundle, and does not own the Caveman entries in their configuration
-files.
+Caveman is used through standalone skills. Its proxy routing, native lifecycle
+hooks, MCP servers, and generated client plugins are retired on current hosts.
+The host retirement began with commit `a677929`; existing device integrations
+need the focused migration below because pulling the source does not change
+client settings in the account home. Keep the installed skills.
 
 The host startup and health helpers do not start or require this gateway.
 Standalone voice skills (`caveman`, `ultracave`, `megacave`) need no CLI,
@@ -58,6 +56,43 @@ The already-running Herdr agent processes still held their old routes, so the
 gateway was left running for those sessions, including the session performing
 the migration. Relaunch/resume those agents to load the direct configuration,
 then run `caveman stop` using the installed CLI. Startup no longer launches it.
+
+### macOS retirement
+
+The 2026-11-09 macOS migration rehearsed the cached Caveman CLI 4.0.1 disable
+operation against private copies, then applied 15 backed-up changes. It removed
+Caveman hooks and MCP/provider registrations, archived its generated OpenCode,
+Pi, and Hermes plugins plus integration journals, and updated the installed
+health helper from `a677929`. Herdr and Impeccable hooks survived. All 12 parsed
+client configurations passed credential-field preservation checks; all 12
+discovered standalone skill files remained byte-identical.
+
+OpenCode's merged MCP registration required targeted removal before the native
+disable operation. Hermes already used its direct provider inside stale
+Caveman markers; the migration preserved that route while withdrawing the
+markers and plugin/MCP blocks. Runtime databases and actively changing cloud
+preferences were retained. Recovery files are private under
+`~/.local/state/dotfiles/caveman-retirement/caveman-macos-retirement-992uxw8d/`.
+
+Both macOS health scenarios (running and stopped Codex daemon) passed without
+a gateway or network dependency, as did the installed `--codex` health check.
+A fresh ephemeral Codex 0.167.0 process reported provider `openai` and returned
+`HEALTH_OK`. The broader Linux host-startup suite failed on this Mac because
+its `timeout` command was unavailable; the Herdr launcher suite passed eight
+of nine tests, with the remaining test assuming the Linux proxy branch. No
+full bootstrap or fresh-install gate was run for this focused device repair.
+
+An existing Codex process initially kept an established connection to port
+8787, so the gateway was left running during migration. On resuming the work,
+no client connections remained. The cached CLI's `stop` command succeeded;
+`lsof` confirmed no listeners or client connections on port 8787, and the
+installed `--codex` health check passed with the gateway stopped.
+
+## Historical gateway reference
+
+The remaining gateway setup, ownership, and diagnostics describe the retired
+integration for rollback and investigation. They are not steps for the current
+skills-only setup. Its binaries, databases, and backups remain device state.
 
 ## Ownership
 
@@ -218,6 +253,21 @@ caveman status
 cat ~/.caveman/run/8787.json
 ss -ltn | grep 8787
 ```
+
+## Codex PostCompact output compatibility
+
+Caveman CLI 4.0.1 registers a Codex `PostCompact` hook that emits
+`hookSpecificOutput` with `hookEventName: "PostCompact"` and
+`additionalContext`. Codex rejects this with `hook returned invalid
+PostCompact hook JSON output`: that event accepts only the
+[common output fields](https://learn.chatgpt.com/docs/hooks#postcompact), not
+hook-specific context. The installed hook reproduced this with a synthetic
+manual-compaction event in an isolated home; it returned valid JSON and exit
+code zero, but the wrong event output schema.
+
+The skills-only migration removes the Caveman hook registrations altogether,
+including `PostCompact`, rather than retaining a compatibility shim. A running
+Codex process can retain its old configuration until relaunched or resumed.
 
 ## Diagnosing upstream stalls
 

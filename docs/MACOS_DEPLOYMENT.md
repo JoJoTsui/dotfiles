@@ -67,6 +67,13 @@ Use [explicit first-device/join setup](SHARED_HISTORY.md) for encrypted sync and
 optional native-history import. Skill prerequisites remain on use. Installing
 and registering CodeGraph leaves project indexing explicit.
 
+Caveman uses standalone skills only. Existing Macs must retire its old native
+hooks, MCP/provider routes, and generated plugins separately; pulling the repo
+does not modify those device-owned settings. Preserve credentials, unrelated
+integrations, and installed skills through the rehearsed
+[Caveman retirement](CAVEMAN.md#macos-retirement). Running clients must be
+relaunched or resumed to load the direct configuration.
+
 ## Installer tier and the terminal
 
 macOS resolves common command groups before the Pixi merge. It adopts a
