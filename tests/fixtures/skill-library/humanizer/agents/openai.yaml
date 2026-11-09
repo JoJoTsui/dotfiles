@@ -1,0 +1,4 @@
+interface:
+  display_name: "Humanizer fixture"
+  short_description: "Synthetic English editing fixture"
+  default_prompt: "Use $humanizer on the sample prose."

@@ -165,11 +165,16 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual((shared / "tdd/SKILL.md").read_bytes(), (claude / "tdd/SKILL.md").read_bytes())
         self.assertIn("disable-model-invocation: true", (shared / "implement-spec/SKILL.md").read_text())
         for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
-            for resource in ("SKILL.md", "agents/openai.yaml"):
-                copied = self.home / root / "show-me" / resource
-                self.assertTrue(copied.is_file())
-                self.assertFalse(copied.is_symlink())
-                self.assertEqual(copied.read_bytes(), (self.skills_fixture / "show-me" / resource).read_bytes())
+            for name, resources in (
+                ("show-me", ("SKILL.md", "agents/openai.yaml")),
+                ("humanizer", ("SKILL.md", "agents/openai.yaml", "LICENSE")),
+                ("humanizer-zh", ("SKILL.md", "LICENSE")),
+            ):
+                for resource in resources:
+                    copied = self.home / root / name / resource
+                    self.assertTrue(copied.is_file())
+                    self.assertFalse(copied.is_symlink())
+                    self.assertEqual(copied.read_bytes(), (self.skills_fixture / name / resource).read_bytes())
         self.assertFalse((shared / "scienceskillscommon").exists())
         self.assertFalse((shared / "clinical-trials-database").exists())
         self.assertEqual((shared / "graphify/references/query.md").read_bytes(),
@@ -355,6 +360,8 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertIn("~/.agents/RTK.md", text)
         self.assertIn("<!-- DOTFILES_AGENT_START -->", text)
         self.assertIn("- tdd:", text)
+        for name in ("humanizer", "humanizer-zh"):
+            self.assertIn("- " + name + ":", text)
         self.assertNotIn("- clinical-trials-database:", text)
         self.assertNotIn("- show-me:", text)
         self.assertIn("are for explicit user requests", text)
@@ -375,6 +382,8 @@ class AgentPayloadTests(unittest.TestCase):
                          (len(expected), 2), data.get("diagnostics"))
         self.assertTrue(next(skill for skill in managed if skill["name"] == "show-me")["disableModelInvocation"])
         self.assertIn("<name>tdd</name>", data["prompt"])
+        for name in ("humanizer", "humanizer-zh"):
+            self.assertIn("<name>" + name + "</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])
         self.assertNotIn("<name>show-me</name>", data["prompt"])
         self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
