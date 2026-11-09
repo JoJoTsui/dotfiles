@@ -51,10 +51,10 @@ merge restores plain `opus` only when it was selected immediately before that
 installation. Explicit `opus[1m]` and custom models survive. Claude's own runtime
 metadata migrations remain client-owned.
 
-One target is not a client setting: `deployment/client-settings/caveman.yaml`
-becomes the Caveman gateway configuration `~/.caveman/caveman.yaml` under the
-`caveman-config` policy, which owns the provider mount base URL. See
-[Caveman gateway](CAVEMAN.md).
+Caveman gateway configuration and lifecycle are device-owned. Bootstrap leaves
+existing configuration, run state, and old merge baselines untouched and creates
+none on fresh homes. Standalone skills continue to deploy through the skill
+catalog. See [Caveman retirement](CAVEMAN.md#skills-only-operation).
 
 | Client | Managed CodeGraph location | Integration |
 | --- | --- | --- |

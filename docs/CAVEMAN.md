@@ -7,6 +7,10 @@ need the focused migration below because pulling the source does not change
 client settings in the account home. Keep the installed skills.
 
 The host startup and health helpers do not start or require this gateway.
+Public bootstrap also leaves the gateway alone: it neither merges configuration
+nor starts, stops, or refreshes the process. Existing configuration, runtime
+files, and old `caveman-config` merge baselines remain device-owned. Fresh homes
+receive the standalone skills without a gateway configuration.
 Standalone voice skills (`caveman`, `ultracave`, `megacave`) need no CLI,
 gateway, hooks, or MCP server. Gateway-backed evidence and optimization skills
 still need their own runtime; keeping a skill installed does not activate it.
@@ -99,7 +103,7 @@ skills-only setup. Its binaries, databases, and backups remain device state.
 | Path | Owner |
 | --- | --- |
 | `~/.caveman/` | Caveman installer; device runtime state |
-| `~/.caveman/caveman.yaml` | repository-managed gateway configuration; merged by bootstrap |
+| `~/.caveman/caveman.yaml` | device-owned; formerly merged by bootstrap |
 | `~/.caveman/bin/` | `caveman setup --install` (downloaded release binaries) |
 | `~/.caveman/integrations/<agent>.json` | `caveman setup --agent-native` ownership journal, when present |
 | `~/.caveman/caveman.db`, `receipts/`, `run/`, `runtime/` | runtime databases and state |
@@ -110,9 +114,10 @@ skills-only setup. Its binaries, databases, and backups remain device state.
 | `~/.local/share/caveman-blocks/` | separate optional `caveman-blocks` install |
 
 Never add `~/.caveman`, the generated plugin, or the generated hook entries to
-the Chezmoi source. The gateway configuration `~/.caveman/caveman.yaml` is the
-one file bootstrap manages there: it is merged like a client setting and never
-enters the source tree. `deployment/client-settings/codex.toml` owns the managed
+the Chezmoi source. Bootstrap formerly merged the gateway configuration, but
+now leaves it and its old merge baseline untouched. The unreferenced
+`deployment/caveman.sh` and `deployment/client-settings/caveman.yaml` remain
+historical reference files. `deployment/client-settings/codex.toml` owns the managed
 `model_provider = "openai"` default. A device that selects Caveman keeps
 `model_provider = "caveman"` plus its `[model_providers.caveman]` and
 `[mcp_servers.caveman]` tables because they differ from that default; the
@@ -152,21 +157,15 @@ The mount base URL must equal the provider's own base URL. Pi compares the
 mount with the endpoint it resolved for the model and keeps the provider
 direct when the two disagree.
 
-`deployment/client-settings/caveman.yaml` is this repository's copy of that
-configuration. Bootstrap merges it into `~/.caveman/caveman.yaml` under the
-`caveman-config` policy: the `compat.minimax-cn.base_url` value is owned here,
-and every other key of the device file survives the merge.
-`tests/test_caveman.py` keeps the managed base URL in step with the pi provider
-catalog in `deployment/client-settings/pi-models-store.json`.
+`deployment/client-settings/caveman.yaml` retains the former configuration as
+a historical example. It is absent from the target catalog and merge policies.
+`tests/test_caveman.py` verifies that Linux and macOS source application creates
+no gateway configuration and preserves existing gateway files without invoking
+its binaries, including when configuration is newer than stale run state.
 
-The merge belongs to the client settings mechanism, so it also inherits that
-mechanism's rules: it refuses symlinked destinations, and a host whose home
-directories are legacy symlinks keeps its gateway configuration outside the
-merge. See [Legacy home links](LEGACY_HOME_LINKS.md).
-
-The gateway reads its configuration once at startup, so bootstrap restarts a
-running gateway when the merged configuration changed. An unchanged
-configuration is left untouched, and hosts without Caveman keep their state.
+The former merge used the client settings mechanism. Gateway configuration is
+now outside that mechanism on all hosts. The old refresh step is also absent
+from bootstrap, so source application cannot restart a gateway.
 
 Check the published mount after an apply:
 

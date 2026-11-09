@@ -10,6 +10,5 @@
   "kimi-tui": [["upgrade", "auto_install"]],
   "opencode": [["mcp", "servers", "codegraph"], ["update"]],
   "pi-settings": [],
-  "pi-models-store": [],
-  "caveman-config": [["compat", "minimax-cn", "base_url"]]
+  "pi-models-store": []
 }

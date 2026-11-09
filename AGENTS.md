@@ -200,13 +200,10 @@ explains every changed pair.
   bytes through `deployment/skill-layouts.tsv`; initialization remains explicit.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,
   ownership, or preservation. Index creation stays an explicit project action.
-- **Caveman provider mounts are repository-owned**: `deployment/client-settings/
-  caveman.yaml` owns `compat.<provider>.base_url` in `~/.caveman/caveman.yaml`;
-  a mount base URL must equal the provider's own base URL or the agent falls
-  back to a pass-through. Bootstrap restarts a running gateway only when the
-  merged configuration changed, and starts it without the managed proxy on
-  macOS, where no Mihomo is provisioned. Read `docs/CAVEMAN.md` before changing
-  mounts, the gateway lifecycle, or that file's ownership.
+- **Caveman uses standalone skills**: bootstrap leaves gateway configuration,
+  runtime state, and old merge baselines device-owned. Existing integrations
+  retire through the focused migration in `docs/CAVEMAN.md`; read it before
+  changing that migration or gateway ownership.
 
 ## CLI tools
 

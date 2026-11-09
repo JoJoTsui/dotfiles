@@ -1,4 +1,4 @@
-# Caveman gateway configuration managed by the dotfiles deployment.
+# Historical Caveman gateway configuration example; not deployed or merged.
 #
 # `compat` declares named mounts for coding-agent providers the gateway does
 # not ship in its built-in catalog. The gateway serves a mount under
@@ -11,7 +11,7 @@
 # provider direct when the two disagree, which it reports as
 # "Caveman: pass-through for <provider>/<model>".
 #
-# tests/test_caveman.py keeps this value in step with the pi provider catalog.
+# Provider URLs in this historical example may drift from the current catalog.
 compat:
   minimax-cn:
     base_url: https://api.minimaxi.com/anthropic

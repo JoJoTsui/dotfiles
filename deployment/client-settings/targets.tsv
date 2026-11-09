@@ -12,4 +12,3 @@ json|mcp-codegraph.json|.qoder/settings.json|codegraph-mcp
 jsonc|opencode.jsonc.tmpl|.config/opencode/opencode.jsonc|opencode
 json|pi-settings.json.tmpl|.pi/agent/settings.json|pi-settings
 json|pi-models-store.json|.pi/agent/models-store.json|pi-models-store
-yaml|caveman.yaml|.caveman/caveman.yaml|caveman-config

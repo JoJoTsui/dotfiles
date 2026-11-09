@@ -1,4 +1,4 @@
-# Publish the managed Caveman gateway configuration.
+# Historical gateway lifecycle reference; bootstrap no longer sources or calls it.
 #
 # The gateway reads ~/.caveman/caveman.yaml once at startup and publishes the
 # mounts it finds in its run state, so a changed configuration needs a gateway
