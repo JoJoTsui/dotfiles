@@ -129,6 +129,12 @@ class WSLDeploymentTests(unittest.TestCase):
                         self.assertIn('EDITOR:=hx', env)
                         self.assertNotIn("WindowsDevice", env)
                         self.assertTrue((self.home / ".local/bin/nu-login").is_file())
+                        for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
+                            for resource in ("SKILL.md", "agents/openai.yaml"):
+                                copied = self.home / root / "show-me" / resource
+                                self.assertFalse(copied.is_symlink())
+                                self.assertEqual(copied.read_bytes(),
+                                                 (SOURCE / "tests/fixtures/skill-library/show-me" / resource).read_bytes())
                         for name in (".agents/skills/tdd/SKILL.md", ".claude/skills/tdd/SKILL.md",
                                      ".claude/CLAUDE.md", ".codex/AGENTS.md",
                                      ".config/atuin/config.toml", ".config/uv/uv.toml"):

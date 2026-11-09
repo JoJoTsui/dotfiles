@@ -164,6 +164,12 @@ class AgentPayloadTests(unittest.TestCase):
                                and p.relative_to(self.skills_fixture).parts[0] not in self.disabled_skills]))
         self.assertEqual((shared / "tdd/SKILL.md").read_bytes(), (claude / "tdd/SKILL.md").read_bytes())
         self.assertIn("disable-model-invocation: true", (shared / "implement-spec/SKILL.md").read_text())
+        for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
+            for resource in ("SKILL.md", "agents/openai.yaml"):
+                copied = self.home / root / "show-me" / resource
+                self.assertTrue(copied.is_file())
+                self.assertFalse(copied.is_symlink())
+                self.assertEqual(copied.read_bytes(), (self.skills_fixture / "show-me" / resource).read_bytes())
         self.assertFalse((shared / "scienceskillscommon").exists())
         self.assertFalse((shared / "clinical-trials-database").exists())
         self.assertEqual((shared / "graphify/references/query.md").read_bytes(),
@@ -335,6 +341,7 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertIn("tdd", skills)
         self.assertIn("implement-spec", skills)
         self.assertFalse(skills["implement-spec"]["autoinvoke"])
+        self.assertFalse(skills["show-me"]["autoinvoke"])
         managed = [skill for skill in data if self.skill_path_is_in_home(skill["path"])]
         self.assertEqual({skill["id"] for skill in managed}, expected)
         self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
@@ -349,6 +356,7 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertIn("<!-- DOTFILES_AGENT_START -->", text)
         self.assertIn("- tdd:", text)
         self.assertNotIn("- clinical-trials-database:", text)
+        self.assertNotIn("- show-me:", text)
         self.assertIn("are for explicit user requests", text)
 
     def test_pinned_pi_resource_loader_reads_the_full_library_and_global_instructions(self):
@@ -364,9 +372,11 @@ class AgentPayloadTests(unittest.TestCase):
                    and any(path.is_relative_to(root) for root in roots)]
         expected = self.expected_skills
         self.assertEqual((len(managed), sum(skill["disableModelInvocation"] for skill in managed)),
-                         (len(expected), 1), data.get("diagnostics"))
+                         (len(expected), 2), data.get("diagnostics"))
+        self.assertTrue(next(skill for skill in managed if skill["name"] == "show-me")["disableModelInvocation"])
         self.assertIn("<name>tdd</name>", data["prompt"])
         self.assertNotIn("<name>implement-spec</name>", data["prompt"])
+        self.assertNotIn("<name>show-me</name>", data["prompt"])
         self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
 
     def test_skill_resource_names_are_copied_verbatim_without_hook_execution(self):
@@ -400,6 +410,7 @@ class AgentPayloadTests(unittest.TestCase):
                                         env=self.diagnostic_env(), log=self.root / f"{client}.log")
                 self.assertIn("tdd" if client == "claude" else "skill:tdd", names)
                 self.assertIn("implement-spec" if client == "claude" else "skill:implement-spec", names)
+                self.assertIn("show-me" if client == "claude" else "skill:show-me", names)
                 advertised = {name.removeprefix("skill:") for name in names}
                 self.assertTrue(expected.issubset(advertised), expected - advertised)
                 self.assertTrue(self.disabled_skills.isdisjoint(advertised),

@@ -155,6 +155,12 @@ class MacOSProfileTests(unittest.TestCase):
                     repeated = self.deploy(*arguments)
                     self.assertEqual(repeated.returncode, 0, repeated.stderr)
                     self.assertEqual(native_env.read_bytes(), before)
+                    for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
+                        for resource in ("SKILL.md", "agents/openai.yaml"):
+                            copied = self.home / root / "show-me" / resource
+                            self.assertFalse(copied.is_symlink())
+                            self.assertEqual(copied.read_bytes(),
+                                             (SOURCE / "tests/fixtures/skill-library/show-me" / resource).read_bytes())
                     for relative, content in originals.items():
                         self.assertEqual((self.home / relative).read_text(), content)
                     self.assertEqual((self.home / ".vscode-server/data/Machine/settings.json").exists(), role == "remote-compute")

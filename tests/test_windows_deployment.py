@@ -759,6 +759,12 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
             self.assertIn('## Native Windows specifics', instructions.read_text())
             self.assertEqual(retired.read_text(), 'device kimi instructions\n')
             self.assertEqual(custom_skill.read_text(), 'custom skill\n')
+            for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
+                for resource in ('SKILL.md', 'agents/openai.yaml'):
+                    copied = self.home / root / 'show-me' / resource
+                    self.assertFalse(copied.is_symlink())
+                    self.assertEqual(copied.read_bytes(),
+                                     (SOURCE / 'tests/fixtures/skill-library/show-me' / resource).read_bytes())
             self.assertEqual(auth.read_text(), '{"synthetic":"device-auth"}\n')
             self.assertEqual(history.read_bytes(), b'synthetic-existing-history')
             self.assertEqual(native_nu_history.read_text(), 'synthetic-existing-native-history\n')
