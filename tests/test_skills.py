@@ -129,6 +129,27 @@ class SkillFetchTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse((self.tmp / "escaped").exists())
 
+    def test_root_skill_layout_keeps_metadata_and_excludes_repository_tools(self):
+        repo = self.make_git_repo("root-skill-repo", ".")
+        metadata = repo / "agents/openai.yaml"
+        metadata.parent.mkdir()
+        metadata.write_text('interface:\n  display_name: "Root skill"\n')
+        (repo / "LICENSE").write_text("synthetic license\n")
+        (repo / "AGENTS.md").write_text("repository maintainer instructions\n")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "commit", "-qm", "root layout"], check=True)
+        self.write_catalog(f"demo|git|{repo}|main|.")
+        (self.catalog.parent / "skill-layouts.tsv").write_text(
+            "demo|SKILL.md|SKILL.md\ndemo|agents/openai.yaml|agents/openai.yaml\ndemo|LICENSE|LICENSE\n")
+        result = self.run_script('prepare_skill_library\nprintf "%s" "$PAYLOAD_SKILLS_DIR"')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        copied = Path(result.stdout) / "demo"
+        self.assertEqual({p.relative_to(copied).as_posix() for p in copied.rglob("*") if p.is_file()},
+                         {"SKILL.md", "agents/openai.yaml", "LICENSE"})
+        for relative in ("SKILL.md", "agents/openai.yaml", "LICENSE"):
+            self.assertEqual((copied / relative).read_bytes(), (repo / relative).read_bytes())
+
     def test_cached_library_is_reused_without_network(self):
         repo = self.make_git_repo("demo-repo")
         self.write_catalog(f"demo|git|{repo}|main|skills/demo")

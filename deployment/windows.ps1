@@ -277,6 +277,8 @@ function Import-SkillLibrary {
             if (-not $resolved) { Stop-Deployment "cannot resolve skill source: $name" }
             $archive = Join-Path $stage "$name.tar"
             $depth = ($path -split '/').Count
+            # Git archive emits no enclosing directory for a repository-root skill.
+            if ($path -eq '.') { $depth = 0 }
             & git -C $repo archive --output=$archive $resolved $path 2>$null
             if ($LASTEXITCODE -ne 0) { Stop-Deployment "cannot read skill $name from $sourceUrl" }
             $destination = Join-Path $stage $name

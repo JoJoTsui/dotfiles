@@ -302,6 +302,58 @@ Import-SkillLibrary
         self.assertEqual(Path(result.stdout), offline)
         self.assertFalse(offline_home.exists(), 'offline library unexpectedly created cache/state')
 
+    def test_git_skill_layout_supports_root_and_nested_packages(self):
+        for skill_path in ('.', 'skills/demo'):
+            with self.subTest(skill_path=skill_path):
+                home = self.root / ('root-package' if skill_path == '.' else 'nested-package')
+                repo = home / '.cache/dotfiles/skills/git/example.invalid_demo.git'
+                package = repo / skill_path
+                package.mkdir(parents=True)
+                (package / 'SKILL.md').write_text('---\nname: demo\ndescription: fixture\n---\nbody\n')
+                (package / 'agents').mkdir()
+                (package / 'agents/openai.yaml').write_text('interface:\n  display_name: "Demo"\n')
+                (package / 'LICENSE').write_text('synthetic license\n')
+                (package / 'AGENTS.md').write_text('repository instructions; do not deploy\n')
+                subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+                subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+                subprocess.run(['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@example.invalid',
+                                'commit', '-qm', 'fixture'], check=True)
+                pin = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+                temporary = home / '.cache/tmp'
+                temporary.mkdir()
+                script = self.root / 'git-skill-layout.ps1'
+                script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{ cache = (Join-Path $TargetHome '.cache'); state = (Join-Path $TargetHome '.local/state') }
+. (Join-Path $Source 'deployment/windows.ps1')
+function Read-Catalog([string]$Relative) {
+    if ($Relative -eq 'deployment/skills.lock.tsv') {
+        @{ columns = @('demo', 'git', 'https://example.invalid/demo.git', $env:DOTFILES_TEST_PIN, 'auto') }
+    } elseif ($Relative -eq 'deployment/skills.tsv') {
+        @{ columns = @('demo', 'git', 'https://example.invalid/demo.git', 'main', $env:DOTFILES_TEST_SKILL_PATH, 'auto') }
+    } elseif ($Relative -eq 'deployment/skill-layouts.tsv') {
+        @{ columns = @('demo', 'SKILL.md', 'SKILL.md') }
+        @{ columns = @('demo', 'agents/openai.yaml', 'agents/openai.yaml') }
+        @{ columns = @('demo', 'LICENSE', 'LICENSE') }
+    } else { throw 'unexpected catalog' }
+}
+Import-SkillLibrary
+[Console]::Out.Write($script:SkillLibrary)
+''')
+                environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(home),
+                                   DOTFILES_TEST_PIN=pin, DOTFILES_TEST_SKILL_PATH=skill_path,
+                                   DOTFILES_SKILLS_DIR='', DOTFILES_SKILLS_REFRESH='0', TEMP=str(temporary))
+                result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                        env=environment, capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                copied = Path(result.stdout) / 'demo'
+                self.assertEqual({p.relative_to(copied).as_posix() for p in copied.rglob('*') if p.is_file()},
+                                 {'SKILL.md', 'agents/openai.yaml', 'LICENSE'})
+                for relative in ('SKILL.md', 'agents/openai.yaml', 'LICENSE'):
+                    self.assertEqual((copied / relative).read_bytes(), (package / relative).read_bytes())
+
     def qoder_fixture(self, reported_version=None, exit_code=0):
         version = native_agent_pins()['qoder']['version']
         if reported_version is None:
