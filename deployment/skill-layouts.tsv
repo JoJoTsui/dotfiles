@@ -1,3 +1,8 @@
 # name|source relative to catalog path|discovery path (upstream bytes unchanged)
 graphify|skill-agents.md|SKILL.md
 graphify|skills/agents/references|references
+humanizer|SKILL.md|SKILL.md
+humanizer|agents/openai.yaml|agents/openai.yaml
+humanizer|LICENSE|LICENSE
+humanizer-zh|SKILL.md|SKILL.md
+humanizer-zh|LICENSE|LICENSE

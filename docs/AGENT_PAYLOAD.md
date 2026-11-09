@@ -67,6 +67,24 @@ same paths. Client discovery and explicit-only behavior are covered by the
 shared diagnostics where available; MiniMax's native discovery remains
 unverified, as recorded in the client table.
 
+`humanizer` (English prose) and `humanizer-zh` (Chinese prose) use the same
+default deployment on all four platforms and all seven coding agents. Both
+publish their skill at the repository root. Their layout rows copy only
+`SKILL.md`, the upstream license, and Humanizer's `agents/openai.yaml`, keeping
+the upstream bytes unchanged. Repository instructions, plugin manifests,
+maintenance scripts, and test materials are excluded from discovery.
+Windows extracts root skill archives without stripping a directory level.
+
+Ask to use `humanizer` or `humanizer-zh` on the text or file to edit. Unlike
+`show-me`, neither upstream disables implicit invocation: agents may select
+them for relevant prose-editing requests. The `humanizer-zh` `allowed-tools`
+names are interpreted by each client's native skill loader or the shared
+client-adapter guidance; no Claude-only tool is required to edit text. They
+provide editorial guidance, with no additional runtime dependency or account
+setup. Their editing rules require preserving facts and protected file
+content; neither skill establishes authorship or guarantees an AI-detector
+outcome.
+
 `deployment/disabled-skills.tsv` excludes the complete Google DeepMind group:
 36 catalog skills and the installed `scienceskillscommon` helper. They cannot
 be selected from the active catalog, even by name. Deployment moves installed

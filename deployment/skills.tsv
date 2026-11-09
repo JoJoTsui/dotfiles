@@ -31,6 +31,8 @@ grill-me|git|https://github.com/mattpocock/skills|main|skills/productivity/grill
 grill-with-docs|git|https://github.com/mattpocock/skills|main|skills/engineering/grill-with-docs|auto
 grilling|git|https://github.com/mattpocock/skills|main|skills/productivity/grilling|auto
 handoff|git|https://github.com/mattpocock/skills|main|skills/productivity/handoff|auto
+humanizer|git|https://github.com/blader/humanizer|main|.|auto
+humanizer-zh|git|https://github.com/op7418/Humanizer-zh|main|.|auto
 implement|git|https://github.com/mattpocock/skills|main|skills/engineering/implement|auto
 implement-spec|git|https://github.com/mattpocock/skills|main|skills/engineering/implement-spec|auto
 improve-codebase-architecture|git|https://github.com/mattpocock/skills|main|skills/engineering/improve-codebase-architecture|auto
