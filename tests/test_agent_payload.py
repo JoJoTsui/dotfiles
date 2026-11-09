@@ -34,6 +34,14 @@ class AgentPayloadTests(unittest.TestCase):
         if not self.chezmoi:
             self.skipTest("actual payload apply requires chezmoi")
         self.skills_fixture = write_skill_library(self.root / "skills-fixture")
+        self.disabled_skills = {
+            line.split("|")[0]
+            for line in (SOURCE / "deployment/disabled-skills.tsv").read_text().splitlines()
+            if line and not line.startswith("#")
+        }
+        self.expected_skills = {
+            path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")
+        } - self.disabled_skills
         self.env = {"HOME": str(self.root / "original"), "PATH": "/usr/bin:/bin",
                     "DOTFILES_CHEZMOI_BIN": self.chezmoi,
                     "DOTFILES_SKILLS_DIR": str(self.skills_fixture)}
@@ -150,13 +158,10 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         shared = self.home / ".agents/skills"
         claude = self.home / ".claude/skills"
-        disabled = {line.split('|')[0] for line in (SOURCE / "deployment/disabled-skills.tsv").read_text().splitlines()
-                    if line and not line.startswith('#')}
-        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")} - disabled
-        self.assertEqual({path.parent.name for path in shared.glob("*/SKILL.md")}, expected)
+        self.assertEqual({path.parent.name for path in shared.glob("*/SKILL.md")}, self.expected_skills)
         self.assertEqual(len([p for p in shared.rglob("*") if p.is_file()]),
                           len([p for p in self.skills_fixture.rglob("*") if p.is_file()
-                               and p.relative_to(self.skills_fixture).parts[0] not in disabled]))
+                               and p.relative_to(self.skills_fixture).parts[0] not in self.disabled_skills]))
         self.assertEqual((shared / "tdd/SKILL.md").read_bytes(), (claude / "tdd/SKILL.md").read_bytes())
         self.assertIn("disable-model-invocation: true", (shared / "implement-spec/SKILL.md").read_text())
         self.assertFalse((shared / "scienceskillscommon").exists())
@@ -322,7 +327,7 @@ class AgentPayloadTests(unittest.TestCase):
             self.skipTest("requires the pinned OpenCode CLI")
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stderr)
-        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
+        expected = self.expected_skills
         data = opencode_skills(opencode, home=self.home, cwd=self.home,
                                env=dict(self.diagnostic_env(), OPENCODE_TEST_HOME=str(self.home)),
                                log=self.root / "opencode.log", expected=expected)
@@ -343,7 +348,7 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertIn("~/.agents/RTK.md", text)
         self.assertIn("<!-- DOTFILES_AGENT_START -->", text)
         self.assertIn("- tdd:", text)
-        self.assertIn("- clinical-trials-database:", text)
+        self.assertNotIn("- clinical-trials-database:", text)
         self.assertIn("are for explicit user requests", text)
 
     def test_pinned_pi_resource_loader_reads_the_full_library_and_global_instructions(self):
@@ -357,7 +362,7 @@ class AgentPayloadTests(unittest.TestCase):
         managed = [skill for skill in data["skills"]
                    if (path := self.local_skill_path(skill["filePath"])) is not None
                    and any(path.is_relative_to(root) for root in roots)]
-        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
+        expected = self.expected_skills
         self.assertEqual((len(managed), sum(skill["disableModelInvocation"] for skill in managed)),
                          (len(expected), 1), data.get("diagnostics"))
         self.assertIn("<name>tdd</name>", data["prompt"])
@@ -388,7 +393,7 @@ class AgentPayloadTests(unittest.TestCase):
             if not os.environ.get("DOTFILES_TEST_" + client.upper()):
                 self.skipTest("requires both pinned Claude and Kimi CLIs")
         self.assertEqual(self.deploy().returncode, 0)
-        expected = {path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")}
+        expected = self.expected_skills
         for client in ("claude", "kimi"):
             with self.subTest(client=client):
                 names = command_catalog(client, os.environ["DOTFILES_TEST_" + client.upper()], cwd=self.home,
@@ -397,6 +402,8 @@ class AgentPayloadTests(unittest.TestCase):
                 self.assertIn("implement-spec" if client == "claude" else "skill:implement-spec", names)
                 advertised = {name.removeprefix("skill:") for name in names}
                 self.assertTrue(expected.issubset(advertised), expected - advertised)
+                self.assertTrue(self.disabled_skills.isdisjoint(advertised),
+                                self.disabled_skills & advertised)
 
 
 if __name__ == "__main__":

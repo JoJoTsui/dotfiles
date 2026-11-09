@@ -92,6 +92,17 @@ no client connections remained. The cached CLI's `stop` command succeeded;
 `lsof` confirmed no listeners or client connections on port 8787, and the
 installed `--codex` health check passed with the gateway stopped.
 
+Corrective native deployment verification subsequently passed on this Apple
+silicon Mac: both full installations, preservation, ordinary discovery, pinned
+commands, and 44 required behavior tests completed with zero skips. The final
+run was cache-assisted; the first empty-cache attempt installed and reapplied
+successfully but exposed stale verification expectations. The
+[verification record](verification/macos.md#caveman-retirement-corrective-verification)
+retains both failed attempts, the final report, and the exact tested source.
+This supplies the missing current verification; it does not change the fact
+that the original live repair preceded its required gate. No real-home
+deployment was repeated during the corrective verification.
+
 ## Historical gateway reference
 
 The remaining gateway setup, ownership, and diagnostics describe the retired

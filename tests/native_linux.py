@@ -29,7 +29,7 @@ from pins import common_pin, manager_pin
 SOURCE = Path(__file__).resolve().parents[1]
 REQUIRED_SUITES = (
     "test_shell_behavior.py", "test_agent_payload.py", "test_codegraph.py",
-    "test_history_behavior.py", "test_portable_history_import.py",
+    "test_history_behavior.py", "test_local_history_behavior.py", "test_portable_history_import.py",
 )
 DEFAULT_AGENTS = {"kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder"}
 LOG_LIMIT = 2 * 1024 * 1024

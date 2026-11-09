@@ -1,0 +1,113 @@
+{
+  "platform": "macos",
+  "arch": "aarch64",
+  "actual_arch": "aarch64",
+  "role": "workstation",
+  "native_execution": true,
+  "status": "passed",
+  "runtime": "macOS-15.8.1-arm64-arm-64bit-Mach-O",
+  "image_version": "unknown",
+  "commit": "751d354fe520e88ab2e7707e1af8386f36e80ac3",
+  "checks": [
+    "native runtime and architecture",
+    "public package cache seed",
+    "profile detection",
+    "default installation 1",
+    "default installation 2",
+    "pinned commands and pending history",
+    "ordinary native configuration discovery",
+    "native shell, instruction, CodeGraph and encrypted-history behavior"
+  ],
+  "installation_timeout_seconds": 900,
+  "installation_cache": "cache-assisted",
+  "bundles": [],
+  "working_tree_dirty": true,
+  "source_sha256": "539a032dba02614368cd7907aef0f97299718d05f12cc44e6235460908319078",
+  "os_version": "15.8.1",
+  "package_cache_seed": {
+    "source": "/private/tmp/dotfiles-native-macos-z8j35rv3/device with spaces/.cache",
+    "paths": [
+      "pixi/pkgs",
+      "pixi/repodata",
+      "bun/install",
+      "dotfiles/skills",
+      "dotfiles/nu-scripts"
+    ],
+    "regular_files": 37711,
+    "symlinks": 1962,
+    "bytes": 3471649015
+  },
+  "versions": {
+    "atuin": "atuin 18.24.1 (NO_GIT)",
+    "bat": "bat 0.26.1",
+    "bun": "1.4.2",
+    "bunx": "1.4.2",
+    "delta": "delta 0.20.1",
+    "direnv": "2.38.2",
+    "eza": "eza eza - A modern, maintained replacement for ls",
+    "fd": "fd 10.5.0",
+    "fzf": "0.74 (conda-forge)",
+    "gh": "gh version 2.103.3",
+    "git": "git version 2.56.0",
+    "git-lfs": "git-lfs/3.8.1 (GitHub; darwin arm64; go 1.27.3)",
+    "hx": "helix 25.07.1 (a05c151b)",
+    "jq": "jq-1.8.2",
+    "less": "less 704 (PCRE2 regular expressions)",
+    "micromamba": "2.10.0",
+    "node": "v26.12.1",
+    "npm": "11.20.0",
+    "npx": "11.20.0",
+    "nu": "0.116.1",
+    "pip": "pip 26.2.2 from /private/tmp/dotfiles-native-macos-3qm33knk/device with spaces/.pixi/envs/python/lib/python3.15/site-packages/pip (python 3.15)",
+    "pip3": "pip 26.2.2 from /private/tmp/dotfiles-native-macos-3qm33knk/device with spaces/.pixi/envs/python/lib/python3.15/site-packages/pip (python 3.15)",
+    "pixi": "pixi 0.83.0",
+    "python": "Python 3.15.2",
+    "python3": "Python 3.15.2",
+    "rg": "ripgrep 15.2.0",
+    "rtk": "rtk 1.1.0",
+    "ruff": "ruff 0.17.3",
+    "rustup": "rustup 1.29.2 (d8c92c676 2026-10-21)",
+    "starship": "starship 1.27.0",
+    "tspin": "tspin 7.0.0",
+    "ty": "ty 0.0.93",
+    "uv": "uv 0.13.6 (aarch64-apple-darwin)",
+    "uvx": "uvx 0.13.6 (aarch64-apple-darwin)",
+    "vivid": "vivid 0.11.1",
+    "wt": "wt v0.80.0",
+    "zoxide": "zoxide 0.10.0",
+    "zsh": "zsh 5.9.2 (aarch64-apple-darwin20.0.0)",
+    "kimi": "2.4.1",
+    "pi": "1.5.0",
+    "opencode": "opencode v2.2.5",
+    "opencode2": "opencode v2.2.5",
+    "claude": "2.1.311 (Claude Code)",
+    "codex": "codex-cli 0.166.0",
+    "mcode": "0.7.0",
+    "codegraph": "1.6.2",
+    "qoder": "1.1.82",
+    "qodercli": "1.1.82"
+  },
+  "behavior_suites": [
+    {
+      "suite": "test_shell_behavior.py",
+      "result": "Ran 13 tests in 45.479s",
+      "skips": 0
+    },
+    {
+      "suite": "test_agent_payload.py",
+      "result": "Ran 13 tests in 33.436s",
+      "skips": 0
+    },
+    {
+      "suite": "test_codegraph.py",
+      "result": "Ran 9 tests in 28.009s",
+      "skips": 0
+    },
+    {
+      "suite": "test_history_behavior.py",
+      "result": "Ran 9 tests in 27.106s",
+      "skips": 0
+    }
+  ],
+  "elapsed_seconds": 363.517
+}

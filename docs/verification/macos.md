@@ -57,3 +57,50 @@ The final public-boundary gate passed all 14 checks in 25.942 seconds, including
 both legacy copy-mode/idempotent applies, the complete profile planning matrix,
 failure boundaries, and actual exclusion of the newly committed workflow from
 macOS source application.
+
+## Caveman retirement corrective verification
+
+The 2026-11-09 Caveman review found that the live Mac repair had not run the
+required native deployment gate. The corrective run used macOS 15.8.1,
+Apple silicon (`aarch64`), the workstation role, no optional bundles, and
+private synthetic homes containing spaces. No real-home apply, history import,
+account activation, or model request was performed. The original ordering
+omission remains part of the record; these results establish current coverage.
+
+| Attempt | Cache | Result | Elapsed |
+| --- | --- | --- | --- |
+| [Initial](caveman-macos-2026-11-09-empty-cache.json) | empty | Both installations, preservation, pins, and discovery passed; agent discovery tests still expected a disabled skill | 829.226 s |
+| [Recheck](caveman-macos-2026-11-09-recheck.json) | public packages only | Reached history; a Linux-only adapter test ran on macOS and the picker fixture raced background history completion | 357.540 s |
+| [Final](caveman-macos-2026-11-09-final.json) | public packages only | Full native gate passed, 44 required behavior tests, zero skips | 363.517 s |
+
+Each installation had a 900-second bound. The cache-assisted runs installed
+into fresh homes and seeded only the verifier's allowlisted public caches,
+without installed environments, launchers, or credentials. They do not claim
+an empty-cache full-gate pass. Both failed reports are retained; their private
+synthetic fixtures were removed after the successful run.
+
+The final gate tested commit `751d354fe520e88ab2e7707e1af8386f36e80ac3` with
+only the following uncommitted verification changes. Its working-source SHA-256
+was `539a032dba02614368cd7907aef0f97299718d05f12cc44e6235460908319078`.
+The evidence reports and this documentation were added after that run.
+
+| Tested file | SHA-256 |
+| --- | --- |
+| `tests/native_linux.py` | `f1cc9bf402a53089d5cfd3d4d516dcf8d0585f8597bf60e4f376e92e4f6e5238` |
+| `tests/test_agent_payload.py` | `6fe2b440174977f31f00c4cfebab0124dcb59d29ea7bc0ec477780729f58fc3d` |
+| `tests/test_history_behavior.py` | `164fea000d08997188ca8a08ff663a6d24a25dc32eeb776e5643074fca04066d` |
+| `tests/test_local_history_behavior.py` | `a653748e949f72af5b9963c6a759b1b2fae0b806e01617ed5ac324b8c970516a` |
+
+Discovery expectations now derive from the existing disabled-skills policy
+and verify that excluded skills remain absent. The Linux-only legacy storage
+integration moved to `test_local_history_behavior.py`, required by the native
+Linux gate; it is outside the Mac gate's applicable suite. The picker fixture
+waits until its command is searchable before pressing Up/Ctrl-R, retaining the
+original four-second UI deadline. Five repeated native picker checks passed.
+The Linux integration itself was not executed on this Mac; 21 Linux-verifier
+unit checks and five Mac-verifier unit checks passed.
+
+The final report records 13 shell, 13 agent-payload, nine CodeGraph, and nine
+shared-history tests, all passing without skips. These results cover the
+Apple silicon workstation cell only; Intel and remote-compute native gates
+were not rerun for this repair.
