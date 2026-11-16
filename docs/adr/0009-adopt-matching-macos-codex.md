@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: superseded
+superseded_by: 0011-agent-provider-chain.md
 ---
 
 # Adopt an exact matching Codex on macOS
@@ -15,3 +16,7 @@ This exception avoids a duplicate Codex installation on an existing Mac while
 preserving the pinned baseline. Other agents retain their declared installation
 ownership. Fresh-install verification still exercises frozen Codex installation;
 an existing-device rehearsal separately verifies adoption and preservation.
+
+Superseded by [ADR 0011](0011-agent-provider-chain.md): the exact-match
+exception became the first version floor, and the provider chain now covers
+every agent instead of one client.

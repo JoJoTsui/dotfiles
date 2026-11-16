@@ -41,10 +41,11 @@ function Get-AgentCatalog {
         $fields = $line.Split('|')
         $rows += [pscustomobject]@{
             record = $line
-            agent = $fields[0]; provider = $fields[1]; package = $fields[2]; version = $fields[3]
-            policy = $fields[4]; commands = $fields[5]; platforms = $fields[6]; order = [int]$fields[7]
-            selection = $fields[8]; herdr = $fields[9]; minimumNode = $fields[10]; trusted = $fields[11]
-            lock = $fields[12]; diagnostic = $fields[13]
+            agent = $fields[0]; provider = $fields[1]; package = $fields[2]; packageKind = $fields[3]
+            version = $fields[4]; policy = $fields[5]; commands = $fields[6]; platforms = $fields[7]
+            order = [int]$fields[8]; selection = $fields[9]; herdr = $fields[10]
+            minimumNode = $fields[11]; trusted = $fields[12]
+            lock = $fields[13]; diagnostic = $fields[14]
         }
     }
     return $rows
@@ -102,14 +103,35 @@ function Test-AgentCatalog {
         $seen[$label] = $true
         if ($row.provider -eq 'bun') {
             if (-not $row.package) { Stop-Deployment "invalid agent provider catalog record (missing package): $label" }
+            if ($row.packageKind -ne '-') {
+                Stop-Deployment "invalid agent provider catalog record (a Bun record has no package kind): $label"
+            }
+            if ($row.policy -ne 'exact') {
+                Stop-Deployment "invalid agent provider catalog record (a deployment-owned provider keeps an exact pin): $label"
+            }
             if (-not [IO.File]::Exists((Join-Path $Source $row.lock))) {
                 Stop-Deployment "missing supported Bun lock for $($row.agent): $($row.lock)"
             }
         }
         if ($row.provider -eq 'native') {
             if (-not $row.package) { Stop-Deployment "invalid agent provider catalog record (missing native release): $label" }
+            if ($row.packageKind -ne '-') {
+                Stop-Deployment "invalid agent provider catalog record (a native record has no package kind): $label"
+            }
+            if ($row.policy -ne 'exact') {
+                Stop-Deployment "invalid agent provider catalog record (a deployment-owned provider keeps an exact pin): $label"
+            }
             if (-not $row.lock.StartsWith('https://')) {
                 Stop-Deployment "invalid agent provider catalog record (native release manifest must use HTTPS): $label"
+            }
+        }
+        if ($row.provider -eq 'homebrew') {
+            if (-not $row.package) { Stop-Deployment "invalid agent provider catalog record (missing Homebrew package): $label" }
+            if ($row.packageKind -notin @('formula', 'cask')) {
+                Stop-Deployment "invalid agent provider catalog record (unknown Homebrew package kind '$($row.packageKind)'): $label"
+            }
+            if ($row.policy -ne 'floor') {
+                Stop-Deployment "invalid agent provider catalog record (an installer-owned provider carries a floor): $label"
             }
         }
     }

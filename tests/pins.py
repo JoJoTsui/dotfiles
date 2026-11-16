@@ -25,7 +25,7 @@ def agent_pins():
             if fields[1] != "bun":
                 continue
             name, package, version, commands, minimum_node, trusted = (
-                fields[0], fields[2], fields[3], fields[5], fields[10], fields[11])
+                fields[0], fields[2], fields[4], fields[6], fields[11], fields[12])
             result[name] = {"package": package, "version": version, "commands": commands,
                             "minimumNode": minimum_node, "trusted": trusted}
     return result
@@ -39,7 +39,7 @@ def native_agent_pins():
             if fields[1] != "native":
                 continue
             name, version, commands, platforms, manifest = (
-                fields[0], fields[3], fields[5], fields[6], fields[12])
+                fields[0], fields[4], fields[6], fields[7], fields[13])
             result[name] = {"version": version, "commands": commands,
                             "platforms": platforms, "manifest": manifest}
     return result

@@ -13,7 +13,7 @@ AGENT_ROW=()
 # native Windows adapter reads the same records.
 AGENT_CATALOG_PATH="deployment/agents/providers.tsv"
 AGENT_HERDR_KINDS_PATH="deployment/agents/herdr-kinds.tsv"
-AGENT_CATALOG_FIELDS=14
+AGENT_CATALOG_FIELDS=15
 
 # Catalog records are read once so every later lookup sees the same rows.
 agent_catalog_load() {
@@ -62,19 +62,26 @@ agent_row_field_count() {
 }
 
 # The records of one agent that can serve the deployment platform, in the
-# provider chain order the catalog declares.
+# provider chain order the catalog declares. A device-owned agent version
+# forces a deployment-owned install: an installer-owned provider cannot
+# promise an exact version.
 agent_viable_rows() {
-    local name=$1 row rows=() index other left right swap
+    local name=$1 row rows=() index other left right swap override
+    override=$(override_agent_version "$name")
     for row in "${DEPLOY_AGENT_ROWS[@]}"; do
         agent_row_split "$row"
         [ "${AGENT_ROW[0]}" = "$name" ] || continue
-        agent_platform_matches "${AGENT_ROW[6]}" || continue
+        agent_platform_matches "${AGENT_ROW[7]}" || continue
+        case "${AGENT_ROW[1]}" in
+            homebrew)
+                if [ -n "$override" ]; then continue; fi ;;
+        esac
         rows+=("$row")
     done
     for (( index=0; index<${#rows[@]}; index++ )); do
         for (( other=index+1; other<${#rows[@]}; other++ )); do
-            agent_row_split "${rows[index]}"; left=${AGENT_ROW[7]}
-            agent_row_split "${rows[other]}"; right=${AGENT_ROW[7]}
+            agent_row_split "${rows[index]}"; left=${AGENT_ROW[8]}
+            agent_row_split "${rows[other]}"; right=${AGENT_ROW[8]}
             if [ "$right" -lt "$left" ]; then
                 swap=${rows[index]}
                 rows[index]=${rows[other]}
@@ -118,7 +125,7 @@ agent_owned_selection() {
     for row in "${DEPLOY_AGENT_ROWS[@]}"; do
         agent_row_split "$row"
         [ "${AGENT_ROW[0]}" = "$name" ] || continue
-        printf '%s' "${AGENT_ROW[8]}"
+        printf '%s' "${AGENT_ROW[9]}"
         return 0
     done
     return 1
@@ -164,7 +171,7 @@ agent_platform_matches() {
 # An invalid catalog record stops the deployment before it creates any state
 # or file, and the message names the offending record.
 validate_agent_catalog() {
-    local row fields name provider package version policy commands platforms order selection
+    local row fields name provider package package_kind version policy commands platforms order selection
     local herdr minimum trusted lock diagnostic platform kind kinds='' seen=''
     local agent herdr_mode selection_mode orders count owned
     for kind in ${DEPLOY_HERDR_KINDS[@]+"${DEPLOY_HERDR_KINDS[@]}"}; do
@@ -176,10 +183,10 @@ validate_agent_catalog() {
             fail "invalid agent provider catalog record (expected $AGENT_CATALOG_FIELDS fields, found $fields): $row"
         agent_row_split "$row"
         name=${AGENT_ROW[0]}; provider=${AGENT_ROW[1]}; package=${AGENT_ROW[2]}
-        version=${AGENT_ROW[3]}; policy=${AGENT_ROW[4]}; commands=${AGENT_ROW[5]}
-        platforms=${AGENT_ROW[6]}; order=${AGENT_ROW[7]}; selection=${AGENT_ROW[8]}
-        herdr=${AGENT_ROW[9]}; minimum=${AGENT_ROW[10]}; trusted=${AGENT_ROW[11]}
-        lock=${AGENT_ROW[12]}; diagnostic=${AGENT_ROW[13]}
+        package_kind=${AGENT_ROW[3]}; version=${AGENT_ROW[4]}; policy=${AGENT_ROW[5]}
+        commands=${AGENT_ROW[6]}; platforms=${AGENT_ROW[7]}; order=${AGENT_ROW[8]}
+        selection=${AGENT_ROW[9]}; herdr=${AGENT_ROW[10]}; minimum=${AGENT_ROW[11]}
+        trusted=${AGENT_ROW[12]}; lock=${AGENT_ROW[13]}; diagnostic=${AGENT_ROW[14]}
         case "$name" in
             ''|*[!A-Za-z0-9._-]*) fail "invalid agent provider catalog record (agent name): $row" ;;
         esac
@@ -229,6 +236,10 @@ validate_agent_catalog() {
         case "$provider" in
             bun)
                 [ -n "$package" ] || fail "invalid agent provider catalog record (missing package): $row"
+                [ "$package_kind" = '-' ] ||
+                    fail "invalid agent provider catalog record (a Bun record has no package kind): $row"
+                [ "$policy" = exact ] ||
+                    fail "invalid agent provider catalog record (a deployment-owned provider keeps an exact pin): $row"
                 [ -f "$DEPLOY_SOURCE/$lock" ] || fail "missing supported Bun lock for $name: $lock"
                 case "$minimum" in
                     ''|*[!0-9.]*) fail "invalid agent provider catalog record (minimum Node): $row" ;;
@@ -238,6 +249,10 @@ validate_agent_catalog() {
                 ;;
             native)
                 [ -n "$package" ] || fail "invalid agent provider catalog record (missing native release): $row"
+                [ "$package_kind" = '-' ] ||
+                    fail "invalid agent provider catalog record (a native record has no package kind): $row"
+                [ "$policy" = exact ] ||
+                    fail "invalid agent provider catalog record (a deployment-owned provider keeps an exact pin): $row"
                 case "$lock" in
                     https://*) ;;
                     *) fail "invalid agent provider catalog record (native release manifest must use HTTPS): $row" ;;
@@ -248,10 +263,13 @@ validate_agent_catalog() {
                 esac
                 ;;
             homebrew)
-                case "$diagnostic" in
-                    *'{version}'*) ;;
-                    *) fail "invalid agent provider catalog record (adopted diagnostic must report {version}): $row" ;;
+                [ -n "$package" ] || fail "invalid agent provider catalog record (missing Homebrew package): $row"
+                case "$package_kind" in
+                    formula|cask) ;;
+                    *) fail "invalid agent provider catalog record (unknown Homebrew package kind '$package_kind'): $row" ;;
                 esac
+                [ "$policy" = floor ] ||
+                    fail "invalid agent provider catalog record (an installer-owned provider carries a floor): $row"
                 ;;
         esac
     done
@@ -264,21 +282,21 @@ validate_agent_catalog() {
             agent_row_split "$row"
             [ "${AGENT_ROW[0]}" = "$name" ] || continue
             if [ -z "$herdr_mode" ]; then
-                herdr_mode=${AGENT_ROW[9]}; selection_mode=${AGENT_ROW[8]}
+                herdr_mode=${AGENT_ROW[10]}; selection_mode=${AGENT_ROW[9]}
             fi
             case "${AGENT_ROW[1]}" in
                 bun|native) owned=$((owned + 1)) ;;
             esac
-            [ "${AGENT_ROW[9]}" = "$herdr_mode" ] ||
+            [ "${AGENT_ROW[10]}" = "$herdr_mode" ] ||
                 fail "agent provider catalog records disagree on the Herdr kind of $name: $row"
-            [ "${AGENT_ROW[8]}" = "$selection_mode" ] ||
+            [ "${AGENT_ROW[9]}" = "$selection_mode" ] ||
                 fail "agent provider catalog records disagree on the selection of $name: $row"
-            agent_platform_matches "${AGENT_ROW[6]}" || continue
+            agent_platform_matches "${AGENT_ROW[7]}" || continue
             count=$((count + 1))
             case "$orders" in
-                *"|${AGENT_ROW[7]},"*) fail "agent provider catalog records share the order ${AGENT_ROW[7]} of $name: $row" ;;
+                *"|${AGENT_ROW[8]},"*) fail "agent provider catalog records share the order ${AGENT_ROW[8]} of $name: $row" ;;
             esac
-            orders="$orders|${AGENT_ROW[7]},"
+            orders="$orders|${AGENT_ROW[8]},"
         done
         [ "$count" -gt 0 ] || fail "agent $name has no provider that can serve $DEPLOY_PLATFORM"
         [ "$owned" -eq 1 ] || fail "agent $name must declare exactly one deployment-owned provider"
@@ -321,7 +339,7 @@ resolve_agent_selection() {
         row=$(agent_resolved_row "$name")
         [ -n "$row" ] || continue
         agent_row_split "$row"
-        IFS=, read -r -a requested_agents <<< "${AGENT_ROW[5]}"
+        IFS=, read -r -a requested_agents <<< "${AGENT_ROW[6]}"
         DEPLOY_TOOLS+=("${requested_agents[@]}")
     done
 }
@@ -336,10 +354,10 @@ print_agent_packages() {
         [ -n "$resolved" ] || continue
         agent_row_split "$resolved"
         provider=${AGENT_ROW[1]}
-        policy=${AGENT_ROW[4]}
-        commands=${AGENT_ROW[5]}
-        herdr=${AGENT_ROW[9]}
-        version=$(agent_effective_version "$name" "${AGENT_ROW[3]}")
+        policy=${AGENT_ROW[5]}
+        commands=${AGENT_ROW[6]}
+        herdr=${AGENT_ROW[10]}
+        version=$(agent_effective_version "$name" "${AGENT_ROW[4]}")
         owned=$(agent_owned_row "$name")
         agent_row_split "$owned"
         printf '%s{"name":' "$separator"; json_string "$name"
@@ -359,12 +377,12 @@ print_agent_packages() {
             bun)
                 printf ',"package":'; json_string "${AGENT_ROW[2]}"
                 printf ',"manager":"bun"'
-                printf ',"minimumNode":'; json_string "${AGENT_ROW[10]}"
-                printf ',"lock":'; json_string "${AGENT_ROW[12]}" ;;
+                printf ',"minimumNode":'; json_string "${AGENT_ROW[11]}"
+                printf ',"lock":'; json_string "${AGENT_ROW[13]}" ;;
             native)
                 printf ',"package":null'
                 printf ',"manager":"native"'
-                printf ',"manifest":'; json_string "${AGENT_ROW[12]}" ;;
+                printf ',"manifest":'; json_string "${AGENT_ROW[13]}" ;;
         esac
         printf '}'
         separator=,
@@ -415,14 +433,19 @@ agent_shell_quote() {
 
 # The expected --version output of one provider. A catalog record that reports
 # "-" accepts a diagnostic containing the version; every other record states
-# the exact diagnostic with {version} replaced by the pinned version.
+# the diagnostic with {version} replaced by the version. A deployment-owned
+# provider must report exactly that diagnostic; an installer-owned provider
+# owns its installed version, so it accepts a diagnostic that contains it.
 agent_diagnostic_matches() {
-    local version=$1 diagnostic=$2 template=$3 expected
+    local version=$1 diagnostic=$2 template=$3 policy=${4:-exact} expected
     case "$template" in
         '-') case "$diagnostic" in *"$version"*) return 0 ;; esac; return 1 ;;
         *'{version}'*)
             expected=${template//\{version\}/$version}
-            [ "$diagnostic" = "$expected" ] ;;
+            case "$policy" in
+                floor) case "$diagnostic" in *"$expected"*) return 0 ;; esac; return 1 ;;
+                *) [ "$diagnostic" = "$expected" ] ;;
+            esac ;;
         *) return 1 ;;
     esac
 }
@@ -599,12 +622,11 @@ agent_physical_path() {
     return 1
 }
 
-# An installer-owned provider is adopted only when the device already provides
-# the command and its diagnostic exactly matches the pinned version. Search
-# beyond the prior managed launchers on PATH, and recheck the device
-# executable every run.
-agent_matching_installer_provider() {
-    local name=$1 version=$2 command=$3 template=$4
+# The device's own command for one name, outside the managed launchers, whose
+# diagnostic reports the installer's version. The installer symlink is resolved
+# so the launchers point at the executable the device provides.
+agent_installer_command() {
+    local command=$1 version=$2 template=$3
     local directory candidate diagnostic physical_home physical_bun
     local search_paths=()
     installer_native_target || return 1
@@ -624,11 +646,35 @@ agent_matching_installer_provider() {
         esac
         if LC_ALL=C head -c 160 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# Managed by dotfiles'; then continue; fi
         diagnostic=$("$candidate" --version 2>/dev/null) || continue
-        agent_diagnostic_matches "$version" "$diagnostic" "$template" || continue
+        agent_diagnostic_matches "$version" "$diagnostic" "$template" floor || continue
         printf '%s' "$candidate"
         return 0
     done
     return 1
+}
+
+# The Homebrew command of one agent record. The device must already provide
+# the package at or above the catalog floor, and the command must report the
+# version the package carries. The deployment adopts that command; it never
+# installs or upgrades a Homebrew package. A missing, below-floor, or removed
+# package leaves the record unresolved so the chain falls through.
+AGENT_HOME_BREW_COMMAND=''
+AGENT_HOME_BREW_VERSION=''
+agent_homebrew_command() {
+    local floor=$1 kind=$2 package=$3 commands=$4 template=$5
+    local brew version command candidate
+    local exposed_commands=()
+    IFS=, read -r -a exposed_commands <<< "$commands"
+    command=${exposed_commands[0]}
+    brew=$(installer_homebrew) || return 1
+    version=$(installer_tool_version "$brew" "$kind" "$package") || return 1
+    # A package revision is not part of the version the command reports.
+    version=${version%%_*}
+    installer_version_at_least "$version" "$floor" || return 1
+    candidate=$(agent_installer_command "$command" "$version" "$template") || return 1
+    AGENT_HOME_BREW_COMMAND=$candidate
+    AGENT_HOME_BREW_VERSION=$version
+    return 0
 }
 
 # The version of one dependency in a package manifest, read with the managed
@@ -728,7 +774,7 @@ agent_global_copy_warning() {
 # available to older shell PATHs.
 agent_install_launchers() {
     local name=$1 version=$2 commands=$3 entrypoint_dir=$4 entrypoint_file=$5
-    local comment=$6 node=$7 bun=$8 template=$9
+    local comment=$6 node=$7 bun=$8 template=$9 policy=${10:-exact}
     local command launcher diagnostic entrypoint exposed_commands=()
     mkdir -p "$BUN_INSTALL/bin" "$HOME/.local/bin"
     IFS=, read -r -a exposed_commands <<< "$commands"
@@ -754,8 +800,8 @@ agent_install_launchers() {
         DEPLOY_STEP="install-agents.$name.diagnostic"
         diagnostic=$("$launcher" --version)
         printf '%s\n' "$diagnostic"
-        agent_diagnostic_matches "$version" "$diagnostic" "$template" ||
-            fail "$name diagnostic did not report pinned version $version"
+        agent_diagnostic_matches "$version" "$diagnostic" "$template" "$policy" ||
+            fail "$name diagnostic did not report version $version"
     done
 }
 
@@ -789,9 +835,32 @@ install_bun_agent() {
     agent_retry env npm_config_global=false pnpm_config_global=false \
         npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
     agent_install_launchers "$name" "$version" "$commands" "$project/node_modules/.bin" '' \
-        "Bun installs the frozen project" "$node" "$bun" "-"
+        "Bun installs the frozen project" "$node" "$bun" "-" exact
     IFS=, read -r -a exposed_commands <<< "$commands"
     agent_global_copy_warning "$package" "$node" "${exposed_commands[0]}"
+}
+
+# The observed provider and version of every selected agent. The state names
+# what the device runs; the catalog stays the source of the plan. The floor is
+# the lowest version the deployment accepts, so a deployment-owned provider
+# records its exact pin there.
+AGENT_STATE_ROWS=()
+agent_state_record() {
+    local name=$1 provider=$2 version=$3 floor=$4
+    AGENT_STATE_ROWS+=("$name|$provider|$version|$floor")
+}
+
+agent_state_write() {
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/agents.lock.tsv" staged row
+    [ ! -L "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles" ] ||
+        fail 'the agent state directory is a symlink'
+    mkdir -p "$(dirname "$state")"
+    [ ! -L "$state" ] || fail 'the agent state file is a symlink'
+    staged=$(mktemp "$state.XXXXXX")
+    for row in ${AGENT_STATE_ROWS[@]+"${AGENT_STATE_ROWS[@]}"}; do
+        printf '%s\n' "$row" >> "$staged"
+    done
+    mv -f "$staged" "$state"
 }
 
 install_agents() {
@@ -800,7 +869,8 @@ install_agents() {
     if [ -z "${DOTFILES_BUN_BIN:-}" ] && [ ! -x "$bun" ]; then bun="$PIXI_HOME/bin/bun"; fi
     if [ -z "${DOTFILES_NODE_BIN:-}" ] && [ ! -x "$node" ]; then node="$PIXI_HOME/bin/node"; fi
     local bun_pin node_pin node_version name row provider commands package version catalog_version
-    local minimum template adopted installed claude_keep_plain_opus=0 exposed_commands=()
+    local minimum template installed claude_keep_plain_opus=0 package_kind=''
+    local observed=''
     DEPLOY_STEP=install-agents.runtime
     case "$bun" in /*) ;; *) fail 'Bun binary override must be absolute' ;; esac
     case "$node" in /*) ;; *) fail 'Node binary override must be absolute' ;; esac
@@ -830,35 +900,44 @@ install_agents() {
             [ -n "$row" ] || continue
             agent_row_split "$row"
             provider=${AGENT_ROW[1]}
-            commands=${AGENT_ROW[5]}
+            commands=${AGENT_ROW[6]}
             package=${AGENT_ROW[2]}
-            minimum=${AGENT_ROW[10]}
-            template=${AGENT_ROW[13]}
-            catalog_version=${AGENT_ROW[3]}
+            package_kind=${AGENT_ROW[3]}
+            minimum=${AGENT_ROW[11]}
+            template=${AGENT_ROW[14]}
+            catalog_version=${AGENT_ROW[4]}
             version=$(agent_effective_version "$name" "$catalog_version")
             case "$provider" in
                 bun)
                     install_bun_agent "$name" "$version" "$catalog_version" "$minimum" "$package" "$commands" \
                         "$bun" "$node" "$node_version"
+                    observed=$version
                     installed=1 ;;
                 native)
-                    install_native_release "$name" "$version" "$commands" "$package" "${AGENT_ROW[12]}" "$template"
+                    install_native_release "$name" "$version" "$commands" "$package" "${AGENT_ROW[13]}" "$template"
+                    observed=$version
                     installed=1 ;;
                 homebrew)
-                    IFS=, read -r -a exposed_commands <<< "$commands"
                     DEPLOY_STEP="install-agents.$name.adopt"
-                    adopted=$(agent_matching_installer_provider "$name" "$version" "${exposed_commands[0]}" "$template") || adopted=''
-                    if [ -n "$adopted" ]; then
-                        printf 'dotfiles: adopted %s %s from %s\n' "$name" "$version" "$adopted"
-                        agent_install_launchers "$name" "$version" "$commands" '' "$adopted" \
-                            "adopted installer command" "$node" "$bun" "$template"
+                    # The device's Homebrew owns the installed version. The
+                    # deployment adopts a package at or above the floor and
+                    # never installs or upgrades one.
+                    if agent_homebrew_command "$version" "$package_kind" "$package" "$commands" "$template"; then
+                        printf 'dotfiles: adopted %s %s from %s\n' "$name" "$AGENT_HOME_BREW_VERSION" "$AGENT_HOME_BREW_COMMAND"
+                        agent_install_launchers "$name" "$AGENT_HOME_BREW_VERSION" "$commands" '' "$AGENT_HOME_BREW_COMMAND" \
+                            "Homebrew provides the command" "$node" "$bun" "$template" floor
+                        observed=$AGENT_HOME_BREW_VERSION
                         installed=1
                     fi ;;
             esac
-            if [ -n "$installed" ]; then break; fi
+            if [ -n "$installed" ]; then
+                agent_state_record "$name" "$provider" "$observed" "$catalog_version"
+                break
+            fi
         done <<< "$(agent_viable_rows "$name")"
         [ -n "$installed" ] || fail "no provider could supply the agent $name"
     done
+    agent_state_write
     install_worktrunk_plugins
     # Client installers can add plugin settings in their own formatting. Finish
     # through the existing merger so the first and later applies agree.

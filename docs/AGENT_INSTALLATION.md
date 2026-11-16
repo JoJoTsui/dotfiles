@@ -85,13 +85,14 @@ state/config roots still follow the designated `--home`.
 
 The provider catalog is `deployment/agents/providers.tsv`. One record per agent
 and provider names the provider (`bun`, `native`, or `homebrew`), the package or
-release, the version, the version policy, the exposed commands, the platforms
-it serves, its place in the provider chain, whether the agent joins the named
-selection or is always installed, the Herdr integration kind, the runtime
-floor, the lifecycle trust list, the lock or release manifest, and the expected
-`--version` diagnostic. `deployment/agents/herdr-kinds.tsv` lists the Herdr
-kinds a record may name. Both bootstrap adapters read these files, so the
-catalog is the only source of agent installation data.
+release, the package kind (the Homebrew formula or cask), the version, the
+version policy, the exposed commands, the platforms it serves, its place in the
+provider chain, whether the agent joins the named selection or is always
+installed, the Herdr integration kind, the runtime floor, the lifecycle trust
+list, the lock or release manifest, and the expected `--version` diagnostic.
+`deployment/agents/herdr-kinds.tsv` lists the Herdr kinds a record may name.
+Both bootstrap adapters read these files, so the catalog is the only source of
+agent installation data.
 
 The plan reports every selected agent with its provider, version policy,
 effective version, commands, and Herdr kind. The provider it names is the first
@@ -120,16 +121,23 @@ mechanism; a filtered monolithic manifest is not used.
 | qoder (native) | release manifest pin 1.1.82 | `qoder`, `qodercli` |
 | independent default | `@colbymchenry/codegraph` 1.6.2 | `codegraph` |
 
-On native macOS, an existing Codex is adopted only when its successful
-`codex-cli <version>` diagnostic exactly matches the catalog pin. The catalog
-declares that adoption as the macOS provider record of Codex, ahead of the
-frozen Bun project. Both regular
-managed launchers point to its physical executable, and every deployment
-rechecks it. Missing, mismatched, suffixed, or failing diagnostics use the frozen
-Bun installation. Other platforms retain Bun ownership; Pixi does not declare
-Codex. See [ADR 0009](adr/0009-adopt-matching-macos-codex.md).
-OpenCode has one selected distribution, without `opencode-ai`. Historical
-inventories remain under `deployment/inventory`. Source application and project
+On native macOS, the provider chain resolves Homebrew first and the frozen Bun
+project second. The catalog declares the Homebrew package of every agent
+Homebrew ships: `kimi-code` and `pi-coding-agent` and `opencode-v2` as
+formulas, `claude-code` and `codex` as casks. A Homebrew record carries a
+floor, not an exact pin: Homebrew owns the installed version, and the
+deployment adopts a package at or above the catalog floor. A missing,
+below-floor, or removed package falls through to the frozen Bun project, and
+the next apply repairs both managed launchers. The deployment never installs or
+upgrades a Homebrew package. See
+[ADR 0011](adr/0011-agent-provider-chain.md).
+
+Both regular managed launchers point at the selected executable, and every
+deployment rechecks it. The frozen Bun project stays on disk as the offline
+fallback, so switching providers is a reapply rather than a reinstall. Other
+platforms retain Bun ownership; Pixi does not declare Codex. OpenCode has one
+selected distribution, without `opencode-ai`. Historical inventories remain under
+`deployment/inventory`. Source application and project
 installation preserve the device's unrelated global Bun registry and tools.
 Real executable launchers under `~/.bun/bin` and `~/.local/bin` point to the
 same selected executable, preserve package-relative native resources, and prepend managed
@@ -137,9 +145,17 @@ Node/Bun paths. Both managed Qoder launchers point at the verified versioned
 native binary. Existing vendor dispatchers and older releases retain their
 device-owned state. Omitted launchers are unchanged.
 
+The deployment records the observed provider, version, and floor of every
+selected agent in `~/.local/state/dotfiles/agents.lock.tsv`, one
+`name|provider|version|floor` row per agent. `dotfiles-agents status` reports
+that provider and the effective version next to the installed state; without
+device state it reports the provider the deployment would install.
+
 A device may own a different version of a client than the catalog pins. The
 entry `agent|<name>|<exact version>` in `~/.config/dotfiles/versions.tsv`
-replaces that client's pin on this device. Its manifest and lock are generated
+replaces that client's pin on this device. An installer-owned provider cannot
+promise an exact version, so the entry forces the deployment-owned install.
+Its manifest and lock are generated
 once into `~/.local/state/dotfiles/agents/<name>` and installed frozen, so the
 client keeps the frozen-install property and the repository lock returns when
 the entry is removed. The client's `--version` diagnostic must report the

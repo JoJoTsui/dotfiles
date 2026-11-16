@@ -142,7 +142,7 @@ override_default_version() {
     case "$kind" in
         agent)
             [ -f "$DEPLOY_SOURCE/deployment/agents/providers.tsv" ] || return 0
-            while IFS=$'|\r' read -r entry provider _ version _; do
+            while IFS=$'|\r' read -r entry provider _ _ version _; do
                 case "$entry" in ''|\#*) continue ;; esac
                 # The deployment-owned record carries the catalog default.
                 case "$provider" in

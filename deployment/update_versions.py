@@ -26,7 +26,7 @@ SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
 # The per-agent provider catalog. One record per agent and provider; both
 # bootstrap adapters read the same file.
-AGENT_CATALOG_FIELDS = 14
+AGENT_CATALOG_FIELDS = 15
 AGENT_PROVIDERS = ("bun", "native", "homebrew")
 
 # A bootstrap manager's version and its per-target release digests are one
@@ -227,9 +227,10 @@ def provider_rows(root: Path) -> list[dict[str, str]]:
         if len(row) != AGENT_CATALOG_FIELDS:
             raise VersionError(
                 f"agent provider catalog record must have {AGENT_CATALOG_FIELDS} fields: {'|'.join(row)}")
-        (agent, provider, package, version, policy, commands, platforms, order,
+        (agent, provider, package, package_kind, version, policy, commands, platforms, order,
          selection, herdr, minimum_node, trusted, lock, diagnostic) = row
         result.append({"agent": agent, "provider": provider, "package": package,
+                       "packageKind": package_kind,
                        "version": version, "policy": policy, "commands": commands,
                        "platforms": platforms, "order": order, "selection": selection,
                        "herdr": herdr, "minimumNode": minimum_node, "trusted": trusted,
@@ -273,6 +274,15 @@ def check_agent_catalog(root: Path) -> dict[str, int]:
             raise VersionError(f"invalid agent provider order in {label}")
         if row["herdr"] != "-" and row["herdr"] not in kinds:
             raise VersionError(f"unknown Herdr kind '{row['herdr']}' in {label}")
+        if row["provider"] == "homebrew":
+            if not row["package"]:
+                raise VersionError(f"missing Homebrew package in {label}")
+            if row["packageKind"] not in ("formula", "cask"):
+                raise VersionError(f"unknown Homebrew package kind '{row['packageKind']}' in {label}")
+            if row["policy"] != "floor":
+                raise VersionError(f"an installer-owned provider carries a floor in {label}")
+        elif row["packageKind"] != "-":
+            raise VersionError(f"a deployment-owned provider has no package kind in {label}")
         agents.setdefault(row["agent"], []).append(row)
     for name, records in agents.items():
         owned = [item for item in records if item["provider"] in ("bun", "native")]
@@ -558,8 +568,8 @@ def _rewrite_agent_versions(path: Path, agent: str, version: str, previous: str)
             output.append(line)
             continue
         fields = line.rstrip("\r\n").split("|")
-        if fields[0] == agent and fields[4] == "exact" and fields[3] == previous:
-            fields[3] = version
+        if fields[0] == agent and fields[5] == "exact" and fields[4] == previous:
+            fields[4] = version
             ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
             line = "|".join(fields) + ending
             updated = True

@@ -142,9 +142,10 @@ class VersionUpdateTests(unittest.TestCase):
         self.assertEqual(agent_rows(self.root)[name]["version"], "99.1.0")
         self.assertEqual(check(self.root)["agents"], 7)
 
-    def test_an_agent_pin_moves_every_provider_record_that_carries_it(self):
-        # Codex states its pin twice: the macOS adoption record and the
-        # frozen Bun project. Both move, so the adoption keeps matching.
+    def test_an_agent_pin_moves_the_deployment_owned_record_and_keeps_the_floor(self):
+        # The frozen Bun project carries the agent's pin and moves with it.
+        # The macOS Homebrew record carries a floor: Homebrew owns the
+        # installed version, so the deployment keeps accepting it.
         name = "codex"
         current = common_versions(self.root)["bun"]
         fake_bun = Path(self.temporary.name) / "bun"
@@ -171,7 +172,10 @@ class VersionUpdateTests(unittest.TestCase):
         records = [line.split("|") for line in
                    (self.root / "deployment/agents/providers.tsv").read_text(encoding="utf-8").splitlines()
                    if line and not line.startswith("#")]
-        self.assertEqual({record[3] for record in records if record[0] == name}, {"99.1.0"})
+        owned = [record for record in records if record[0] == name and record[5] == "exact"]
+        floor = [record for record in records if record[0] == name and record[5] == "floor"]
+        self.assertEqual([record[4] for record in owned], ["99.1.0"])
+        self.assertEqual([record[4] for record in floor], ["0.166.0"])
         self.assertEqual(len([record for record in records if record[0] == name]), 2)
         self.assertEqual(check(self.root)["agents"], 7)
 

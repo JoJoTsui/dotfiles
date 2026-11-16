@@ -74,7 +74,16 @@ class ProviderCatalogTests(unittest.TestCase):
         self.assertNotIn("deployment/agents/native.tsv", windows)
 
     def test_plan_names_provider_version_commands_and_herdr_kind_for_every_platform(self):
-        expected = {record[0]: record for record in self.catalog_records()}
+        # macOS resolves Homebrew first; the other platforms use the
+        # deployment-owned provider alone.
+        providers = {
+            "macos": {"kimi": "homebrew", "pi": "homebrew", "opencode": "homebrew",
+                      "claude": "homebrew", "codex": "homebrew", "minimax": "bun",
+                      "codegraph": "bun", "qoder": "native"},
+            "linux": {"kimi": "bun", "pi": "bun", "opencode": "bun", "claude": "bun",
+                      "codex": "bun", "minimax": "bun", "codegraph": "bun", "qoder": "native"},
+        }
+        providers["wsl"] = providers["linux"]
         for platform in PLATFORMS:
             with self.subTest(platform=platform):
                 result = self.plan(platform)
@@ -83,15 +92,86 @@ class ProviderCatalogTests(unittest.TestCase):
                 packages = {entry["name"]: entry for entry in plan["agentPackages"]}
                 self.assertEqual(set(packages), set(plan["agents"]) | {"codegraph"})
                 for name, entry in packages.items():
-                    record = expected[name]
+                    provider = providers[platform][name]
+                    record = next(item for item in self.catalog_records()
+                                  if item[0] == name and item[1] == provider)
+                    owned = next(item for item in self.catalog_records()
+                                 if item[0] == name and item[1] in ("bun", "native"))
                     with self.subTest(agent=name):
-                        self.assertIn(entry["provider"], ("bun", "native", "homebrew"))
-                        self.assertEqual(entry["policy"], record[4])
-                        self.assertEqual(entry["commands"], record[5].split(","))
-                        self.assertEqual(entry["herdr"], None if record[9] == "-" else record[9])
-                        self.assertEqual(entry["version"], record[3])
-                        self.assertEqual(entry["manager"], "bun" if record[1] == "bun" else "native")
+                        self.assertEqual(entry["provider"], provider)
+                        self.assertEqual(entry["policy"], record[5])
+                        self.assertEqual(entry["commands"], record[6].split(","))
+                        self.assertEqual(entry["herdr"], None if record[10] == "-" else record[10])
+                        self.assertEqual(entry["version"], record[4])
+                        self.assertEqual(entry["manager"], "bun" if owned[1] == "bun" else "native")
+                        self.assertEqual(entry["package"], owned[2] if owned[1] == "bun" else None)
                 self.assertFalse(self.home.exists())
+
+    def test_the_catalog_declares_the_homebrew_package_of_every_agent_homebrew_ships(self):
+        expected = {
+            "kimi": ("formula", "kimi-code", "2.4.1"),
+            "pi": ("formula", "pi-coding-agent", "1.5.2"),
+            "opencode": ("formula", "opencode-v2", "2.2.5"),
+            "claude": ("cask", "claude-code", "2.1.325"),
+            "codex": ("cask", "codex", "0.166.0"),
+        }
+        records = [record for record in self.catalog_records() if record[1] == "homebrew"]
+        self.assertEqual({record[0] for record in records}, set(expected))
+        for record in records:
+            kind, package, floor = expected[record[0]]
+            with self.subTest(agent=record[0]):
+                self.assertEqual(record[3], kind)
+                self.assertEqual(record[2], package)
+                self.assertEqual(record[4], floor)
+                # An installer-owned provider carries a floor, not an exact pin.
+                self.assertEqual(record[5], "floor")
+                self.assertEqual(record[7], "macos")
+                self.assertEqual(record[8], "1")
+        # The clients Homebrew does not ship stay with the deployment-owned
+        # provider alone.
+        for name in ("minimax", "codegraph", "qoder"):
+            with self.subTest(agent=name):
+                self.assertNotIn(name, expected)
+
+    def test_a_homebrew_record_needs_a_package_kind_and_a_floor(self):
+        cases = {
+            "missing package kind": (
+                lambda records: [record[:3] + ["-"] + record[4:] for record in records
+                                 if record[1] == "homebrew"],
+                "unknown Homebrew package kind"),
+            "unknown package kind": (
+                lambda records: [record[:3] + ["tarball"] + record[4:] for record in records
+                                 if record[1] == "homebrew"],
+                "unknown Homebrew package kind"),
+            "exact policy": (
+                lambda records: [record[:5] + ["exact"] + record[6:] for record in records
+                                 if record[1] == "homebrew"],
+                "installer-owned provider carries a floor"),
+            "missing package": (
+                lambda records: [record[:2] + [""] + record[3:] for record in records
+                                 if record[1] == "homebrew"],
+                "missing Homebrew package"),
+        }
+        for label, (mutate, message) in cases.items():
+            with self.subTest(case=label):
+                source = self.source_copy("source-" + label.replace(" ", "-"))
+                self.write_catalog(source, mutate(self.catalog_records(source)))
+                home = self.root / ("home-" + label.replace(" ", "-"))
+                result = self.plan("macos", source=source, home=home)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(message, result.stderr)
+                self.assertFalse(home.exists())
+
+    def test_a_deployment_owned_record_carries_no_package_kind(self):
+        source = self.source_copy()
+        records = self.catalog_records(source)
+        records = [record[:3] + ["npm"] + record[4:] for record in records if record[1] == "bun"]
+        self.write_catalog(source, records)
+        home = self.root / "home-kind"
+        result = self.plan("linux", source=source, home=home)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("a Bun record has no package kind", result.stderr)
+        self.assertFalse(home.exists())
 
     def test_the_codex_provider_follows_the_platform_chain(self):
         for platform, provider in (("linux", "bun"), ("wsl", "bun"), ("macos", "homebrew")):
@@ -108,7 +188,7 @@ class ProviderCatalogTests(unittest.TestCase):
     def test_a_catalog_record_drives_the_plan_without_a_named_branch(self):
         source = self.source_copy()
         records = self.catalog_records(source)
-        records.append(["widget", "bun", "@example/widget", "1.2.3", "exact", "widget", "all", "1",
+        records.append(["widget", "bun", "@example/widget", "-", "1.2.3", "exact", "widget", "all", "1",
                         "selectable", "-", "22.0.0", "-", "deployment/agents/widget/bun.lock", "-"])
         self.write_catalog(source, records)
         lock = source / "deployment/agents/widget/bun.lock"
@@ -130,31 +210,31 @@ class ProviderCatalogTests(unittest.TestCase):
                 lambda records: records + [records[0]],
                 "duplicate agent provider catalog record", "linux"),
             "unknown provider": (
-                lambda records: records + [["widget", "brew", "-", "1.0.0", "exact", "widget", "all", "1",
+                lambda records: records + [["widget", "brew", "-", "-", "1.0.0", "exact", "widget", "all", "1",
                                             "selectable", "-", "-", "-", "-", "-"]],
                 "unknown provider", "linux"),
             "unsupported platform": (
-                lambda records: [record[:6] + ["plan9"] + record[7:] for record in records],
+                lambda records: [record[:7] + ["plan9"] + record[8:] for record in records],
                 "unsupported platform", "linux"),
             "missing lock": (
-                lambda records: [record[:12] + ["deployment/agents/gone/bun.lock"] + record[13:]
+                lambda records: [record[:13] + ["deployment/agents/gone/bun.lock"] + record[14:]
                                  for record in records if record[0] == "kimi"],
                 "missing supported Bun lock", "linux"),
             "unknown Herdr kind": (
-                lambda records: [record[:9] + ["kodex"] + record[10:] for record in records
+                lambda records: [record[:10] + ["kodex"] + record[11:] for record in records
                                  if record[0] == "codex" and record[1] == "bun"],
                 "unknown Herdr kind", "linux"),
             "no viable provider": (
-                lambda records: [record[:6] + ["windows"] + record[7:] for record in records
+                lambda records: [record[:7] + ["windows"] + record[8:] for record in records
                                  if record[0] == "qoder"],
                 "has no provider that can serve", "linux"),
             "shared provider order": (
-                lambda records: [record[:7] + ["1"] + record[8:] for record in records
+                lambda records: [record[:8] + ["1"] + record[9:] for record in records
                                  if record[0] == "codex"],
                 "share the order", "macos"),
             "wrong field count": (
                 lambda records: [record[:-1] for record in records],
-                "expected 14 fields", "linux"),
+                "expected 15 fields", "linux"),
         }
         for label, (mutate, message, platform) in cases.items():
             with self.subTest(case=label):
@@ -169,7 +249,7 @@ class ProviderCatalogTests(unittest.TestCase):
     def test_a_catalog_record_without_its_herdr_kind_is_rejected(self):
         source = self.source_copy()
         records = self.catalog_records(source)
-        records.append(["widget", "bun", "@example/widget", "1.2.3", "exact", "widget", "all", "1",
+        records.append(["widget", "bun", "@example/widget", "-", "1.2.3", "exact", "widget", "all", "1",
                         "selectable", "widgetd", "22.0.0", "-", "deployment/agents/widget/bun.lock", "-"])
         self.write_catalog(source, records)
         lock = source / "deployment/agents/widget/bun.lock"

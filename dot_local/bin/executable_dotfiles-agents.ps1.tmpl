@@ -18,7 +18,7 @@ Usage: dotfiles-agents.ps1 <command> [selection]
 Commands:
   install [selection]  Apply source and install selected agents
   update  [selection]  Resolve current pins, refresh locks, then reinstall
-  status  [selection]  Show pinned and installed versions
+  status  [selection]  Show provider, effective version, and installed state
 
 selection: all (default), none, or a comma-separated list such as
            qoder,minimax,kimi. Aliases kimi-code, claude-code, and
@@ -94,15 +94,42 @@ function Get-AgentCatalog {
         $fields = $line.Split('|')
         $agent = $fields[0]
         if (-not $records.ContainsKey($agent)) { $records[$agent] = @(); $order += $agent }
-        $records[$agent] += [pscustomobject]@{ provider = $fields[1]; version = $fields[3]; commands = $fields[5] }
+        $records[$agent] += [pscustomobject]@{ provider = $fields[1]; version = $fields[4]; commands = $fields[6] }
     }
     $rows = @()
     foreach ($agent in $order) {
         $owned = @($records[$agent] | Where-Object { $_.provider -in @('bun', 'native') })
         if ($owned.Count -ne 1) { continue }
-        $rows += [pscustomobject]@{ name = $agent; version = $owned[0].version; commands = $owned[0].commands }
+        $rows += [pscustomobject]@{ name = $agent; provider = $owned[0].provider; version = $owned[0].version; commands = $owned[0].commands }
     }
     return $rows
+}
+
+function Get-AgentState {
+    # The observed provider and version of the last deployment.
+    $stateRoot = if ($env:XDG_STATE_HOME) { $env:XDG_STATE_HOME } else { Join-Path $HOME '.local/state' }
+    $path = Join-Path $stateRoot 'dotfiles/agents.lock.tsv'
+    $state = @{}
+    if (-not [IO.File]::Exists($path)) { return $state }
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $fields = $line.Split('|')
+        if ($fields.Count -ge 3) { $state[$fields[0]] = @{ provider = $fields[1]; version = $fields[2] } }
+    }
+    return $state
+}
+
+function Get-DeviceOverride {
+    # A device-owned agent version forces a deployment-owned install.
+    param([string]$Name)
+    $path = Join-Path $HOME '.config/dotfiles/versions.tsv'
+    if (-not [IO.File]::Exists($path)) { return '' }
+    foreach ($line in [IO.File]::ReadAllLines($path)) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $fields = $line.Split('|')
+        if ($fields.Count -ge 3 -and $fields[0] -eq 'agent' -and $fields[1] -eq $Name) { return $fields[2] }
+    }
+    return ''
 }
 
 function Select-Agents {
@@ -129,16 +156,30 @@ function Select-Agents {
 function Show-Status {
     Assert-Source
     $rows = Select-Agents (Get-AgentCatalog)
-    '{0,-10} {1,-12} {2,-16} {3}' -f 'NAME', 'PIN', 'COMMAND', 'STATE'
+    $state = Get-AgentState
+    if (-not $state) { $state = @{} }
+    '{0,-10} {1,-10} {2,-12} {3,-16} {4}' -f 'NAME', 'PROVIDER', 'VERSION', 'COMMAND', 'STATE'
     foreach ($row in $rows) {
         $command = $row.commands.Split(',')[0]
-        $state = 'not installed'
+        $provider = $row.provider
+        $version = $row.version
+        $note = ''
+        $override = Get-DeviceOverride $row.name
+        if ($override) {
+            # A device-owned version forces a deployment-owned install.
+            $version = $override
+            $note = ' (device-owned version)'
+        } elseif ($state.ContainsKey($row.name)) {
+            $provider = $state[$row.name].provider
+            $version = $state[$row.name].version
+        }
+        $status = 'not installed'
         $resolved = Get-Command $command -ErrorAction SilentlyContinue
         if ($resolved) {
             $output = (& $resolved.Source --version 2>&1 | Select-Object -First 1) -join ''
-            $state = if ($output -match [regex]::Escape($row.version)) { 'installed' } else { "mismatch ($output)" }
+            $status = if ($output -match [regex]::Escape($version)) { 'installed' } else { "mismatch ($output)" }
         }
-        '{0,-10} {1,-12} {2,-16} {3}' -f $row.name, $row.version, $command, $state
+        '{0,-10} {1,-10} {2,-12} {3,-16} {4}' -f $row.name, $provider, $version, $command, ($status + $note)
     }
 }
 
