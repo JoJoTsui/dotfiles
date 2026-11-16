@@ -172,10 +172,8 @@ rules:
   - "RULE-SET,reject,REJECT"
 
   # Apple services
-  # - "RULE-SET,icloud,DIRECT"
-  # - "RULE-SET,apple,DIRECT"
-  - "RULE-SET,icloud,PROXY"
-  - "RULE-SET,apple,PROXY"
+  - "RULE-SET,icloud,DIRECT"
+  - "RULE-SET,apple,DIRECT"
 
   # Proxy rules (Google, GFW, etc.)
   - "RULE-SET,google,PROXY"
