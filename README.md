@@ -134,7 +134,8 @@ dot_vscode-server/…         # remote compute Machine settings
 system/bash.bashrc          # manual system banner payload; never auto-applied
 deployment/system/bashrc    # portable Bash defaults; installed only by --system-config
 docs/                       # CLAUDE_SETUP_T9K.md, vscode-win-settings.jsonc
-clash/                      # Clash Verge profile merge (app config, not $HOME)
+clash/                      # Clash Verge merge + rules enhancement (app config, not $HOME)
+                            # reference copies of profiles/ under Application Support
 ```
 
 Files ending `.tmpl` are rendered; everything else is applied verbatim.
