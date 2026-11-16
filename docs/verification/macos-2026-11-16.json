@@ -7,7 +7,7 @@
   "status": "passed",
   "runtime": "macOS-15.8.1-arm64-arm-64bit-Mach-O",
   "image_version": "unknown",
-  "commit": "22ee4861b23568b43c2a3f2245c1e2ab4f81575f",
+  "commit": "03ebaf546b2e93b1c98df1b4577d776f429650d7",
   "checks": [
     "native runtime and architecture",
     "profile detection",
@@ -20,8 +20,8 @@
   "installation_timeout_seconds": 2400,
   "installation_cache": "empty",
   "bundles": [],
-  "working_tree_dirty": true,
-  "source_sha256": "4546e34cf115fc2910e2c30a89336d584563215d9996bd25663599c62f6fe6e0",
+  "working_tree_dirty": false,
+  "source_sha256": "50ae365b5ae6f4626bb7e21c7554327eebb29c43e73e6dd14d4d089c42c83cf2",
   "os_version": "15.8.1",
   "versions": {
     "atuin": "atuin 18.24.1 (NO_GIT)",
@@ -44,8 +44,8 @@
     "npm": "11.20.0",
     "npx": "11.20.0",
     "nu": "0.116.1",
-    "pip": "pip 26.2.2 from /private/var/folders/s1/j5nmfngn1hn8cryh2s_vyc5h0000gn/T/dotfiles-native-macos-boi9y5c4/device with spaces/.pixi/envs/python/lib/python3.15/site-packages/pip (python 3.15)",
-    "pip3": "pip 26.2.2 from /private/var/folders/s1/j5nmfngn1hn8cryh2s_vyc5h0000gn/T/dotfiles-native-macos-boi9y5c4/device with spaces/.pixi/envs/python/lib/python3.15/site-packages/pip (python 3.15)",
+    "pip": "pip 26.2.2 from /private/var/folders/s1/j5nmfngn1hn8cryh2s_vyc5h0000gn/T/dotfiles-native-macos-z3k613ya/device with spaces/.pixi/envs/python/lib/python3.15/site-packages/pip (python 3.15)",
+    "pip3": "pip 26.2.2 from /private/var/folders/s1/j5nmfngn1hn8cryh2s_vyc5h0000gn/T/dotfiles-native-macos-z3k613ya/device with spaces/.pixi/envs/python/lib/python3.15/site-packages/pip (python 3.15)",
     "pixi": "pixi 0.83.0",
     "python": "Python 3.15.2",
     "python3": "Python 3.15.2",
@@ -76,24 +76,24 @@
   "behavior_suites": [
     {
       "suite": "test_shell_behavior.py",
-      "result": "Ran 13 tests in 46.652s",
+      "result": "Ran 13 tests in 50.003s",
       "skips": 0
     },
     {
       "suite": "test_agent_payload.py",
-      "result": "Ran 13 tests in 34.584s",
+      "result": "Ran 13 tests in 36.222s",
       "skips": 0
     },
     {
       "suite": "test_codegraph.py",
-      "result": "Ran 9 tests in 30.732s",
+      "result": "Ran 9 tests in 30.034s",
       "skips": 0
     },
     {
       "suite": "test_history_behavior.py",
-      "result": "Ran 9 tests in 27.439s",
+      "result": "Ran 9 tests in 29.290s",
       "skips": 0
     }
   ],
-  "elapsed_seconds": 724.345
+  "elapsed_seconds": 948.844
 }
