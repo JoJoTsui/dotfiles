@@ -109,6 +109,13 @@ explains every changed pair.
   the manager digests when it bumps a manager version, and `check` fails when a
   pinned target is missing. A version bump that leaves a digest, a runtime
   version check, or a second catalog behind breaks the deployment.
+- **A device may own the version it runs**: `~/.config/dotfiles/versions.tsv`
+  is device state that the deployment reads and never writes. An `agent` entry
+  replaces a client pin, a `tool` entry a Pixi specification, and a `cli` entry
+  the accepted installer floor. The catalog keeps the default; the plan reports
+  every effective override. Atuin and the bootstrap managers stay with the
+  repository pin. Read `docs/adr/0010-device-version-overrides.md` before
+  changing the override kinds, the manifest, or the merge input.
 - **The installer order is per platform**: macOS resolves a missing command
   through Homebrew, then Pixi, then a native release; Linux, WSL, and native
   Windows use Pixi, then a native release. Homebrew is adopted from the device

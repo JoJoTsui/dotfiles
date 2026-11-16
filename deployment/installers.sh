@@ -2,6 +2,7 @@
 # files. Later tickets extend these adapters; bootstrap owns selection, state
 # isolation, step failures, and working-tree source application.
 # shellcheck disable=SC2034 # Plan arrays are consumed by the sourced caller.
+source "$DEPLOY_SOURCE/deployment/overrides.sh"
 source "$DEPLOY_SOURCE/deployment/common.sh"
 source "$DEPLOY_SOURCE/deployment/bundles.sh"
 source "$DEPLOY_SOURCE/deployment/installer.sh"
@@ -30,9 +31,14 @@ install_managers() {
 # the device registry. Pixi owns installation and exposure after that merge.
 install_common() {
     DEPLOY_STEP=install-common.merge-manifest
-    local provider_arguments=()
+    local provider_arguments=() override_arguments=()
     if [ "$DEPLOY_PLATFORM" = macos ]; then provider_arguments=(--providers "$XDG_STATE_HOME/dotfiles/installer-tools.lock.tsv"); fi
-    "$DEPLOY_PIXI" exec --spec "$(common_python_spec)" python "$DEPLOY_SOURCE/deployment/merge_pixi.py" ${provider_arguments[@]+"${provider_arguments[@]}"} "$XDG_CONFIG_HOME/dotfiles/pixi-global.toml" "$XDG_CONFIG_HOME/dotfiles/pixi-bundles.toml" "$PIXI_HOME/manifests/pixi-global.toml"
+    # The device override snapshot is the only version input the merge takes
+    # besides the rendered desired manifests.
+    DEPLOY_STEP=install-common.version-overrides
+    deploy_version_overrides
+    override_arguments=(--overrides "$XDG_STATE_HOME/dotfiles/version-overrides.json")
+    "$DEPLOY_PIXI" exec --spec "$(common_python_spec)" python "$DEPLOY_SOURCE/deployment/merge_pixi.py" ${provider_arguments[@]+"${provider_arguments[@]}"} ${override_arguments[@]+"${override_arguments[@]}"} "$XDG_CONFIG_HOME/dotfiles/pixi-global.toml" "$XDG_CONFIG_HOME/dotfiles/pixi-bundles.toml" "$PIXI_HOME/manifests/pixi-global.toml"
     DEPLOY_STEP=install-common.pixi-sync
     "$DEPLOY_PIXI" global sync
     installer_expose_common

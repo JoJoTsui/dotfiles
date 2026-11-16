@@ -95,6 +95,16 @@ Node/Bun paths. Both managed Qoder launchers point at the verified versioned
 native binary. Existing vendor dispatchers and older releases retain their
 device-owned state. Omitted launchers are unchanged.
 
+A device may own a different version of a client than the catalog pins. The
+entry `agent|<name>|<exact version>` in `~/.config/dotfiles/versions.tsv`
+replaces that client's pin on this device. Its manifest and lock are generated
+once into `~/.local/state/dotfiles/agents/<name>` and installed frozen, so the
+client keeps the frozen-install property and the repository lock returns when
+the entry is removed. The client's `--version` diagnostic must report the
+declared version. Native clients use the same entry; their release manifest
+still supplies and verifies the archive digest. See
+[ADR 0010](adr/0010-device-version-overrides.md).
+
 Qoder is not executed from the vendor install script. The installer reads
 `<manifest-base>/<version>/manifest.json`, requires that it advertises the
 pinned version, selects the declared host archive, requires an HTTPS URL and a

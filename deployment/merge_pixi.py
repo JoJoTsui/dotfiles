@@ -78,18 +78,53 @@ def toml_value(value):
     raise ValueError(f"unsupported manifest value: {type(value).__name__}")
 
 
+def read_tool_overrides(path):
+    """Read the device-owned tool versions that replace catalog pins."""
+    if path is None:
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read the version override snapshot: {error}") from error
+    if not isinstance(data, dict):
+        raise ValueError("the version override snapshot must be an object")
+    tools = data.get("tools", {})
+    if not isinstance(tools, dict):
+        raise ValueError("the version override snapshot has an invalid tools section")
+    for package, version in tools.items():
+        if not isinstance(version, str) or not version:
+            raise ValueError(f"the version override snapshot has an invalid version for {package!r}")
+    return tools
+
+
+def apply_tool_overrides(dependencies, overrides):
+    """Replace the pinned specification of every overridden package."""
+    if not overrides or not isinstance(dependencies, dict):
+        return dependencies
+    return {package: (f"=={overrides[package]}" if package in overrides else specification)
+            for package, specification in dependencies.items()}
+
+
 def main():
     arguments = sys.argv[1:]
     provided = set()
-    if arguments[:1] == ["--providers"]:
-        providers = Path(arguments[1])
-        if providers.is_symlink() or not providers.is_file():
-            raise ValueError("common provider state must be a regular file")
-        for line in providers.read_text(encoding="utf-8").splitlines():
-            name, provider, _version, _minimum = line.split("|")
-            if provider in ("homebrew", "adopted"):
-                provided.add(name)
-        arguments = arguments[2:]
+    overrides = {}
+    while arguments[:1] and arguments[0].startswith("--"):
+        option = arguments[0]
+        if option == "--providers":
+            providers = Path(arguments[1])
+            if providers.is_symlink() or not providers.is_file():
+                raise ValueError("common provider state must be a regular file")
+            for line in providers.read_text(encoding="utf-8").splitlines():
+                name, provider, _version, _minimum = line.split("|")
+                if provider in ("homebrew", "adopted"):
+                    provided.add(name)
+            arguments = arguments[2:]
+        elif option == "--overrides":
+            overrides = read_tool_overrides(Path(arguments[1]))
+            arguments = arguments[2:]
+        else:
+            raise ValueError(f"unknown merge option: {option}")
     desired_paths = list(map(Path, arguments[:-1]))
     registry_path = Path(sys.argv[-1])
     if not desired_paths:
@@ -115,6 +150,8 @@ def main():
             retired_coreutils |= retire_uutils_aliases(name, owned, environment)
             for field, value in owned.items():
                 if field in ("dependencies", "exposed"):
+                    if field == "dependencies":
+                        value = apply_tool_overrides(value, overrides)
                     environment.setdefault(field, {}).update(value)
                 elif field == "channels":
                     environment[field] = list(dict.fromkeys(value + environment.get(field, [])))

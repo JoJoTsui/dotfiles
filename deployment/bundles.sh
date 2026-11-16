@@ -62,7 +62,7 @@ verify_bundle_exposure() {
 }
 
 print_bundle_packages() {
-    local name environment specifications mappings channels item separator='' inner_separator saved_ifs platforms
+    local name environment specifications mappings channels item separator='' inner_separator saved_ifs platforms version override
     printf '['
     while IFS=$'|\r' read -r name environment specifications mappings channels platforms; do
         case "$name" in ''|\#*) continue ;; esac
@@ -72,8 +72,11 @@ print_bundle_packages() {
         printf ',"environment":'; json_string "$environment"
         printf ',"dependencies":{'; inner_separator=''; saved_ifs=$IFS; IFS=,
         for item in $specifications; do
+            # A device override replaces the catalog pin for this tool.
+            override=$(override_tool_version "${item%%==*}")
+            if [ -n "$override" ]; then version=$override; else version=${item#*==}; fi
             printf '%s' "$inner_separator"; json_string "${item%%==*}"
-            printf ':'; json_string "==${item#*==}"; inner_separator=,
+            printf ':'; json_string "==$version"; inner_separator=,
         done
         printf '},"exposed":{'; inner_separator=''
         for item in $mappings; do

@@ -328,6 +328,29 @@ preserve device-specific text; unrelated skills and built-ins remain intact.
 See [agent payloads](docs/AGENT_PAYLOAD.md) for discovery, ownership, prerequisite
 setup on use, and offline checks.
 
+## Device-owned versions
+
+The repository catalogs own the default version of every managed component.
+A device may own a different version of the components it runs; the entry
+lives in `~/.config/dotfiles/versions.tsv`, which the deployment reads and
+never writes:
+
+```text
+agent|<name>|<exact version>     coding client, npm or native
+tool|<package>|<exact version>    Pixi-managed command
+cli|<name>|<minimum version>      installer-owned command
+```
+
+An `agent` entry installs that client from a device-owned manifest and lock,
+so the frozen-install property is kept and the repository lock returns when
+the entry is removed. A `tool` entry replaces that package's specification in
+the merged Pixi registry. A `cli` entry raises the floor the device accepts
+from its installer. The plan reports every effective override with the
+catalog default it replaces. Atuin and the bootstrap managers keep their
+repository pins. See
+[ADR 0010](docs/adr/0010-device-version-overrides.md) and the
+[deployment boundary](docs/DEPLOYMENT_BOUNDARY.md#device-owned-version-overrides).
+
 ## Validating on a simulated host
 
 ```bash

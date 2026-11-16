@@ -48,12 +48,15 @@ common_python_spec() {
 }
 
 common_package_pin() {
-    local environment specifications mappings targets specification saved_ifs
+    local environment specifications mappings targets specification saved_ifs override
     while IFS=$'|\r' read -r environment specifications mappings targets; do
         saved_ifs=$IFS; IFS=,
         for specification in $specifications; do
             if [ "${specification%%==*}" = "$1" ]; then
-                printf '%s' "${specification#*==}"; IFS=$saved_ifs; return 0
+                # A device override replaces the catalog pin for this tool.
+                override=$(override_tool_version "$1")
+                if [ -n "$override" ]; then printf '%s' "$override"; else printf '%s' "${specification#*==}"; fi
+                IFS=$saved_ifs; return 0
             fi
         done
         IFS=$saved_ifs
@@ -62,7 +65,7 @@ common_package_pin() {
 }
 
 print_common_packages() {
-    local environment specifications mappings targets separator='' item inner_separator saved_ifs
+    local environment specifications mappings targets separator='' item inner_separator saved_ifs version override
     printf '['
     while IFS=$'|\r' read -r environment specifications mappings targets; do
         case "$environment" in ''|\#*) continue ;; esac
@@ -71,8 +74,11 @@ print_common_packages() {
         printf ',"dependencies":{'
         inner_separator=''; saved_ifs=$IFS; IFS=,
         for item in $specifications; do
+            # A device override replaces the catalog pin for this tool.
+            override=$(override_tool_version "${item%%==*}")
+            if [ -n "$override" ]; then version=$override; else version=${item#*==}; fi
             printf '%s' "$inner_separator"; json_string "${item%%==*}"
-            printf ':'; json_string "==${item#*==}"; inner_separator=,
+            printf ':'; json_string "==$version"; inner_separator=,
         done
         printf '},"exposed":{'; inner_separator=''
         for item in $mappings; do

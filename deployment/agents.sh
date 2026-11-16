@@ -102,7 +102,7 @@ print_agent_packages() {
         IFS=, read -r -a exposed_commands <<< "$commands"
         printf '%s{"name":' "$separator"; json_string "$name"
         printf ',"package":'; json_string "$package"
-        printf ',"version":'; json_string "$version"
+        printf ',"version":'; json_string "$(agent_effective_version "$name" "$version")"
         printf ',"manager":"bun","commands":['
         local first=''
         for command in "${exposed_commands[@]}"; do
@@ -118,7 +118,7 @@ print_agent_packages() {
         IFS=, read -r -a exposed_commands <<< "$commands"
         printf '%s{"name":' "$separator"; json_string "$name"
         printf ',"package":null'
-        printf ',"version":'; json_string "$version"
+        printf ',"version":'; json_string "$(agent_effective_version "$name" "$version")"
         printf ',"manager":"native","commands":['
         local first=''
         for command in "${exposed_commands[@]}"; do
@@ -130,14 +130,26 @@ print_agent_packages() {
     printf ']'
 }
 
+# A device may own a different version of an agent than the catalog pins.
+# The catalog stays the default; the override decides what this device runs.
+agent_effective_version() {
+    local name=$1 default=$2 override
+    override=$(override_agent_version "$name")
+    if [ -n "$override" ]; then printf '%s' "$override"; else printf '%s' "$default"; fi
+}
+
 agent_runtime_pin() {
-    local environment specifications commands targets item
+    local environment specifications commands targets item override
     local runtime_specs=()
     while IFS=$'|\r' read -r environment specifications commands targets; do
         case "$environment" in ''|\#*) continue ;; esac
         IFS=, read -r -a runtime_specs <<< "$specifications"
         for item in "${runtime_specs[@]}"; do
-            if [ "${item%%==*}" = "$1" ]; then printf '%s' "${item#*==}"; return; fi
+            if [ "${item%%==*}" = "$1" ]; then
+                override=$(override_tool_version "$1")
+                if [ -n "$override" ]; then printf '%s' "$override"; else printf '%s' "${item#*==}"; fi
+                return
+            fi
         done
     done < "$DEPLOY_SOURCE/deployment/common-tools.tsv"
     fail "common catalog must declare the $1 runtime pin"
@@ -277,6 +289,7 @@ install_native_agents() {
         case "$name" in ''|\#*) continue ;; esac
         agent_selected "$name" || continue
         agent_platform_matches "$platforms" || continue
+        version=$(agent_effective_version "$name" "$version")
         case "$name" in
             qoder) install_qoder "$version" "$manifest_base" ;;
             *) fail "unsupported native agent: $name" ;;
@@ -366,12 +379,82 @@ agent_matching_macos_codex() {
     return 1
 }
 
+# The version of one dependency in a package manifest, read with the managed
+# Node runtime. Prints nothing when the manifest is absent or unreadable.
+agent_manifest_version() {
+    local node=$1 manifest=$2 package=$3
+    [ -f "$manifest" ] || return 0
+    "$node" -e '
+const fs = require("fs");
+const [manifest, packageName] = process.argv.slice(1);
+try {
+    const parsed = JSON.parse(fs.readFileSync(manifest, "utf8"));
+    const version = (parsed.dependencies || {})[packageName];
+    if (typeof version === "string") { process.stdout.write(version); }
+} catch (error) { }
+' "$manifest" "$package"
+}
+
+# One package manifest with the device-owned version of its agent package.
+agent_manifest_pin() {
+    local node=$1 source=$2 destination=$3 package=$4 version=$5
+    "$node" -e '
+const fs = require("fs");
+const [source, destination, packageName, version] = process.argv.slice(1);
+const manifest = JSON.parse(fs.readFileSync(source, "utf8"));
+const dependencies = manifest.dependencies || {};
+if (!(packageName in dependencies)) { throw new Error("unknown package " + packageName); }
+dependencies[packageName] = version;
+manifest.dependencies = dependencies;
+fs.writeFileSync(destination, JSON.stringify(manifest, null, 2) + "\n");
+' "$source" "$destination" "$package" "$version"
+}
+
+# The device-owned project material of one overridden agent: its manifest and
+# the lock that resolves it. The lock is generated once and reused, so every
+# later install of that version stays frozen and identical.
+agent_override_material() {
+    local name=$1 package=$2 version=$3 bun=$4 node=$5
+    local state_dir="$XDG_STATE_HOME/dotfiles/agents/$name"
+    local scratch temporary declared
+    mkdir -p "$state_dir"
+    [ ! -L "$state_dir" ] || fail "the agent override state is a symlink: $state_dir"
+    declared=$(agent_manifest_version "$node" "$state_dir/package.json" "$package")
+    if [ "$declared" = "$version" ] && [ -f "$state_dir/bun.lock" ]; then
+        return 0
+    fi
+    scratch=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-agent-override.XXXXXX")
+    if ! agent_manifest_pin "$node" "$DEPLOY_SOURCE/deployment/agents/$name/package.json" \
+        "$scratch/package.json" "$package" "$version"; then
+        rm -rf "$scratch"
+        fail "cannot prepare the overridden manifest for $package"
+    fi
+    DEPLOY_STEP="install-agents.$name.override-lock"
+    if ! agent_retry env npm_config_global=false pnpm_config_global=false npm_config_location=project \
+        "$bun" install --cwd "$scratch" --lockfile-only --ignore-scripts; then
+        rm -rf "$scratch"
+        fail "cannot resolve the device-owned $name version $version"
+    fi
+    if [ ! -f "$scratch/bun.lock" ]; then
+        rm -rf "$scratch"
+        fail "Bun did not write the lock for the overridden $name"
+    fi
+    temporary=$(mktemp "$state_dir/.package.json.XXXXXX")
+    cp "$scratch/package.json" "$temporary"
+    mv -f "$temporary" "$state_dir/package.json"
+    temporary=$(mktemp "$state_dir/.bun.lock.XXXXXX")
+    cp "$scratch/bun.lock" "$temporary"
+    mv -f "$temporary" "$state_dir/bun.lock"
+    rm -rf "$scratch"
+}
+
 install_agents() {
     local common_bin="${DOTFILES_COMMON_BIN:-$PIXI_HOME/bin}"
     local bun="${DOTFILES_BUN_BIN:-$common_bin/bun}" node="${DOTFILES_NODE_BIN:-$common_bin/node}"
     if [ -z "${DOTFILES_BUN_BIN:-}" ] && [ ! -x "$bun" ]; then bun="$PIXI_HOME/bin/bun"; fi
     if [ -z "${DOTFILES_NODE_BIN:-}" ] && [ ! -x "$node" ]; then node="$PIXI_HOME/bin/node"; fi
     local bun_pin node_pin node_version name package version commands minimum trusted project command launcher diagnostic adopted_codex entrypoint claude_keep_plain_opus=0
+    local catalog_version override
     local exposed_commands=()
     DEPLOY_STEP=install-agents.runtime
     case "$bun" in /*) ;; *) fail 'Bun binary override must be absolute' ;; esac
@@ -399,6 +482,8 @@ install_agents() {
         case "$name" in ''|\#*) continue ;; esac
         agent_selected "$name" || continue
         agent_version_at_least "${node_version#v}" "$minimum" || fail "Node $node_version does not satisfy $name >=$minimum"
+        catalog_version=$version
+        version=$(agent_effective_version "$name" "$catalog_version")
         project="$BUN_INSTALL/managed/$name"
         adopted_codex=''
         if [ "$name" = codex ] && adopted_codex=$(agent_matching_macos_codex "$version"); then
@@ -410,8 +495,16 @@ install_agents() {
             done
             [ -f "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" ] || fail "missing supported Bun lock for $name"
             mkdir -p "$project" "$BUN_INSTALL/bin"
-            cp "$DEPLOY_SOURCE/deployment/agents/$name/package.json" "$project/package.json"
-            cp "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" "$project/bun.lock"
+            if [ "$version" = "$catalog_version" ]; then
+                cp "$DEPLOY_SOURCE/deployment/agents/$name/package.json" "$project/package.json"
+                cp "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" "$project/bun.lock"
+            else
+                # The device owns this agent's version. Its manifest and lock
+                # are generated once into device state, then installed frozen.
+                agent_override_material "$name" "$package" "$version" "$bun" "$node"
+                cp "$XDG_STATE_HOME/dotfiles/agents/$name/package.json" "$project/package.json"
+                cp "$XDG_STATE_HOME/dotfiles/agents/$name/bun.lock" "$project/bun.lock"
+            fi
             DEPLOY_STEP="install-agents.$name.install"
             # A registry hiccup should not abort the deployment; the lock file
             # keeps the result the same on every attempt.

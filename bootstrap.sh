@@ -153,6 +153,8 @@ if "$DEPLOY_PROXY"; then DEPLOY_ACTIONS+=(install-proxy); fi
 if "$DEPLOY_SYSTEM_CONFIG"; then DEPLOY_ACTIONS+=(configure-system); fi
 if "$DEPLOY_LOGIN_SHELL"; then DEPLOY_ACTIONS+=(set-login-shell); fi
 if "$DEPLOY_PLAN"; then
+    # An invalid device override is rejected before the plan is printed.
+    validate_version_overrides
     printf '{"platform":'; json_string "$DEPLOY_PLATFORM"
     printf ',"role":'; json_string "$DEPLOY_ROLE"
     printf ',"arch":'; json_string "$DEPLOY_ARCH"
@@ -169,6 +171,7 @@ printf ',"installerTools":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else pr
     printf ',"bundlePrerequisites":'; print_bundle_prerequisites
     printf ',"agents":'; json_array ${DEPLOY_AGENTS[@]+"${DEPLOY_AGENTS[@]}"}
     printf ',"agentPackages":'; print_agent_packages
+    printf ',"overrides":'; print_version_overrides
     printf ',"managers":{"pixi":'; json_string "$PIXI_VERSION"
     printf ',"chezmoi":'; json_string "$CHEZMOI_VERSION"
     printf ',"rustup":'; json_string "$RUSTUP_VERSION"; printf '}'
@@ -201,6 +204,8 @@ fi
 for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config .config/chezmoi .config/dotfiles .config/opencode .cache .cache/tmp .pixi .pixi/bin .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml .bun .bun/bin .bun/managed .bun/install .bun/install/global .cargo .cargo/bin .rustup .codex .claude .kimi-code .pi .pi/agent .qoder .minimax .minimax-code .minimax-code-install-logs; do
     [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target state root is a symlink: $DEPLOY_HOME/$relative"
 done
+DEPLOY_STEP=apply-source.overrides
+validate_version_overrides
 DEPLOY_STEP=apply-source.skills
 validate_skill_catalog
 if [ -z "${DOTFILES_SKILLS_DIR:-}" ]; then

@@ -141,6 +141,41 @@ resources before replacing working files and rejects symlinked startup state.
 The shared shell model and actual interactive/non-interactive Nu distinction
 are documented in [shared shell settings](SHARED_SHELL_SETTINGS.md).
 
+## Device-owned version overrides
+
+`~/.config/dotfiles/versions.tsv` is a device-owned manifest of the versions
+this device runs. The repository catalogs keep owning the default version of
+every component; the manifest moves ownership of the named components to the
+device while an entry exists. The deployment reads the manifest and never
+writes it.
+
+```text
+agent|<name>|<exact version>     coding client, npm or native
+tool|<package>|<exact version>    Pixi-managed command
+cli|<name>|<minimum version>      installer-owned command
+```
+
+An `agent` entry replaces the catalog pin of that client. The client is
+installed from a device-owned manifest and lock that are generated once from
+the overridden version, so the frozen-install property is kept and the
+repository lock returns when the entry is removed. The client's `--version`
+diagnostic must report the overridden version. A `tool` entry replaces the
+catalog specification of that package when the desired manifests are merged
+into the Pixi registry. A `cli` entry raises the floor the device accepts from
+its installer; the installer still owns the installed version. The installer
+order still decides the provider, so an adopted macOS command keeps its
+installed version and a `cli` entry is the way to require a newer one.
+
+The manifest is validated before any state is created: an unknown kind, an
+unknown name, a malformed line, a duplicate entry, or a version outside the
+accepted shape fails the deployment. The plan reports every effective
+override with the catalog default it replaces. Atuin is rejected because the
+history importer verifies one storage schema owned by the repository pin, and
+manager versions are not overridable because their digests move with the
+catalog version. The native Windows adapter keeps the catalog pins until that
+adapter reads the manifest. See
+[ADR 0010](adr/0010-device-version-overrides.md).
+
 ## Isolated acceptance checks
 
 Run `DOTFILES_TEST_CHEZMOI=/path/to/chezmoi python3 -m unittest discover -s tests -v`.

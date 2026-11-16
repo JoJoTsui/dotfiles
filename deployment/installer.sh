@@ -80,7 +80,7 @@ validate_installer_catalog() {
 }
 
 print_installer_tools() {
-    local name installer kind package minimum bundle platforms separator=''
+    local name installer kind package minimum bundle platforms separator='' override
     if [ "${DEPLOY_APPLY_ONLY:-false}" = true ] || [ "${DEPLOY_AGENTS_ONLY:-false}" = true ]; then
         printf '[]'
         return
@@ -90,6 +90,9 @@ print_installer_tools() {
         case "$name" in ''|\#*) continue ;; esac
         installer_selected "$bundle" || continue
         installer_tool_matches "$platforms" || continue
+        # A device override raises the floor the device accepts.
+        override=$(override_cli_minimum "$name")
+        if [ -n "$override" ]; then minimum=$override; fi
         printf '%s{"name":' "$separator"; json_string "$name"
         printf ',"installer":'; json_string "$installer"
         printf ',"kind":'; json_string "$kind"
@@ -131,10 +134,12 @@ installer_common_mappings() {
 }
 
 installer_common_minimum() {
-    local name installer kind package minimum bundle platforms
+    local name installer kind package minimum bundle platforms override
     while IFS=$'|\r' read -r name installer kind package minimum bundle platforms; do
         if [ "$name" = "$1" ] && [ "$bundle" = common ]; then
-            printf '%s' "$minimum"
+            # A device override raises the floor the device accepts.
+            override=$(override_cli_minimum "$1")
+            if [ -n "$override" ]; then printf '%s' "$override"; else printf '%s' "$minimum"; fi
             return 0
         fi
     done < "$INSTALLER_CATALOG"
@@ -294,7 +299,7 @@ installer_install() {
 }
 
 install_installer_tools() {
-    local name installer kind package minimum bundle platforms brew version state staged
+    local name installer kind package minimum bundle platforms brew version state staged override
     [ "$DEPLOY_PLATFORM" = macos ] || return 0
     state="$XDG_STATE_HOME/dotfiles/installer-tools.lock.tsv"
     [ ! -L "$XDG_STATE_HOME/dotfiles" ] || fail 'installer state directory is a symlink'
@@ -305,6 +310,9 @@ install_installer_tools() {
         case "$name" in ''|\#*) continue ;; esac
         installer_selected "$bundle" || continue
         installer_tool_matches "$platforms" || continue
+        # A device override raises the floor the device accepts.
+        override=$(override_cli_minimum "$name")
+        if [ -n "$override" ]; then minimum=$override; fi
         if [ "$bundle" = common ]; then
             DEPLOY_STEP="install-installer-tools.$name"
             if installer_resolve_common "$name" "$package" "$minimum"; then
