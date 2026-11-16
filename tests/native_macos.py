@@ -258,7 +258,7 @@ def check_native_discovery(home, role):
     require(values["polling"] == ("1" if role == "remote-compute" else "0"), "standalone Nu role")
     require(values["preference"] == "managed" and values["index"] == MIRROR, "standalone Nu Python defaults")
     require(values["paths"][:4] == [str(home / path) for path in
-            (".bun/bin", ".local/bin", ".pixi/bin", ".cargo/bin")], "standalone Nu managed path order")
+            (".local/bin", ".bun/bin", ".pixi/bin", ".cargo/bin")], "standalone Nu managed path order")
     require(len(values["paths"]) == len(set(values["paths"])), "standalone Nu idempotent path")
     autoload = run([nu, "-e",
                     'print ({starship: $env.STARSHIP_SHELL?, pixi: (scope commands | where name == "pixi" | length), '

@@ -61,10 +61,16 @@ Use `micromamba run -n <name> <command>` or activate in Bash/Zsh for those
 environments. PATH overrides in environment metadata are also rejected; a
 partial activation is never reported as success.
 
-PATH prefers Bun agent launchers, then local commands, Pixi exposures, and
-Cargo. `DOTFILES_COMMON_BIN` selects Pixi exposures on Linux/WSL/Windows and
-the regular common launchers on macOS. A source-only macOS upgrade retains
-Pixi discovery until those launchers exist. The agent installer invokes its
+PATH priority is per platform. macOS resolves the managed launcher directory
+(`~/.local/bin`) before the Bun directory, so a launcher for an adopted
+Homebrew agent wins in an interactive shell. Linux, WSL, and native Windows
+keep the Bun directory first, because Bun is the agent provider there, and
+follow it with the managed launcher directory, the Pixi exposures, and Cargo.
+The shared path model in `.chezmoidata.toml` owns the order, and both shell
+adapters render it. `DOTFILES_COMMON_BIN` selects Pixi exposures on
+Linux/WSL/Windows and the regular common launchers on macOS. A source-only
+macOS upgrade retains Pixi discovery until those launchers exist. The agent
+installer invokes its
 selected Bun/Node explicitly, enforcing exact pins on other platforms and
 catalog floors on macOS. `MAMBA_EXE` follows the selected common directory,
 and its explicit device

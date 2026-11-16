@@ -139,10 +139,12 @@ upgrades a Homebrew package. See
 
 Both regular managed launchers point at the selected executable, and every
 deployment rechecks it. The frozen Bun project stays on disk as the offline
-fallback, so switching providers is a reapply rather than a reinstall. Other
-platforms retain Bun ownership; Pixi does not declare Codex. OpenCode has one
-selected distribution, without `opencode-ai`. Historical inventories remain under
-`deployment/inventory`. Source application and project
+fallback, so switching providers is a reapply rather than a reinstall. On
+macOS the managed launcher directory precedes the Bun directory in the managed
+PATH, so the adopted command wins in an interactive shell; the other platforms
+keep Bun first and retain Bun ownership; Pixi does not declare Codex. OpenCode
+has one selected distribution, without `opencode-ai`. Historical inventories
+remain under `deployment/inventory`. Source application and project
 installation preserve the device's unrelated global Bun registry and tools.
 Real executable launchers under `~/.bun/bin` and `~/.local/bin` point to the
 same selected executable, preserve package-relative native resources, and prepend managed

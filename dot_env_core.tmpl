@@ -68,10 +68,13 @@ _dotfiles_prepend_path() {
     PATH="$1${_dotfiles_path_rest:+:$_dotfiles_path_rest}"
     unset _dotfiles_path_rest _dotfiles_path_scan _dotfiles_path_entry
 }
-{{ $paths := .sharedShell.paths -}}
-{{- if eq .platform "windows" -}}{{- $paths = concat $paths .sharedShell.windowsPaths -}}{{- end -}}
-{{ range reverse $paths -}}
-{{ printf "_dotfiles_prepend_path \"${%s}/%s\"" .base .suffix }}
+{{ $entries := .sharedShell.pathEntries -}}
+{{- $order := .sharedShell.pathOrder -}}
+{{- if eq .platform "macos" -}}{{- $order = .sharedShell.macosPathOrder -}}
+{{- else if eq .platform "windows" -}}{{- $order = .sharedShell.windowsPathOrder -}}{{- end -}}
+{{ range reverse $order -}}
+{{- $entry := index $entries . -}}
+{{ printf "_dotfiles_prepend_path \"${%s}/%s\"" $entry.base $entry.suffix }}
 {{ end -}}
 unset -f _dotfiles_prepend_path
 {{ if eq .platform "windows" -}}

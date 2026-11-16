@@ -40,16 +40,21 @@ windowsDefaults = [
   { name = "CLAUDE_CODE_GIT_BASH_PATH", base = "XDG_DATA_HOME", suffix = "dotfiles/git-bash/bin/bash.exe" },
   { name = "HELIX_RUNTIME", base = "XDG_DATA_HOME", suffix = "dotfiles/helix/runtime" },
 ]
-# The first directory wins. Compatibility tool directories are never added.
-paths = [
-  { base = "BUN_INSTALL", suffix = "bin" },
-  { base = "HOME", suffix = ".local/bin" },
-  { base = "PIXI_HOME", suffix = "bin" },
-  { base = "CARGO_HOME", suffix = "bin" },
-]
-windowsPaths = [
-  { base = "XDG_DATA_HOME", suffix = "dotfiles/git-bash/bin" },
-]
+# The managed PATH entries. The order lists below decide which directory wins:
+# the first one wins. macOS resolves the managed launcher directory before the
+# Bun directory, so a launcher for an adopted Homebrew agent wins. Every other
+# platform keeps Bun first, because Bun is the agent provider there.
+# Compatibility tool directories are never added.
+pathOrder = ["bun", "launchers", "pixi", "cargo"]
+macosPathOrder = ["launchers", "bun", "pixi", "cargo"]
+windowsPathOrder = ["bun", "launchers", "pixi", "cargo", "gitbash"]
+
+[sharedShell.pathEntries]
+bun = { base = "BUN_INSTALL", suffix = "bin" }
+launchers = { base = "HOME", suffix = ".local/bin" }
+pixi = { base = "PIXI_HOME", suffix = "bin" }
+cargo = { base = "CARGO_HOME", suffix = "bin" }
+gitbash = { base = "XDG_DATA_HOME", suffix = "dotfiles/git-bash/bin" }
 
 [mirrors.tuna]
 pythonIndex = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"

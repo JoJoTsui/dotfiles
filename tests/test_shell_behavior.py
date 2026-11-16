@@ -141,6 +141,19 @@ class ShellBehaviorTests(unittest.TestCase):
         self.assertEqual(len(values), len(names) + 1, result.stdout)
         return dict(zip([*names, "PATH"], [*values[:-1], values[-1].split(":")]))
 
+    def managed_path_order(self):
+        """The managed PATH order of the platform under test.
+
+        macOS resolves the managed launcher directory before the Bun
+        directory, so a launcher for an adopted Homebrew agent wins. The
+        other platforms keep Bun first, because Bun is the agent provider
+        there.
+        """
+        order = (".bun/bin", ".local/bin", ".pixi/bin", ".cargo/bin")
+        if os.environ.get("DOTFILES_TEST_PLATFORM", "linux") == "macos":
+            order = (".local/bin", ".bun/bin", ".pixi/bin", ".cargo/bin")
+        return order
+
     def test_fresh_shells_share_managed_paths_and_role_defaults(self):
         for role, polling in (("workstation", "0"), ("remote-compute", "1")):
             self.deploy(role)
@@ -156,7 +169,7 @@ class ShellBehaviorTests(unittest.TestCase):
                     self.assertEqual(actual["CHOKIDAR_USEPOLLING"], polling)
                     self.assertEqual(actual["MAMBA_EXE"], str(self.home / ".pixi/bin/micromamba"))
                     self.assertEqual(actual["JOEY"], str(self.home / "joey"))
-                    expected_paths = [str(self.home / path) for path in (".bun/bin", ".local/bin", ".pixi/bin", ".cargo/bin")]
+                    expected_paths = [str(self.home / path) for path in self.managed_path_order()]
                     self.assertEqual(actual["PATH"][:4], expected_paths)
                     self.assertEqual(len(actual["PATH"]), len(set(actual["PATH"])))
                     self.assertNotIn(actual["GIZMO"], actual["PATH"])

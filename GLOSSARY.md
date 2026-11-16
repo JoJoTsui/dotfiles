@@ -35,6 +35,12 @@ _Avoid_: Shared history, agent history
 The environment values and interactive behavior intended to agree across the
 shells available in a deployment profile.
 
+**Managed launcher directory**:
+The directory the deployment owns the managed launchers in, `~/.local/bin`. It
+resolves before the Bun directory in the managed PATH on macOS, so a launcher
+for an adopted agent wins.
+_Avoid_: Agent directory, Local bin
+
 **Common defaults**:
 The portable tools and settings selected by default for every supported device.
 
