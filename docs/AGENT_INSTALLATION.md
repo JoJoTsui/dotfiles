@@ -72,7 +72,7 @@ mechanism; a filtered monolithic manifest is not used.
 | Selection | Exact package | CLI |
 | --- | --- | --- |
 | kimi | `@moonshot-ai/kimi-code` 2.4.1 | `kimi` |
-| pi | `@earendil-works/pi-coding-agent` 1.5.0 | `pi` |
+| pi | `@earendil-works/pi-coding-agent` 1.5.2 | `pi` |
 | opencode | `@opencode/cli` 2.2.5 | `opencode`, `opencode2` |
 | claude | `@anthropic-ai/claude-code` 2.1.311 | `claude` |
 | codex | `@openai/codex` 0.166.0 | `codex` |
