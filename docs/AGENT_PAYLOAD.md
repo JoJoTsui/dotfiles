@@ -153,6 +153,14 @@ names the shared tree does not provide. The deployment reports the duplicates
 it finds — `deployment/agent-payload/skill-roots.tsv` lists the client roots
 that overlap the shared tree — instead of removing a file the client owns.
 
+A generated skill is not a catalog row. Herdr ships its own instructions, so
+the deployment writes them into the shared tree at
+`~/.agents/skills/herdr/SKILL.md` from `herdr --skill` and refreshes them
+when the installed binary changed. The deployment records every generated
+skill in `~/.local/state/dotfiles/generated-skills.tsv` as
+`name|root|generator`, so the pruning step can tell a generated skill from a
+catalog row and leave it alone.
+
 Update explicitly, inspect the lock diff and changed upstream skills, then run
 the deployment checks before committing:
 

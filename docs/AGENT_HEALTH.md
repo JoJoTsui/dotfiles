@@ -17,10 +17,15 @@ silently after a reboot or a daemon restart:
 dotfiles-agent-health             # full stack, human-readable
 dotfiles-agent-health --quiet     # failures only
 dotfiles-agent-health --codex     # Codex launch path; skips graph tools
-dotfiles-agent-health --clients   # client binaries and config paths (diagnostic)
+dotfiles-agent-health --clients   # client binaries, config paths, Herdr drift
 dotfiles-agent-health --before-restore # dependencies only; Herdr can be down
 dotfiles-agent-health --probe     # one paid Codex model round trip
 ```
+
+`--clients` also reports the Herdr integration drift of every managed agent:
+the deployment records which agent owns which Herdr kind, and the check reads
+the live state from Herdr. The drift is a warning, never a failure: an
+outdated integration affects restore and resume, not launch.
 
 This is a **preflight**, not a shell-startup check. `codex-herdr` runs the
 narrow `--codex` set before every Herdr Codex launch. Explicit host preparation

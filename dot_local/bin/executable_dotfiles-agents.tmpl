@@ -116,10 +116,10 @@ update_agents() {
 }
 
 status_agents() {
-    local selection name provider version command note status
+    local selection name provider version command note status herdr
     need_source
     selection=$(selection_arg "$@")
-    printf '%-10s %-10s %-12s %-16s %s\n' NAME PROVIDER VERSION COMMAND STATE
+    printf '%-10s %-10s %-12s %-16s %-12s %s\n' NAME PROVIDER VERSION COMMAND HERDR STATE
     (
         cd "$SOURCE"
         "$PYTHON" - "$selection" <<'PY'
@@ -217,8 +217,44 @@ def installed_state(command, version, policy):
     return f"mismatch ({diagnostic or 'no version output'})"
 
 
+def herdr_kind(name):
+    # The provider catalog is the only source of an agent's Herdr kind.
+    for row in records(name):
+        value = row["herdr"]
+        return None if value == "-" else value
+    return None
+
+
+def herdr_states(kinds):
+    # The managed helper owns Herdr's status vocabulary, so the report and
+    # the deployment read the same state.
+    if not kinds:
+        return {}
+    helper = Path.home() / ".local/bin/dotfiles-herdr-status"
+    if not helper.is_file() or not os.access(helper, os.X_OK):
+        return {kind: "unavailable" for kind in kinds}
+    try:
+        result = subprocess.run([str(helper), *kinds], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return {kind: "unavailable" for kind in kinds}
+    states = {}
+    for line in result.stdout.splitlines():
+        if "|" not in line:
+            continue
+        kind, state = line.split("|", 1)
+        states[kind.strip()] = state.strip()
+    return {kind: states.get(kind, "unsupported") for kind in kinds}
+
+
 state = recorded_state()
-for name in selected_agents(root, sys.argv[1]):
+selected = selected_agents(root, sys.argv[1])
+kinds = []
+for name in selected:
+    kind = herdr_kind(name)
+    if kind:
+        kinds.append(kind)
+herdr = herdr_states(kinds)
+for name in selected:
     chain = serving(name)
     owned = [row for row in records(name) if row["provider"] in ("bun", "native")]
     override = device_override(name)
@@ -251,10 +287,13 @@ for name in selected_agents(root, sys.argv[1]):
     if not command and owned:
         command = owned[0]["commands"].split(",")[0]
     status = installed_state(command, version, policy) if version else "not installed"
-    print("|".join([name, provider, version, command, note, status]))
+    kind = herdr_kind(name)
+    integration = "unsupported" if kind is None else herdr.get(kind, "unsupported")
+    print("|".join([name, provider, version, command, integration, note, status]))
 PY
-    ) | while IFS='|' read -r name provider version command note status; do
-        printf '%-10s %-10s %-12s %-16s %s\n' "$name" "$provider" "$version" "$command" "$status${note:+ ($note)}"
+    ) | while IFS='|' read -r name provider version command herdr note status; do
+        printf '%-10s %-10s %-12s %-16s %-12s %s\n' \
+            "$name" "$provider" "$version" "$command" "$herdr" "$status${note:+ ($note)}"
     done
     # A Bun global copy of a managed client cannot run: the managed launcher
     # owns the command. Report it so the leftover can be removed by name.

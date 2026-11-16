@@ -26,6 +26,50 @@ herdr integration status
 herdr integration install codex
 ```
 
+## The deployment installs the integrations
+
+Herdr owns the integration bytes; the deployment owns the trigger, the
+ordering, and the check. After the agent step and before the final
+client-settings merge, the deployment maps every selected managed agent to its
+Herdr kind, reads `herdr integration status`, and runs
+`herdr integration install <kind>` for the kinds that are missing or outdated.
+A current integration is left alone, an agent outside the selection is never
+passed to Herdr, and the deployment never writes an integration file itself.
+The step runs in a full deployment and in `--agents-only`, never in
+`--apply-only`. A host without Herdr completes the deployment with nothing to
+do.
+
+The kind of each agent is a column of the provider catalog
+(`deployment/agents/providers.tsv`), and `deployment/agents/herdr-kinds.tsv`
+lists the kinds a record may name. `qoder` uses the kind `qodercli`; MiniMax
+Code and CodeGraph have no kind and are never passed to Herdr.
+
+`~/.local/bin/dotfiles-herdr-status` owns Herdr's status vocabulary. It reads
+`herdr integration status` once and prints one `<kind>|<state>` line per
+requested kind, where the state is `current`, `outdated`, `missing`,
+`unsupported` (Herdr does not know the kind), or `unavailable` (Herdr is not
+installed). The deployment, `dotfiles-agents status`, and
+`dotfiles-agent-health --clients` all read that vocabulary, so the three
+reports agree.
+
+`dotfiles-agents status` reports the state of every selected agent in a
+`HERDR` column, and `dotfiles-agent-health --clients` reports the same drift
+as a warning without failing the check: integration drift affects restore and
+resume, not launch.
+
+The deployment records the observed state in
+`~/.local/state/dotfiles/herdr.tsv` as `agent|kind|state` rows.
+
+## The generated Herdr skill
+
+Herdr ships its own skill for the agents it drives. When Herdr is present, the
+deployment generates it from `herdr --skill` into the shared tree at
+`~/.agents/skills/herdr/SKILL.md` and refreshes it when the installed binary
+changed; unchanged bytes are never rewritten. The skill is generated, not a
+catalog pin, so it is recorded in
+`~/.local/state/dotfiles/generated-skills.tsv` as `name|root|generator`. The
+skill pruning step reads that record and leaves the generated skill alone.
+
 ## Collaboration use
 
 Only use Herdr from inside a Herdr pane. The check is:
@@ -86,6 +130,11 @@ register it once after `herdr integration install codex`:
 dotfiles-codex-herdr install
 ```
 
+The deployment runs that registration after every codex integration install or
+reinstall, because Herdr rewrites the hook file when it reinstalls. The final
+client-settings merge runs after the Herdr step, so the merge preserves both
+the Herdr entry and the managed resume hook.
+
 The installer preserves every existing hook, removes an older copy of this
 entry, and places it last so its resume argv wins. For reference, the entry is:
 
@@ -112,9 +161,10 @@ Before a restore, or when a pane cannot reach its provider, run
 `~/.local/bin/dotfiles-agent-health`. The full check covers Mihomo, U.S.
 egress, Caveman, the Codex app-server daemon, Herdr, and CodeGraph.
 `--codex` narrows it to the Codex launch path (no CodeGraph), `--clients`
-reports client binaries and config paths, and `--probe` adds one paid Codex
-model round trip. After a reboot, `dotfiles-host-up up` chains the same
-dependency order and `up --restore` starts the saved Herdr session. See
+reports client binaries, config paths, and the Herdr integration drift,
+and `--probe` adds one paid Codex model round trip. After a reboot,
+`dotfiles-host-up up` chains the same dependency order and `up --restore`
+starts the saved Herdr session. See
 [agent health](AGENT_HEALTH.md) and [host bring-up](HOST_UP.md).
 
 ## Verified here

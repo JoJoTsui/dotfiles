@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""A fake Herdr for deployment tests.
+
+It logs every invocation, keeps a small integration state, and writes the
+integration files the real Herdr would write. The state file holds one
+"<kind>|<state>" row per kind, where the state is current, outdated, or
+missing.
+"""
+import json
+import os
+import pathlib
+import sys
+
+ARGUMENTS = sys.argv[1:]
+LOG = pathlib.Path(os.environ["HERDR_LOG"])
+LOG.parent.mkdir(parents=True, exist_ok=True)
+with LOG.open("a", encoding="utf-8") as handle:
+    handle.write(" ".join(ARGUMENTS) + "\n")
+
+STATE = pathlib.Path(os.environ["HERDR_STATE"])
+
+
+def rows():
+    if not STATE.exists():
+        return []
+    result = []
+    for line in STATE.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            name, value = line.split("|", 1)
+            result.append((name, value))
+    return result
+
+
+if ARGUMENTS[:2] == ["integration", "status"]:
+    for name, value in rows():
+        if value == "current":
+            print(f"{name}: current (v9) (/fake/{name})")
+        elif value == "outdated":
+            print(f"{name}: outdated (v2 < v9) (/fake/{name})")
+        else:
+            print(f"{name}: not installed (/fake/{name})")
+    raise SystemExit(0)
+
+if ARGUMENTS[:2] == ["integration", "install"]:
+    kind = ARGUMENTS[2]
+    updated = [(name, "current" if name == kind else value) for name, value in rows()]
+    if not any(name == kind for name, _ in updated):
+        updated.append((kind, "current"))
+    STATE.write_text("".join(f"{name}|{value}\n" for name, value in updated), encoding="utf-8")
+    marker = pathlib.Path(os.environ["HERDR_MARKER"])
+    marker.mkdir(parents=True, exist_ok=True)
+    (marker / kind).write_text("installed\n", encoding="utf-8")
+    if kind == "codex":
+        # The real Herdr writes its own SessionStart hook into the codex
+        # hook file; the deployment registers the managed entry after it.
+        hooks = pathlib.Path(os.environ["HOME"]) / ".codex" / "hooks.json"
+        hooks.parent.mkdir(parents=True, exist_ok=True)
+        hooks.write_text(json.dumps({
+            "hooks": {
+                "SessionStart": [{
+                    "hooks": [{
+                        "type": "command",
+                        "command": 'bash "$HOME/.codex/herdr-agent-state.sh"',
+                        "timeout": 5,
+                    }],
+                }],
+            },
+        }) + "\n", encoding="utf-8")
+    raise SystemExit(0)
+
+if ARGUMENTS[:1] == ["--skill"]:
+    sys.stdout.write(pathlib.Path(os.environ["HERDR_SKILL"]).read_text(encoding="utf-8"))
+    raise SystemExit(0)
+
+raise SystemExit(0)

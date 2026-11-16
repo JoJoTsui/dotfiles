@@ -15,13 +15,13 @@ profile. `dotfiles-agents status` reports each agent's Herdr state, and
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] A missing integration is installed; an outdated one is reinstalled; a current one is not invoked again.
-- [ ] Qoder calls `qodercli`; MiniMax and CodeGraph are never passed to Herdr.
-- [ ] A codex reinstall is followed by resume-hook registration, and the final client-settings merge preserves both the Herdr entries and the resume hook.
-- [ ] With Herdr absent the step succeeds with nothing to do; with `--apply-only` neither Herdr nor an agent installer runs.
-- [ ] Unselected agents are never passed to Herdr, and their integration files are untouched.
-- [ ] Herdr's generated skill exists in the shared tree when Herdr is present, is refreshed on reapply, and is exempt from pruning.
-- [ ] `status` shows current/outdated/missing/unsupported per selected agent; health reports drift without failing the check.
-- [ ] Tests with a fake Herdr log the invoked kinds and status reads, and cover the skip and apply-only paths.
+- [x] A missing integration is installed; an outdated one is reinstalled; a current one is not invoked again.
+- [x] Qoder calls `qodercli`; MiniMax and CodeGraph are never passed to Herdr.
+- [x] A codex reinstall is followed by resume-hook registration, and the final client-settings merge preserves both the Herdr entries and the resume hook.
+- [x] With Herdr absent the step succeeds with nothing to do; with `--apply-only` neither Herdr nor an agent installer runs.
+- [x] Unselected agents are never passed to Herdr, and their integration files are untouched.
+- [x] Herdr's generated skill exists in the shared tree when Herdr is present, is refreshed on reapply, and is exempt from pruning.
+- [x] `status` shows current/outdated/missing/unsupported per selected agent; health reports drift without failing the check.
+- [x] Tests with a fake Herdr log the invoked kinds and status reads, and cover the skip and apply-only paths.

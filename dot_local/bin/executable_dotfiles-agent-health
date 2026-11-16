@@ -183,6 +183,30 @@ if [ "$clients" = true ]; then
             warn "config ${config#"$HOME"/} missing"
         fi
     done
+    # Herdr integration drift is informational: it affects restore and resume,
+    # not launch, so it never fails the check. The deployment records which
+    # managed agent owns which kind; the state is read live.
+    herdr_state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/herdr.tsv"
+    herdr_helper="$HOME/.local/bin/dotfiles-herdr-status"
+    if [ ! -f "$herdr_state" ]; then
+        warn "herdr integration state not recorded (no deployment state)"
+    elif [ ! -x "$herdr_helper" ]; then
+        warn "herdr integration state unavailable (dotfiles-herdr-status is missing)"
+    else
+        herdr_kinds=$(awk -F'|' '!/^#/ && NF >= 2 { print $2 }' "$herdr_state")
+        if [ -z "$herdr_kinds" ]; then
+            warn "herdr integration state not recorded (no managed agent has an integration)"
+        else
+            # shellcheck disable=SC2086 # The kinds are separate arguments.
+            "$herdr_helper" $herdr_kinds | while IFS='|' read -r herdr_kind herdr_value; do
+                case "$herdr_value" in
+                    current) ok "herdr integration $herdr_kind (current)" ;;
+                    unavailable) warn "herdr integration $herdr_kind (unavailable: Herdr is absent)" ;;
+                    *) warn "herdr integration $herdr_kind ($herdr_value)" ;;
+                esac
+            done
+        fi
+    fi
 fi
 
 # Optional end-to-end model probe. This is the only step that spends tokens.

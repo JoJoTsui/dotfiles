@@ -150,6 +150,21 @@ explains every changed pair.
   deployment-owned record keeps an exact pin. Read
   `docs/AGENT_INSTALLATION.md` before changing an agent's provider, pin,
   command, or Herdr kind.
+- **Herdr owns its integration bytes**: the deployment triggers
+  `herdr integration install <kind>` for the selected managed agents, after
+  the agent step and before the final client-settings merge, and never writes
+  an integration file itself. The kind comes from the provider catalog, so an
+  agent outside the selection is never passed to Herdr, and MiniMax Code and
+  CodeGraph have no kind at all. A missing or outdated integration is
+  installed, a current one is left alone, and a host without Herdr completes
+  the deployment with nothing to do. Every codex install or reinstall is
+  followed by `dotfiles-codex-herdr install`, so the managed resume hook stays
+  last. `~/.local/bin/dotfiles-herdr-status` owns the status vocabulary the
+  deployment, `dotfiles-agents status`, and
+  `dotfiles-agent-health --clients` share. Herdr's own skill is generated
+  into the shared tree and recorded as a generated skill, so pruning leaves it
+  alone. Read `docs/adr/0012-herdr-owned-integrations.md` before changing the
+  Herdr step, the kind mapping, or the generated skill.
 - **The installer order is per platform**: macOS resolves a missing command
   through Homebrew, then Pixi, then a native release; Linux, WSL, and native
   Windows use Pixi, then a native release. Homebrew is adopted from the device

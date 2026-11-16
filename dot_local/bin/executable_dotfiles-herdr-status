@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# dotfiles-herdr-status — report the Herdr integration state of named kinds.
+#
+# Herdr owns the integration bytes and its own status vocabulary. This helper
+# reads `herdr integration status` once and prints one normalized state per
+# requested kind:
+#
+#   current      the installed integration matches the schema Herdr ships
+#   outdated     the installed integration is older than the current schema
+#   missing      Herdr has no integration installed for the kind
+#   unsupported  Herdr does not know the kind
+#   unavailable  Herdr is not installed on this device
+#
+# It never writes an integration and never touches a client file.
+set -uo pipefail
+
+usage() {
+    cat <<'EOF'
+usage: dotfiles-herdr-status <kind> [kind...]
+
+Print one "<kind>|<state>" line per requested kind. The states are current,
+outdated, missing, unsupported, and unavailable.
+EOF
+}
+
+kinds=()
+for argument in "$@"; do
+    case "$argument" in
+        -h|--help|help) usage; exit 0 ;;
+        '') continue ;;
+        *[!A-Za-z0-9._-]*)
+            printf 'dotfiles-herdr-status: invalid kind: %s\n' "$argument" >&2
+            exit 2 ;;
+        *) kinds+=("$argument") ;;
+    esac
+done
+[ "${#kinds[@]}" -gt 0 ] || { usage >&2; exit 2; }
+
+if ! command -v herdr >/dev/null 2>&1; then
+    for kind in "${kinds[@]}"; do printf '%s|unavailable\n' "$kind"; done
+    exit 0
+fi
+
+if ! status=$(herdr integration status 2>/dev/null); then
+    for kind in "${kinds[@]}"; do printf '%s|unavailable\n' "$kind"; done
+    exit 0
+fi
+
+states=()
+while IFS= read -r line; do
+    case "$line" in
+        *': '*) ;;
+        *) continue ;;
+    esac
+    label=${line%%': '*}
+    rest=${line#*': '}
+    # "current (v9) (/path)", "outdated (v2 < v9) (/path)", and
+    # "not installed (/path)" all name the state before the first parenthesis.
+    rest=${rest%%' ('*}
+    case "$rest" in
+        current) state=current ;;
+        outdated) state=outdated ;;
+        'not installed') state=missing ;;
+        *) state=unsupported ;;
+    esac
+    states+=("$label|$state")
+done <<EOF
+$status
+EOF
+
+for kind in "${kinds[@]}"; do
+    state=unsupported
+    for entry in ${states[@]+"${states[@]}"}; do
+        [ "${entry%%|*}" = "$kind" ] || continue
+        state=${entry#*|}
+        break
+    done
+    printf '%s|%s\n' "$kind" "$state"
+done

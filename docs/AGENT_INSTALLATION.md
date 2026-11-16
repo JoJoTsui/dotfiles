@@ -158,6 +158,16 @@ selected agent in `~/.local/state/dotfiles/agents.lock.tsv`, one
 that provider and the effective version next to the installed state; without
 device state it reports the provider the deployment would install.
 
+The deployment also triggers Herdr's own integrations for the selected
+managed agents. Each agent's Herdr kind is a column of the provider catalog,
+and the deployment runs `herdr integration install <kind>` for the kinds that
+are missing or outdated, after the agent step and before the final
+client-settings merge. It never writes an integration file itself, never
+passes an agent the selection does not own, and does nothing on a host
+without Herdr. `dotfiles-agents status` reports the resulting state in its
+`HERDR` column. See [ADR 0012](adr/0012-herdr-owned-integrations.md) and
+[Herdr](HERDR.md).
+
 A device may own a different version of a client than the catalog pins. The
 entry `agent|<name>|<exact version>` in `~/.config/dotfiles/versions.tsv`
 replaces that client's pin on this device. An installer-owned provider cannot

@@ -614,6 +614,185 @@ agent_retry() {
     return "$status"
 }
 
+# The Herdr integration kind of one agent. The provider catalog is the only
+# source; an agent Herdr does not integrate has no kind at all.
+agent_herdr_kind() {
+    local name=$1 row kind=''
+    for row in "${DEPLOY_AGENT_ROWS[@]}"; do
+        agent_row_split "$row"
+        [ "${AGENT_ROW[0]}" = "$name" ] || continue
+        kind=${AGENT_ROW[10]}
+        break
+    done
+    if [ "$kind" = '-' ]; then kind=''; fi
+    printf '%s' "$kind"
+    return 0
+}
+
+# The Herdr integration state of the selected agents, the generated skill, and
+# the state files that record both. Herdr owns the integration bytes; the
+# deployment only triggers its installer and verifies the result.
+HERDR_KINDS=()
+HERDR_AGENTS=()
+HERDR_STATE_ROWS=()
+HERDR_GENERATED_SKILLS=()
+
+# The managed resume hook. Herdr rewrites the hook file when it reinstalls its
+# codex integration, so the managed entry is registered again and placed last.
+codex_herdr_register() {
+    local hook="$HOME/.local/bin/dotfiles-codex-herdr"
+    if [ ! -x "$hook" ]; then
+        hook=$(command -v dotfiles-codex-herdr 2>/dev/null || true)
+    fi
+    [ -n "$hook" ] || fail 'the managed Codex resume hook installer is missing: dotfiles-codex-herdr'
+    "$hook" install >/dev/null || fail 'cannot register the managed Codex resume hook'
+}
+
+# Herdr ships its own skill for the agents it drives. The deployment
+# generates it into the shared tree and refreshes it when the installed
+# binary changed; unchanged bytes are never rewritten.
+herdr_generate_skill() {
+    local herdr=$1 target="$HOME/.agents/skills/herdr/SKILL.md" temporary=''
+    if [ -n "$herdr" ]; then
+        if temporary=$(mktemp "${TMPDIR:-/tmp}/herdr-skill.XXXXXX" 2>/dev/null) &&
+            "$herdr" --skill > "$temporary" 2>/dev/null && [ -s "$temporary" ]; then
+            if [ ! -f "$target" ] || ! cmp -s "$temporary" "$target"; then
+                mkdir -p "$(dirname "$target")" && cp "$temporary" "$target" && chmod 644 "$target"
+            fi
+        else
+            printf 'dotfiles: Herdr did not produce a skill; skipped\n' >&2
+        fi
+        [ -z "$temporary" ] || rm -f "$temporary"
+    fi
+    # A generated skill belongs to no catalog row, so the pruning step reads
+    # this record instead of the catalog to leave it alone.
+    if [ -f "$target" ]; then
+        HERDR_GENERATED_SKILLS+=("herdr|.agents/skills|herdr --skill")
+    fi
+    return 0
+}
+
+# The observed Herdr state of every selected agent that has a kind.
+herdr_state_record() {
+    local states=$1 kind state index name
+    HERDR_STATE_ROWS=()
+    while IFS='|' read -r kind state; do
+        [ -n "$kind" ] || continue
+        name=''
+        for index in "${!HERDR_KINDS[@]}"; do
+            if [ "${HERDR_KINDS[$index]}" = "$kind" ]; then
+                name=${HERDR_AGENTS[$index]}
+                break
+            fi
+        done
+        [ -n "$name" ] || continue
+        HERDR_STATE_ROWS+=("$name|$kind|$state")
+    done <<< "$states"
+}
+
+# The Herdr state of the selected agents, recorded for the drift report.
+herdr_state_write() {
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/herdr.tsv" staged row
+    [ ! -L "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles" ] || fail 'the agent state directory is a symlink'
+    mkdir -p "$(dirname "$state")"
+    [ ! -L "$state" ] || fail 'the Herdr state file is a symlink'
+    staged=$(mktemp "$state.XXXXXX")
+    {
+        printf '# agent|kind|state\n'
+        for row in ${HERDR_STATE_ROWS[@]+"${HERDR_STATE_ROWS[@]}"}; do
+            printf '%s\n' "$row"
+        done
+    } > "$staged"
+    mv -f "$staged" "$state"
+}
+
+# The generated skills the deployment owns. A generated skill comes from a
+# tool installed on the device, not from the catalog, so the pruning step
+# leaves it alone.
+herdr_generated_skills_write() {
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/generated-skills.tsv" staged row
+    [ ! -L "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles" ] || fail 'the agent state directory is a symlink'
+    mkdir -p "$(dirname "$state")"
+    [ ! -L "$state" ] || fail 'the generated skill state file is a symlink'
+    staged=$(mktemp "$state.XXXXXX")
+    {
+        printf '# name|root|generator\n'
+        for row in ${HERDR_GENERATED_SKILLS[@]+"${HERDR_GENERATED_SKILLS[@]}"}; do
+            printf '%s\n' "$row"
+        done
+    } > "$staged"
+    mv -f "$staged" "$state"
+}
+
+# Install and repair Herdr's own integrations for the selected managed agents.
+# The deployment never writes integration bytes and never touches an agent the
+# selection does not own. Herdr absent leaves nothing to do. The generated
+# skill belongs to no catalog row, so the agent selection does not gate it.
+install_herdr_integrations() {
+    local herdr helper name kind state installed=''
+    local states=''
+    herdr=$(command -v herdr 2>/dev/null || true)
+    # The helper is the managed command the status report and the health
+    # check read. The source tree holds the same bytes, so the deployment
+    # runs it from there.
+    helper="$DEPLOY_SOURCE/dot_local/bin/executable_dotfiles-herdr-status"
+    if [ ! -f "$helper" ]; then
+        helper="$HOME/.local/bin/dotfiles-herdr-status"
+    fi
+    [ -f "$helper" ] || fail 'the Herdr status helper is missing: dotfiles-herdr-status'
+    HERDR_KINDS=()
+    HERDR_AGENTS=()
+    for name in "${DEPLOY_AGENT_ORDER[@]}"; do
+        agent_selected "$name" || continue
+        kind=$(agent_herdr_kind "$name")
+        [ -n "$kind" ] || continue
+        HERDR_KINDS+=("$kind")
+        HERDR_AGENTS+=("$name")
+    done
+    if [ "${#HERDR_KINDS[@]}" -eq 0 ]; then
+        printf 'dotfiles: no selected agent has a Herdr integration\n'
+    else
+        states=$(bash "$helper" "${HERDR_KINDS[@]}")
+        while IFS='|' read -r kind state; do
+            [ -n "$kind" ] || continue
+            case "$state" in
+                current) continue ;;
+                unavailable) continue ;;
+                unsupported)
+                    printf 'dotfiles: Herdr does not support the %s integration; skipped\n' "$kind" >&2
+                    continue ;;
+            esac
+            [ -n "$herdr" ] || continue
+            DEPLOY_STEP="install-agents.herdr.$kind"
+            "$herdr" integration install "$kind" || fail "cannot install the Herdr $kind integration"
+            installed="$installed $kind"
+        done <<< "$states"
+        # The recorded state is the one the deployment left behind, so a
+        # repaired integration is never reported as drift.
+        if [ -n "$installed" ]; then
+            states=$(bash "$helper" "${HERDR_KINDS[@]}")
+        fi
+        herdr_state_record "$states"
+    fi
+    # Every codex install or reinstall is followed by the managed resume-hook
+    # registration, so the custom SessionStart entry stays last.
+    case " $installed " in
+        *' codex '*)
+            DEPLOY_STEP=install-agents.herdr.codex-hook
+            codex_herdr_register
+            ;;
+    esac
+    # The generated skill belongs to the shared tree, not to the catalog, so
+    # it is recorded even when Herdr is no longer installed.
+    DEPLOY_STEP=install-agents.herdr.skill
+    herdr_generate_skill "$herdr"
+    # The state records the live drift, so the status report and the health
+    # check read the same facts the deployment saw.
+    DEPLOY_STEP=install-agents.herdr.state
+    herdr_state_write
+    herdr_generated_skills_write
+}
+
 # Worktrunk's client plugins report which worktree an agent is using. The
 # plugin files are client state; the CLI owns their content, so they are
 # installed through it instead of being written from this source.
@@ -966,6 +1145,11 @@ install_agents() {
     done
     agent_state_write
     install_worktrunk_plugins
+    # Herdr owns its integration bytes. The deployment triggers them for the
+    # selected agents before the final client-settings merge, so the merge
+    # preserves the entries Herdr added.
+    DEPLOY_STEP=install-agents.herdr
+    install_herdr_integrations
     # Client installers can add plugin settings in their own formatting. Finish
     # through the existing merger so the first and later applies agree.
     DEPLOY_STEP=install-agents.client-settings
