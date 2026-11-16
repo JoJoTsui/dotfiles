@@ -25,6 +25,13 @@ prepend:
   # - "DOMAIN-SUFFIX,example.com,PROXY"
   # - "DOMAIN-SUFFIX,another.com,🤖AI网站"
 
+  # ---- owned categories (clash/imported/) ---------------------------------
+  # Domains copied from the subscription by intent, so they stop depending on
+  # its group names. Regenerate with clash/generate-imported-rules.py.
+  - "RULE-SET,imported-ai,ai"
+  - "RULE-SET,imported-ads,REJECT"
+  - "RULE-SET,imported-proxy,PROXY"
+
   # ---- routing policy (moved out of Merge.yaml rules:) --------------------
   # Custom IP rules (highest priority)
   - "IP-CIDR,34.102.215.99/32,PROXY"
@@ -48,7 +55,6 @@ prepend:
   # Apple services
   - "RULE-SET,icloud,DIRECT"
   - "RULE-SET,apple,DIRECT"
-
   # Proxy rules (Google, GFW, etc.)
   - "RULE-SET,google,PROXY"
   - "RULE-SET,gfw,PROXY"
@@ -63,8 +69,9 @@ prepend:
   - "GEOIP,LAN,DIRECT"
   - "GEOIP,CN,DIRECT"
 
-# The vendor list ends with its own MATCH; keep the historical direct default.
+# The vendor list ends with its own MATCH; send unmatched traffic to the owned
+# fallback group, where it can be flipped between a node and DIRECT at runtime.
 append:
-  - "MATCH,DIRECT"
+  - "MATCH,兜底"
 
 delete: []

@@ -134,3 +134,19 @@ rule-providers:
     path: ./ruleset/applications.yaml
     interval: 86400
 
+  # Categories copied from the subscription into clash/imported/, so the rules
+  # stop depending on its group names. Generate with
+  # clash/generate-imported-rules.py and copy the files into ./ruleset/.
+  imported-ai:
+    type: file
+    behavior: domain
+    path: ./ruleset/imported-ai.yaml
+  imported-ads:
+    type: file
+    behavior: domain
+    path: ./ruleset/imported-ads.yaml
+  imported-proxy:
+    type: file
+    behavior: domain
+    path: ./ruleset/imported-proxy.yaml
+
