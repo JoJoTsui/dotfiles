@@ -179,12 +179,24 @@ tidies the device.
 ```bash
 python3 deployment/skill_drift.py            # the dedicated report; exits non-zero on drift
 python3 deployment/skill_drift.py --report   # the same report without failing
-python3 deployment/update_skills.py check    # the pin check; reports the drift without failing
+python3 deployment/update_skills.py check    # the pin check and the review; reports the drift without failing
 ```
 
 An apply reports the drift and continues: the lockfile belongs to the device,
 and its contents are the device owner's to review. A gate runs the dedicated
 report, which exits non-zero while drift remains.
+
+The skill review gate measures the library and applies a description and a
+root-document budget to it. The check reads the deployed shared tree by
+default, or the library named with `--library`, and reports the per-client
+inventory, the budget findings, and the ratchet result. Rows that are already
+above a budget are recorded as reviewed exceptions in
+`deployment/skill-budget-exceptions.tsv` with their measured values and a
+reason; a new row above a budget fails the check by name, and a row whose
+measurements no longer match its exception fails as well. A library that
+cannot be read is reported as not measured. The per-client matrix is
+`deployment/agent-payload/skill-clients.tsv`, and the review reference is
+[skill review](SKILL_REVIEW.md).
 
 The six skills the CLI knew and the catalog did not are catalogued rows now.
 `baoyu-diagram`, `baoyu-slide-deck`, `guizang-ppt-skill`, and `impeccable`

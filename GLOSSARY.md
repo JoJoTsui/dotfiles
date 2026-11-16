@@ -121,6 +121,18 @@ The set of catalog skills one client receives. The shared tree is the profile
 root of Pi and OpenCode, whose merged settings register it.
 _Avoid_: Skill list, skill set
 
+**Skill review gate**:
+The check that measures a skill library against the description and
+root-document budgets and applies the ratchet. It reports the per-client
+inventory, the findings, and the ratchet result.
+_Avoid_: Skill budget, Lint
+
+**Skill review exception**:
+A catalog row that is above a budget and is kept as a reviewed exception with
+its measured values and a reason. A new row above a budget, and a row whose
+measurements no longer match its exception, fail the skill review gate.
+_Avoid_: Skill waiver, Exemption
+
 **Managed skill**:
 A skill directory the deployment wrote into a discovery root and may prune when
 it leaves the profile.

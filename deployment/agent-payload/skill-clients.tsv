@@ -1,0 +1,21 @@
+# The per-client skill matrix. One row per client that discovers skills.
+#
+# client  the client's identifier, as the agent provider catalog names it.
+# shape   shared-tree: the client reads the shared tree at the root below.
+#         copy: the client receives a filtered copy in its own root.
+# root    the discovery root, relative to the designated home.
+# scope   profile: the client receives the selected profile.
+#         global: the client receives the whole shared tree, because the client
+#         has no supported persistent filter.
+#
+# The shared tree is the portable home of the library. The two copies hold the
+# same selected profile for the clients that discover skills only in their own
+# directory. The matrix is the machine-readable form of the table in
+# docs/SKILL_REVIEW.md.
+claude|copy|.claude/skills|profile
+codex|shared-tree|.agents/skills|global
+kimi|shared-tree|.agents/skills|global
+minimax|copy|.minimax/skills|profile
+opencode|shared-tree|.agents/skills|profile
+pi|shared-tree|.agents/skills|profile
+qoder|shared-tree|.agents/skills|global

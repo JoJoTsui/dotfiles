@@ -173,7 +173,7 @@ skill_extract_archive() {
 # The catalog owns that tree, so the CLI lockfile is device state: the
 # deployment reads it, names the entries the catalog does not own, and prints
 # the removal commands that tidy the device. It never writes that file.
-skill_drift_interpreter() {
+skill_python_interpreter() {
     local candidate
     for candidate in python3 "${DOTFILES_COMMON_BIN:-}/python3" "${PIXI_HOME:-}/python3"; do
         case "$candidate" in /python3) continue ;; esac
@@ -185,13 +185,31 @@ skill_drift_interpreter() {
 report_skill_cli_drift() {
     local interpreter
     [ -f "$DEPLOY_SOURCE/deployment/skill_drift.py" ] || return 0
-    if ! interpreter=$(skill_drift_interpreter); then
+    if ! interpreter=$(skill_python_interpreter); then
         printf 'dotfiles: the skills CLI drift report needs Python; skipped\n' >&2
         return 0
     fi
     # The report never fails a deployment: the drift is the device's state to
     # review, not a defect in the deployment.
     "$interpreter" "$DEPLOY_SOURCE/deployment/skill_drift.py" --home "$HOME" --report || true
+    return 0
+}
+
+# The skill review measures the library that is about to ship and reports the
+# per-client inventory, the budget findings, and the ratchet result. The
+# report never fails a deployment: the review gate is the explicit check.
+report_skill_review() {
+    local library="$1" interpreter
+    [ -f "$DEPLOY_SOURCE/deployment/update_skills.py" ] || return 0
+    if ! interpreter=$(skill_python_interpreter); then
+        printf 'dotfiles: the skill review needs Python; skipped\n' >&2
+        return 0
+    fi
+    "$interpreter" "$DEPLOY_SOURCE/deployment/update_skills.py" review \
+        --catalog "$DEPLOY_SOURCE/deployment/skills.tsv" \
+        --library "$library" \
+        --generated-skills "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/generated-skills.tsv" \
+        --report || true
     return 0
 }
 
@@ -323,6 +341,7 @@ prepare_skill_library() {
         [ -d "$DOTFILES_SKILLS_DIR" ] || fail "DOTFILES_SKILLS_DIR is not a directory: $DOTFILES_SKILLS_DIR"
         PAYLOAD_SKILLS_DIR=$DOTFILES_SKILLS_DIR
         export PAYLOAD_SKILLS_DIR
+        report_skill_review "$PAYLOAD_SKILLS_DIR"
         return 0
     fi
     [ ! -L "$lock" ] || fail 'skill lock is a symlink'
@@ -372,6 +391,7 @@ prepare_skill_library() {
     fi
     PAYLOAD_SKILLS_DIR=$root
     export PAYLOAD_SKILLS_DIR
+    report_skill_review "$PAYLOAD_SKILLS_DIR"
 }
 
 cleanup_skill_library() {

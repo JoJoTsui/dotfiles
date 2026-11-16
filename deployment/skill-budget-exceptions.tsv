@@ -1,0 +1,37 @@
+# Reviewed skill budget exceptions.
+#
+# name|description characters|root lines|reference file|reason
+#
+# A skill above the budget is a reviewed exception until the row changes. The
+# measurements are the ones that were reviewed: a row whose measurements no
+# longer match this record fails the check, because updating an exception is a
+# review action and never an automatic pass.
+#
+# The upstream bytes are not rewritten, because the lock's value is that the
+# deployed bytes are upstream's. A description above the budget is therefore
+# kept and reviewed, not edited.
+#
+# description characters  the length of the description a client reads, with a
+#                        folded or literal frontmatter block read as its joined
+#                        prose.
+# root lines             the number of lines of the skill's root document.
+# reference file         whether the skill ships a reference file beside the
+#                        root document. A root document with a reference file
+#                        may be longer, because the detail lives beside it.
+caveman-explore|246|42|no|the upstream description names the situations to skip and the one to use; the bytes are upstream's and are not rewritten
+caveman-learn|293|176|yes|the upstream description names every trigger and the per-edit consent flow; the bytes are upstream's and are not rewritten
+caveman-setup|170|222|no|the root document carries the upstream gateway guide and the skill ships no reference file; the bytes are upstream's and are not rewritten
+code-review|419|89|no|the upstream description names both review axes and the parallel reviews; the bytes are upstream's and are not rewritten
+codebase-design|265|114|yes|the upstream description lists the design questions the vocabulary answers; the bytes are upstream's and are not rewritten
+find-skills|249|141|no|the upstream description separates finding a skill from performing the task; the bytes are upstream's and are not rewritten
+git-guardrails-claude-code|243|95|no|the upstream description names the commands the hooks block; the bytes are upstream's and are not rewritten
+graphify|353|795|yes|the upstream description names the query path and the graph tools; the root document is long and the skill ships eight reference files
+humanizer|341|397|no|the upstream description lists the writing tells the skill removes and the root document carries the full guide without a reference file
+humanizer-zh|82|408|no|the root document carries the upstream Chinese guide and the skill ships no reference file; the bytes are upstream's and are not rewritten
+impeccable|589|86|yes|the upstream description enumerates the interface surfaces the skill audits; the bytes are upstream's and are not rewritten
+lark-base|241|285|yes|the upstream description lists the Base features and the routing between the lark skills; the bytes are upstream's and are not rewritten
+lark-event|265|158|yes|the upstream description names the event stream and the route for one-off queries; the bytes are upstream's and are not rewritten
+lark-slides|265|310|yes|the upstream description names the slide operations and the routing rules; the bytes are upstream's and are not rewritten
+to-tickets|247|105|no|the upstream description names the ticket shape and the tracker the tickets reach; the bytes are upstream's and are not rewritten
+wizard|313|44|no|the upstream description names the steps only a human can perform; the bytes are upstream's and are not rewritten
+worktrunk|503|166|yes|the upstream description names every hook and configuration path the skill covers; the bytes are upstream's and are not rewritten

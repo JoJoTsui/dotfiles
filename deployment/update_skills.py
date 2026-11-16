@@ -1,4 +1,8 @@
-"""Check skill pins or explicitly refresh a reviewable lock; never deploy skills."""
+"""Check skill pins, review the skill budget, or refresh a reviewable lock.
+
+Never deploys skills. The review measures a library and reports the
+per-client inventory, the budget findings, and the ratchet result.
+"""
 from __future__ import annotations
 
 import argparse
@@ -13,8 +17,12 @@ import urllib.request
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import skill_drift  # noqa: E402  The drift reader lives beside this module.
+import skill_review  # noqa: E402  The budget reader lives beside this module.
 
 SOURCE = Path(__file__).resolve().parents[1]
+# The shared tree is the portable home of the library and the default library
+# the review measures.
+DEFAULT_LIBRARY = ".agents/skills"
 
 
 def rows(path: Path, width: int) -> list[list[str]]:
@@ -31,7 +39,8 @@ def rows(path: Path, width: int) -> list[list[str]]:
     return result
 
 
-def check(catalog: Path, lock: Path) -> None:
+def check(catalog: Path, lock: Path) -> dict[str, list[str]]:
+    """Validate the catalog against the reviewed lock; return the declarations."""
     declarations = {row[0]: row for row in rows(catalog, 6)}
     pins = {row[0]: row for row in rows(lock, 5)}
     disabled = catalog.with_name("disabled-skills.tsv")
@@ -48,6 +57,29 @@ def check(catalog: Path, lock: Path) -> None:
         pattern = r"[a-f0-9]{40}" if pin[1] == "git" else r"[a-f0-9]{64}"
         if pin[1] not in ("git", "tarball") or not re.fullmatch(pattern, pin[3]):
             raise ValueError(f"invalid skill pin: {name}")
+    return declarations
+
+
+def report_review(library: Path, catalog: Path, exceptions: Path, clients: Path,
+                  skill_roots: Path, generated: Path) -> list[str]:
+    """Measure the library and report the inventory, the findings, and the ratchet.
+
+    The review never writes the library, the exception list, or the catalog.
+    It reports the rows that fail the budget gate, so a caller decides what
+    the result means.
+    """
+    selections = {row[0]: row[5] for row in rows(catalog, 6)}
+    result = skill_review.review(
+        library,
+        selections,
+        skill_review.read_exceptions(exceptions),
+        skill_review.read_clients(clients),
+        skill_review.read_device_roots(skill_roots),
+        skill_review.read_generated_skills(generated),
+    )
+    for line in result.lines:
+        print(line)
+    return result.failures
 
 
 def layout_paths(catalog: Path, name: str, path: str) -> list[str]:
@@ -134,7 +166,7 @@ def report_cli_drift(lock_path: Path, catalog: Path, disabled: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "refresh"))
+    parser.add_argument("command", choices=("check", "refresh", "review"))
     parser.add_argument("--catalog", type=Path, default=SOURCE / "deployment/skills.tsv")
     parser.add_argument("--lock", type=Path, default=SOURCE / "deployment/skills.lock.tsv")
     parser.add_argument("--disabled", type=Path, default=SOURCE / "deployment/disabled-skills.tsv")
@@ -142,14 +174,43 @@ def main() -> None:
                         help="the skills CLI lockfile the drift report reads")
     parser.add_argument("--no-drift", action="store_true",
                         help="skip the skills CLI lockfile drift report")
+    parser.add_argument("--library", type=Path, default=None,
+                        help="the skill library the budget is measured in; "
+                             "the deployed shared tree by default")
+    parser.add_argument("--exceptions", type=Path,
+                        default=SOURCE / "deployment/skill-budget-exceptions.tsv",
+                        help="the reviewed budget exceptions")
+    parser.add_argument("--clients", type=Path,
+                        default=SOURCE / "deployment/agent-payload/skill-clients.tsv",
+                        help="the per-client skill matrix")
+    parser.add_argument("--skill-roots", type=Path,
+                        default=SOURCE / "deployment/agent-payload/skill-roots.tsv",
+                        help="the client roots the deployment never writes")
+    parser.add_argument("--generated-skills", type=Path, default=None,
+                        help="the device state that names the generated skills")
+    parser.add_argument("--report", action="store_true",
+                        help="report the budget findings without failing on them")
     args = parser.parse_args()
     if args.command == "refresh":
         refresh(args.catalog, args.lock)
-    check(args.catalog, args.lock)
-    print(f"skill pins: checked {len(rows(args.lock, 5))} entries")
-    if not args.no_drift:
+        check(args.catalog, args.lock)
+        print(f"skill pins: checked {len(rows(args.lock, 5))} entries")
+        if not args.no_drift:
+            report_cli_drift(args.cli_lock or skill_drift.cli_lock_path(Path.home()),
+                            args.catalog, args.disabled)
+        return
+    if args.command == "check":
+        check(args.catalog, args.lock)
+        print(f"skill pins: checked {len(rows(args.lock, 5))} entries")
+    library = args.library or (Path.home() / DEFAULT_LIBRARY)
+    generated = args.generated_skills or (Path.home() / ".local/state/dotfiles/generated-skills.tsv")
+    failures = report_review(library, args.catalog, args.exceptions, args.clients,
+                             args.skill_roots, generated)
+    if args.command == "check" and not args.no_drift:
         lock_path = args.cli_lock or skill_drift.cli_lock_path(Path.home())
         report_cli_drift(lock_path, args.catalog, args.disabled)
+    if failures and not args.report:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

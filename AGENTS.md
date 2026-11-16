@@ -264,6 +264,18 @@ explains every changed pair.
   command. An apply and the pin check report the drift without failing;
   `deployment/skill_drift.py` is the dedicated report a gate runs. Read
   `docs/AGENT_PAYLOAD.md` before changing the catalog, the lock, or the report.
+- **The skill review gate is measured, not asserted**: a skill's description
+  is at most 240 characters and its root document is at most 200 lines, unless
+  the skill ships a reference file. `deployment/skill-budget-exceptions.tsv`
+  records today's over-budget rows with their measured values and a reason; a
+  new row above a budget fails the check by name, and a row whose measurements
+  no longer match its exception fails as well, because updating an exception is
+  a review action. `python3 deployment/update_skills.py check` reads the
+  deployed shared tree by default, reports the per-client inventory, the
+  findings, and the ratchet result, and never claims a budget it could not
+  measure. The per-client matrix is `deployment/agent-payload/skill-clients.tsv`.
+  Read `docs/SKILL_REVIEW.md` before changing the budget, the exception list,
+  or the matrix.
 - **Worktrunk is the shared worktree tool**: the `wt` command is a common Unix
   tool (native Windows keeps the name for Windows Terminal), its skill bytes
   come from the upstream catalog like every other skill, and the per-client

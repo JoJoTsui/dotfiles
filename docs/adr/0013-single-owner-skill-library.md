@@ -55,11 +55,19 @@ prune leaves it alone everywhere.
 
 The review is guarded, not just documented. New or changed catalog rows must
 have a description of 240 characters or fewer and a root document of 200 lines
-or fewer unless it ships a reference file; the current 30 over-budget
-descriptions and 3 long root documents are listed as reviewed exceptions. The
-check reports the per-client inventory, the budget findings, and the ratchet
-failures. Upstream prose is not rewritten, because the lock's value is that the
-bytes are upstream's.
+or fewer unless it ships a reference file. The measured library holds 15
+over-budget descriptions and 3 long root documents, 17 rows in all; they are
+listed as reviewed exceptions in `deployment/skill-budget-exceptions.tsv` with
+their measured description length, their measured root lines, whether the
+skill ships a reference file, and the reason the row stays. A row above a
+budget without such an exception fails the check by name, and a row whose
+measurements no longer match its exception fails as well, because updating an
+exception is a review action. The check reports the per-client inventory, the
+budget findings, and the ratchet failures, and a library it cannot read is
+reported as not measured rather than as a pass. The per-client matrix is
+`deployment/agent-payload/skill-clients.tsv`, and the review reference is
+`docs/SKILL_REVIEW.md`. Upstream prose is not rewritten, because the lock's
+value is that the bytes are upstream's.
 
 RTK remains instruction-only: an always-applicable rule belongs in the shared
 instructions, not in a skill a client may or may not select. Herdr's own skill
