@@ -32,14 +32,29 @@ replacements.
 The portable skill tree lives at `~/.agents/skills`. Claude Code's real-file
 adapter lives at `~/.claude/skills`; its resources and relative references have
 the same layout. Built-in client skills and plugin payloads stay client-owned.
-Pi resolves the shared tree relative to its managed agent directory, and
-OpenCode V2 receives the target home's absolute skill path in its managed
-config so isolated deployments do not fall back to the host account's home.
+Pi and OpenCode V2 receive the target home's absolute skill path in their
+managed config, so an isolated deployment does not fall back to the host
+account's home.
 
-Pi also scans its own user root, `~/.pi/agent/skills`. A name that the shared
-tree provides must not be repeated there: Pi keeps the first copy it finds and
-warns about the second. The deployment reports such a duplicate instead of
-removing a file the client owns.
+Pi and OpenCode have the shared tree as their profile root: their merged
+settings register `<home>/.agents/skills`, and that tree holds the selected
+profile plus the generated Herdr skill. No second copy is deployed for them.
+Pi also resolves the shared tree natively as the Agent Skills location, so its
+configured path and the native one name the same directory and no skill is
+discovered twice.
+
+Both clients also scan roots the deployment does not own, so a name can be
+discovered twice. Pi scans its own user root, `~/.pi/agent/skills`, and warns
+about the second copy of a name the shared tree provides; OpenCode scans its
+default root, `~/.config/opencode/skills`, and the project's `.opencode/skills`
+beside the configured profile root. The registered profile root wins the name
+in both clients, because the merged settings name it: Pi prefers the
+configured path over its own root, and OpenCode prefers the configured global
+root over its default and project roots. The deployment writes neither root,
+reports every duplicate it finds, and never removes a file the client owns.
+The client-settings merge keeps a device's own skill paths, so an extra
+configured root can also repeat a profile name; that root is the device's to
+review.
 
 Claude Code and Kimi expose a `Skill` tool; OpenCode exposes its own skill
 mechanism. Qoder lists the shared library with `qoder skills list`; MiniMax Code

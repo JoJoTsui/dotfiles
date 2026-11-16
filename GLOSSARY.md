@@ -117,7 +117,8 @@ The pinned commit or archive digest that a skill catalog row resolves to.
 _Avoid_: Skill version
 
 **Skill profile**:
-The set of catalog skills one client receives.
+The set of catalog skills one client receives. The shared tree is the profile
+root of Pi and OpenCode, whose merged settings register it.
 _Avoid_: Skill list, skill set
 
 **Managed skill**:

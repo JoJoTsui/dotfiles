@@ -201,6 +201,16 @@ names the shared tree does not provide. The deployment reports the duplicates
 it finds — `deployment/agent-payload/skill-roots.tsv` lists the client roots
 that overlap the shared tree — instead of removing a file the client owns.
 
+Pi and OpenCode receive the shared tree as their profile root. Their merged
+settings register the designated home's `~/.agents/skills`, and that tree holds
+the selected profile plus the generated Herdr skill; no second copy is
+deployed for them. OpenCode scans its default root (`~/.config/opencode/skills`)
+and the project's `.opencode/skills` beside the configured root, so a device
+entry there repeats a profile name; the registered root wins the name, and the
+deployment reports the duplicate without writing to that root. The
+client-settings merge keeps a device's own skill paths, so an extra configured
+root can repeat a profile name too; that root belongs to the device.
+
 A generated skill is not a catalog row. Herdr ships its own instructions, so
 the deployment writes them into the shared tree at
 `~/.agents/skills/herdr/SKILL.md` from `herdr --skill` and refreshes them
@@ -262,13 +272,19 @@ dependencies use the skill's own setup instructions on first use.
 
 | Client | Global instructions | Portable skills | Offline discovery check |
 | --- | --- | --- | --- |
-| Codex | `~/.codex/AGENTS.md` | `~/.agents/skills` | `codex debug prompt-input` |
-| Claude Code | `~/.claude/CLAUDE.md` | real-file `~/.claude/skills` adapter | SDK initialize command catalog |
-| Kimi Code | `~/.agents/AGENTS.md` (single copy; the retired `~/.kimi-code/AGENTS.md` block is removed on upgrade) | `~/.agents/skills` | ACP initialize/new session command catalog |
-| Pi | `~/.pi/agent/AGENTS.md` | `~/.agents/skills` via `settings.skills` | public SDK resource loader |
-| OpenCode V2 | `~/.config/opencode/AGENTS.md` | `~/.agents/skills` via `skills` | loopback `GET /api/skill` |
-| MiniMax Code | `~/.minimax/AGENTS.md` | real-file `~/.minimax/skills` adapter | client-native discovery not yet recorded |
-| Qoder | `~/.qoder/AGENTS.md` | `~/.agents/skills` | `qoder skills list` |
+| Codex | `~/.codex/AGENTS.md` | `~/.agents/skills` (global set) | `codex debug prompt-input` |
+| Claude Code | `~/.claude/CLAUDE.md` | real-file `~/.claude/skills` adapter (filtered copy) | SDK initialize command catalog |
+| Kimi Code | `~/.agents/AGENTS.md` (single copy; the retired `~/.kimi-code/AGENTS.md` block is removed on upgrade) | `~/.agents/skills` (global set) | ACP initialize/new session command catalog |
+| Pi | `~/.pi/agent/AGENTS.md` | `~/.agents/skills` (profile root) via `settings.skills` | public SDK resource loader |
+| OpenCode V2 | `~/.config/opencode/AGENTS.md` | `~/.agents/skills` (profile root) via `skills` | loopback `GET /api/skill` |
+| MiniMax Code | `~/.minimax/AGENTS.md` | real-file `~/.minimax/skills` adapter (filtered copy) | client-native discovery not yet recorded |
+| Qoder | `~/.qoder/AGENTS.md` | `~/.agents/skills` (global set) | `qoder skills list` |
+
+The three shapes are the recorded limit of each client's discovery. A filtered
+copy and a profile root hold the selected profile; the global set is the whole
+shared tree, because Codex, Kimi, and Qoder have no supported persistent
+filter. The shapes follow
+[ADR 0013](adr/0013-single-owner-skill-library.md).
 
 MiniMax Code reads global memory from `<data-dir>/AGENTS.md` (default
 `~/.minimax`) and skills only from `<data-dir>/skills`, so it needs a real-file

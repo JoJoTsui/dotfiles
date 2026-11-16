@@ -5,3 +5,7 @@
 # holds only names the shared tree does not provide, and the deployment
 # reports the duplicates it finds.
 pi|.pi/agent/skills
+# OpenCode scans its default root next to the configured profile root, so a
+# device entry there repeats a profile name. The deployment owns neither root
+# separately: it reports the duplicate and never writes there.
+opencode|.config/opencode/skills

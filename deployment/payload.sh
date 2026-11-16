@@ -559,10 +559,10 @@ payload_skill_names() {
 }
 
 # Report a skill name that the shared tree and a client root both provide. The
-# client keeps the first copy it finds and warns about the second, so the
-# shared tree is the portable home and the client root holds only names the
-# shared tree does not provide. The deployment reports the duplicate instead
-# of removing a file the client owns.
+# client keeps the first copy it finds, so the shared tree is the portable
+# home and the client root holds only names the shared tree does not provide.
+# The deployment reports the duplicate instead of removing a file the client
+# owns.
 report_skill_collisions() {
     local shared="$HOME/.agents/skills"
     local catalog="$DEPLOY_SOURCE/deployment/agent-payload/skill-roots.tsv"
@@ -579,7 +579,7 @@ report_skill_collisions() {
         duplicate=$(comm -12 "$shared_names" "$client_names")
         rm -f "$shared_names" "$client_names"
         for name in $duplicate; do
-            printf 'dotfiles: skill %s is in both %s and %s; %s keeps the first copy and warns about the second\n' \
+            printf 'dotfiles: skill %s is in both %s and %s; %s keeps the first copy and neither entry is removed\n' \
                 "$name" "$shared" "$HOME/$root" "$client" >&2
         done
     done < "$catalog"
