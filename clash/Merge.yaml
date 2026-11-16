@@ -1,10 +1,39 @@
 # Profile Enhancement Merge Template for Clash Verge
+#
+# Reference copy of the live global extend config:
+#   ~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles/Merge.yaml
+# `clash/` is chezmoi-ignored, so this file is never applied to $HOME. Change the
+# live copy through the app (全局扩展配置) and copy it back here.
+#
+# Merge semantics, verified against the generated runtime config:
+#   dns:            deep-merges into the subscription's dns block
+#   rules:          REPLACES the subscription's rule list
+#   rule-providers: the Loyalsoldier sets below refresh every 86400s from GitHub
+# Personal rules belong in the per-profile rules enhancement
+# (profiles/<uid>.yaml, `prepend:`), which adds instead of replacing.
 
 profile:
   store-selected: true
 
 dns:
   use-system-hosts: false
+
+  # ===== 个人 DNS 覆写开始（Personal DNS Override）=====
+  # aihot.news 被国内 DNS 解析到失效的 EdgeOne 国内节点
+  # （180.178.227.7 / 36.25.245.118 / 119.96.17.181：TCP 通，但 TLS/HTTP 无响应），
+  # 强制改用境外解析器，拿到可用的境外节点（43.159.99.102 / 43.159.98.107）。
+  nameserver-policy:
+    "aihot.news":
+      - "https://dns.google/dns-query#PROXY"
+      - "https://cloudflare-dns.com/dns-query#PROXY"
+    "+.aihot.news":
+      - "https://dns.google/dns-query#PROXY"
+      - "https://cloudflare-dns.com/dns-query#PROXY"
+
+  # 别的域名也要走境外 DNS，照这个格式往下加：
+  # "example.com":
+  #   - "https://dns.google/dns-query#PROXY"
+  # ===== 个人 DNS 覆写结束 =====
 
 rule-providers:
   reject:
@@ -98,7 +127,33 @@ rule-providers:
     path: ./ruleset/applications.yaml
     interval: 86400
 
+
+# proxy-groups:
+#   - name: PROXY
+#     type: select
+#     proxies:
+#       - 狗狗加速.com
+#       - ♻️自动选择
+#       - 🔯故障转移
+#       - 🐴Trojan
+#       - 🔥ChatGPT
+#       - Tuic
+#       - AnyTLS
+
+
 rules:
+  # ===== 个人自定义规则开始（Personal Rules）=====
+  # AIHOT：走代理（配合上面的 nameserver-policy，才会拿到境外 CDN 节点）
+  - "DOMAIN-SUFFIX,aihot.news,PROXY"
+
+  # 新增自定义规则写在这下面。可用的代理组：
+  #   PROXY     → 主代理组（跟 RULE-SET,google/gfw 一致）
+  #   🚀节点选择 → 手动选节点
+  #   🤖AI网站  → AI 类站点专用组
+  # - "DOMAIN-SUFFIX,example.com,PROXY"
+  # - "DOMAIN-SUFFIX,another.com,🤖AI网站"
+  # ===== 个人自定义规则结束 =====
+
   # Custom IP rules (highest priority)
   - "IP-CIDR,34.102.215.99/32,PROXY"
 
@@ -111,13 +166,16 @@ rules:
 
   # Private networks
   - "RULE-SET,private,DIRECT"
+  - "IP-CIDR,10.31.3.142/32,DIRECT"
 
   # Ad blocking
   - "RULE-SET,reject,REJECT"
 
   # Apple services
-  - "RULE-SET,icloud,DIRECT"
-  - "RULE-SET,apple,DIRECT"
+  # - "RULE-SET,icloud,DIRECT"
+  # - "RULE-SET,apple,DIRECT"
+  - "RULE-SET,icloud,PROXY"
+  - "RULE-SET,apple,PROXY"
 
   # Proxy rules (Google, GFW, etc.)
   - "RULE-SET,google,PROXY"
