@@ -37,6 +37,31 @@ proposal exists, and then reinstalls through the same boundary. Vendor
 self-updaters are not invoked. The working checkout remains the source of
 truth, so the refreshed manifests and locks can be reviewed and committed.
 
+## Updating a client CLI
+
+The managed launchers own `~/.bun/bin/<command>` and `~/.local/bin/<command>`.
+Bun's global installer links into the same directory and refuses to replace an
+existing file, so `bun add -g @anthropic-ai/claude-code` fails with `EEXIST`.
+The package still lands in `~/.bun/install/global/node_modules`, where it can
+never run: the managed launcher keeps the command. Remove such a leftover with
+`bun remove -g <package>`. The deployment reports every leftover it finds, and
+`dotfiles-agents status` lists each copy with its version, the commands it
+would provide, and the command that removes it.
+
+Update a client through the wrapper instead. It resolves the upstream version,
+rewrites the pin and its Bun lock, and reinstalls the selected clients:
+
+```bash
+dotfiles-agents update claude      # one client
+dotfiles-agents update all         # every selected client
+dotfiles-agents status             # pinned, device-owned, and installed versions
+```
+
+`update` never invokes a vendor self-updater and never edits the device's
+global Bun registry. A device-owned version in
+`~/.config/dotfiles/versions.tsv` stays in effect; `status` reports it as
+device-owned rather than as a mismatch.
+
 Lock generation requires the exact Bun pin from the common catalog. When a
 proposal changes Bun-managed pins, `update` reuses the selected Bun only at that
 version; otherwise managed Pixi supplies a separate cached runtime through
@@ -74,7 +99,7 @@ mechanism; a filtered monolithic manifest is not used.
 | kimi | `@moonshot-ai/kimi-code` 2.4.1 | `kimi` |
 | pi | `@earendil-works/pi-coding-agent` 1.5.2 | `pi` |
 | opencode | `@opencode/cli` 2.2.5 | `opencode`, `opencode2` |
-| claude | `@anthropic-ai/claude-code` 2.1.311 | `claude` |
+| claude | `@anthropic-ai/claude-code` 2.1.325 | `claude` |
 | codex | `@openai/codex` 0.166.0 | `codex` |
 | minimax | `@minimax-ai/code` 0.7.0 | `mcode` |
 | qoder (native) | release manifest pin 1.1.82 | `qoder`, `qodercli` |

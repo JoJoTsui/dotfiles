@@ -662,6 +662,37 @@ def _regenerate_bun_locks(root: Path, changed_agents: set[str], bun: Path,
             shutil.copy2(project / "bun.lock", source / "bun.lock")
 
 
+def rewrite_windows_assets(path: Path, updates: dict[str, Any]) -> None:
+    """Update the named Windows assets and keep the one-asset-per-line layout."""
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    remaining = dict(updates)
+    output: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("{"):
+            output.append(line)
+            continue
+        # The catalog is a JSON array with one asset per line, so each line
+        # but the last carries the array separator.
+        separator = "," if stripped.endswith(",") else ""
+        try:
+            asset = json.loads(stripped[:-1] if separator else stripped)
+        except ValueError:
+            output.append(line)
+            continue
+        name = asset.get("name")
+        if name not in remaining:
+            output.append(line)
+            continue
+        asset.update(remaining.pop(name))
+        indent = line[:len(line) - len(line.lstrip())]
+        ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+        output.append(indent + json.dumps(asset, separators=(",", ":")) + separator + ending)
+    if remaining:
+        raise VersionError("unknown Windows asset in proposal: " + ", ".join(sorted(remaining)))
+    path.write_text("".join(output), encoding="utf-8")
+
+
 def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
     try:
         proposal = _proposal(json.loads(proposal_path.read_text(encoding="utf-8")))
@@ -692,11 +723,8 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
         rewrite_manager_digests(staged_deployment / "managers.sh", proposal.get("managers", {}))
 
         assets_path = staged_deployment / "windows-assets.json"
-        assets = json.loads(assets_path.read_text(encoding="utf-8"))
-        asset_map = {item["name"]: item for item in assets}
-        for name, update in proposal.get("windowsAssets", {}).items():
-            asset_map[name].update(update)
-        assets_path.write_text(json.dumps(assets, indent=2) + "\n", encoding="utf-8")
+        if proposal.get("windowsAssets"):
+            rewrite_windows_assets(assets_path, proposal["windowsAssets"])
 
         changed_agents: set[str] = set()
         changed_native: dict[str, str] = {}

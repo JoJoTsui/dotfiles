@@ -162,6 +162,51 @@ class AgentTests(unittest.TestCase):
         self.assertNotIn("dotfiles: applied", result.stdout)
         self.assertEqual(registry.read_text(), original)
 
+    def test_deployment_reports_a_leftover_bun_global_copy(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual apply requires chezmoi")
+        tools = self.root / "tools"
+        tools.mkdir()
+        bun = tools / "bun"
+        helper = tools / "bun.py"
+        helper.write_text(
+            "import os, pathlib, sys\n"
+            f"pins = {agent_pins()!r}\n"
+            "project = pathlib.Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
+            "pin = pins[project.name]\n"
+            "for command in pin['commands'].split(','):\n"
+            "    launcher = project / 'node_modules/.bin' / command\n"
+            "    launcher.parent.mkdir(parents=True, exist_ok=True)\n"
+            "    launcher.write_text('#!/bin/sh\\necho ' + pin['version'] + '\\n')\n"
+            "    launcher.chmod(0o755)\n")
+        bun.write_text('#!/bin/sh\nif [ "$1" = --version ]; then echo ' + common_pin("bun") +
+                       '; else exec "' + sys.executable + '" "' + str(helper) + '" "$@"; fi\n')
+        bun.chmod(0o755)
+        node = tools / "node"
+        # The deployment reads a package version and its bins with Node.
+        node.write_text('#!/bin/sh\nif [ "$1" = "-e" ]; then exec "' + sys.executable +
+                        '" -c \'import json,sys; m=json.load(open(sys.argv[1])); b=m.get("bin") or {}; '
+                        'names=[b] if isinstance(b,str) else list(b); '
+                        'print(str(m.get("version",""))+chr(9)+" ".join(names))\' "$3"; fi\n'
+                        'echo v' + common_pin("nodejs") + '\n')
+        node.chmod(0o755)
+        leftover = self.home / ".bun/install/global/node_modules/@earendil-works/pi-coding-agent/package.json"
+        leftover.parent.mkdir(parents=True)
+        leftover.write_text(json.dumps({"name": "@earendil-works/pi-coding-agent", "version": "9.9.9",
+                                        "bin": {"pi": "dist/bundle/cli.js", "pi-extra": "dist/extra.js"}}))
+        result = self.deploy("--agents-only", "--agents", "pi", env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node)))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("@earendil-works/pi-coding-agent@9.9.9 is also installed in the Bun global registry",
+                      result.stdout)
+        self.assertIn("the managed launcher owns pi", result.stdout)
+        self.assertIn("the global copy also provides pi-extra, which no managed launcher owns",
+                      result.stdout)
+        self.assertIn("bun remove -g @earendil-works/pi-coding-agent", result.stdout)
+        # The device-owned package stays; the deployment only reports it.
+        self.assertTrue(leftover.is_file())
+
     def test_selected_opencode_accepts_rendered_config_with_managed_updates(self):
         opencode = os.environ.get("DOTFILES_TEST_OPENCODE")
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI")

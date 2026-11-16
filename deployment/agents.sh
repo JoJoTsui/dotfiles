@@ -451,6 +451,30 @@ agent_override_material() {
     rm -rf "$scratch"
 }
 
+# Bun's global registry can keep a copy of a managed client, for example after
+# an unsuccessful `bun add -g`. The managed launcher owns the command, so such
+# a copy never runs; it only drifts from the pin. Report the leftover with the
+# command that removes it instead of deleting a device-owned package.
+agent_global_copy_warning() {
+    local package=$1 node=$2 command=$3 manifest details version bins extra
+    manifest="$BUN_INSTALL/install/global/node_modules/$package/package.json"
+    [ -f "$manifest" ] || return 0
+    details=$("$node" -e 'const fs=require("fs");try{const m=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const b=m.bin||{};const names=typeof b==="string"?[require("path").basename(b)]:Object.keys(b);process.stdout.write(String(m.version||"")+"\t"+names.join(" "))}catch(e){}' "$manifest" 2>/dev/null) || details=''
+    version=${details%%$'\t'*}
+    bins=${details#*$'\t'}
+    printf 'dotfiles: %s@%s is also installed in the Bun global registry; the managed launcher owns %s\n' \
+        "$package" "${version:-unknown}" "$command"
+    extra=''
+    for bin in $bins; do
+        [ "$bin" = "$command" ] && continue
+        extra="$extra $bin"
+    done
+    if [ -n "$extra" ]; then
+        printf 'dotfiles: the global copy also provides%s, which no managed launcher owns\n' "$extra"
+    fi
+    printf 'dotfiles: remove the leftover copy with: bun remove -g %s\n' "$package"
+}
+
 install_agents() {
     local common_bin="${DOTFILES_COMMON_BIN:-$PIXI_HOME/bin}"
     local bun="${DOTFILES_BUN_BIN:-$common_bin/bun}" node="${DOTFILES_NODE_BIN:-$common_bin/node}"
@@ -544,6 +568,7 @@ install_agents() {
                 case "$diagnostic" in *"$version"*) ;; *) fail "$name diagnostic did not report pinned version $version" ;; esac
             fi
         done
+        agent_global_copy_warning "$package" "$node" "${exposed_commands[0]}"
     done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
     install_native_agents
     install_worktrunk_plugins

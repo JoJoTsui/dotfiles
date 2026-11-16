@@ -28,6 +28,7 @@ class AgentUpdateTests(unittest.TestCase):
         self.pins.parent.mkdir()
         self.original_pins = (SOURCE / "deployment/agents/catalog.tsv").read_text()
         self.pins.write_text(self.original_pins)
+        shutil.copy2(SOURCE / "deployment/agents/native.tsv", deployment / "agents/native.tsv")
         self.home = self.root / "home"
         self.common = self.home / ".local/bin"
         self.common.mkdir(parents=True)
@@ -152,6 +153,33 @@ class AgentUpdateTests(unittest.TestCase):
         self.assertFalse(self.pixi_log.exists())
         self.assertEqual(self.pins.read_text(), "refreshed pins\n")
         self.assert_reinstalled("qoder")
+
+    def test_status_reports_a_shadowed_bun_global_copy(self):
+        registry = self.home / ".bun/install/global/node_modules/@earendil-works/pi-coding-agent"
+        registry.mkdir(parents=True)
+        (registry / "package.json").write_text(json.dumps(
+            {"name": "@earendil-works/pi-coding-agent", "version": "9.9.9",
+             "bin": {"pi": "dist/bundle/cli.js"}}))
+        result = subprocess.run(["/bin/bash", str(self.command), "status", "pi"],
+                                cwd=self.root, env=dict(self.env),
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("GLOBAL COPIES", result.stdout)
+        self.assertIn("@earendil-works/pi-coding-agent 9.9.9", result.stdout)
+        self.assertIn("bins: pi", result.stdout)
+        self.assertIn("bun remove -g @earendil-works/pi-coding-agent", result.stdout)
+
+    def test_status_uses_the_device_owned_version(self):
+        override = self.home / ".config/dotfiles/versions.tsv"
+        override.parent.mkdir(parents=True)
+        override.write_text("# device\nagent|pi|8.8.8\n")
+        result = subprocess.run(["/bin/bash", str(self.command), "status", "pi"],
+                                cwd=self.root, env=dict(self.env),
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("8.8.8", result.stdout)
+        self.assertIn("device-owned version", result.stdout)
+        self.assertNotIn("mismatch", result.stdout)
 
     def test_missing_managed_pixi_fails_before_refresh_or_pin_changes(self):
         self.pixi.unlink()

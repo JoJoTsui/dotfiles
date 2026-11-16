@@ -116,7 +116,7 @@ update_agents() {
 }
 
 status_agents() {
-    local selection name pin command output state
+    local selection name pin command note output state
     need_source
     selection=$(selection_arg "$@")
     printf '%-10s %-12s %-16s %s\n' NAME PIN COMMAND STATE
@@ -130,12 +130,32 @@ from deployment.update_versions import agent_rows, native_agent_rows, selected_a
 root = Path.cwd()
 agents = agent_rows(root)
 native = native_agent_rows(root)
+
+
+def device_override(name):
+    path = Path.home() / ".config" / "dotfiles" / "versions.tsv"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("|")
+        if len(fields) >= 3 and fields[0] == "agent" and fields[1] == name:
+            return fields[2].strip()
+    return ""
+
+
 for name in selected_agents(root, sys.argv[1]):
     entry = agents.get(name) or native[name]
     command = entry["commands"].split(",")[0]
-    print(f"{name}\t{entry['version']}\t{command}")
+    override = device_override(name)
+    pin = override or entry["version"]
+    print(f"{name}\t{pin}\t{command}\t{'device-owned version' if override else ''}")
 PY
-    ) | while IFS=$'\t' read -r name pin command; do
+    ) | while IFS=$'\t' read -r name pin command note; do
         if command -v "$command" >/dev/null 2>&1; then
             output=$("$command" --version 2>&1 | head -n1 || true)
             case "$output" in
@@ -145,8 +165,108 @@ PY
         else
             state='not installed'
         fi
-        printf '%-10s %-12s %-16s %s\n' "$name" "$pin" "$command" "$state"
+        printf '%-10s %-12s %-16s %s\n' "$name" "$pin" "$command" "$state${note:+ ($note)}"
     done
+    # A Bun global copy of a managed client cannot run: the managed launcher
+    # owns the command. Report it so the leftover can be removed by name.
+    (
+        cd "$SOURCE"
+        "$PYTHON" - "$selection" <<'PY'
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from deployment.update_versions import agent_rows, native_agent_rows, selected_agents
+
+root = Path.cwd()
+agents = agent_rows(root)
+native = native_agent_rows(root)
+managed = set()
+for entry in list(agents.values()) + list(native.values()):
+    managed.update(entry["commands"].split(","))
+
+
+def device_override(name):
+    path = Path.home() / ".config" / "dotfiles" / "versions.tsv"
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return ""
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("|")
+        if len(fields) >= 3 and fields[0] == "agent" and fields[1] == name:
+            return fields[2].strip()
+    return ""
+
+
+def package_bins(manifest):
+    try:
+        declared = json.loads(manifest.read_text(encoding="utf-8")).get("bin") or {}
+    except (OSError, ValueError):
+        return []
+    if isinstance(declared, str):
+        return [Path(declared).name]
+    return list(declared)
+
+
+def registries():
+    roots = []
+    install = os.environ.get("BUN_INSTALL")
+    if install:
+        roots.append(Path(install))
+    roots.append(Path.home() / ".bun")
+    bun = shutil.which("bun")
+    if bun:
+        try:
+            reported = subprocess.run([bun, "pm", "bin", "-g"], capture_output=True,
+                                      text=True, timeout=20).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            reported = ""
+        if reported:
+            roots.append(Path(reported).parent)
+    unique = []
+    for candidate in roots:
+        if str(candidate) not in [str(item) for item in unique]:
+            unique.append(candidate)
+    return [item / "install" / "global" / "node_modules" for item in unique]
+
+
+copies = []
+for name in selected_agents(root, sys.argv[1]):
+    entry = agents.get(name)
+    if not entry:
+        continue
+    package = entry["package"]
+    for registry in registries():
+        manifest = registry / package / "package.json"
+        if not manifest.is_file():
+            continue
+        try:
+            version = json.loads(manifest.read_text(encoding="utf-8")).get("version", "")
+        except (OSError, ValueError):
+            version = ""
+        bins = package_bins(manifest)
+        copies.append((package, version or "unknown", manifest.parent, bins,
+                       [item for item in bins if item not in managed]))
+        break
+if copies:
+    print()
+    print("GLOBAL COPIES (Bun global registry; the managed launcher owns the command)")
+    for package, version, path, bins, exclusive in copies:
+        print(f"  {package} {version} {path}")
+        if bins:
+            note = ", ".join(bins)
+            if exclusive:
+                note += " (" + ", ".join(exclusive) + " only here)"
+            print(f"    bins: {note}")
+        print(f"    remove with: bun remove -g {package}")
+PY
+    )
 }
 
 case "${1:-}" in

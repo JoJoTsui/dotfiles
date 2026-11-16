@@ -56,8 +56,13 @@ class VersionUpdateTests(unittest.TestCase):
 
     def test_common_refresh_is_reviewable_and_idempotent(self):
         original = common_versions(self.root)["uv"]
+        assets = self.root / "deployment/windows-assets.json"
+        before = assets.read_bytes()
         changed = refresh(self.root, self.proposal({"common": {"uv": "99.1.0"}}), Path("unused"))
         self.assertIn(Path("deployment/common-tools.tsv"), changed)
+        # A proposal without Windows assets must not rewrite that catalog.
+        self.assertNotIn(Path("deployment/windows-assets.json"), changed)
+        self.assertEqual(assets.read_bytes(), before)
         self.assertEqual(common_versions(self.root)["uv"], "99.1.0")
         self.assertNotEqual(original, common_versions(self.root)["uv"])
         self.assertEqual(check(self.root)["commonPins"], check(SOURCE)["commonPins"])
