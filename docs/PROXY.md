@@ -69,6 +69,11 @@ everything else leaves through a US node. The instance configures itself
 through a controller port of its own and pins the `GLOBAL` group to the
 lowest-latency US leaf, the way the service's supervisor does.
 
+US is a preference, not a restriction: when no US leaf serves traffic, the
+helper measures the remaining nodes and pins the lowest-latency working one,
+printing that it fell back. Groups are never candidates, since pinning a
+selector to another group would measure that group's choice rather than a node.
+
 The instance builds **its own** profile. The long-standing service keeps its
 own profile untouched, and the deployment never overwrites it.
 

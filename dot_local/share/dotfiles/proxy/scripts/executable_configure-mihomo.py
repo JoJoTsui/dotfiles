@@ -133,6 +133,32 @@ def pin_node(base: str, selector: str, name: str) -> None:
     http("PUT", base, f"/proxies/{encoded}", {"name": name})
 
 
+# Group types answer /proxies like nodes do, but pinning a selector to another
+# group would measure that group's own choice, not a node.
+GROUP_TYPES = {"Selector", "URLTest", "Fallback", "LoadBalance", "Relay", "Compatible"}
+
+
+def measure_nodes(base: str, selector: str, candidates: list[str], proxy_url: str) -> list[tuple[int, str]]:
+    """Pin each candidate and keep the ones that actually serve traffic."""
+    working: list[tuple[int, str]] = []
+    for name in candidates:
+        pin_node(base, selector, name)
+        time.sleep(0.4)
+        started = time.monotonic()
+        ok, ip = route_health(proxy_url)
+        if not ok and not working:
+            # The first candidates can fail while the proxy is still warming up.
+            time.sleep(1.5)
+            ok, ip = route_health(proxy_url)
+        if ok:
+            elapsed = int((time.monotonic() - started) * 1000)
+            print(f"  {elapsed:>5} ms  {name}  exit {ip}")
+            working.append((elapsed, name))
+        else:
+            print(f"  no exit    {name}")
+    return working
+
+
 def wait_for_controller(base: str, deadline_s: float = 15.0) -> None:
     deadline = time.monotonic() + deadline_s
     last_err: Exception | None = None
@@ -186,11 +212,13 @@ def main() -> int:
 
     members = proxies[selector].get("all", [])
     pattern = REGION_PATTERNS[region]
-    candidates = [n for n in members if pattern.search(n) and n not in STRUCTURAL_NODES]
+    nodes = [n for n in members
+             if n not in STRUCTURAL_NODES
+             and proxies.get(n, {}).get("type") not in GROUP_TYPES]
+    candidates = [n for n in nodes if pattern.search(n)]
 
     if not candidates:
-        print(f"no {region} nodes in {selector}; leaving selector unchanged")
-        return 0
+        print(f"no {region} nodes in {selector}")
 
     current = proxies[selector].get("now")
     if check_only:
@@ -200,30 +228,30 @@ def main() -> int:
             return 0
         print("route is not serving traffic; looking for a working node")
 
-    print(f"testing {len(candidates)} {region} nodes in {selector} through the proxy...")
-    working: list[tuple[int, str]] = []
-    for name in candidates:
-        pin_node(base, selector, name)
-        time.sleep(0.4)
-        started = time.monotonic()
-        ok, ip = route_health(proxy_url)
-        if not ok and not working:
-            # The first candidates can fail while the proxy is still warming up.
-            time.sleep(1.5)
-            ok, ip = route_health(proxy_url)
-        if ok:
-            elapsed = int((time.monotonic() - started) * 1000)
-            print(f"  {elapsed:>5} ms  {name}  exit {ip}")
-            working.append((elapsed, name))
-        else:
-            print(f"  no exit    {name}")
+    if candidates:
+        print(f"testing {len(candidates)} {region} nodes in {selector} through the proxy...")
+        working = measure_nodes(base, selector, candidates, proxy_url)
+        if working:
+            elapsed, name = min(working)
+            print(f"selecting {name} ({elapsed} ms) into {selector}")
+            pin_node(base, selector, name)
+            return 0
+        print(f"no {region} node served traffic; falling back to other regions")
 
+    # Preference, not a restriction: only now consider nodes outside the region.
+    others = [n for n in nodes if not pattern.search(n)]
+    if not others:
+        print(f"no other node in {selector}; leaving selector unchanged")
+        return 1 if check_only else 0
+
+    print(f"testing {len(others)} other nodes in {selector} through the proxy...")
+    working = measure_nodes(base, selector, others, proxy_url)
     if not working:
         print("no node served traffic through the proxy; leaving selector unchanged")
         return 1 if check_only else 0
 
     elapsed, name = min(working)
-    print(f"selecting {name} ({elapsed} ms) into {selector}")
+    print(f"selecting {name} ({elapsed} ms) into {selector} (no {region} node was available)")
     pin_node(base, selector, name)
     return 0
 
