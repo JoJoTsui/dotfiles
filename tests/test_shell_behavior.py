@@ -181,15 +181,17 @@ class ShellBehaviorTests(unittest.TestCase):
                     self.assertEqual(json.loads(result.stdout), actual["PATH"])
 
     def test_proxy_helpers_agree_and_unset_all_variants(self):
+        # PROXY_HTTP is the documented pin and skips the port probe: the probe
+        # would otherwise pick up whatever proxy the host happens to be running.
         proxy = 'http://127.0.0.1:17777/?quoted=\'"value\\path'
-        self.deploy(overrides={"HTTP_PROXY_URL": proxy})
+        self.deploy()
         for name in self.shells():
             with self.subTest(shell=name):
                 if name == "nu":
                     script = 'noproxy; print ([$env.http_proxy $env.https_proxy $env.HTTP_PROXY $env.HTTPS_PROXY] | to json --raw); unproxy; $env | columns | where {|name| $name in [http_proxy https_proxy HTTP_PROXY HTTPS_PROXY] } | to json --raw'
                 else:
                     script = '. "$HOME/.env_core"; noproxy; printf "%s\\n" "$http_proxy" "$https_proxy" "$HTTP_PROXY" "$HTTPS_PROXY"; unproxy; printf "%s\\n" "${http_proxy+set}${https_proxy+set}${HTTP_PROXY+set}${HTTPS_PROXY+set}"'
-                result = self.shell(name, script)
+                result = self.shell(name, script, overrides={"PROXY_HTTP": proxy})
                 self.assertEqual(result.returncode, 0, result.stderr)
                 lines = result.stdout.splitlines()
                 if name == "nu":

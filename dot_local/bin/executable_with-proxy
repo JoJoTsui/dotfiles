@@ -15,19 +15,55 @@
 # NO_PROXY is set to the local list rather than inherited: an inherited bypass
 # list could send a public destination around the proxy route.
 #
-# Env knobs (set these in your shell rc if 7890 is wrong on this host):
-#   PROXY_HTTP   default http://127.0.0.1:7890
-#   PROXY_SOCKS  default socks5h://127.0.0.1:7890
+# The endpoint is resolved per call, not per platform. A port belongs to the
+# proxy process that owns it: the managed mihomo defaults to 7890 and Clash
+# Verge to 7897, on every OS. So this probes the usual ports instead of
+# branching on uname, and the same dotfiles work on a Mac running Clash Verge
+# and on a headless host running the deployment instance.
+#
+# Env knobs (an explicit value always skips the probe):
+#   PROXY_HTTP   default: probed, else http://127.0.0.1:7890
+#   PROXY_SOCKS  default: socks5h:// on the same host:port as PROXY_HTTP
 #   PROXY_NO     default localhost,127.0.0.1,::1
+#
+# --print emits the export lines instead of exec'ing, which is how the shell
+# helper in .env_core reuses this resolution without copying the port list.
 
 set -euo pipefail
 
-PROXY_HTTP=${PROXY_HTTP:-http://127.0.0.1:7890}
-PROXY_SOCKS=${PROXY_SOCKS:-socks5h://127.0.0.1:7890}
 PROXY_NO=${PROXY_NO:-localhost,127.0.0.1,::1}
 
+if [[ -z ${PROXY_HTTP:-} ]]; then
+    for _port in 7897 7890; do
+        if nc -z 127.0.0.1 "$_port" 2>/dev/null; then
+            PROXY_HTTP="http://127.0.0.1:$_port"
+            break
+        fi
+    done
+fi
+PROXY_HTTP=${PROXY_HTTP:-http://127.0.0.1:7890}
+PROXY_SOCKS=${PROXY_SOCKS:-socks5h://${PROXY_HTTP#http://}}
+
+if [[ ${1:-} == --print-url ]]; then
+    printf '%s\n' "$PROXY_HTTP"
+    exit 0
+fi
+
+if [[ ${1:-} == --print ]]; then
+    printf 'export HTTP_PROXY=%q\n' "$PROXY_HTTP"
+    printf 'export HTTPS_PROXY=%q\n' "$PROXY_HTTP"
+    printf 'export http_proxy=%q\n' "$PROXY_HTTP"
+    printf 'export https_proxy=%q\n' "$PROXY_HTTP"
+    printf 'export ALL_PROXY=%q\n' "$PROXY_SOCKS"
+    printf 'export all_proxy=%q\n' "$PROXY_SOCKS"
+    printf 'export NO_PROXY=%q\n' "$PROXY_NO"
+    printf 'export no_proxy=%q\n' "$PROXY_NO"
+    printf 'export PROXY=%q\n' "$PROXY_HTTP"
+    exit 0
+fi
+
 if [[ $# -eq 0 ]]; then
-    echo "usage: with-proxy command [args...]" >&2
+    echo "usage: with-proxy [--print] command [args...]" >&2
     exit 64
 fi
 

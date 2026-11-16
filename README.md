@@ -80,7 +80,7 @@ never enter git):
 | `role` | `DOTFILES_ROLE` | workstation |
 | `arch` | `DOTFILES_ARCH` | detected; x86_64/aarch64 |
 | `class` | `DOTFILES_CLASS` (legacy input) | compatibility metadata |
-| `proxyUrl` | `HTTP_PROXY_URL` | `http://127.0.0.1:7890` |
+| `proxyUrl` | `HTTP_PROXY_URL` | `http://127.0.0.1:7890`; static value for the vscode-server setting — the shell helpers probe the port instead |
 | `mirror` | `DOTFILES_MIRROR` | `tuna`; select `upstream` outside the regional mirror setup |
 | `glmBaseUrl` | `GLM_BASE_URL` | `https://open.bigmodel.cn/api/anthropic` |
 | `glmToken` | `GLM_API_TOKEN` | `REPLACE_ME` |

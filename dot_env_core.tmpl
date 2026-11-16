@@ -88,13 +88,18 @@ if command -v vivid >/dev/null 2>&1; then
     export LS_COLORS
 fi
 
-# Public proxy helpers share the configured URL; enabling is deliberate.
+# Public proxy helpers share one endpoint resolution, owned by with-proxy:
+# an explicit PROXY_HTTP wins, otherwise it probes the port the device serves
+# (Clash Verge 7897, managed mihomo 7890). Baking the URL in here made a Mac
+# running Clash Verge inherit the headless 7890 and fail every request.
 noproxy() {
-    http_proxy='{{ .proxyUrl | replace "'" "'\"'\"'" }}'
-    https_proxy=$http_proxy HTTP_PROXY=$http_proxy HTTPS_PROXY=$http_proxy
-    export http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
+    if ! command -v with-proxy >/dev/null 2>&1; then
+        printf '%s\n' 'noproxy: with-proxy is not installed' >&2
+        return 1
+    fi
+    eval "$(with-proxy --print)"
 }
-unproxy() { unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY; }
+unproxy() { unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy; }
 
 # Tailspin owns highlighting/paging; arguments and stdin pass through unchanged.
 logs() { command tspin "$@"; }

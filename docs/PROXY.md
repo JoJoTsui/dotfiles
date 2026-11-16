@@ -104,6 +104,14 @@ loopback `NO_PROXY`; `direct` removes every proxy variable. Both exec the
 command, so exit status and signals pass through. Override the endpoint with
 `PROXY_HTTP` and `PROXY_SOCKS`.
 
+The endpoint is resolved per call, not per platform. A port belongs to the
+proxy process that owns it — the deployment instance uses 7890, Clash Verge
+uses 7897, on every OS — so `with-proxy` probes 7897 then 7890 and falls back
+to 7890 when neither answers. An explicit `PROXY_HTTP` skips the probe.
+`noproxy`, in both the POSIX and the Nu adapter, asks `with-proxy` for the same
+answer, so the port is never baked in at `chezmoi init` and one checkout
+serves a headless host and a desktop running a different client.
+
 The routing policy follows the source project: local and China destinations go
 direct, advertising domains are rejected, and everything
 else uses the pinned US leaf. Loopback traffic never reaches the proxy.

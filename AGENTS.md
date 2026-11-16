@@ -92,8 +92,11 @@ explains every changed pair.
 - **Shared settings are defined once**: `.chezmoidata.toml` owns shared defaults
   and PATH priority. `dot_env_core.tmpl` and
   `dot_config/nushell/env.nu.tmpl` render its POSIX/Nu syntax; change the model,
-  then verify both adapters. Proxy input comes from `proxyUrl` and is quoted
-  separately for each shell. The `.bashrc` and `.zshrc` interactive blocks keep
+  then verify both adapters. `proxyUrl` is the static value written into the
+  vscode-server setting; the shell proxy helpers resolve the port at call time
+  through `with-proxy`, because the port belongs to whichever proxy client the
+  device runs (Clash Verge 7897, deployment mihomo 7890), not to the OS. The
+  `.bashrc` and `.zshrc` interactive blocks keep
   equivalent managed-tool hooks (Zsh adds its required `compinit`).
 - **macOS runs Zsh, not Bash**: macOS applies no Bash startup file and installs
   no managed Bash runtime. `dot_zprofile` is the Zsh login file and shares
