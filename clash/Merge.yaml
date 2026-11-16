@@ -127,20 +127,6 @@ rule-providers:
     path: ./ruleset/applications.yaml
     interval: 86400
 
-
-# proxy-groups:
-#   - name: PROXY
-#     type: select
-#     proxies:
-#       - 狗狗加速.com
-#       - ♻️自动选择
-#       - 🔯故障转移
-#       - 🐴Trojan
-#       - 🔥ChatGPT
-#       - Tuic
-#       - AnyTLS
-
-
 rules:
   # ===== 个人自定义规则开始（Personal Rules）=====
   # AIHOT：走代理（配合上面的 nameserver-policy，才会拿到境外 CDN 节点）
