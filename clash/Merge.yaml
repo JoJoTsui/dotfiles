@@ -142,6 +142,9 @@ rules:
 
   # Custom IP rules (highest priority)
   - "IP-CIDR,34.102.215.99/32,PROXY"
+  # Private-range host that must stay off the proxy. RULE-SET,private is a
+  # domain set, so it cannot match an address; this entry is the only cover.
+  - "IP-CIDR,10.31.3.142/32,DIRECT"
 
   # Local applications
   - "RULE-SET,applications,DIRECT"
@@ -152,7 +155,6 @@ rules:
 
   # Private networks
   - "RULE-SET,private,DIRECT"
-  - "IP-CIDR,10.31.3.142/32,DIRECT"
 
   # Ad blocking
   - "RULE-SET,reject,REJECT"
