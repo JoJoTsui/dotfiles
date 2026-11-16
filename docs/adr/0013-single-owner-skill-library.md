@@ -43,6 +43,16 @@ leave a profile. Device-created skills are never removed. A generated skill and
 a symlinked entry are preserved as well: the prune never follows a link and
 never deletes through it.
 
+A copy root is inspected before a selected skill is written there. A device
+entry with the same name — a symlink or a file — is preserved and reported,
+and the deployment never writes through it. A directory the inventory does not
+record is adopted when it already holds the selected bytes, and preserved and
+reported when its bytes differ, so the stale copy a device carried before the
+inventory is never deleted silently. A directory the inventory records belongs
+to the deployment, so the staged copy replaces it. The generated skill reaches
+every managed root, and each root is recorded in `generated-skills.tsv` so the
+prune leaves it alone everywhere.
+
 The review is guarded, not just documented. New or changed catalog rows must
 have a description of 240 characters or fewer and a root document of 200 lines
 or fewer unless it ships a reference file; the current 30 over-budget

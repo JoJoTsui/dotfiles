@@ -249,6 +249,13 @@ explains every changed pair.
   recorded directory that leaves the selection. A device-created skill, a
   generated skill, and a symlinked entry are preserved and reported, never
   removed.
+- **A copy root is inspected before a skill is written there**: a device entry
+  that carries the name of a selected skill is preserved and reported, and the
+  copy never follows a link or writes through it. An unrecorded directory that
+  already holds the selected bytes is adopted without a rewrite; a directory
+  the inventory records belongs to the deployment, so the staged copy replaces
+  it. The generated Herdr skill reaches every managed root, and each root is
+  recorded in `~/.local/state/dotfiles/generated-skills.tsv`.
 - **The catalog is the only writer of a managed skill root**: `bunx skills add`
   and `bunx skills update` must not target `~/.agents/skills` or a client root
   the deployment owns. The CLI's lockfile at `~/.agents/.skill-lock.json` is

@@ -9,9 +9,25 @@ payload_safe_destination() {
     done
 }
 
+# A payload source holds regular resources only. A symlink in the source
+# would carry a copy outside the managed tree.
+payload_validate_source() {
+    local source=$1 entry
+    [ ! -L "$source" ] || fail "agent payload source is a symlink: $source"
+    if [ -d "$source" ]; then
+        for entry in "$source"/* "$source"/.[!.]* "$source"/..?*; do
+            [ -e "$entry" ] || [ -L "$entry" ] || continue
+            payload_validate_source "$entry"
+        done
+        return 0
+    fi
+    [ -f "$source" ] || fail "unsupported agent payload resource: $source"
+    return 0
+}
+
 payload_validate_tree() {
     local source=$1 target=$2 entry
-    [ ! -L "$source" ] || fail "agent payload source is a symlink: $source"
+    payload_validate_source "$source"
     payload_safe_destination "$target"
     if [ -d "$source" ]; then
         [ ! -e "$target" ] || [ -d "$target" ] || fail "agent payload directory conflicts with a file: $target"
@@ -21,8 +37,6 @@ payload_validate_tree() {
         done
     elif [ -f "$source" ]; then
         [ ! -e "$target" ] || [ -f "$target" ] || fail "agent payload file conflicts with a directory: $target"
-    else
-        fail "unsupported agent payload resource: $source"
     fi
 }
 
@@ -34,9 +48,11 @@ payload_source_path() {
     fi
 }
 
-# Validate the destinations of the skills the deployment writes. A skill the
+# Validate the sources of the skills the deployment writes. A skill the
 # selection leaves out is not written, so its destination is not the
-# deployment's business; the prune reports that entry and preserves it.
+# deployment's business; the prune reports that entry and preserves it. The
+# destination of a written skill is inspected when the skill is copied: a
+# device entry there is preserved and reported, never written through.
 payload_validate_skills() {
     local origin=$1 target=$2 entry name selection
     [ ! -L "$origin" ] || fail "agent payload source is a symlink: $origin"
@@ -48,7 +64,7 @@ payload_validate_skills() {
         selection=$(skill_catalog_selection "$name")
         [ -n "$selection" ] || continue
         skill_selected "$name" "$selection" || continue
-        payload_validate_tree "$entry" "$target/$name"
+        payload_validate_source "$entry"
     done
 }
 
@@ -168,6 +184,103 @@ payload_skill_disabled() {
 # prune step reads the record to tell a managed skill from a device skill.
 PAYLOAD_SKILL_WRITTEN=()
 
+# The generated skill rows the deployment owns in the other managed roots.
+PAYLOAD_GENERATED_SKILL_ROWS=()
+
+# Whether the previous inventory recorded a managed skill in a root. The copy
+# step reads that record before the prune rewrites it, so it knows which
+# destinations the deployment owns.
+payload_previous_managed_skill() {
+    local state name=$1 root=$2
+    state=$(payload_managed_skills_state)
+    [ -f "$state" ] || return 1
+    PAYLOAD_MANAGED_NAME=$name PAYLOAD_MANAGED_ROOT=$root awk -F '|' '
+        BEGIN { name = ENVIRON["PAYLOAD_MANAGED_NAME"]; root = ENVIRON["PAYLOAD_MANAGED_ROOT"] }
+        !/^#/ && NF >= 2 && $1 == name && $2 == root { found = 1 }
+        END { exit !found }
+    ' "$state"
+}
+
+# The entries of a skill directory, with their kinds. Two trees with the same
+# entries hold the same resources.
+payload_tree_entries() {
+    local root=$1
+    (
+        cd "$root" || exit 1
+        find . -mindepth 1 | LC_ALL=C sort | while IFS= read -r path; do
+            if [ -L "$path" ]; then
+                printf 'l %s\n' "$path"
+            elif [ -d "$path" ]; then
+                printf 'd %s\n' "$path"
+            else
+                printf 'f %s\n' "$path"
+            fi
+        done
+    )
+}
+
+# Whether two skill directories hold the same entries and the same bytes.
+payload_tree_identical() {
+    local staged=$1 existing=$2 staged_entries existing_entries
+    [ -d "$existing" ] || return 1
+    staged_entries=$(mktemp "$TMPDIR/payload-tree-staged.XXXXXX") || return 1
+    existing_entries=$(mktemp "$TMPDIR/payload-tree-existing.XXXXXX") || {
+        rm -f "$staged_entries"
+        return 1
+    }
+    payload_tree_entries "$staged" > "$staged_entries"
+    payload_tree_entries "$existing" > "$existing_entries"
+    if ! cmp -s "$staged_entries" "$existing_entries"; then
+        rm -f "$staged_entries" "$existing_entries"
+        return 1
+    fi
+    rm -f "$staged_entries" "$existing_entries"
+    # The entries match, so the contents decide. A difference of any kind
+    # leaves the device directory alone.
+    diff -r "$staged" "$existing" >/dev/null 2>&1
+}
+
+# Report a device entry that carries the name of a selected skill. The
+# deployment preserves it and never writes through it.
+payload_report_collision() {
+    local name=$1 root=$2 reason=$3
+    printf 'dotfiles: preserved skill %s in %s; %s\n' "$name" "$root" "$reason" >&2
+}
+
+# Copy one selected skill into a managed root. The destination decides what
+# happens: a device entry is preserved and reported, a directory the
+# deployment owns is replaced, and a directory that already holds these bytes
+# is adopted without a rewrite.
+payload_copy_skill() {
+    local staged=$1 destination=$2 name=$3 root=$4
+    if [ -L "$destination" ]; then
+        payload_report_collision "$name" "$root" 'a device symlink has that name'
+        return 0
+    fi
+    if [ -e "$destination" ] && [ ! -d "$destination" ]; then
+        payload_report_collision "$name" "$root" 'a device file has that name'
+        return 0
+    fi
+    if [ -d "$destination" ]; then
+        if payload_previous_managed_skill "$name" "$root"; then
+            # The deployment owns the directory, so the staged copy replaces
+            # it and the bytes it no longer carries are gone.
+            rm -rf -- "$destination" || fail "cannot replace the managed skill $name in $root"
+            [ ! -e "$destination" ] || fail "cannot replace the managed skill $name in $root"
+        elif payload_tree_identical "$staged" "$destination"; then
+            # The device already holds these bytes, so the deployment adopts
+            # the directory and never rewrites it.
+            PAYLOAD_SKILL_WRITTEN+=("$name|$root")
+            return 0
+        else
+            payload_report_collision "$name" "$root" 'a device directory has that name and its bytes differ'
+            return 0
+        fi
+    fi
+    cp -Rp "$staged" "$destination" || fail "cannot copy the skill $name into $root"
+    PAYLOAD_SKILL_WRITTEN+=("$name|$root")
+}
+
 payload_copy_skills() {
     local origin=$1 target=$2 root=$3 entry name selection
     mkdir -p "$target"
@@ -181,9 +294,46 @@ payload_copy_skills() {
         selection=$(skill_catalog_selection "$name")
         [ -n "$selection" ] || continue
         skill_selected "$name" "$selection" || continue
-        cp -Rp "$entry" "$target/"
-        PAYLOAD_SKILL_WRITTEN+=("$name|$root")
+        payload_copy_skill "$entry" "$target/$name" "$name" "$root"
     done
+}
+
+# Copy a generated skill into every managed skill root but the one that holds
+# the generated bytes. The deployment owns the generated skill in each root,
+# so the copy refreshes it when the tool changed; a device entry at the
+# destination is preserved and reported, and the copy never writes through it.
+payload_copy_generated_skill() {
+    local name=$1 source=$2 origin_root=$3 generator=$4 root destination
+    PAYLOAD_GENERATED_SKILL_ROWS=()
+    while IFS= read -r root; do
+        [ -n "$root" ] || continue
+        [ "$root" = "$origin_root" ] && continue
+        payload_safe_destination "$HOME/$root"
+        destination="$HOME/$root/$name"
+        if [ -L "$destination" ]; then
+            payload_report_collision "$name" "$root" 'a device symlink has that name'
+            continue
+        fi
+        if [ -e "$destination" ] && [ ! -d "$destination" ]; then
+            payload_report_collision "$name" "$root" 'a device file has that name'
+            continue
+        fi
+        if [ -L "$destination/SKILL.md" ]; then
+            payload_report_collision "$name" "$root" 'a device symlink has that name'
+            continue
+        fi
+        mkdir -p "$destination" || fail "cannot create the generated skill directory: $destination"
+        if [ ! -f "$destination/SKILL.md" ] || ! cmp -s "$source" "$destination/SKILL.md"; then
+            cp "$source" "$destination/SKILL.md" ||
+                fail "cannot write the generated skill: $destination/SKILL.md"
+            chmod 644 "$destination/SKILL.md" ||
+                fail "cannot set the permissions of the generated skill: $destination/SKILL.md"
+        fi
+        PAYLOAD_GENERATED_SKILL_ROWS+=("$name|$root|$generator")
+    done <<EOF
+$(payload_skill_roots)
+EOF
+    return 0
 }
 
 # The managed skill roots: the tree rows that copy the skill library. A root

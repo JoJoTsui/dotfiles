@@ -296,13 +296,14 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(third.returncode, 0, third.stderr)
         self.assertFalse(empty.exists(), "an empty retired file must be removed")
 
-    def test_payload_refuses_nested_destination_symlinks_before_copying(self):
+    def test_payload_refuses_a_symlinked_destination_before_writing(self):
         outside = self.root / "outside"
         outside.mkdir()
         sentinel = outside / "untouched"
         sentinel.write_text("another device\n")
-        for relative in (".agents", ".agents/skills/tdd/resources",
-                         ".claude/skills/tdd/SKILL.md", ".codex/AGENTS.md"):
+        # The deployment writes to these destinations itself, so a symlink
+        # there refuses the deployment.
+        for relative in (".agents", ".codex/AGENTS.md"):
             with self.subTest(relative=relative):
                 self.home = self.root / relative.replace("/", "-").replace(".", "")
                 escape = self.home / relative
@@ -311,6 +312,26 @@ class AgentPayloadTests(unittest.TestCase):
                 result = self.deploy()
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("symlink", result.stderr)
+                self.assertEqual(list(outside.iterdir()), [sentinel])
+                self.assertEqual(sentinel.read_text(), "another device\n")
+
+    def test_payload_never_writes_through_a_nested_destination_symlink(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        sentinel = outside / "untouched"
+        sentinel.write_text("another device\n")
+        # A symlink inside a skill destination belongs to the device. The
+        # deployment preserves the entry, reports the collision, and never
+        # copies through the link.
+        for relative in (".agents/skills/tdd/resources", ".claude/skills/tdd/SKILL.md"):
+            with self.subTest(relative=relative):
+                self.home = self.root / relative.replace("/", "-").replace(".", "")
+                escape = self.home / relative
+                escape.parent.mkdir(parents=True, exist_ok=True)
+                escape.symlink_to(outside, target_is_directory=True)
+                result = self.deploy()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn("preserved skill tdd", result.stderr)
                 self.assertEqual(list(outside.iterdir()), [sentinel])
                 self.assertEqual(sentinel.read_text(), "another device\n")
 

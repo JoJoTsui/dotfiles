@@ -196,6 +196,15 @@ class HerdrDeploymentTests(unittest.TestCase, HerdrFixture):
         rows = self.fixture.state_rows("generated-skills.tsv")
         self.assertIn("herdr|.agents/skills|herdr --skill", rows)
 
+    def test_the_generated_skill_is_in_every_managed_skill_root(self):
+        for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
+            skill = self.fixture.home / root / "herdr/SKILL.md"
+            self.assertTrue(skill.is_file(), root)
+            self.assertEqual(skill.read_text(encoding="utf-8"), FAKE_SKILL, root)
+        rows = self.fixture.state_rows("generated-skills.tsv")
+        for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
+            self.assertIn(f"herdr|{root}|herdr --skill", rows)
+
     def test_the_status_helper_is_managed_as_a_command(self):
         helper = self.fixture.home / ".local/bin/dotfiles-herdr-status"
         self.assertTrue(helper.is_file())
@@ -331,6 +340,33 @@ class HerdrSkillRefreshTests(unittest.TestCase, HerdrFixture):
         self.assertTrue((self.fixture.home / ".agents/skills/herdr/SKILL.md").is_file())
         self.assertIn("herdr|.agents/skills|herdr --skill",
                       self.fixture.state_rows("generated-skills.tsv"))
+
+    def test_the_generated_skill_survives_the_prune(self):
+        library = Path(self.temporary.name) / "library"
+        shutil.copytree(SOURCE / "tests/fixtures/skill-library", library)
+        # A tagged skill, so a skill leaves the profile between two applies.
+        skill = library / "caveman-review"
+        skill.mkdir()
+        (skill / "SKILL.md").write_text(
+            "---\nname: caveman-review\ndescription: fixture skill\n---\nbody\n")
+        first = self.fixture.deploy("--agents-only", "--agents", "codex",
+                                    env={"DOTFILES_SKILLS": "caveman",
+                                         "DOTFILES_SKILLS_DIR": str(library)})
+        self.assertEqual(first.returncode, 0, first.stderr[-4000:])
+        managed = self.fixture.home / ".claude/skills/caveman-review"
+        self.assertTrue(managed.is_dir())
+        second = self.fixture.deploy("--agents-only", "--agents", "codex",
+                                     env={"DOTFILES_SKILLS_DIR": str(library)})
+        self.assertEqual(second.returncode, 0, second.stderr[-4000:])
+        # The managed skill leaves the profile, so the prune removes it.
+        self.assertFalse(managed.exists())
+        self.assertIn("pruned managed skill caveman-review", second.stderr)
+        # The generated skill is no catalog row, so the prune leaves it in
+        # every root.
+        for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
+            generated = self.fixture.home / root / "herdr/SKILL.md"
+            self.assertTrue(generated.is_file(), root)
+            self.assertEqual(generated.read_text(encoding="utf-8"), FAKE_SKILL, root)
 
 
 @unittest.skipUnless(shutil.which("chezmoi"), "the deployment boundary requires chezmoi")

@@ -135,6 +135,12 @@ _Avoid_: Skill lock, Skill list
 A skill present in a discovery root that the catalog does not own.
 _Avoid_: Extra skill, unmanaged skill
 
+**Skill collision**:
+An entry in a managed root that carries the name of a selected skill while the
+deployment does not own it. The deployment preserves it, reports it, and never
+writes through it.
+_Avoid_: Overwrite, skill conflict
+
 **Generated skill**:
 A skill whose bytes come from a tool installed on the device, such as Herdr's
 own instructions, rather than from the pinned catalog. It is refreshed from the
