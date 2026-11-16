@@ -4,50 +4,72 @@
 #   ~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles/gAEjvrdSRtou.yaml
 # `clash/` is chezmoi-ignored, so this file is never applied to $HOME.
 #
-# The three owned groups are url-test over every node of whatever subscription
-# is active (include-all), so a rule can target a stable name, survive a
-# subscription switch, and never inherit a dead first member the way a bare
-# select group does. Manual choice stays available in PROXY.
+# Selection policy: prefer a US node, fall back to anything else only when no
+# US node passes its health check.
 #
-# 兜底 receives everything no earlier rule matched. It is url-test rather than
-# select because a fresh select picks the first node of the subscription's list,
-# which was not reachable here. Streaming is deliberately absent: unlock needs
-# the vendor's own media group, so those rules stay with the subscription.
+# `us` and `row` partition the nodes of whatever subscription is active
+# (include-all + filter), and every routing group is a `fallback` over that
+# pair, so members are tried in order: us first, row second. url-test inside
+# each half picks the lowest-latency healthy node instead of the first entry,
+# which a bare select would take even when it is dead.
 #
 # exclude-filter drops the subscription's informational pseudo-nodes (traffic
 # counters and expiry notices), which are ss entries pointing at localhost.
 #
 # health check: gstatic 204 is reachable from a node but blocked from a
 # mainland direct connection, so it reports the node, not the line.
+#
+# Streaming is deliberately absent: unlock needs the subscription's own media
+# group, so those rules stay with the subscription.
 
 prepend:
-  - type: 'select'
-    name: 'PROXY'
+  - type: 'url-test'
+    name: 'us'
+    url: 'https://www.gstatic.com/generate_204'
     interval: 300
+    tolerance: 50
+    lazy: true
     timeout: 5000
     max-failed-times: 5
-    lazy: true
     include-all: true
+    filter: '(?i)(🇺🇸|美国|United States|\bUS\b)'
     exclude-filter: '剩余流量|套餐到期'
   - type: 'url-test'
+    name: 'row'
+    url: 'https://www.gstatic.com/generate_204'
+    interval: 300
+    tolerance: 50
+    lazy: true
+    timeout: 5000
+    max-failed-times: 5
+    include-all: true
+    exclude-filter: '剩余流量|套餐到期|(?i)(🇺🇸|美国|United States|\bUS\b)'
+  - type: 'fallback'
+    name: 'PROXY'
+    url: 'https://www.gstatic.com/generate_204'
+    interval: 300
+    timeout: 5000
+    lazy: true
+    proxies:
+      - 'us'
+      - 'row'
+  - type: 'fallback'
     name: 'ai'
     url: 'https://www.gstatic.com/generate_204'
     interval: 300
-    tolerance: 50
-    lazy: true
     timeout: 5000
-    max-failed-times: 5
-    include-all: true
-    exclude-filter: '剩余流量|套餐到期'
-  - type: 'url-test'
+    lazy: true
+    proxies:
+      - 'us'
+      - 'row'
+  - type: 'fallback'
     name: '兜底'
     url: 'https://www.gstatic.com/generate_204'
     interval: 300
-    tolerance: 50
-    lazy: true
     timeout: 5000
-    max-failed-times: 5
-    include-all: true
-    exclude-filter: '剩余流量|套餐到期'
+    lazy: true
+    proxies:
+      - 'us'
+      - 'row'
 append: []
 delete: []
