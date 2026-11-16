@@ -11,11 +11,11 @@ No managed root is written by `bunx skills`.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Six adopted catalog rows resolve to their recorded upstream sources and pinned bytes, and the lock contains them.
-- [ ] Deployment and check report uncatalogued and disabled CLI entries with exact removal commands.
-- [ ] The drift report exits non-zero when drift exists; a normal apply reports without failing.
-- [ ] The CLI lockfile bytes and modification time are unchanged after a check and after an apply.
-- [ ] Adopted skills deploy through the existing catalog path on all supported platforms.
-- [ ] Tests cover adoption, uncatalogued drift, disabled drift, clean state, and the no-write guarantee.
+- [x] Six adopted catalog rows resolve to their recorded upstream sources and pinned bytes, and the lock contains them.
+- [x] Deployment and check report uncatalogued and disabled CLI entries with exact removal commands.
+- [x] The drift report exits non-zero when drift exists; a normal apply reports without failing.
+- [x] The CLI lockfile bytes and modification time are unchanged after a check and after an apply.
+- [x] Adopted skills deploy through the existing catalog path on all supported platforms.
+- [x] Tests cover adoption, uncatalogued drift, disabled drift, clean state, and the no-write guarantee.

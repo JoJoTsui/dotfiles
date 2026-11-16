@@ -150,6 +150,32 @@ skill_extract_archive() {
     [ -f "$destination/SKILL.md" ] || return 1
 }
 
+# The bunx skills CLI keeps a second lockfile beside the shared skill tree.
+# The catalog owns that tree, so the CLI lockfile is device state: the
+# deployment reads it, names the entries the catalog does not own, and prints
+# the removal commands that tidy the device. It never writes that file.
+skill_drift_interpreter() {
+    local candidate
+    for candidate in python3 "${DOTFILES_COMMON_BIN:-}/python3" "${PIXI_HOME:-}/python3"; do
+        case "$candidate" in /python3) continue ;; esac
+        command -v "$candidate" >/dev/null 2>&1 && { printf '%s' "$candidate"; return 0; }
+    done
+    return 1
+}
+
+report_skill_cli_drift() {
+    local interpreter
+    [ -f "$DEPLOY_SOURCE/deployment/skill_drift.py" ] || return 0
+    if ! interpreter=$(skill_drift_interpreter); then
+        printf 'dotfiles: the skills CLI drift report needs Python; skipped\n' >&2
+        return 0
+    fi
+    # The report never fails a deployment: the drift is the device's state to
+    # review, not a defect in the deployment.
+    "$interpreter" "$DEPLOY_SOURCE/deployment/skill_drift.py" --home "$HOME" --report || true
+    return 0
+}
+
 # One artifact fetch can fail on a transient network error, and the catalog
 # holds many artifacts. Retry a bounded number of times before giving up.
 skill_retry() {
@@ -172,7 +198,7 @@ skill_retry() {
 
 skill_fetch_git() {
     local name=$1 source=$2 ref=$3 path=$4 cache=$5 destination=$6 index=$7
-    local slug repo resolved depth mappings from to object archive
+    local slug repo resolved depth mappings from to object archive prefix
     slug=$(skill_slug "$source")
     repo="$cache/git/$slug"
     if [ -n "$SKILL_PIN" ]; then
@@ -208,7 +234,17 @@ skill_fetch_git() {
                     archive=$(mktemp "$TMPDIR/skill-layout.XXXXXX") || return 1
                     git -C "$repo" archive --format=tar.gz "$resolved" "$path/$from" > "$archive" || return 1
                     skill_archive_is_safe "$archive" || return 1
-                    depth=$(printf '%s' "$path/$from" | awk -F/ '{print NF}')
+                    # The archive keeps the catalog path as its prefix, except at
+                    # the repository root, where the mapped resource is the
+                    # only prefix. The depth is that prefix length.
+                    prefix=${path#./}
+                    prefix=${prefix%/}
+                    case "$prefix" in ''|.) prefix='' ;; esac
+                    if [ -z "$prefix" ]; then
+                        depth=$(printf '%s' "$from" | awk -F/ '{print NF}')
+                    else
+                        depth=$(printf '%s' "$prefix/$from" | awk -F/ '{print NF}')
+                    fi
                     mkdir -p "$destination/$name/$to"
                     tar -xzf "$archive" -C "$destination/$name/$to" --strip-components="$depth" || return 1
                     rm -f "$archive"
@@ -263,6 +299,7 @@ prepare_skill_library() {
     local cache name kind source ref path index state staged_state
     local root="$TMPDIR/skills.$$"
     validate_skill_catalog
+    report_skill_cli_drift
     if [ -n "${DOTFILES_SKILLS_DIR:-}" ]; then
         [ -d "$DOTFILES_SKILLS_DIR" ] || fail "DOTFILES_SKILLS_DIR is not a directory: $DOTFILES_SKILLS_DIR"
         PAYLOAD_SKILLS_DIR=$DOTFILES_SKILLS_DIR

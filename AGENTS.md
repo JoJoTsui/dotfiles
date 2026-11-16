@@ -225,6 +225,14 @@ explains every changed pair.
 - **Skills carry a selection**: the catalog's last column is `auto` or a tag.
   Tagged skills are not deployed automatically; a host asks for them with
   `DOTFILES_SKILLS=<tag>`. The Lark skills are tagged.
+- **The catalog is the only writer of a managed skill root**: `bunx skills add`
+  and `bunx skills update` must not target `~/.agents/skills` or a client root
+  the deployment owns. The CLI's lockfile at `~/.agents/.skill-lock.json` is
+  device state: the deployment reads it, never writes it, and reports every
+  uncatalogued or disabled entry with its exact `bunx skills remove <name>`
+  command. An apply and the pin check report the drift without failing;
+  `deployment/skill_drift.py` is the dedicated report a gate runs. Read
+  `docs/AGENT_PAYLOAD.md` before changing the catalog, the lock, or the report.
 - **Worktrunk is the shared worktree tool**: the `wt` command is a common Unix
   tool (native Windows keeps the name for Windows Terminal), its skill bytes
   come from the upstream catalog like every other skill, and the per-client

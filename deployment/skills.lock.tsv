@@ -1,5 +1,7 @@
 # Reviewed source snapshot: name|kind|source|git commit or archive SHA-256
 ask-matt|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
+baoyu-diagram|git|https://github.com/jimliu/baoyu-skills|ca703c2d7c2c4399a1dc0cf82224f8551e05a96d|design
+baoyu-slide-deck|git|https://github.com/jimliu/baoyu-skills|ca703c2d7c2c4399a1dc0cf82224f8551e05a96d|design
 cavecrew|git|https://github.com/JuliusBrussee/caveman|9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4|auto
 caveman|git|https://github.com/JuliusBrussee/caveman|9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4|auto
 caveman-commit|git|https://github.com/JuliusBrussee/caveman|9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4|auto
@@ -20,14 +22,17 @@ code-review|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e
 codebase-design|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 diagnosing-bugs|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 domain-modeling|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
+find-skills|git|https://github.com/vercel-labs/skills|50894c1d98bc45ca1ab127213e59d6525065b5e7|auto
 git-guardrails-claude-code|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 graphify|git|https://github.com/Graphify-Labs/graphify|16218bfc80d4ca2799734d045039f7ed1a5fa9fb|auto
 grill-me|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 grill-with-docs|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 grilling|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
+guizang-ppt-skill|git|https://github.com/op7418/guizang-ppt-skill|93d21bf4a73a851907a6eb00acbf30618236667a|design
 handoff|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 humanizer|git|https://github.com/blader/humanizer|0ef9fe5bc3572734fd3ae6c448fe00a30cd5dcf0|auto
 humanizer-zh|git|https://github.com/op7418/Humanizer-zh|f4518a8eab97b8bfebc66a89d34320a89bef6930|auto
+impeccable|git|https://github.com/pbakaus/impeccable|d41d9860b0094dcb68030657da63461212835aaa|design
 implement|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 implement-spec|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 improve-codebase-architecture|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
@@ -68,6 +73,7 @@ migration|git|https://github.com/JuliusBrussee/caveman|9b68f7ed12b05e7efaff18e65
 pr|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 prototype|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 research|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
+resolving-merge-conflicts|git|https://github.com/mattpocock/skills|6acc160e4e0cd062dbbbd7a1b26ae92855edf07e|auto
 retro|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto
 safe-refactor|git|https://github.com/JuliusBrussee/caveman|9b68f7ed12b05e7efaff18e65c5a3fc2849fd0a4|auto
 scaffold-exercises|git|https://github.com/mattpocock/skills|59db609eb1e18aaf59b63284d0e52255aff0c63c|auto

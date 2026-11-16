@@ -115,6 +115,36 @@ payload rows copy that tree to `~/.agents/skills` and the adapters. Moving branc
 names in the catalog are discovery inputs for explicit updates, not deployment
 versions. Cached archives and newly downloaded archives must match the lock.
 
+The repository catalog is the only writer of a managed skill root. `bunx skills
+add` and `bunx skills update` must not target `~/.agents/skills` or a client
+root the deployment owns: a second writer replaces reviewed bytes with
+unpinned ones, and the next apply overwrites the change. A skill added that
+way is reported as drift and named for removal.
+
+The `bunx skills` CLI keeps its own lockfile at `~/.agents/.skill-lock.json`.
+It is device state, not a second catalog. The deployment reads that file and
+never writes it or the directory that holds it. Every entry the catalog does
+not own is reported: an uncatalogued skill the device added, and a disabled
+skill the CLI still records. Each one is named with the exact command that
+tidies the device.
+
+```bash
+python3 deployment/skill_drift.py            # the dedicated report; exits non-zero on drift
+python3 deployment/skill_drift.py --report   # the same report without failing
+python3 deployment/update_skills.py check    # the pin check; reports the drift without failing
+```
+
+An apply reports the drift and continues: the lockfile belongs to the device,
+and its contents are the device owner's to review. A gate runs the dedicated
+report, which exits non-zero while drift remains.
+
+The six skills the CLI knew and the catalog did not are catalogued rows now.
+`baoyu-diagram`, `baoyu-slide-deck`, `guizang-ppt-skill`, and `impeccable`
+carry the `design` tag; `find-skills` and `resolving-merge-conflicts` stay
+`auto`. Their rows are seeded from the CLI's recorded source and path, and the
+lock pins an upstream commit that ships the declared path. `impeccable` was in
+neither record, so its upstream path is the one its repository publishes.
+
 One name belongs to one discovery root per client. Pi reads the shared tree
 natively and also scans its own user root (`~/.pi/agent/skills`), so a name in
 both roots is a collision: Pi keeps the first copy it finds and warns about

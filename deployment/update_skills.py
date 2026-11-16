@@ -6,9 +6,13 @@ import hashlib
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+import sys
 import tarfile
 import tempfile
 import urllib.request
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import skill_drift  # noqa: E402  The drift reader lives beside this module.
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -114,16 +118,38 @@ def refresh(catalog: Path, lock: Path) -> None:
             staged.unlink(missing_ok=True)
 
 
+def report_cli_drift(lock_path: Path, catalog: Path, disabled: Path) -> None:
+    """The CLI lockfile is device state: name the entries the catalog does not own.
+
+    A check reports the drift without failing: the lockfile belongs to the
+    device, and its contents are the device owner's to review.
+    """
+    try:
+        entries = skill_drift.drift_entries(lock_path, catalog, disabled)
+    except skill_drift.LockError as error:
+        print(f"dotfiles: {error}", file=sys.stderr)
+        return
+    print(skill_drift.report_text(lock_path, entries))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("check", "refresh"))
     parser.add_argument("--catalog", type=Path, default=SOURCE / "deployment/skills.tsv")
     parser.add_argument("--lock", type=Path, default=SOURCE / "deployment/skills.lock.tsv")
+    parser.add_argument("--disabled", type=Path, default=SOURCE / "deployment/disabled-skills.tsv")
+    parser.add_argument("--cli-lock", type=Path, default=None,
+                        help="the skills CLI lockfile the drift report reads")
+    parser.add_argument("--no-drift", action="store_true",
+                        help="skip the skills CLI lockfile drift report")
     args = parser.parse_args()
     if args.command == "refresh":
         refresh(args.catalog, args.lock)
     check(args.catalog, args.lock)
     print(f"skill pins: checked {len(rows(args.lock, 5))} entries")
+    if not args.no_drift:
+        lock_path = args.cli_lock or skill_drift.cli_lock_path(Path.home())
+        report_cli_drift(lock_path, args.catalog, args.disabled)
 
 
 if __name__ == "__main__":

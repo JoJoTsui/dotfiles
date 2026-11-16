@@ -5,6 +5,8 @@
 # selection <tag>: the skill is not deployed automatically; a host asks for it
 # with DOTFILES_SKILLS=<tag> (or by name).
 ask-matt|git|https://github.com/mattpocock/skills|main|skills/engineering/ask-matt|auto
+baoyu-diagram|git|https://github.com/jimliu/baoyu-skills|main|skills/baoyu-diagram|design
+baoyu-slide-deck|git|https://github.com/jimliu/baoyu-skills|main|skills/baoyu-slide-deck|design
 cavecrew|git|https://github.com/JuliusBrussee/caveman|main|skills/cavecrew|auto
 caveman|git|https://github.com/JuliusBrussee/caveman|main|skills/caveman|auto
 caveman-commit|git|https://github.com/JuliusBrussee/caveman|main|skills/caveman-commit|auto
@@ -25,14 +27,17 @@ code-review|git|https://github.com/mattpocock/skills|main|skills/engineering/cod
 codebase-design|git|https://github.com/mattpocock/skills|main|skills/engineering/codebase-design|auto
 diagnosing-bugs|git|https://github.com/mattpocock/skills|main|skills/engineering/diagnosing-bugs|auto
 domain-modeling|git|https://github.com/mattpocock/skills|main|skills/engineering/domain-modeling|auto
+find-skills|git|https://github.com/vercel-labs/skills|main|skills/find-skills|auto
 git-guardrails-claude-code|git|https://github.com/mattpocock/skills|main|skills/misc/git-guardrails-claude-code|auto
 graphify|git|https://github.com/Graphify-Labs/graphify|v0.9.103|graphify|auto
 grill-me|git|https://github.com/mattpocock/skills|main|skills/productivity/grill-me|auto
 grill-with-docs|git|https://github.com/mattpocock/skills|main|skills/engineering/grill-with-docs|auto
 grilling|git|https://github.com/mattpocock/skills|main|skills/productivity/grilling|auto
+guizang-ppt-skill|git|https://github.com/op7418/guizang-ppt-skill|main|.|design
 handoff|git|https://github.com/mattpocock/skills|main|skills/productivity/handoff|auto
 humanizer|git|https://github.com/blader/humanizer|main|.|auto
 humanizer-zh|git|https://github.com/op7418/Humanizer-zh|main|.|auto
+impeccable|git|https://github.com/pbakaus/impeccable|main|.agents/skills/impeccable|design
 implement|git|https://github.com/mattpocock/skills|main|skills/engineering/implement|auto
 implement-spec|git|https://github.com/mattpocock/skills|main|skills/engineering/implement-spec|auto
 improve-codebase-architecture|git|https://github.com/mattpocock/skills|main|skills/engineering/improve-codebase-architecture|auto
@@ -73,6 +78,7 @@ migration|git|https://github.com/JuliusBrussee/caveman|main|skills/migration|aut
 pr|git|https://github.com/mattpocock/skills|main|skills/engineering/pr|auto
 prototype|git|https://github.com/mattpocock/skills|main|skills/engineering/prototype|auto
 research|git|https://github.com/mattpocock/skills|main|skills/engineering/research|auto
+resolving-merge-conflicts|git|https://github.com/mattpocock/skills|v1.2.3|skills/engineering/resolving-merge-conflicts|auto
 retro|git|https://github.com/mattpocock/skills|main|skills/engineering/retro|auto
 safe-refactor|git|https://github.com/JuliusBrussee/caveman|main|skills/safe-refactor|auto
 scaffold-exercises|git|https://github.com/mattpocock/skills|main|skills/misc/scaffold-exercises|auto
