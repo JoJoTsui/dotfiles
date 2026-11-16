@@ -34,6 +34,24 @@ payload_source_path() {
     fi
 }
 
+# Validate the destinations of the skills the deployment writes. A skill the
+# selection leaves out is not written, so its destination is not the
+# deployment's business; the prune reports that entry and preserves it.
+payload_validate_skills() {
+    local origin=$1 target=$2 entry name selection
+    [ ! -L "$origin" ] || fail "agent payload source is a symlink: $origin"
+    payload_safe_destination "$target"
+    for entry in "$origin"/* "$origin"/.[!.]* "$origin"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        name=${entry##*/}
+        payload_skill_disabled "$name" && continue
+        selection=$(skill_catalog_selection "$name")
+        [ -n "$selection" ] || continue
+        skill_selected "$name" "$selection" || continue
+        payload_validate_tree "$entry" "$target/$name"
+    done
+}
+
 validate_agent_payload() {
     local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target value origin
     [ ! -L "$payload/targets.tsv" ] || fail 'agent payload catalog is a symlink'
@@ -56,6 +74,10 @@ validate_agent_payload() {
             [ -d "$origin" ] || fail "agent payload tree is missing: $source"
         else
             [ -f "$origin" ] || fail "agent payload file is missing: $source"
+        fi
+        if [ "$source" = skills ] && [ -n "${PAYLOAD_SKILLS_DIR:-}" ]; then
+            payload_validate_skills "$origin" "$DEPLOY_HOME/$target"
+            continue
         fi
         payload_validate_tree "$origin" "$DEPLOY_HOME/$target"
     done < "$payload/targets.tsv"
@@ -142,14 +164,173 @@ payload_skill_disabled() {
     awk -F '|' -v name="$1" '$1 == name { found=1 } END { exit !found }' "$catalog"
 }
 
+# The skill directories this deployment wrote into each managed root. The
+# prune step reads the record to tell a managed skill from a device skill.
+PAYLOAD_SKILL_WRITTEN=()
+
 payload_copy_skills() {
-    local origin=$1 target=$2 entry
+    local origin=$1 target=$2 root=$3 entry name selection
     mkdir -p "$target"
     for entry in "$origin"/* "$origin"/.[!.]* "$origin"/..?*; do
         [ -e "$entry" ] || [ -L "$entry" ] || continue
-        payload_skill_disabled "${entry##*/}" && continue
+        name=${entry##*/}
+        payload_skill_disabled "$name" && continue
+        # The catalog owns a managed root. A name the catalog does not
+        # declare is device content and never enters one, and a tagged skill
+        # enters only when the host asks for it by tag or by name.
+        selection=$(skill_catalog_selection "$name")
+        [ -n "$selection" ] || continue
+        skill_selected "$name" "$selection" || continue
         cp -Rp "$entry" "$target/"
+        PAYLOAD_SKILL_WRITTEN+=("$name|$root")
     done
+}
+
+# The managed skill roots: the tree rows that copy the skill library. A root
+# the deployment does not own is never recorded and never pruned.
+payload_skill_roots() {
+    local payload="$DEPLOY_SOURCE/deployment/agent-payload" kind source target
+    [ -f "$payload/targets.tsv" ] || return 0
+    while IFS=$'|\r' read -r kind source target; do
+        [ "$kind" = tree ] || continue
+        [ "$source" = skills ] || continue
+        case "$target" in ''|\#*) continue ;; esac
+        printf '%s\n' "$target"
+    done < "$payload/targets.tsv"
+}
+
+# Whether the deployment owns a skill root.
+payload_owned_skill_root() {
+    local root=$1 owned
+    while IFS= read -r owned; do
+        [ -n "$owned" ] || continue
+        [ "$owned" = "$root" ] && return 0
+    done <<EOF
+$(payload_skill_roots)
+EOF
+    return 1
+}
+
+# The managed skill inventory: the device-state record of the skill
+# directories the deployment wrote into each managed root.
+payload_managed_skills_state() {
+    printf '%s' "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/managed-skills.tsv"
+}
+
+# A generated skill comes from a tool installed on the device, so the prune
+# leaves it alone even when the catalog knows the same name.
+payload_generated_skill() {
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/generated-skills.tsv" name=$1 root=$2
+    [ -f "$state" ] || return 1
+    PAYLOAD_GENERATED_NAME=$name PAYLOAD_GENERATED_ROOT=$root awk -F '|' '
+        BEGIN { name = ENVIRON["PAYLOAD_GENERATED_NAME"]; root = ENVIRON["PAYLOAD_GENERATED_ROOT"] }
+        !/^#/ && NF >= 2 && $1 == name && $2 == root { found = 1 }
+        END { exit !found }
+    ' "$state"
+}
+
+# Report the entries a managed root holds that the deployment does not own.
+# They are device content: they are named and never removed.
+report_device_skills() {
+    local inventory=$1 root entry name selection
+    while IFS= read -r root; do
+        [ -n "$root" ] || continue
+        [ -d "$HOME/$root" ] || continue
+        for entry in "$HOME/$root"/* "$HOME/$root"/.[!.]* "$HOME/$root"/..?*; do
+            [ -e "$entry" ] || [ -L "$entry" ] || continue
+            name=${entry##*/}
+            if grep -q -F -x "$name|$root" "$inventory"; then continue; fi
+            if payload_generated_skill "$name" "$root"; then continue; fi
+            selection=$(skill_catalog_selection "$name")
+            # A selected skill belongs to the profile even when the library
+            # did not carry it, so it is not a leftover.
+            if [ -n "$selection" ] && skill_selected "$name" "$selection"; then continue; fi
+            if [ -n "$selection" ]; then
+                printf 'dotfiles: preserved skill %s in %s; the selection does not include it\n' \
+                    "$name" "$root" >&2
+            else
+                printf 'dotfiles: preserved device skill %s in %s\n' "$name" "$root" >&2
+            fi
+        done
+    done <<EOF
+$(payload_skill_roots)
+EOF
+    return 0
+}
+
+# Prune the managed skills that left the profile. The inventory names the
+# directories the deployment wrote into each managed root; a directory that is
+# no longer selected is removed from its root. A device skill, a generated
+# skill, and a symlinked entry are preserved and reported instead.
+prune_managed_skills() {
+    local state previous written kept inventory staged row name root path selection
+    state=$(payload_managed_skills_state)
+    validate_skill_state "$state"
+    previous=$(mktemp "$TMPDIR/skill-inventory-previous.XXXXXX") || fail 'cannot create the skill inventory'
+    written=$(mktemp "$TMPDIR/skill-inventory-written.XXXXXX") || fail 'cannot create the skill inventory'
+    kept=$(mktemp "$TMPDIR/skill-inventory-kept.XXXXXX") || fail 'cannot create the skill inventory'
+    if [ -f "$state" ]; then
+        grep -v '^#' "$state" > "$previous" || true
+    else
+        : > "$previous"
+    fi
+    for row in ${PAYLOAD_SKILL_WRITTEN[@]+"${PAYLOAD_SKILL_WRITTEN[@]}"}; do
+        printf '%s\n' "$row" >> "$written"
+    done
+    while IFS='|' read -r name root; do
+        [ -n "$name" ] && [ -n "$root" ] || continue
+        # A root the deployment does not own is never recorded and never
+        # pruned: the entries there belong to somebody else.
+        if ! payload_owned_skill_root "$root"; then
+            printf 'dotfiles: preserved skill %s in %s; the deployment does not own that root\n' \
+                "$name" "$root" >&2
+            continue
+        fi
+        selection=$(skill_catalog_selection "$name")
+        if [ -n "$selection" ] && skill_selected "$name" "$selection"; then
+            # The skill is still part of the profile, so the deployment keeps
+            # managing it.
+            printf '%s|%s\n' "$name" "$root" >> "$kept"
+            continue
+        fi
+        path="$HOME/$root/$name"
+        if [ ! -e "$path" ] && [ ! -L "$path" ]; then
+            # The entry is already gone, so the inventory stops claiming it.
+            continue
+        fi
+        if payload_generated_skill "$name" "$root"; then
+            printf 'dotfiles: preserved generated skill %s in %s\n' "$name" "$root" >&2
+            printf '%s|%s\n' "$name" "$root" >> "$kept"
+            continue
+        fi
+        if [ -L "$path" ]; then
+            # A symlinked entry is never followed and never deleted through.
+            printf 'dotfiles: preserved managed skill %s in %s; refused to follow a symlink\n' \
+                "$name" "$root" >&2
+            printf '%s|%s\n' "$name" "$root" >> "$kept"
+            continue
+        fi
+        if [ ! -d "$path" ]; then
+            printf 'dotfiles: preserved managed skill %s in %s; it is not a managed directory\n' \
+                "$name" "$root" >&2
+            printf '%s|%s\n' "$name" "$root" >> "$kept"
+            continue
+        fi
+        rm -rf -- "$path" || fail "cannot prune the managed skill $name from $root"
+        printf 'dotfiles: pruned managed skill %s from %s\n' "$name" "$root" >&2
+    done < "$previous"
+    mkdir -p "$(dirname "$state")"
+    inventory=$(mktemp "$TMPDIR/skill-inventory.XXXXXX") || fail 'cannot write the managed skill inventory'
+    {
+        printf '# name|root\n'
+        cat "$written" "$kept" | sort -u
+    } > "$inventory"
+    staged=$(mktemp "$state.XXXXXX") || fail 'cannot write the managed skill inventory'
+    cat "$inventory" > "$staged"
+    mv -f "$staged" "$state"
+    report_device_skills "$inventory"
+    rm -f "$previous" "$written" "$kept" "$inventory"
+    return 0
 }
 
 # Additive payload copies cannot retire an installed skill. Move disabled
@@ -198,7 +379,7 @@ deploy_agent_payload() {
                 mkdir -p "$HOME/$target"
                 origin=$(payload_source_path "$source")
                 if [ "$source" = skills ]; then
-                    payload_copy_skills "$origin" "$HOME/$target"
+                    payload_copy_skills "$origin" "$HOME/$target" "$target"
                 else
                     cp -Rp "$origin/." "$HOME/$target/"
                 fi

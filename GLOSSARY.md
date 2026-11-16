@@ -125,6 +125,12 @@ A skill directory the deployment wrote into a discovery root and may prune when
 it leaves the profile.
 _Avoid_: Installed skill
 
+**Managed skill inventory**:
+The device-state record of the managed skill directories per discovery root.
+It says which directories the deployment owns, so a skill that leaves the
+profile can be pruned and a device skill never can.
+_Avoid_: Skill lock, Skill list
+
 **Device skill**:
 A skill present in a discovery root that the catalog does not own.
 _Avoid_: Extra skill, unmanaged skill

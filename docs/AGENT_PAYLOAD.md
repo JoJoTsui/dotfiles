@@ -104,16 +104,47 @@ A missing or invalid lock stops fetching; `DOTFILES_SKILLS_DIR` remains the
 hermetic bypass.
 
 The catalog's last column is the selection: `auto` skills are deployed by
-every host, and a tagged skill is not deployed automatically. The Lark skills
-are tagged `lark` — a host that uses them asks for them with
-`DOTFILES_SKILLS=lark` (or by skill name). Their pins stay reviewed, so
-asking for them deploys the bytes that were pinned.
+every host, and a tagged skill is not deployed automatically. `auto` is the
+reviewed core: the mattpocock engineering and productivity skills, graphify,
+worktrunk, the humanizers, `show-me`, `pr` and `research`, and the other
+general entries. The caveman mode and its compress skill stay in that core,
+and so do the six generic engineering skills of the caveman repository
+(`investigate-first`, `lean-build`, `migration`, `safe-refactor`,
+`surgical-patch`, `verify-and-stop`); they are general workflows, not caveman
+voice. The other fourteen caveman-branded skills carry the `caveman` tag, the
+four diagram, slide-deck, PPT, and front-end design skills carry `design`, and
+the Feishu skills carry `lark`. A host asks for a group with
+`DOTFILES_SKILLS=<tag>`, or for one skill with `DOTFILES_SKILLS=<name>`. Their
+pins stay reviewed, so asking for them deploys the bytes that were pinned.
+The selection applies both to the fetch and to the copy into a managed root,
+so a library supplied through `DOTFILES_SKILLS_DIR` deploys the selected
+skills and nothing else. A name the catalog does not declare is device
+content: it never enters a managed root.
 The initial lock records the existing isolated upstream cache, including every
 declared skill path; it does not claim to select the latest upstream release.
 Bootstrap fetches these reviewed bytes into a staging tree, then the `skills`
 payload rows copy that tree to `~/.agents/skills` and the adapters. Moving branch
 names in the catalog are discovery inputs for explicit updates, not deployment
 versions. Cached archives and newly downloaded archives must match the lock.
+
+The deployment records the skill directories it wrote into each managed root
+in `~/.local/state/dotfiles/managed-skills.tsv`, one `name|root` row per
+directory. A root the deployment does not own is never recorded. The prune
+step runs after the payload copy: a recorded directory that leaves the
+selection is removed from its root, so a tag that a host drops actually
+shrinks the library. The exemptions keep the prune inside the deployment's
+ownership:
+
+- a device-created skill — a directory the deployment did not write — is never
+  removed; it is reported with the root that holds it
+- a generated skill named in `~/.local/state/dotfiles/generated-skills.tsv` is
+  never removed
+- a symlinked entry is refused and preserved: the prune never follows a link
+  and never deletes through it
+- a root the deployment does not own is never pruned
+
+Reapplying with an unchanged selection changes nothing: the inventory, the
+roots, and the report stay the same.
 
 The repository catalog is the only writer of a managed skill root. `bunx skills
 add` and `bunx skills update` must not target `~/.agents/skills` or a client

@@ -88,6 +88,25 @@ skill_selected() {
     return 1
 }
 
+# The selection a catalog row declares. An empty result means the catalog
+# does not own the name, so the name is device content rather than a member
+# of the profile.
+skill_catalog_selection() {
+    local catalog="$DEPLOY_SOURCE/deployment/skills.tsv" name=$1
+    [ -f "$catalog" ] || return 0
+    SKILL_CATALOG_NAME=$name awk -F '|' '
+        BEGIN { name = ENVIRON["SKILL_CATALOG_NAME"] }
+        !/^#/ && NF >= 6 && $1 == name {
+            value = $6
+            # A catalog written with CRLF line endings keeps the carriage
+            # return on the last field.
+            sub(/\r$/, "", value)
+            print value
+            exit
+        }
+    ' "$catalog"
+}
+
 # Some upstreams publish a portable skill under another filename. Map only
 # declared resources, keeping their bytes and relative references unchanged.
 skill_layout_rows() {

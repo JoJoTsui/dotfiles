@@ -37,8 +37,11 @@ MiniMax receive filtered copies; Pi and OpenCode receive a profile root through
 the `skills` path already present in their merged settings. Codex, Kimi, and
 Qoder keep the reviewed global set because they have no supported persistent
 filter, and the per-client matrix records that limit. The deployment records
-the skill directories it deployed per root in device state and prunes only
-those when they leave a profile. Device-created skills are never removed.
+the skill directories it deployed per root in device state
+(`~/.local/state/dotfiles/managed-skills.tsv`) and prunes only those when they
+leave a profile. Device-created skills are never removed. A generated skill and
+a symlinked entry are preserved as well: the prune never follows a link and
+never deletes through it.
 
 The review is guarded, not just documented. New or changed catalog rows must
 have a description of 240 characters or fewer and a root document of 200 lines

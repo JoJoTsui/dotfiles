@@ -238,8 +238,17 @@ explains every changed pair.
   instance routes through US nodes on its own ports and its own profile, so
   the long-standing service keeps its profile and its controller.
 - **Skills carry a selection**: the catalog's last column is `auto` or a tag.
-  Tagged skills are not deployed automatically; a host asks for them with
-  `DOTFILES_SKILLS=<tag>`. The Lark skills are tagged.
+  `auto` is the reviewed core; a tagged skill is not deployed automatically, and
+  a host asks for it with `DOTFILES_SKILLS=<tag>` or by skill name. The tags are
+  `caveman` for the caveman-branded skills other than the mode and its compress
+  skill, `design` for the diagram, slide-deck, PPT, and front-end design
+  skills, and `lark` for the Feishu skills.
+- **Managed skills are recorded and pruned**: the deployment records the skill
+  directories it wrote into each managed root in
+  `~/.local/state/dotfiles/managed-skills.tsv`, and the prune step removes a
+  recorded directory that leaves the selection. A device-created skill, a
+  generated skill, and a symlinked entry are preserved and reported, never
+  removed.
 - **The catalog is the only writer of a managed skill root**: `bunx skills add`
   and `bunx skills update` must not target `~/.agents/skills` or a client root
   the deployment owns. The CLI's lockfile at `~/.agents/.skill-lock.json` is

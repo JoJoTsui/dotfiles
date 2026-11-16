@@ -269,6 +269,7 @@ DEPLOY_STEP=apply-source
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
 run_step apply-source.skills prepare_skill_library
 run_step apply-source.agent-payload deploy_agent_payload
+run_step apply-source.skills-prune prune_managed_skills
 cleanup_skill_library
 run_step apply-source.client-settings deploy_client_settings
 run_step apply-source.macos-discovery deploy_macos_config
