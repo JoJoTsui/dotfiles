@@ -15,6 +15,19 @@ or the graph tool is unavailable, fall back to bounded text search. Never create
 a new index unless the user asks. Do not query both graphs for one question.
 <!-- CODEGRAPH_END -->
 
+## Preferred workflows
+
+In each area, reach for the named tool before improvising. The detailed rules
+already live in the section or skill named here, so follow that detail instead
+of restating it.
+
+| Area | First choice | Where the detail lives |
+| --- | --- | --- |
+| Engineering and productivity method | the mattpocock skills (`tdd`, `code-review`, `research`) | the Skills section |
+| Pane, agent, and workspace control inside a Herdr pane | Herdr | the generated `herdr` skill |
+| Worktrees | Worktrunk (`wt`) | the Worktree persistence and Worktree hygiene sections |
+| Shell output | RTK | the RTK section |
+
 ## Disabled integrations
 
 Serena and the Google DeepMind science-skills library are disabled on this

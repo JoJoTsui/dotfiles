@@ -93,6 +93,33 @@ class AgentPayloadTests(unittest.TestCase):
                          "shared shell initialization changed the isolated HOME")
         return managed
 
+    def payload_targets(self):
+        """Read the payload catalog as (kind, source, destination) rows."""
+        rows = []
+        for line in (SOURCE / "deployment/agent-payload/targets.tsv").read_text().splitlines():
+            if not line or line.startswith("#"):
+                continue
+            kind, source, destination = line.split("|")
+            rows.append((kind, source, destination))
+        return rows
+
+    def managed_instruction_block(self, text):
+        """Return the deployed block between the managed markers."""
+        start = "<!-- DOTFILES_AGENT_START -->"
+        end = "<!-- DOTFILES_AGENT_END -->"
+        self.assertEqual(text.count(start), 1, "the managed block must appear once")
+        self.assertEqual(text.count(end), 1, "the managed block must close once")
+        return text.split(start, 1)[1].split(end, 1)[0]
+
+    def expected_instruction_block(self):
+        """The block the deployment writes: the source plus the platform overlay."""
+        content = (SOURCE / "deployment/agent-payload/AGENTS.md").read_text()
+        platform = os.environ.get("DOTFILES_TEST_PLATFORM", "linux")
+        overlay = SOURCE / f"deployment/agent-payload/overlays/{platform}.md"
+        if overlay.is_file():
+            content += "\n\n" + overlay.read_text()
+        return "\n" + content
+
     def local_skill_path(self, value):
         return resolve_skill_path(value, self.home)
 
@@ -199,6 +226,66 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertNotIn("/t9k/", (self.home / ".agents/RTK.md").read_text())
         self.assertFalse((self.home / ".codegraph").exists())
         self.assertFalse((self.home / ".codex/auth.json").exists())
+
+    def test_shared_instructions_name_the_preferred_workflows(self):
+        block = (SOURCE / "deployment/agent-payload/AGENTS.md").read_text()
+        self.assertIn("## Preferred workflows", block)
+        section = block.split("## Preferred workflows", 1)[1].split("\n## ", 1)[0]
+        for area, choice in (
+            ("Engineering and productivity method", "mattpocock"),
+            ("Pane, agent, and workspace control inside a Herdr pane", "Herdr"),
+            ("Worktrees", "Worktrunk"),
+            ("Shell output", "RTK"),
+        ):
+            with self.subTest(choice=choice):
+                self.assertIn(area, section)
+                self.assertIn(choice, section)
+        # The section routes to the detailed rules instead of repeating them.
+        for detail in ("~/.agents/RTK.md", "rtk git status", "herdr pane split", "wt switch"):
+            self.assertNotIn(detail, section)
+        self.assertLess(len(section.splitlines()), 20)
+        for heading in ("## Skills", "## RTK", "## Worktree persistence", "## Worktree hygiene"):
+            self.assertIn(heading, block)
+
+    def test_rtk_stays_instruction_only(self):
+        catalog = (SOURCE / "deployment/skills.tsv").read_text().splitlines()
+        names = {line.split("|")[0] for line in catalog if line and not line.startswith("#")}
+        self.assertNotIn("rtk", names, "RTK is an instruction, not a catalog skill")
+        self.assertIn("file|RTK.md|.agents/RTK.md",
+                      (SOURCE / "deployment/agent-payload/targets.tsv").read_text().splitlines())
+        result = self.deploy("--agents", "none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("rtk", (self.home / ".agents/RTK.md").read_text())
+        for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
+            self.assertFalse((self.home / root / "rtk").exists(), root)
+        block = (self.home / ".agents/AGENTS.md").read_text()
+        self.assertIn("## RTK", block)
+        preferred = block.split("## Preferred workflows", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("Shell output", preferred)
+        self.assertIn("RTK", preferred)
+
+    def test_every_client_instruction_file_carries_the_current_block(self):
+        targets = self.payload_targets()
+        retired = [destination for kind, _, destination in targets if kind == "retire"]
+        self.assertEqual(retired, [".kimi-code/AGENTS.md"])
+        stale = self.home / retired[0]
+        stale.parent.mkdir(parents=True, exist_ok=True)
+        stale.write_text("<!-- DOTFILES_AGENT_START -->\nstale managed body\n<!-- DOTFILES_AGENT_END -->\n")
+        result = self.deploy("--agents", "none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(stale.exists(), "the retired Kimi instruction file must stay absent")
+        destinations = [destination for kind, _, destination in targets if kind == "block"]
+        self.assertEqual(len(destinations), 7)
+        expected = self.expected_instruction_block()
+        for relative in destinations:
+            path = self.home / relative
+            with self.subTest(destination=relative):
+                self.assertTrue(path.is_file(), relative)
+                block = self.managed_instruction_block(path.read_text())
+                self.assertEqual(block, expected, relative)
+                self.assertIn("## Preferred workflows", block)
+                for choice in ("mattpocock", "Herdr", "Worktrunk", "RTK"):
+                    self.assertIn(choice, block)
 
     def test_disabled_skills_are_quarantined_and_not_restored_from_an_override(self):
         old = self.home / ".agents/skills/pubmed-database/SKILL.md"

@@ -252,13 +252,16 @@ skill. Client built-ins, plugins, credentials, trust records, sessions, and
 caches remain outside the owned source.
 
 The common instructions use portable command discovery, a pointer to owned
-`~/.agents/RTK.md`, conditional CodeGraph and Graphify guidance, a cross-agent
-delegation contract with verified one-shot commands for Codex, Kimi, Pi,
-OpenCode, Qoder, and MiniMax Code, the collaboration rules recorded in
-[cross-agent collaboration](AGENT_COLLABORATION.md), the optional
-[Herdr](HERDR.md) multi-pane workflow, the [resource-budget](AGENT_RESOURCES.md)
-rules, the [shared-host and remote-job](AGENT_REMOTE_JOBS.md) pattern with
-bounded search, and the cache-discipline rules recorded in
+`~/.agents/RTK.md`, conditional CodeGraph and Graphify guidance, a
+preferred-workflows section that names the mattpocock skills, Herdr, Worktrunk,
+and RTK as the first choice in their area and points at the detailed section or
+skill instead of repeating it, a cross-agent delegation contract with verified
+one-shot commands for Codex, Kimi, Pi, OpenCode, Qoder, and MiniMax Code, the
+collaboration rules recorded in [cross-agent collaboration](AGENT_COLLABORATION.md),
+the optional [Herdr](HERDR.md) multi-pane workflow, the
+[resource-budget](AGENT_RESOURCES.md) rules, the
+[shared-host and remote-job](AGENT_REMOTE_JOBS.md) pattern with bounded search,
+and the cache-discipline rules recorded in
 [caching and context budget](AGENT_CACHING.md).
 
 CodeGraph is the primary code-query path: its MCP entry is registered for every
@@ -285,6 +288,12 @@ copy and a profile root hold the selected profile; the global set is the whole
 shared tree, because Codex, Kimi, and Qoder have no supported persistent
 filter. The shapes follow
 [ADR 0013](adr/0013-single-owner-skill-library.md).
+
+The instruction block stays one shared source. A simulated apply proves that
+all seven client instruction files carry the current block, that every copy
+holds the same content, and that the retired `~/.kimi-code/AGENTS.md` file
+stays absent. The per-client differences live in the delta table of
+`deployment/agent-payload/CLIENTS.md`, not in per-client copies of the block.
 
 MiniMax Code reads global memory from `<data-dir>/AGENTS.md` (default
 `~/.minimax`) and skills only from `<data-dir>/skills`, so it needs a real-file

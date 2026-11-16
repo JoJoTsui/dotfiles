@@ -5,15 +5,25 @@
 Each client reads a user-scope file plus project files. The user file is the same
 managed block everywhere, but discovery and conflict behavior differ.
 
+The deployment replaces the block between the `DOTFILES_AGENT_START` and
+`DOTFILES_AGENT_END` markers, so host text outside them survives a reapply.
+Every copy carries the same content: the shared block plus the overlay for the
+platform. The block names the preferred workflows, so the mattpocock skills,
+Herdr, Worktrunk, and RTK read the same in every client.
+
+The deployment points each client's user root at the home-relative path below
+and clears the overrides that would relocate a client, so the managed file is
+the one the client reads.
+
 | Client | User-scope file | Project files | Caveats |
 | --- | --- | --- | --- |
-| Codex | `~/.codex/AGENTS.md` | `AGENTS.md` from root to cwd | `AGENTS.override.md` shadows the user block; deeper project files load later |
-| Claude Code | `~/.claude/CLAUDE.md` | `CLAUDE.md`, `CLAUDE.local.md` | A project `CLAUDE.md` suppresses project `AGENTS.md` by default; sources are concatenated |
-| Kimi Code | `~/.agents/AGENTS.md` | `.kimi-code/AGENTS.md`, `AGENTS.md` | One copy is deployed here; the retired `~/.kimi-code/AGENTS.md` block is removed on upgrade |
-| Pi | `~/.pi/agent/AGENTS.md` | `AGENTS.md` chain | `AGENTS.override.md` shadows the user block; instructions are system-prompt level |
-| OpenCode V2 | `~/.config/opencode/AGENTS.md` | `AGENTS.md` chain | Sources are concatenated; a project file loads later but does not formally override |
-| MiniMax Code | `~/.minimax/AGENTS.md` | project instructions | Global memory lives under the data dir |
-| Qoder | `~/.qoder/AGENTS.md` | `AGENTS.md`, `AGENTS.local.md`, `.qoder/rules` | Project documents have a byte budget and can truncate |
+| Codex | `~/.codex/AGENTS.md` | `AGENTS.md` from root to cwd | The user root is `CODEX_HOME`; `AGENTS.override.md` shadows the user block; deeper project files load later |
+| Claude Code | `~/.claude/CLAUDE.md` | `CLAUDE.md`, `CLAUDE.local.md` | `CLAUDE_CONFIG_DIR` is cleared, so the user file stays in `~/.claude`; a project `CLAUDE.md` suppresses project `AGENTS.md` by default; sources are concatenated |
+| Kimi Code | `~/.agents/AGENTS.md` | `.kimi-code/AGENTS.md`, `AGENTS.md` | One copy is deployed here, outside `KIMI_CODE_HOME`; the retired user-scope `~/.kimi-code/AGENTS.md` block is removed on upgrade, and the project-scope `.kimi-code/AGENTS.md` is left alone |
+| Pi | `~/.pi/agent/AGENTS.md` | `AGENTS.md` chain | The user root is `PI_CODING_AGENT_DIR`; `AGENTS.override.md` shadows the user block; instructions are system-prompt level |
+| OpenCode V2 | `~/.config/opencode/AGENTS.md` | `AGENTS.md` chain | The user root is `OPENCODE_CONFIG_DIR`; sources are concatenated; a project file loads later but does not formally override |
+| MiniMax Code | `~/.minimax/AGENTS.md` | project instructions | The global memory is the data dir's `AGENTS.md`; the deployment points `MINIMAX_DATA_DIR` at `~/.minimax` |
+| Qoder | `~/.qoder/AGENTS.md` | `AGENTS.md`, `AGENTS.local.md`, `.qoder/rules` | The user root is `QODER_CONFIG_DIR`; project documents have a byte budget and can truncate |
 
 No client guarantees identical conflict resolution. The shared policy states the
 desired order: system prompt and explicit user message first, project
