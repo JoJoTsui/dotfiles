@@ -1,6 +1,9 @@
 # Optional whole-bundle selection; declarations only until an installer runs.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # Public bootstrap adapter data.
+# The device override reader is a dependency of the package pins below.
+source "$DEPLOY_SOURCE/deployment/overrides.sh"
+
 DEPLOY_BUNDLES=()
 DEPLOY_BUNDLES_CSV=''
 bundle_selection=${DOTFILES_BUNDLES:-none}

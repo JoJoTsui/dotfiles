@@ -1,5 +1,8 @@
 # Canonical desired-tool inventory shared by planning and source rendering.
 # shellcheck disable=SC2034 # Sourced adapter contract.
+# The device override reader is a dependency of the catalog pins below.
+source "$DEPLOY_SOURCE/deployment/overrides.sh"
+
 PIXI_VERSION=0.83.0
 RUSTUP_VERSION=1.29.2
 DEPLOY_TOOLS=(pixi chezmoi rustup)

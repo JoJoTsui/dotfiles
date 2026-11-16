@@ -1,4 +1,7 @@
 # Bun project ownership and public plan metadata. Sourcing is read-only.
+# The device override reader is a dependency of the client versions below.
+source "$DEPLOY_SOURCE/deployment/overrides.sh"
+
 DEPLOY_AGENTS=()
 
 agent_selected() {

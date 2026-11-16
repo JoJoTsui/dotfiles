@@ -4,6 +4,8 @@
 # next installer in the order.
 # shellcheck shell=bash
 # shellcheck disable=SC2034 # Public bootstrap adapter data.
+# The device override reader is a dependency of the version floors below.
+source "$DEPLOY_SOURCE/deployment/overrides.sh"
 
 INSTALLER_CATALOG="$DEPLOY_SOURCE/deployment/installer-tools.tsv"
 DEPLOY_INSTALLER_TOOLS=()

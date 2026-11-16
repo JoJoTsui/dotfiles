@@ -15,7 +15,7 @@
 # The file is device state. The deployment reads it and never writes it.
 # shellcheck shell=bash
 
-DEPLOY_OVERRIDE_FILE="$DEPLOY_HOME/.config/dotfiles/versions.tsv"
+DEPLOY_OVERRIDE_FILE="${DEPLOY_HOME:-$HOME}/.config/dotfiles/versions.tsv"
 
 override_lookup() {
     # $1 kind, $2 name. Prints the declared version, if any.
@@ -35,10 +35,12 @@ override_cli_minimum() { override_lookup cli "$1"; }
 
 override_agent_known() {
     local name=$1 entry
+    [ -f "$DEPLOY_SOURCE/deployment/agents/catalog.tsv" ] || return 1
     while IFS=$'|\r' read -r entry _ _ _ _ _; do
         case "$entry" in ''|\#*) continue ;; esac
         if [ "$entry" = "$name" ]; then return 0; fi
     done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
+    [ -f "$DEPLOY_SOURCE/deployment/agents/native.tsv" ] || return 1
     while IFS=$'|\r' read -r entry _ _ _ _; do
         case "$entry" in ''|\#*) continue ;; esac
         if [ "$entry" = "$name" ]; then return 0; fi
@@ -48,12 +50,14 @@ override_agent_known() {
 
 override_tool_known() {
     local package=$1 specifications specification
+    [ -f "$DEPLOY_SOURCE/deployment/common-tools.tsv" ] || return 1
     while IFS=$'|\r' read -r _ specifications _ _; do
         case "${specifications:-}" in ''|\#*) continue ;; esac
         for specification in $(printf '%s' "$specifications" | tr ',' ' '); do
             if [ "${specification%%==*}" = "$package" ]; then return 0; fi
         done
     done < "$DEPLOY_SOURCE/deployment/common-tools.tsv"
+    [ -f "$DEPLOY_SOURCE/deployment/bundle-tools.tsv" ] || return 1
     while IFS=$'|\r' read -r _ _ specifications _ _ _; do
         case "${specifications:-}" in ''|\#*) continue ;; esac
         for specification in $(printf '%s' "$specifications" | tr ',' ' '); do
@@ -65,6 +69,7 @@ override_tool_known() {
 
 override_cli_known() {
     local name=$1 entry
+    [ -f "$DEPLOY_SOURCE/deployment/installer-tools.tsv" ] || return 1
     while IFS=$'|\r' read -r entry _ _ _ _ _ _; do
         case "$entry" in ''|\#*) continue ;; esac
         if [ "$entry" = "$name" ]; then return 0; fi
@@ -141,16 +146,19 @@ override_default_version() {
     local kind=$1 name=$2 entry
     case "$kind" in
         agent)
+            [ -f "$DEPLOY_SOURCE/deployment/agents/catalog.tsv" ] || return 0
             while IFS=$'|\r' read -r entry _ version _ _ _; do
                 case "$entry" in ''|\#*) continue ;; esac
                 if [ "$entry" = "$name" ]; then printf '%s' "$version"; return 0; fi
             done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
+            [ -f "$DEPLOY_SOURCE/deployment/agents/native.tsv" ] || return 0
             while IFS=$'|\r' read -r entry version _ _ _; do
                 case "$entry" in ''|\#*) continue ;; esac
                 if [ "$entry" = "$name" ]; then printf '%s' "$version"; return 0; fi
             done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
             ;;
         tool)
+            [ -f "$DEPLOY_SOURCE/deployment/common-tools.tsv" ] || return 0
             while IFS=$'|\r' read -r _ specifications _ _; do
                 case "${specifications:-}" in ''|\#*) continue ;; esac
                 for specification in $(printf '%s' "$specifications" | tr ',' ' '); do
@@ -160,6 +168,7 @@ override_default_version() {
                     fi
                 done
             done < "$DEPLOY_SOURCE/deployment/common-tools.tsv"
+            [ -f "$DEPLOY_SOURCE/deployment/bundle-tools.tsv" ] || return 0
             while IFS=$'|\r' read -r _ _ specifications _ _ _; do
                 case "${specifications:-}" in ''|\#*) continue ;; esac
                 for specification in $(printf '%s' "$specifications" | tr ',' ' '); do
@@ -171,6 +180,7 @@ override_default_version() {
             done < "$DEPLOY_SOURCE/deployment/bundle-tools.tsv"
             ;;
         cli)
+            [ -f "$DEPLOY_SOURCE/deployment/installer-tools.tsv" ] || return 0
             while IFS=$'|\r' read -r entry _ _ _ minimum _ _; do
                 case "$entry" in ''|\#*) continue ;; esac
                 if [ "$entry" = "$name" ]; then printf '%s' "$minimum"; return 0; fi

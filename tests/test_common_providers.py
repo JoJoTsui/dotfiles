@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,6 +24,8 @@ class CommonProviderTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.source = self.root / "source"
         (self.source / "deployment").mkdir(parents=True)
+        # The sourced modules read the override reader from the source tree.
+        shutil.copy2(SOURCE / "deployment/overrides.sh", self.source / "deployment/overrides.sh")
         self.home = self.root / "home"
         (self.home / ".local/bin").mkdir(parents=True)
         self.tools = self.root / "device"
