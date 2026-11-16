@@ -142,6 +142,39 @@ class VersionUpdateTests(unittest.TestCase):
         self.assertEqual(agent_rows(self.root)[name]["version"], "99.1.0")
         self.assertEqual(check(self.root)["agents"], 7)
 
+    def test_an_agent_pin_moves_every_provider_record_that_carries_it(self):
+        # Codex states its pin twice: the macOS adoption record and the
+        # frozen Bun project. Both move, so the adoption keeps matching.
+        name = "codex"
+        current = common_versions(self.root)["bun"]
+        fake_bun = Path(self.temporary.name) / "bun"
+        fake_bun.write_text(
+            "#!" + sys.executable + "\n"
+            "import json, pathlib, re, sys\n"
+            "if sys.argv[1] == '--version': print(" + repr(current) + "); raise SystemExit(0)\n"
+            "project = pathlib.Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
+            "manifest = json.loads((project / 'package.json').read_text())\n"
+            "path = project / 'bun.lock'\n"
+            "lock = json.loads(re.sub(r',(?=\\s*[}\\]])', '', path.read_text()))\n"
+            "package, version = next(iter(manifest['dependencies'].items()))\n"
+            "lock['workspaces']['']['dependencies'] = manifest['dependencies']\n"
+            "lock['packages'][package][0] = f'{package}@{version}'\n"
+            "path.write_text(json.dumps(lock) + '\\n')\n"
+        , encoding="utf-8")
+        fake_bun.chmod(0o755)
+        with patch("deployment.update_versions.npm_metadata", return_value={
+            "version": "99.1.0", "engines": {"node": ">=16.0.0"}
+        }):
+            candidate = self.proposal({"agents": {name: "99.1.0"}})
+            changed = refresh(self.root, candidate, fake_bun)
+        self.assertIn(Path("deployment/agents/providers.tsv"), changed)
+        records = [line.split("|") for line in
+                   (self.root / "deployment/agents/providers.tsv").read_text(encoding="utf-8").splitlines()
+                   if line and not line.startswith("#")]
+        self.assertEqual({record[3] for record in records if record[0] == name}, {"99.1.0"})
+        self.assertEqual(len([record for record in records if record[0] == name]), 2)
+        self.assertEqual(check(self.root)["agents"], 7)
+
     def test_native_agent_refresh_rewrites_only_the_pin_and_validates_the_release(self):
         name = "qoder"
         manifest = native_agent_rows(self.root)[name]["manifest"]
@@ -149,7 +182,7 @@ class VersionUpdateTests(unittest.TestCase):
             candidate = self.proposal({"agents": {name: "99.1.0"}})
             changed = refresh(self.root, candidate, Path("unused"))
             self.assertEqual(refresh(self.root, candidate, Path("unused")), [])
-        self.assertIn(Path("deployment/agents/native.tsv"), changed)
+        self.assertIn(Path("deployment/agents/providers.tsv"), changed)
         metadata.assert_called_with(manifest, "99.1.0")
         self.assertEqual(native_agent_rows(self.root)[name]["version"], "99.1.0")
         self.assertFalse((self.root / "deployment/agents/qoder").exists())

@@ -89,7 +89,7 @@ DEPLOY_TOOLS=()
 DEPLOY_PLATFORM=macos
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 source "$DEPLOY_SOURCE/deployment/agents.sh"
-qoder_platform_key() { printf 'darwin arm64'; }
+native_release_platform_key() { printf 'darwin arm64'; }
 curl() {
     printf 'manifest\n' >> "$QODER_TEST_NETWORK_CALLS"
     while [ "$#" -gt 0 ]; do
@@ -104,7 +104,7 @@ download_verified() {
     [ "$3" = "$QODER_TEST_ARCHIVE_SHA256" ] || fail 'unexpected archive checksum'
     cp "$QODER_TEST_ARCHIVE" "$2"
 }
-install_qoder "$2" 'https://qoder.invalid/channels'
+install_native_release qoder "$2" 'qoder,qodercli' 'qodercli' 'https://qoder.invalid/channels' '{version}'
 '''
         return subprocess.run(
             ["/bin/bash", "-c", script, "qoder-fixture", str(SOURCE), self.version],

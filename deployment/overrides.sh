@@ -35,16 +35,11 @@ override_cli_minimum() { override_lookup cli "$1"; }
 
 override_agent_known() {
     local name=$1 entry
-    [ -f "$DEPLOY_SOURCE/deployment/agents/catalog.tsv" ] || return 1
-    while IFS=$'|\r' read -r entry _ _ _ _ _; do
+    [ -f "$DEPLOY_SOURCE/deployment/agents/providers.tsv" ] || return 1
+    while IFS=$'|\r' read -r entry _; do
         case "$entry" in ''|\#*) continue ;; esac
         if [ "$entry" = "$name" ]; then return 0; fi
-    done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
-    [ -f "$DEPLOY_SOURCE/deployment/agents/native.tsv" ] || return 1
-    while IFS=$'|\r' read -r entry _ _ _ _; do
-        case "$entry" in ''|\#*) continue ;; esac
-        if [ "$entry" = "$name" ]; then return 0; fi
-    done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
+    done < "$DEPLOY_SOURCE/deployment/agents/providers.tsv"
     return 1
 }
 
@@ -146,16 +141,15 @@ override_default_version() {
     local kind=$1 name=$2 entry
     case "$kind" in
         agent)
-            [ -f "$DEPLOY_SOURCE/deployment/agents/catalog.tsv" ] || return 0
-            while IFS=$'|\r' read -r entry _ version _ _ _; do
+            [ -f "$DEPLOY_SOURCE/deployment/agents/providers.tsv" ] || return 0
+            while IFS=$'|\r' read -r entry provider _ version _; do
                 case "$entry" in ''|\#*) continue ;; esac
-                if [ "$entry" = "$name" ]; then printf '%s' "$version"; return 0; fi
-            done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
-            [ -f "$DEPLOY_SOURCE/deployment/agents/native.tsv" ] || return 0
-            while IFS=$'|\r' read -r entry version _ _ _; do
-                case "$entry" in ''|\#*) continue ;; esac
-                if [ "$entry" = "$name" ]; then printf '%s' "$version"; return 0; fi
-            done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
+                # The deployment-owned record carries the catalog default.
+                case "$provider" in
+                    bun|native)
+                        if [ "$entry" = "$name" ]; then printf '%s' "$version"; return 0; fi ;;
+                esac
+            done < "$DEPLOY_SOURCE/deployment/agents/providers.tsv"
             ;;
         tool)
             [ -f "$DEPLOY_SOURCE/deployment/common-tools.tsv" ] || return 0

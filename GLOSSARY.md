@@ -81,6 +81,12 @@ The ordered agent providers a platform tries for one agent, such as Homebrew
 then Bun on macOS.
 _Avoid_: Installer order, agent order
 
+**Agent provider catalog**:
+The repository-owned list of agent provider records. Each record names one
+agent, one provider, the package or release, the version, the commands, the
+platforms, the chain order, and the Herdr kind.
+_Avoid_: Agent catalog, client list
+
 **Shared agent instructions**:
 The personal operating rules that apply to coding agents across projects and
 devices. A project's own instructions describe that project's separate contract.

@@ -24,11 +24,10 @@ class AgentUpdateTests(unittest.TestCase):
         shutil.copy2(catalog, deployment / "common-tools.tsv")
         row = next(line for line in catalog.read_text().splitlines() if line.startswith("bun|"))
         self.pin = row.split("|")[1].split("==")[1]
-        self.pins = deployment / "agents/catalog.tsv"
+        self.pins = deployment / "agents/providers.tsv"
         self.pins.parent.mkdir()
-        self.original_pins = (SOURCE / "deployment/agents/catalog.tsv").read_text()
+        self.original_pins = (SOURCE / "deployment/agents/providers.tsv").read_text()
         self.pins.write_text(self.original_pins)
-        shutil.copy2(SOURCE / "deployment/agents/native.tsv", deployment / "agents/native.tsv")
         self.home = self.root / "home"
         self.common = self.home / ".local/bin"
         self.common.mkdir(parents=True)
@@ -68,7 +67,7 @@ class AgentUpdateTests(unittest.TestCase):
             "    proposal = json.loads(Path(args[args.index('--proposal') + 1]).read_text())\n"
             "    if set(proposal['agents']) & agent_rows(root).keys():\n"
             "        assert subprocess.check_output([str(bun), '--version'], text=True).strip() == common_versions(root)['bun']\n"
-            "    (root / 'deployment/agents/catalog.tsv').write_text('refreshed pins\\n')\n"
+            "    (root / 'deployment/agents/providers.tsv').write_text('refreshed pins\\n')\n"
             "else: raise SystemExit(98)\n")
         python = self.root / "python"
         python.write_text(

@@ -1,14 +1,135 @@
-# Bun project ownership and public plan metadata. Sourcing is read-only.
+# Agent provider catalog and public plan metadata. Sourcing is read-only.
 # The device override reader is a dependency of the client versions below.
 source "$DEPLOY_SOURCE/deployment/overrides.sh"
 
 DEPLOY_AGENTS=()
+DEPLOY_AGENT_NAMES=()
+DEPLOY_AGENT_ROWS=()
+DEPLOY_AGENT_ORDER=()
+DEPLOY_HERDR_KINDS=()
+AGENT_ROW=()
+
+# The provider catalog is the only source of agent installation data. The
+# native Windows adapter reads the same records.
+AGENT_CATALOG_PATH="deployment/agents/providers.tsv"
+AGENT_HERDR_KINDS_PATH="deployment/agents/herdr-kinds.tsv"
+AGENT_CATALOG_FIELDS=14
+
+# Catalog records are read once so every later lookup sees the same rows.
+agent_catalog_load() {
+    local file="$DEPLOY_SOURCE/$AGENT_CATALOG_PATH" line name seen=''
+    DEPLOY_AGENT_ROWS=()
+    DEPLOY_AGENT_ORDER=()
+    [ -f "$file" ] || fail "the agent provider catalog is missing: $AGENT_CATALOG_PATH"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in ''|\#*) continue ;; esac
+        DEPLOY_AGENT_ROWS+=("$line")
+        name=${line%%|*}
+        case "$seen" in
+            *"|$name|"*) ;;
+            *) DEPLOY_AGENT_ORDER+=("$name"); seen="$seen|$name|" ;;
+        esac
+    done < "$file"
+}
+
+# The Herdr kinds the deployment recognizes. A catalog record may name a kind
+# only when this list contains it.
+agent_herdr_kinds_load() {
+    local file="$DEPLOY_SOURCE/$AGENT_HERDR_KINDS_PATH" line
+    DEPLOY_HERDR_KINDS=()
+    [ -f "$file" ] || fail "the Herdr kind catalog is missing: $AGENT_HERDR_KINDS_PATH"
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in ''|\#*) continue ;; esac
+        DEPLOY_HERDR_KINDS+=("$line")
+    done < "$file"
+}
+
+# Split one catalog record into its fields. The fields are positional because
+# the record is the shared contract of both bootstrap adapters.
+agent_row_split() {
+    local -a fields
+    IFS='|' read -r -a fields <<< "$1"
+    AGENT_ROW=(${fields[@]+"${fields[@]}"})
+    while [ "${#AGENT_ROW[@]}" -lt "$AGENT_CATALOG_FIELDS" ]; do
+        AGENT_ROW+=("")
+    done
+}
+
+agent_row_field_count() {
+    printf '%s' "$1" | awk -F'|' '{ print NF }'
+}
+
+# The records of one agent that can serve the deployment platform, in the
+# provider chain order the catalog declares.
+agent_viable_rows() {
+    local name=$1 row rows=() index other left right swap
+    for row in "${DEPLOY_AGENT_ROWS[@]}"; do
+        agent_row_split "$row"
+        [ "${AGENT_ROW[0]}" = "$name" ] || continue
+        agent_platform_matches "${AGENT_ROW[6]}" || continue
+        rows+=("$row")
+    done
+    for (( index=0; index<${#rows[@]}; index++ )); do
+        for (( other=index+1; other<${#rows[@]}; other++ )); do
+            agent_row_split "${rows[index]}"; left=${AGENT_ROW[7]}
+            agent_row_split "${rows[other]}"; right=${AGENT_ROW[7]}
+            if [ "$right" -lt "$left" ]; then
+                swap=${rows[index]}
+                rows[index]=${rows[other]}
+                rows[other]=$swap
+            fi
+        done
+    done
+    for (( index=0; index<${#rows[@]}; index++ )); do
+        printf '%s\n' "${rows[index]}"
+    done
+}
+
+# The provider the plan selects first for one agent on this platform.
+agent_resolved_row() {
+    local name=$1 row
+    while IFS= read -r row; do
+        [ -n "$row" ] || continue
+        printf '%s' "$row"
+        return 0
+    done <<< "$(agent_viable_rows "$name")"
+    return 1
+}
+
+# The record of the provider the deployment owns and pins. It carries the
+# package or release manifest, the lock, and the runtime floor.
+agent_owned_row() {
+    local name=$1 row
+    for row in "${DEPLOY_AGENT_ROWS[@]}"; do
+        agent_row_split "$row"
+        [ "${AGENT_ROW[0]}" = "$name" ] || continue
+        case "${AGENT_ROW[1]}" in
+            bun|native) printf '%s' "$row"; return 0 ;;
+        esac
+    done
+    return 1
+}
+
+# The selection mode of one agent. Every record of an agent declares it.
+agent_owned_selection() {
+    local name=$1 row
+    for row in "${DEPLOY_AGENT_ROWS[@]}"; do
+        agent_row_split "$row"
+        [ "${AGENT_ROW[0]}" = "$name" ] || continue
+        printf '%s' "${AGENT_ROW[8]}"
+        return 0
+    done
+    return 1
+}
 
 agent_selected() {
-    [ "$1" != codegraph ] || return 0
-    local selected
+    local name=$1 selection selected
+    selection=$(agent_owned_selection "$name")
+    [ "$selection" = always ] && return 0
     for selected in ${DEPLOY_AGENTS[@]+"${DEPLOY_AGENTS[@]}"}; do
-        [ "$selected" != "$1" ] || return 0
+        [ "$selected" != "$name" ] || return 0
     done
     return 1
 }
@@ -40,20 +161,140 @@ agent_platform_matches() {
     return 1
 }
 
+# An invalid catalog record stops the deployment before it creates any state
+# or file, and the message names the offending record.
+validate_agent_catalog() {
+    local row fields name provider package version policy commands platforms order selection
+    local herdr minimum trusted lock diagnostic platform kind kinds='' seen=''
+    local agent herdr_mode selection_mode orders count owned
+    for kind in ${DEPLOY_HERDR_KINDS[@]+"${DEPLOY_HERDR_KINDS[@]}"}; do
+        kinds="$kinds|$kind|"
+    done
+    for row in "${DEPLOY_AGENT_ROWS[@]}"; do
+        fields=$(agent_row_field_count "$row")
+        [ "$fields" = "$AGENT_CATALOG_FIELDS" ] ||
+            fail "invalid agent provider catalog record (expected $AGENT_CATALOG_FIELDS fields, found $fields): $row"
+        agent_row_split "$row"
+        name=${AGENT_ROW[0]}; provider=${AGENT_ROW[1]}; package=${AGENT_ROW[2]}
+        version=${AGENT_ROW[3]}; policy=${AGENT_ROW[4]}; commands=${AGENT_ROW[5]}
+        platforms=${AGENT_ROW[6]}; order=${AGENT_ROW[7]}; selection=${AGENT_ROW[8]}
+        herdr=${AGENT_ROW[9]}; minimum=${AGENT_ROW[10]}; trusted=${AGENT_ROW[11]}
+        lock=${AGENT_ROW[12]}; diagnostic=${AGENT_ROW[13]}
+        case "$name" in
+            ''|*[!A-Za-z0-9._-]*) fail "invalid agent provider catalog record (agent name): $row" ;;
+        esac
+        case "$provider" in
+            bun|native|homebrew) ;;
+            *) fail "invalid agent provider catalog record (unknown provider '$provider'): $row" ;;
+        esac
+        case "$policy" in
+            exact|floor) ;;
+            *) fail "invalid agent provider catalog record (unknown version policy '$policy'): $row" ;;
+        esac
+        case "$platforms" in
+            ''|,*|*,|*[!A-Za-z0-9,]*)
+                fail "invalid agent provider catalog record (platforms): $row" ;;
+        esac
+        for platform in ${platforms//,/ }; do
+            case "$platform" in
+                all|unix|windows|linux|macos|wsl) ;;
+                *) fail "invalid agent provider catalog record (unsupported platform '$platform'): $row" ;;
+            esac
+        done
+        case "$order" in
+            ''|*[!0-9]*) fail "invalid agent provider catalog record (order): $row" ;;
+        esac
+        [ "$order" -ge 1 ] || fail "invalid agent provider catalog record (order starts at 1): $row"
+        case "$selection" in
+            selectable|always) ;;
+            *) fail "invalid agent provider catalog record (unknown selection '$selection'): $row" ;;
+        esac
+        case "$commands" in
+            ''|,*|*,|*[!A-Za-z0-9,._-]*)
+                fail "invalid agent provider catalog record (commands): $row" ;;
+        esac
+        case "$version" in
+            ''|*[!0-9A-Za-z.+-]*) fail "invalid agent provider catalog record (version): $row" ;;
+        esac
+        if [ "$herdr" != '-' ]; then
+            case "$kinds" in
+                *"|$herdr|"*) ;;
+                *) fail "invalid agent provider catalog record (unknown Herdr kind '$herdr'): $row" ;;
+            esac
+        fi
+        case "$seen" in
+            *"|$name|$provider|"*) fail "duplicate agent provider catalog record ($name/$provider): $row" ;;
+        esac
+        seen="$seen|$name|$provider|"
+        case "$provider" in
+            bun)
+                [ -n "$package" ] || fail "invalid agent provider catalog record (missing package): $row"
+                [ -f "$DEPLOY_SOURCE/$lock" ] || fail "missing supported Bun lock for $name: $lock"
+                case "$minimum" in
+                    ''|*[!0-9.]*) fail "invalid agent provider catalog record (minimum Node): $row" ;;
+                esac
+                [ "$diagnostic" = '-' ] ||
+                    fail "invalid agent provider catalog record (a Bun record accepts a containing diagnostic): $row"
+                ;;
+            native)
+                [ -n "$package" ] || fail "invalid agent provider catalog record (missing native release): $row"
+                case "$lock" in
+                    https://*) ;;
+                    *) fail "invalid agent provider catalog record (native release manifest must use HTTPS): $row" ;;
+                esac
+                case "$diagnostic" in
+                    *'{version}'*) ;;
+                    *) fail "invalid agent provider catalog record (native diagnostic must report {version}): $row" ;;
+                esac
+                ;;
+            homebrew)
+                case "$diagnostic" in
+                    *'{version}'*) ;;
+                    *) fail "invalid agent provider catalog record (adopted diagnostic must report {version}): $row" ;;
+                esac
+                ;;
+        esac
+    done
+    # Every agent declares one Herdr kind and one selection mode, offers at
+    # least one provider that can serve this platform, and owns exactly one
+    # deployment-owned record.
+    for name in "${DEPLOY_AGENT_ORDER[@]}"; do
+        herdr_mode=''; selection_mode=''; orders=''; count=0; owned=0
+        for row in "${DEPLOY_AGENT_ROWS[@]}"; do
+            agent_row_split "$row"
+            [ "${AGENT_ROW[0]}" = "$name" ] || continue
+            if [ -z "$herdr_mode" ]; then
+                herdr_mode=${AGENT_ROW[9]}; selection_mode=${AGENT_ROW[8]}
+            fi
+            case "${AGENT_ROW[1]}" in
+                bun|native) owned=$((owned + 1)) ;;
+            esac
+            [ "${AGENT_ROW[9]}" = "$herdr_mode" ] ||
+                fail "agent provider catalog records disagree on the Herdr kind of $name: $row"
+            [ "${AGENT_ROW[8]}" = "$selection_mode" ] ||
+                fail "agent provider catalog records disagree on the selection of $name: $row"
+            agent_platform_matches "${AGENT_ROW[6]}" || continue
+            count=$((count + 1))
+            case "$orders" in
+                *"|${AGENT_ROW[7]},"*) fail "agent provider catalog records share the order ${AGENT_ROW[7]} of $name: $row" ;;
+            esac
+            orders="$orders|${AGENT_ROW[7]},"
+        done
+        [ "$count" -gt 0 ] || fail "agent $name has no provider that can serve $DEPLOY_PLATFORM"
+        [ "$owned" -eq 1 ] || fail "agent $name must declare exactly one deployment-owned provider"
+    done
+}
+
 resolve_agent_selection() {
-    local selection="${DOTFILES_AGENTS:-all}" requested canonical item name package version commands minimum trusted platforms manifest
+    local selection="${DOTFILES_AGENTS:-all}" requested canonical item name row
     local requested_agents=() normalized=()
     DEPLOY_AGENT_NAMES=()
     if "$CLI_AGENTS_SET"; then selection=$CLI_AGENTS; fi
     # Catalog order is the public installation and plan order.
-    while IFS=$'|\r' read -r name package version commands minimum trusted; do
-        case "$name" in ''|\#*|codegraph) continue ;; esac
+    for name in "${DEPLOY_AGENT_ORDER[@]}"; do
+        [ "$(agent_owned_selection "$name")" = selectable ] || continue
         DEPLOY_AGENT_NAMES+=("$name")
-    done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
-    while IFS=$'|\r' read -r name version commands platforms manifest; do
-        case "$name" in ''|\#*) continue ;; esac
-        DEPLOY_AGENT_NAMES+=("$name")
-    done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
+    done
     case "$selection" in
         all) normalized=(${DEPLOY_AGENT_NAMES[@]+"${DEPLOY_AGENT_NAMES[@]}"}) ;;
         none) ;;
@@ -68,68 +309,66 @@ resolve_agent_selection() {
             done ;;
     esac
     # Stable catalog ordering deduplicates aliases and repeated names.
-    while IFS=$'|\r' read -r name package version commands minimum trusted; do
-        case "$name" in ''|\#*|codegraph) continue ;; esac
+    for name in "${DEPLOY_AGENT_NAMES[@]}"; do
         for item in ${normalized[@]+"${normalized[@]}"}; do
             if [ "$item" = "$name" ]; then DEPLOY_AGENTS+=("$name"); break; fi
         done
-    done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
-    while IFS=$'|\r' read -r name version commands platforms manifest; do
-        case "$name" in ''|\#*) continue ;; esac
-        for item in ${normalized[@]+"${normalized[@]}"}; do
-            if [ "$item" = "$name" ]; then DEPLOY_AGENTS+=("$name"); break; fi
-        done
-    done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
-    while IFS=$'|\r' read -r name package version commands minimum trusted; do
-        case "$name" in ''|\#*) continue ;; esac
+    done
+    # The commands of every selected agent, taken from the provider the plan
+    # selects on this platform.
+    for name in "${DEPLOY_AGENT_ORDER[@]}"; do
         agent_selected "$name" || continue
-        IFS=, read -r -a requested_agents <<< "$commands"
+        row=$(agent_resolved_row "$name")
+        [ -n "$row" ] || continue
+        agent_row_split "$row"
+        IFS=, read -r -a requested_agents <<< "${AGENT_ROW[5]}"
         DEPLOY_TOOLS+=("${requested_agents[@]}")
-    done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
-    while IFS=$'|\r' read -r name version commands platforms manifest; do
-        case "$name" in ''|\#*) continue ;; esac
-        agent_selected "$name" || continue
-        IFS=, read -r -a requested_agents <<< "$commands"
-        DEPLOY_TOOLS+=("${requested_agents[@]}")
-    done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
+    done
 }
-resolve_agent_selection
 
 print_agent_packages() {
-    local name package version commands minimum trusted platforms manifest separator='' command
-    local exposed_commands=()
+    local name row resolved owned provider policy version commands herdr separator='' command
+    local exposed_commands=() first=''
     printf '['
-    while IFS=$'|\r' read -r name package version commands minimum trusted; do
-        case "$name" in ''|\#*) continue ;; esac
+    for name in "${DEPLOY_AGENT_ORDER[@]}"; do
         agent_selected "$name" || continue
-        IFS=, read -r -a exposed_commands <<< "$commands"
+        resolved=$(agent_resolved_row "$name")
+        [ -n "$resolved" ] || continue
+        agent_row_split "$resolved"
+        provider=${AGENT_ROW[1]}
+        policy=${AGENT_ROW[4]}
+        commands=${AGENT_ROW[5]}
+        herdr=${AGENT_ROW[9]}
+        version=$(agent_effective_version "$name" "${AGENT_ROW[3]}")
+        owned=$(agent_owned_row "$name")
+        agent_row_split "$owned"
         printf '%s{"name":' "$separator"; json_string "$name"
-        printf ',"package":'; json_string "$package"
-        printf ',"version":'; json_string "$(agent_effective_version "$name" "$version")"
-        printf ',"manager":"bun","commands":['
-        local first=''
+        printf ',"provider":'; json_string "$provider"
+        printf ',"policy":'; json_string "$policy"
+        printf ',"version":'; json_string "$version"
+        printf ',"commands":['
+        IFS=, read -r -a exposed_commands <<< "$commands"
+        first=''
         for command in "${exposed_commands[@]}"; do
             printf '%s' "$first"; json_string "$command"; first=,
         done
-        printf '],"minimumNode":'; json_string "$minimum"
-        printf ',"lock":'; json_string "deployment/agents/$name/bun.lock"
-        printf '}'; separator=,
-    done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
-    while IFS=$'|\r' read -r name version commands platforms manifest; do
-        case "$name" in ''|\#*) continue ;; esac
-        agent_selected "$name" || continue
-        IFS=, read -r -a exposed_commands <<< "$commands"
-        printf '%s{"name":' "$separator"; json_string "$name"
-        printf ',"package":null'
-        printf ',"version":'; json_string "$(agent_effective_version "$name" "$version")"
-        printf ',"manager":"native","commands":['
-        local first=''
-        for command in "${exposed_commands[@]}"; do
-            printf '%s' "$first"; json_string "$command"; first=,
-        done
-        printf '],"manifest":'; json_string "$manifest"
-        printf '}'; separator=,
-    done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
+        printf ']'
+        printf ',"herdr":'
+        if [ "$herdr" = '-' ]; then printf 'null'; else json_string "$herdr"; fi
+        case "${AGENT_ROW[1]}" in
+            bun)
+                printf ',"package":'; json_string "${AGENT_ROW[2]}"
+                printf ',"manager":"bun"'
+                printf ',"minimumNode":'; json_string "${AGENT_ROW[10]}"
+                printf ',"lock":'; json_string "${AGENT_ROW[12]}" ;;
+            native)
+                printf ',"package":null'
+                printf ',"manager":"native"'
+                printf ',"manifest":'; json_string "${AGENT_ROW[12]}" ;;
+        esac
+        printf '}'
+        separator=,
+    done
     printf ']'
 }
 
@@ -174,10 +413,24 @@ agent_shell_quote() {
     printf "'%s'" "$value"
 }
 
-# The upstream Qoder launcher carries OS/CPU feature selection. Reuse its
+# The expected --version output of one provider. A catalog record that reports
+# "-" accepts a diagnostic containing the version; every other record states
+# the exact diagnostic with {version} replaced by the pinned version.
+agent_diagnostic_matches() {
+    local version=$1 diagnostic=$2 template=$3 expected
+    case "$template" in
+        '-') case "$diagnostic" in *"$version"*) return 0 ;; esac; return 1 ;;
+        *'{version}'*)
+            expected=${template//\{version\}/$version}
+            [ "$diagnostic" = "$expected" ] ;;
+        *) return 1 ;;
+    esac
+}
+
+# The upstream native release carries OS/CPU feature selection. Reuse its
 # published manifest and verify the archive digest before executing the
 # extracted installer binary; the remote install script itself is not executed.
-qoder_platform_key() {
+native_release_platform_key() {
     local os arch
     os=$(uname -s | tr '[:upper:]' '[:lower:]')
     arch=$(uname -m)
@@ -187,14 +440,15 @@ qoder_platform_key() {
     fi
     [ "$arch" = aarch64 ] && arch=arm64
     [ "$arch" = x86_64 ] && arch=amd64
-    # Bun's optimized Linux x64 build needs the same flags as upstream.
-    if [ "$os" = linux ] && [ "$arch" = amd64 ] && ! qoder_cpu_has_flags; then
+    # The upstream Linux x64 build needs the same flags as its published
+    # baseline archive.
+    if [ "$os" = linux ] && [ "$arch" = amd64 ] && ! native_release_cpu_has_flags; then
         arch=amd64-baseline
     fi
     printf '%s %s' "$os" "$arch"
 }
 
-qoder_cpu_has_flags() {
+native_release_cpu_has_flags() {
     local cpuinfo="${QODERCLI_CPUINFO_PATH:-/proc/cpuinfo}" flags flag
     [ -r "$cpuinfo" ] || return 1
     flags=$(grep -m1 -E '^flags[[:space:]]*:' "$cpuinfo" 2>/dev/null || true)
@@ -220,84 +474,75 @@ agent_launcher() {
     chmod 755 "$launcher"
 }
 
-install_qoder() {
-    local version=$1 manifest_base=$2 root cli entry manifest archive scratch url checksum os arch command diagnostic
-    local manifest_json=''
-    root="$HOME/.qoder"
-    cli="$root/bin/qodercli/qodercli-$version"
-    if [ ! -x "$cli" ] || ! diagnostic=$("$cli" --version 2>/dev/null) || [ "$diagnostic" != "$version" ]; then
-        set -- $(qoder_platform_key)
+# The verified native release of one agent. The catalog record names the
+# release binary, the manifest base, and the expected diagnostic.
+install_native_release() {
+    local name=$1 version=$2 commands=$3 binary=$4 manifest_base=$5 template=$6
+    local root cli entry manifest manifest_json archive scratch url checksum os arch command diagnostic
+    local exposed_commands=()
+    root="$HOME/.$name"
+    cli="$root/bin/$binary/$binary-$version"
+    if [ ! -x "$cli" ] || ! diagnostic=$("$cli" --version 2>/dev/null) ||
+        ! agent_diagnostic_matches "$version" "$diagnostic" "$template"; then
+        set -- $(native_release_platform_key)
         os=$1 arch=$2
         case "$os" in
             linux|darwin) ;;
-            *) fail "Qoder native installation is unavailable on $os" ;;
+            *) fail "The $name native installation is unavailable on $os" ;;
         esac
-        scratch=$(mktemp -d "$TMPDIR/qoder.XXXXXX")
+        scratch=$(mktemp -d "$TMPDIR/$name.XXXXXX")
         manifest="$scratch/manifest.json"
-        DEPLOY_STEP='install-agents.qoder.manifest'
+        DEPLOY_STEP="install-agents.$name.manifest"
         curl -fsSL --retry 2 --connect-timeout 30 --max-time 300 \
             "$manifest_base/$version/manifest.json" -o "$manifest" ||
-            fail "cannot download the pinned Qoder $version manifest"
+            fail "cannot download the pinned $name $version manifest"
         manifest_json=$(cat "$manifest")
         [ "$(manifest_string "$manifest_json" latest)" = "$version" ] ||
-            fail "Qoder manifest does not advertise the pinned version $version"
+            fail "$name manifest does not advertise the pinned version $version"
         entry=$(printf '%s' "$manifest_json" | tr -d '\n\r\t ' |
             sed 's/},{/}\n{/g' | grep -F "\"os\":\"$os\"" |
             grep -F "\"arch\":\"$arch\"" | head -n1)
-        [ -n "$entry" ] || fail "Qoder $version has no native binary for $os/$arch"
+        [ -n "$entry" ] || fail "$name $version has no native binary for $os/$arch"
         url=$(manifest_string "$entry" url)
         checksum=$(manifest_string "$entry" sha256)
-        case "$url" in https://*) ;; *) fail 'Qoder archive must use HTTPS' ;; esac
-        [ "${#checksum}" -eq 64 ] || fail "Qoder manifest is missing a valid SHA-256 for $os/$arch"
-        case "$checksum" in *[!0-9a-f]*) fail "Qoder manifest has an invalid SHA-256 for $os/$arch" ;; esac
+        case "$url" in https://*) ;; *) fail "$name archive must use HTTPS" ;; esac
+        [ "${#checksum}" -eq 64 ] || fail "$name manifest is missing a valid SHA-256 for $os/$arch"
+        case "$checksum" in *[!0-9a-f]*) fail "$name manifest has an invalid SHA-256 for $os/$arch" ;; esac
         archive="$scratch/${url##*/}"
-        DEPLOY_STEP='install-agents.qoder.download'
+        DEPLOY_STEP="install-agents.$name.download"
         download_verified "$url" "$archive" "$checksum"
-        DEPLOY_STEP='install-agents.qoder.extract'
-        tar -xzf "$archive" -C "$scratch" || fail 'cannot extract the Qoder archive'
-        [ -f "$scratch/qodercli" ] || fail 'Qoder archive did not contain qodercli'
-        chmod 755 "$scratch/qodercli"
-        DEPLOY_STEP='install-agents.qoder.verify'
-        diagnostic=$("$scratch/qodercli" --version) ||
-            fail "downloaded Qoder did not report pinned version $version"
-        [ "$diagnostic" = "$version" ] ||
-            fail "downloaded Qoder did not report pinned version $version"
-        DEPLOY_STEP='install-agents.qoder.install'
+        DEPLOY_STEP="install-agents.$name.extract"
+        tar -xzf "$archive" -C "$scratch" || fail "cannot extract the $name archive"
+        [ -f "$scratch/$binary" ] || fail "$name archive did not contain $binary"
+        chmod 755 "$scratch/$binary"
+        DEPLOY_STEP="install-agents.$name.verify"
+        diagnostic=$("$scratch/$binary" --version) ||
+            fail "downloaded $name did not report pinned version $version"
+        agent_diagnostic_matches "$version" "$diagnostic" "$template" ||
+            fail "downloaded $name did not report pinned version $version"
+        DEPLOY_STEP="install-agents.$name.install"
         # The verified archive is the installed binary. Upstream's own
         # installer resolves its latest release and would place an unpinned
         # binary, so the deployment places the pinned one itself.
-        mkdir -p "$root/bin/qodercli"
-        cp "$scratch/qodercli" "$cli"
+        mkdir -p "$root/bin/$binary"
+        cp "$scratch/$binary" "$cli"
         chmod 755 "$cli"
         rm -rf "$scratch"
     fi
     mkdir -p "$HOME/.local/bin"
     # A vendor dispatcher may select another installed release. Both managed
     # commands use the verified pin while the device-owned dispatcher survives.
-    for command in qoder qodercli; do
+    IFS=, read -r -a exposed_commands <<< "$commands"
+    for command in "${exposed_commands[@]}"; do
         agent_launcher "$HOME/.local/bin/$command" "$cli"
     done
-    DEPLOY_STEP='install-agents.qoder.diagnostic'
-    for command in qoder qodercli; do
+    DEPLOY_STEP="install-agents.$name.diagnostic"
+    for command in "${exposed_commands[@]}"; do
         diagnostic=$("$HOME/.local/bin/$command" --version)
         printf '%s\n' "$diagnostic"
-        [ "$diagnostic" = "$version" ] ||
+        agent_diagnostic_matches "$version" "$diagnostic" "$template" ||
             fail "$command diagnostic did not report pinned version $version"
     done
-}
-
-install_native_agents() {
-    local name version commands platforms manifest_base
-    while IFS=$'|\r' read -r name version commands platforms manifest_base; do
-        case "$name" in ''|\#*) continue ;; esac
-        agent_selected "$name" || continue
-        agent_platform_matches "$platforms" || continue
-        version=$(agent_effective_version "$name" "$version")
-        case "$name" in
-            qoder) install_qoder "$version" "$manifest_base" ;;
-            *) fail "unsupported native agent: $name" ;;
-        esac
-    done < "$DEPLOY_SOURCE/deployment/agents/native.tsv"
 }
 
 # One attempt of a command that reaches the network can fail on its own.
@@ -334,9 +579,10 @@ install_worktrunk_plugins() {
     done
 }
 
-# Resolve the physical executable so a Homebrew symlink remains separate from
-# the two launchers we replace. Bound symlink traversal, including device loops.
-agent_codex_physical_path() {
+# Resolve the physical executable so an installer symlink remains separate
+# from the two launchers we replace. Bound symlink traversal, including device
+# loops.
+agent_physical_path() {
     local candidate=$1 directory target hops=0
     while [ "$hops" -lt 40 ]; do
         directory=$(CDPATH= cd -P -- "$(dirname "$candidate")" 2>/dev/null && pwd -P) || return 1
@@ -353,12 +599,15 @@ agent_codex_physical_path() {
     return 1
 }
 
-# This exact-pin exception belongs only to native macOS Codex. Search beyond
-# prior managed launchers on PATH, and recheck the device executable every run.
-agent_matching_macos_codex() {
-    [ "$DEPLOY_PLATFORM" = macos ] && installer_native_target || return 1
-    local version=$1 directory candidate diagnostic physical_home physical_bun
+# An installer-owned provider is adopted only when the device already provides
+# the command and its diagnostic exactly matches the pinned version. Search
+# beyond the prior managed launchers on PATH, and recheck the device
+# executable every run.
+agent_matching_installer_provider() {
+    local name=$1 version=$2 command=$3 template=$4
+    local directory candidate diagnostic physical_home physical_bun
     local search_paths=()
+    installer_native_target || return 1
     physical_home=$(CDPATH= cd -P -- "$HOME" && pwd -P) || return 1
     if [ -d "$BUN_INSTALL" ]; then
         physical_bun=$(CDPATH= cd -P -- "$BUN_INSTALL" && pwd -P) || return 1
@@ -369,13 +618,13 @@ agent_matching_macos_codex() {
     IFS=: read -r -a search_paths <<< "$PATH"
     for directory in "${search_paths[@]}"; do
         case "$directory" in /*) ;; *) continue ;; esac
-        candidate=$(agent_codex_physical_path "$directory/codex") || continue
+        candidate=$(agent_physical_path "$directory/$command") || continue
         case "$candidate" in
-            "$physical_home/.local/bin/codex"|"$physical_bun/bin/codex"|"$physical_bun/managed/"*) continue ;;
+            "$physical_home/.local/bin/$command"|"$physical_bun/bin/$command"|"$physical_bun/managed/"*) continue ;;
         esac
         if LC_ALL=C head -c 160 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# Managed by dotfiles'; then continue; fi
         diagnostic=$("$candidate" --version 2>/dev/null) || continue
-        [ "$diagnostic" = "codex-cli $version" ] || continue
+        agent_diagnostic_matches "$version" "$diagnostic" "$template" || continue
         printf '%s' "$candidate"
         return 0
     done
@@ -475,14 +724,83 @@ agent_global_copy_warning() {
     printf 'dotfiles: remove the leftover copy with: bun remove -g %s\n' "$package"
 }
 
+# The two managed launchers of one provider. The same selected executable is
+# available to older shell PATHs.
+agent_install_launchers() {
+    local name=$1 version=$2 commands=$3 entrypoint_dir=$4 entrypoint_file=$5
+    local comment=$6 node=$7 bun=$8 template=$9
+    local command launcher diagnostic entrypoint exposed_commands=()
+    mkdir -p "$BUN_INSTALL/bin" "$HOME/.local/bin"
+    IFS=, read -r -a exposed_commands <<< "$commands"
+    for command in "${exposed_commands[@]}"; do
+        launcher="$BUN_INSTALL/bin/$command"
+        if [ -n "$entrypoint_file" ]; then
+            entrypoint=$entrypoint_file
+        else
+            entrypoint="$entrypoint_dir/$command"
+        fi
+        [ -x "$entrypoint" ] || fail "$name did not expose $command"
+        [ ! -L "$launcher" ] || rm "$launcher"
+        {
+            printf '#!/bin/sh\n# Managed by dotfiles; %s.\n' "$comment"
+            printf 'PATH='; agent_shell_quote "$(dirname "$node"):$(dirname "$bun")"; printf ':"$PATH"\nexport PATH\n'
+            printf 'exec '; agent_shell_quote "$entrypoint"; printf ' "$@"\n'
+        } > "$launcher"
+        chmod 755 "$launcher"
+        # Omitted agents never reach this loop and retain their launchers.
+        [ ! -L "$HOME/.local/bin/$command" ] || rm "$HOME/.local/bin/$command"
+        cp "$launcher" "$HOME/.local/bin/$command"
+        chmod 755 "$HOME/.local/bin/$command"
+        DEPLOY_STEP="install-agents.$name.diagnostic"
+        diagnostic=$("$launcher" --version)
+        printf '%s\n' "$diagnostic"
+        agent_diagnostic_matches "$version" "$diagnostic" "$template" ||
+            fail "$name diagnostic did not report pinned version $version"
+    done
+}
+
+# The frozen Bun project of one agent. The catalog record names the package,
+# the lock, and the runtime floor.
+install_bun_agent() {
+    local name=$1 version=$2 catalog_version=$3 minimum=$4 package=$5 commands=$6
+    local bun=$7 node=$8 node_version=$9
+    local project command exposed_commands=()
+    agent_version_at_least "${node_version#v}" "$minimum" ||
+        fail "Node $node_version does not satisfy $name >=$minimum"
+    project="$BUN_INSTALL/managed/$name"
+    for command in "$project" "$project/node_modules" "$project/package.json" "$project/bun.lock"; do
+        [ ! -L "$command" ] || fail "managed Bun project is a symlink: $command"
+    done
+    [ -f "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" ] || fail "missing supported Bun lock for $name"
+    mkdir -p "$project" "$BUN_INSTALL/bin"
+    if [ "$version" = "$catalog_version" ]; then
+        cp "$DEPLOY_SOURCE/deployment/agents/$name/package.json" "$project/package.json"
+        cp "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" "$project/bun.lock"
+    else
+        # The device owns this agent's version. Its manifest and lock are
+        # generated once into device state, then installed frozen.
+        agent_override_material "$name" "$package" "$version" "$bun" "$node"
+        cp "$XDG_STATE_HOME/dotfiles/agents/$name/package.json" "$project/package.json"
+        cp "$XDG_STATE_HOME/dotfiles/agents/$name/bun.lock" "$project/bun.lock"
+    fi
+    DEPLOY_STEP="install-agents.$name.install"
+    # A registry hiccup should not abort the deployment; the lock file keeps
+    # the result the same on every attempt.
+    agent_retry env npm_config_global=false pnpm_config_global=false \
+        npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
+    agent_install_launchers "$name" "$version" "$commands" "$project/node_modules/.bin" '' \
+        "Bun installs the frozen project" "$node" "$bun" "-"
+    IFS=, read -r -a exposed_commands <<< "$commands"
+    agent_global_copy_warning "$package" "$node" "${exposed_commands[0]}"
+}
+
 install_agents() {
     local common_bin="${DOTFILES_COMMON_BIN:-$PIXI_HOME/bin}"
     local bun="${DOTFILES_BUN_BIN:-$common_bin/bun}" node="${DOTFILES_NODE_BIN:-$common_bin/node}"
     if [ -z "${DOTFILES_BUN_BIN:-}" ] && [ ! -x "$bun" ]; then bun="$PIXI_HOME/bin/bun"; fi
     if [ -z "${DOTFILES_NODE_BIN:-}" ] && [ ! -x "$node" ]; then node="$PIXI_HOME/bin/node"; fi
-    local bun_pin node_pin node_version name package version commands minimum trusted project command launcher diagnostic adopted_codex entrypoint claude_keep_plain_opus=0
-    local catalog_version override
-    local exposed_commands=()
+    local bun_pin node_pin node_version name row provider commands package version catalog_version
+    local minimum template adopted installed claude_keep_plain_opus=0 exposed_commands=()
     DEPLOY_STEP=install-agents.runtime
     case "$bun" in /*) ;; *) fail 'Bun binary override must be absolute' ;; esac
     case "$node" in /*) ;; *) fail 'Node binary override must be absolute' ;; esac
@@ -505,75 +823,50 @@ install_agents() {
         DEPLOY_STEP=install-agents.claude.model-snapshot
         if client_claude_uses_plain_opus; then claude_keep_plain_opus=1; fi
     fi
-    while IFS=$'|\r' read -r name package version commands minimum trusted; do
-        case "$name" in ''|\#*) continue ;; esac
+    for name in "${DEPLOY_AGENT_ORDER[@]}"; do
         agent_selected "$name" || continue
-        agent_version_at_least "${node_version#v}" "$minimum" || fail "Node $node_version does not satisfy $name >=$minimum"
-        catalog_version=$version
-        version=$(agent_effective_version "$name" "$catalog_version")
-        project="$BUN_INSTALL/managed/$name"
-        adopted_codex=''
-        if [ "$name" = codex ] && adopted_codex=$(agent_matching_macos_codex "$version"); then
-            mkdir -p "$BUN_INSTALL/bin"
-            printf 'dotfiles: adopted Codex %s from %s\n' "$version" "$adopted_codex"
-        else
-            for command in "$project" "$project/node_modules" "$project/package.json" "$project/bun.lock"; do
-                [ ! -L "$command" ] || fail "managed Bun project is a symlink: $command"
-            done
-            [ -f "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" ] || fail "missing supported Bun lock for $name"
-            mkdir -p "$project" "$BUN_INSTALL/bin"
-            if [ "$version" = "$catalog_version" ]; then
-                cp "$DEPLOY_SOURCE/deployment/agents/$name/package.json" "$project/package.json"
-                cp "$DEPLOY_SOURCE/deployment/agents/$name/bun.lock" "$project/bun.lock"
-            else
-                # The device owns this agent's version. Its manifest and lock
-                # are generated once into device state, then installed frozen.
-                agent_override_material "$name" "$package" "$version" "$bun" "$node"
-                cp "$XDG_STATE_HOME/dotfiles/agents/$name/package.json" "$project/package.json"
-                cp "$XDG_STATE_HOME/dotfiles/agents/$name/bun.lock" "$project/bun.lock"
-            fi
-            DEPLOY_STEP="install-agents.$name.install"
-            # A registry hiccup should not abort the deployment; the lock file
-            # keeps the result the same on every attempt.
-            agent_retry env npm_config_global=false pnpm_config_global=false \
-                npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
-        fi
-        IFS=, read -r -a exposed_commands <<< "$commands"
-        for command in "${exposed_commands[@]}"; do
-            launcher="$BUN_INSTALL/bin/$command"
-            entrypoint="${adopted_codex:-$project/node_modules/.bin/$command}"
-            [ -x "$entrypoint" ] || fail "$name did not expose $command"
-            [ ! -L "$launcher" ] || rm "$launcher"
-            {
-                if [ -n "$adopted_codex" ]; then
-                    printf '#!/bin/sh\n# Managed by dotfiles; adopted macOS Codex.\n'
-                else
-                    printf '#!/bin/sh\n# Managed by dotfiles; Bun installs the frozen project.\n'
-                fi
-                printf 'PATH='; agent_shell_quote "$(dirname "$node"):$(dirname "$bun")"; printf ':"$PATH"\nexport PATH\n'
-                printf 'exec '; agent_shell_quote "$entrypoint"; printf ' "$@"\n'
-            } > "$launcher"
-            chmod 755 "$launcher"
-            # The same selected executable is available to older shell PATHs.
-            # Omitted agents never reach this loop and retain their launchers.
-            [ ! -L "$HOME/.local/bin/$command" ] || rm "$HOME/.local/bin/$command"
-            cp "$launcher" "$HOME/.local/bin/$command"
-            chmod 755 "$HOME/.local/bin/$command"
-            DEPLOY_STEP="install-agents.$name.diagnostic"
-            diagnostic=$("$launcher" --version)
-            printf '%s\n' "$diagnostic"
-            if [ -n "$adopted_codex" ]; then
-                [ "$diagnostic" = "codex-cli $version" ] || fail "$name diagnostic did not report pinned version $version"
-            else
-                case "$diagnostic" in *"$version"*) ;; *) fail "$name diagnostic did not report pinned version $version" ;; esac
-            fi
-        done
-        agent_global_copy_warning "$package" "$node" "${exposed_commands[0]}"
-    done < "$DEPLOY_SOURCE/deployment/agents/catalog.tsv"
-    install_native_agents
+        installed=''
+        while IFS= read -r row; do
+            [ -n "$row" ] || continue
+            agent_row_split "$row"
+            provider=${AGENT_ROW[1]}
+            commands=${AGENT_ROW[5]}
+            package=${AGENT_ROW[2]}
+            minimum=${AGENT_ROW[10]}
+            template=${AGENT_ROW[13]}
+            catalog_version=${AGENT_ROW[3]}
+            version=$(agent_effective_version "$name" "$catalog_version")
+            case "$provider" in
+                bun)
+                    install_bun_agent "$name" "$version" "$catalog_version" "$minimum" "$package" "$commands" \
+                        "$bun" "$node" "$node_version"
+                    installed=1 ;;
+                native)
+                    install_native_release "$name" "$version" "$commands" "$package" "${AGENT_ROW[12]}" "$template"
+                    installed=1 ;;
+                homebrew)
+                    IFS=, read -r -a exposed_commands <<< "$commands"
+                    DEPLOY_STEP="install-agents.$name.adopt"
+                    adopted=$(agent_matching_installer_provider "$name" "$version" "${exposed_commands[0]}" "$template") || adopted=''
+                    if [ -n "$adopted" ]; then
+                        printf 'dotfiles: adopted %s %s from %s\n' "$name" "$version" "$adopted"
+                        agent_install_launchers "$name" "$version" "$commands" '' "$adopted" \
+                            "adopted installer command" "$node" "$bun" "$template"
+                        installed=1
+                    fi ;;
+            esac
+            if [ -n "$installed" ]; then break; fi
+        done <<< "$(agent_viable_rows "$name")"
+        [ -n "$installed" ] || fail "no provider could supply the agent $name"
+    done
     install_worktrunk_plugins
     # Client installers can add plugin settings in their own formatting. Finish
     # through the existing merger so the first and later applies agree.
     DEPLOY_STEP=install-agents.client-settings
     deploy_client_settings "$claude_keep_plain_opus"
 }
+
+agent_catalog_load
+agent_herdr_kinds_load
+validate_agent_catalog
+resolve_agent_selection

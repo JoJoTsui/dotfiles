@@ -85,22 +85,22 @@ function Update-Agents {
 }
 
 function Get-AgentCatalog {
+    # The per-agent provider catalog is the only source of agent installation
+    # data. The status view reports the deployment-owned record of each agent.
+    $records = @{}
+    $order = @()
+    foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source 'deployment/agents/providers.tsv'))) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $fields = $line.Split('|')
+        $agent = $fields[0]
+        if (-not $records.ContainsKey($agent)) { $records[$agent] = @(); $order += $agent }
+        $records[$agent] += [pscustomobject]@{ provider = $fields[1]; version = $fields[3]; commands = $fields[5] }
+    }
     $rows = @()
-    $catalogs = @(
-        @{ File = 'catalog.tsv'; Header = @('name', 'package', 'version', 'commands', 'minimumNode', 'trusted') },
-        @{ File = 'native.tsv'; Header = @('name', 'version', 'commands', 'platforms', 'manifest') }
-    )
-    foreach ($catalog in $catalogs) {
-        $path = Join-Path $Source ('deployment/agents/' + $catalog.File)
-        foreach ($line in [IO.File]::ReadAllLines($path)) {
-            if (-not $line -or $line.StartsWith('#')) { continue }
-            $fields = $line.Split('|')
-            $row = [ordered]@{}
-            for ($index = 0; $index -lt $catalog.Header.Count; $index++) {
-                $row[$catalog.Header[$index]] = $fields[$index]
-            }
-            $rows += [pscustomobject]$row
-        }
+    foreach ($agent in $order) {
+        $owned = @($records[$agent] | Where-Object { $_.provider -in @('bun', 'native') })
+        if ($owned.Count -ne 1) { continue }
+        $rows += [pscustomobject]@{ name = $agent; version = $owned[0].version; commands = $owned[0].commands }
     }
     return $rows
 }

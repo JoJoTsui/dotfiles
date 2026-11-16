@@ -136,6 +136,14 @@ explains every changed pair.
   every effective override. Atuin and the bootstrap managers stay with the
   repository pin. Read `docs/adr/0010-device-version-overrides.md` before
   changing the override kinds, the manifest, or the merge input.
+- **The agent provider catalog owns agent installation data**:
+  `deployment/agents/providers.tsv` declares every agent, provider, package or
+  release, version, version policy, command, platform, chain order, selection
+  mode, and Herdr kind; `deployment/agents/herdr-kinds.tsv` declares the kinds a
+  record may name. Both bootstrap adapters read these files, so a record is the
+  only place an agent's installation is described, and an invalid record stops
+  the deployment before it creates state. Read `docs/AGENT_INSTALLATION.md`
+  before changing an agent's provider, pin, command, or Herdr kind.
 - **The installer order is per platform**: macOS resolves a missing command
   through Homebrew, then Pixi, then a native release; Linux, WSL, and native
   Windows use Pixi, then a native release. Homebrew is adopted from the device

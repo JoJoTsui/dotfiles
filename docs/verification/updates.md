@@ -13,7 +13,7 @@ python3 deployment/update_versions.py check
 To prepare a change, create a reviewed JSON proposal from upstream release
 metadata. Its keys are optional. Common and bundle values are exact package
 versions; bundle keys use `bundle/package`. Agent names match
-`deployment/agents/catalog.tsv`. A changed Windows exception requires the new
+`deployment/agents/providers.tsv`. A changed Windows exception requires the new
 version, HTTPS URL, and published SHA-256 together.
 
 ```json

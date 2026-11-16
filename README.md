@@ -113,8 +113,8 @@ dot_gitconfig               # identity, delta pager (side-by-side), zdiff3,
 dot_condarc.tmpl            # mirror channels with upstream fallback; community only
 deployment/common-tools.tsv  # exact common requirements and command exposures
 deployment/installer-tools.tsv # installer-owned commands: Homebrew casks
-deployment/agents/           # Bun catalog, per-client manifests + bun.lock,
-                             # native release pins (native.tsv)
+deployment/agents/           # provider catalog + Herdr kinds, per-client
+                             # manifests + bun.lock, native release pins
 deployment/client-settings/  # default configs and preservation/CodeGraph catalog
 deployment/inventory/        # preserved optional/specialist inventory
 dot_config/

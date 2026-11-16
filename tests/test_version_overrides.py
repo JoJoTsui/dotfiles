@@ -227,10 +227,11 @@ class OverrideAgentInstallTests(unittest.TestCase):
 
     def test_the_declared_agent_version_is_installed(self):
         pins = {}
-        catalog = (SOURCE / "deployment/agents/catalog.tsv").read_text(encoding="utf-8")
+        catalog = (SOURCE / "deployment/agents/providers.tsv").read_text(encoding="utf-8")
         for line in catalog.splitlines():
-            if line.startswith("pi|"):
-                pins = {"package": line.split("|")[1], "default": line.split("|")[2]}
+            fields = line.split("|")
+            if fields[0] == "pi" and fields[1] == "bun":
+                pins = {"package": fields[2], "default": fields[3]}
         other = self.published_version(pins["package"], pins["default"])
         (self.home / ".config/dotfiles/versions.tsv").write_text(f"agent|pi|{other}\n", encoding="utf-8")
         env = {key: value for key, value in os.environ.items()

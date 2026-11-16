@@ -24,6 +24,11 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z.+_~-]*$")
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
+# The per-agent provider catalog. One record per agent and provider; both
+# bootstrap adapters read the same file.
+AGENT_CATALOG_FIELDS = 14
+AGENT_PROVIDERS = ("bun", "native", "homebrew")
+
 # A bootstrap manager's version and its per-target release digests are one
 # pin: the bytes differ per target and per rebuild, so a version without
 # matching digests cannot be verified. Each entry names where upstream
@@ -211,36 +216,116 @@ def bundle_versions(root: Path) -> dict[tuple[str, str], str]:
     return versions
 
 
+def provider_rows(root: Path) -> list[dict[str, str]]:
+    """Every record of the per-agent provider catalog.
+
+    The catalog is the only source of agent installation data: the POSIX and
+    the native Windows adapter read the same records.
+    """
+    result = []
+    for row in rows(root / "deployment/agents/providers.tsv", AGENT_CATALOG_FIELDS):
+        if len(row) != AGENT_CATALOG_FIELDS:
+            raise VersionError(
+                f"agent provider catalog record must have {AGENT_CATALOG_FIELDS} fields: {'|'.join(row)}")
+        (agent, provider, package, version, policy, commands, platforms, order,
+         selection, herdr, minimum_node, trusted, lock, diagnostic) = row
+        result.append({"agent": agent, "provider": provider, "package": package,
+                       "version": version, "policy": policy, "commands": commands,
+                       "platforms": platforms, "order": order, "selection": selection,
+                       "herdr": herdr, "minimumNode": minimum_node, "trusted": trusted,
+                       "lock": lock, "diagnostic": diagnostic})
+    return result
+
+
+def herdr_kinds(root: Path) -> list[str]:
+    """The Herdr integration kinds the deployment recognizes."""
+    return [line for line in
+            (root / "deployment/agents/herdr-kinds.tsv").read_text(encoding="utf-8").splitlines()
+            if line and not line.startswith("#")]
+
+
+def check_agent_catalog(root: Path) -> dict[str, int]:
+    """Reject a provider catalog the deployment cannot install from."""
+    catalog = provider_rows(root)
+    if not catalog:
+        raise VersionError("agent provider catalog is empty")
+    kinds = herdr_kinds(root)
+    seen: set[str] = set()
+    agents: dict[str, list[dict[str, str]]] = {}
+    for row in catalog:
+        label = f"{row['agent']}/{row['provider']}"
+        if row["provider"] not in AGENT_PROVIDERS:
+            raise VersionError(f"unknown agent provider '{row['provider']}' in {label}")
+        if label in seen:
+            raise VersionError(f"duplicate agent provider catalog record: {label}")
+        seen.add(label)
+        if row["policy"] not in ("exact", "floor"):
+            raise VersionError(f"unknown agent version policy '{row['policy']}' in {label}")
+        if row["selection"] not in ("selectable", "always"):
+            raise VersionError(f"unknown agent selection '{row['selection']}' in {label}")
+        if not row["commands"] or any(
+                not re.fullmatch(r"[A-Za-z0-9._-]+", item) for item in row["commands"].split(",")):
+            raise VersionError(f"invalid agent commands in {label}")
+        allowed = {"all", "unix", "windows", "linux", "macos", "wsl"}
+        if not row["platforms"] or set(row["platforms"].split(",")) - allowed:
+            raise VersionError(f"invalid agent platforms in {label}")
+        if not row["order"].isdigit() or int(row["order"]) < 1:
+            raise VersionError(f"invalid agent provider order in {label}")
+        if row["herdr"] != "-" and row["herdr"] not in kinds:
+            raise VersionError(f"unknown Herdr kind '{row['herdr']}' in {label}")
+        agents.setdefault(row["agent"], []).append(row)
+    for name, records in agents.items():
+        owned = [item for item in records if item["provider"] in ("bun", "native")]
+        if len(owned) != 1:
+            raise VersionError(f"agent {name} must declare exactly one deployment-owned provider")
+        if len({item["herdr"] for item in records}) != 1:
+            raise VersionError(f"agent provider catalog records disagree on the Herdr kind of {name}")
+        if len({item["selection"] for item in records}) != 1:
+            raise VersionError(f"agent provider catalog records disagree on the selection of {name}")
+        for item in records:
+            if item["policy"] == "exact" and item["version"] != owned[0]["version"]:
+                raise VersionError(f"agent provider catalog records disagree on the version of {name}")
+    return {"records": len(catalog), "agents": len(agents)}
+
+
 def agent_rows(root: Path) -> dict[str, dict[str, str]]:
+    """The Bun-owned records of the provider catalog."""
     result = {}
-    for row in rows(root / "deployment/agents/catalog.tsv", 6):
-        name, package, version, commands, minimum_node, trusted = row[:6]
+    for row in provider_rows(root):
+        if row["provider"] != "bun":
+            continue
+        name = row["agent"]
         if name in result:
             raise VersionError(f"duplicate agent catalog entry: {name}")
-        if not VERSION_RE.fullmatch(version) or not re.fullmatch(r"\d+(?:\.\d+){1,2}", minimum_node):
+        if not VERSION_RE.fullmatch(row["version"]) or not re.fullmatch(r"\d+(?:\.\d+){1,2}", row["minimumNode"]):
             raise VersionError(f"invalid agent version or minimum Node pin for {name}")
-        result[name] = {"package": package, "version": version, "commands": commands,
-                        "minimumNode": minimum_node, "trusted": trusted}
+        result[name] = {"package": row["package"], "version": row["version"],
+                        "commands": row["commands"], "minimumNode": row["minimumNode"],
+                        "trusted": row["trusted"]}
     return result
 
 
 def native_agent_rows(root: Path) -> dict[str, dict[str, str]]:
+    """The native-release records of the provider catalog."""
     result = {}
-    for row in rows(root / "deployment/agents/native.tsv", 5):
-        name, version, commands, platforms, manifest = row[:5]
+    for row in provider_rows(root):
+        if row["provider"] != "native":
+            continue
+        name = row["agent"]
         if name in result:
             raise VersionError(f"duplicate native agent catalog entry: {name}")
-        if not VERSION_RE.fullmatch(version):
+        if not VERSION_RE.fullmatch(row["version"]):
             raise VersionError(f"invalid native agent version for {name}")
+        commands = row["commands"]
         if not commands or any(not re.fullmatch(r"[A-Za-z0-9._-]+", item) for item in commands.split(",")):
             raise VersionError(f"invalid native agent commands for {name}")
         allowed_platforms = {"all", "unix", "windows", "linux", "macos", "wsl"}
-        if not platforms or set(platforms.split(",")) - allowed_platforms:
+        if not row["platforms"] or set(row["platforms"].split(",")) - allowed_platforms:
             raise VersionError(f"invalid native agent platforms for {name}")
-        if not manifest.startswith("https://"):
+        if not row["lock"].startswith("https://"):
             raise VersionError(f"native agent {name} manifest must use HTTPS")
-        result[name] = {"version": version, "commands": commands,
-                        "platforms": platforms, "manifest": manifest}
+        result[name] = {"version": row["version"], "commands": commands,
+                        "platforms": row["platforms"], "manifest": row["lock"]}
     return result
 
 
@@ -316,6 +401,7 @@ def node_satisfies(version: str, expression: str) -> bool:
 def check(root: Path) -> dict[str, int]:
     common = common_versions(root)
     bundles = bundle_versions(root)
+    catalog = check_agent_catalog(root)
     agents = agent_rows(root)
     native_agents = native_agent_rows(root)
     if not agents:
@@ -401,6 +487,7 @@ def check(root: Path) -> dict[str, int]:
         "commonPins": len(common),
         "bundleToolRows": len(rows(root / "deployment/bundle-tools.tsv", 6)),
         "bundlePins": len(bundles),
+        "agentProviderRecords": catalog["records"],
         "agents": len(agents),
         "nativeAgents": len(native_agents),
         "windowsAssets": len(assets),
@@ -453,6 +540,32 @@ def _rewrite_bundle_pins(path: Path, updates: dict[str, dict[str, str]]) -> None
     if missing:
         names = ", ".join(f"{bundle}/{package}" for bundle, package in sorted(missing))
         raise VersionError(f"unknown bundle package(s): {names}")
+    path.write_text("".join(output), encoding="utf-8")
+
+
+def _rewrite_agent_versions(path: Path, agent: str, version: str, previous: str) -> None:
+    """Move one agent's pin to every record that carries it.
+
+    A record with an exact version policy states the agent's pin, so it moves
+    with it. A record with a floor policy states an installer-owned minimum
+    and keeps its own value.
+    """
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    output = []
+    updated = False
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            output.append(line)
+            continue
+        fields = line.rstrip("\r\n").split("|")
+        if fields[0] == agent and fields[4] == "exact" and fields[3] == previous:
+            fields[3] = version
+            ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+            line = "|".join(fields) + ending
+            updated = True
+        output.append(line)
+    if not updated:
+        raise VersionError(f"missing agent provider catalog record: {agent}")
     path.write_text("".join(output), encoding="utf-8")
 
 
@@ -728,6 +841,7 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
 
         changed_agents: set[str] = set()
         changed_native: dict[str, str] = {}
+        catalog_path = staged_deployment / "agents/providers.tsv"
         for name, version in proposal.get("agents", {}).items():
             if name in original_agents:
                 package = original_agents[name]["package"]
@@ -735,45 +849,10 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
                 package_json = json.loads(package_path.read_text(encoding="utf-8"))
                 package_json["dependencies"][package] = version
                 package_path.write_text(json.dumps(package_json, indent=2) + "\n", encoding="utf-8")
-                catalog_path = staged_deployment / "agents/catalog.tsv"
-                catalog_lines = catalog_path.read_text(encoding="utf-8").splitlines(keepends=True)
-                updated_lines = []
-                seen = False
-                for line in catalog_lines:
-                    fields = line.rstrip("\r\n").split("|")
-                    if fields and fields[0] == name:
-                        if seen:
-                            raise VersionError(f"duplicate agent catalog entry: {name}")
-                        fields[2] = version
-                        ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
-                        line = "|".join(fields) + ending
-                        seen = True
-                    updated_lines.append(line)
-                if not seen:
-                    raise VersionError(f"missing agent catalog entry: {name}")
-                catalog_path.write_text("".join(updated_lines), encoding="utf-8")
+                _rewrite_agent_versions(catalog_path, name, version, original_agents[name]["version"])
                 changed_agents.add(name)
             elif name in original_native:
-                native_path = staged_deployment / "agents/native.tsv"
-                native_lines = native_path.read_text(encoding="utf-8").splitlines(keepends=True)
-                updated_lines = []
-                seen = False
-                for line in native_lines:
-                    if line.lstrip().startswith("#") or not line.strip():
-                        updated_lines.append(line)
-                        continue
-                    fields = line.rstrip("\r\n").split("|")
-                    if fields and fields[0] == name:
-                        if seen:
-                            raise VersionError(f"duplicate native agent catalog entry: {name}")
-                        fields[1] = version
-                        ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
-                        line = "|".join(fields) + ending
-                        seen = True
-                    updated_lines.append(line)
-                if not seen:
-                    raise VersionError(f"missing native agent catalog entry: {name}")
-                native_path.write_text("".join(updated_lines), encoding="utf-8")
+                _rewrite_agent_versions(catalog_path, name, version, original_native[name]["version"])
                 changed_native[name] = version
             else:
                 raise VersionError(f"unknown agent in proposal: {name}")
@@ -821,7 +900,10 @@ def selected_agents(root: Path, selection: str) -> list[str]:
     agents = agent_rows(root)
     native = native_agent_rows(root)
     aliases = {"kimi-code": "kimi", "claude-code": "claude", "minimax-code": "minimax"}
-    ordered = list(agents) + list(native)
+    ordered: list[str] = []
+    for row in provider_rows(root):
+        if row["agent"] not in ordered:
+            ordered.append(row["agent"])
     if selection == "all":
         return ordered
     if selection == "none":

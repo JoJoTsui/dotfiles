@@ -1,0 +1,10 @@
+# Herdr integration kinds the deployment recognizes.
+#
+# A provider catalog row may name a kind only when this list contains it. A row
+# without a kind names an agent Herdr does not integrate.
+pi
+claude
+codex
+kimi
+opencode
+qodercli

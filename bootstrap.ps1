@@ -32,6 +32,105 @@ function Read-Catalog([string]$RelativePath) {
         }
     }
 }
+function Get-AgentCatalog {
+    # The per-agent provider catalog is the only source of agent installation
+    # data. The POSIX adapter reads the same records.
+    $rows = @()
+    foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source 'deployment/agents/providers.tsv'))) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $fields = $line.Split('|')
+        $rows += [pscustomobject]@{
+            record = $line
+            agent = $fields[0]; provider = $fields[1]; package = $fields[2]; version = $fields[3]
+            policy = $fields[4]; commands = $fields[5]; platforms = $fields[6]; order = [int]$fields[7]
+            selection = $fields[8]; herdr = $fields[9]; minimumNode = $fields[10]; trusted = $fields[11]
+            lock = $fields[12]; diagnostic = $fields[13]
+        }
+    }
+    return $rows
+}
+function Get-HerdrKinds {
+    $kinds = @()
+    foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source 'deployment/agents/herdr-kinds.tsv'))) {
+        if ($line -and -not $line.StartsWith('#')) { $kinds += $line }
+    }
+    return $kinds
+}
+function Test-AgentPlatform([string]$Platforms) {
+    foreach ($item in $Platforms.Split(',')) {
+        if ($item -eq 'all' -or $item -eq 'windows') { return $true }
+    }
+    return $false
+}
+function Select-AgentRecords {
+    # The records of one agent that can serve the platform, in chain order.
+    param($Catalog, [string]$Agent)
+    $viable = @($Catalog | Where-Object { $_.agent -eq $Agent -and (Test-AgentPlatform $_.platforms) })
+    return @($viable | Sort-Object order)
+}
+function Test-AgentCatalog {
+    # An invalid record stops the deployment before it creates any state or
+    # file, and the message names the offending record.
+    $catalog = @(Get-AgentCatalog)
+    $kinds = @(Get-HerdrKinds)
+    $seen = @{}
+    foreach ($row in $catalog) {
+        $label = "$($row.agent)/$($row.provider)"
+        if ($row.provider -notin @('bun', 'native', 'homebrew')) {
+            Stop-Deployment "invalid agent provider catalog record (unknown provider '$($row.provider)'): $label"
+        }
+        if ($row.policy -notin @('exact', 'floor')) {
+            Stop-Deployment "invalid agent provider catalog record (unknown version policy '$($row.policy)'): $label"
+        }
+        foreach ($platform in $row.platforms.Split(',')) {
+            if ($platform -notin @('all', 'unix', 'windows', 'linux', 'macos', 'wsl')) {
+                Stop-Deployment "invalid agent provider catalog record (unsupported platform '$platform'): $label"
+            }
+        }
+        if ($row.order -lt 1) { Stop-Deployment "invalid agent provider catalog record (order starts at 1): $label" }
+        if ($row.selection -notin @('selectable', 'always')) {
+            Stop-Deployment "invalid agent provider catalog record (unknown selection '$($row.selection)'): $label"
+        }
+        if (-not $row.commands -or $row.commands.StartsWith(',') -or $row.commands.EndsWith(',')) {
+            Stop-Deployment "invalid agent provider catalog record (commands): $label"
+        }
+        if (-not $row.version) { Stop-Deployment "invalid agent provider catalog record (version): $label" }
+        if ($row.herdr -ne '-' -and $row.herdr -notin $kinds) {
+            Stop-Deployment "invalid agent provider catalog record (unknown Herdr kind '$($row.herdr)'): $label"
+        }
+        if ($seen.ContainsKey($label)) { Stop-Deployment "duplicate agent provider catalog record: $label" }
+        $seen[$label] = $true
+        if ($row.provider -eq 'bun') {
+            if (-not $row.package) { Stop-Deployment "invalid agent provider catalog record (missing package): $label" }
+            if (-not [IO.File]::Exists((Join-Path $Source $row.lock))) {
+                Stop-Deployment "missing supported Bun lock for $($row.agent): $($row.lock)"
+            }
+        }
+        if ($row.provider -eq 'native') {
+            if (-not $row.package) { Stop-Deployment "invalid agent provider catalog record (missing native release): $label" }
+            if (-not $row.lock.StartsWith('https://')) {
+                Stop-Deployment "invalid agent provider catalog record (native release manifest must use HTTPS): $label"
+            }
+        }
+    }
+    foreach ($agent in @($catalog | ForEach-Object { $_.agent } | Select-Object -Unique)) {
+        $records = @($catalog | Where-Object { $_.agent -eq $agent })
+        if (@($records | ForEach-Object { $_.herdr } | Select-Object -Unique).Count -ne 1) {
+            Stop-Deployment "agent provider catalog records disagree on the Herdr kind of $agent"
+        }
+        if (@($records | ForEach-Object { $_.selection } | Select-Object -Unique).Count -ne 1) {
+            Stop-Deployment "agent provider catalog records disagree on the selection of $agent"
+        }
+        $viable = @(Select-AgentRecords $catalog $agent)
+        if ($viable.Count -eq 0) { Stop-Deployment "agent $agent has no provider that can serve windows" }
+        if (@($viable | ForEach-Object { $_.order } | Select-Object -Unique).Count -ne $viable.Count) {
+            Stop-Deployment "agent provider catalog records share an order for $agent"
+        }
+        if (@($records | Where-Object { $_.provider -in @('bun', 'native') }).Count -ne 1) {
+            Stop-Deployment "agent $agent must declare exactly one deployment-owned provider"
+        }
+    }
+}
 function Get-Selection {
     $selectedPlatform = Get-Input 'DOTFILES_PLATFORM' 'windows'
     $selectedRole = Get-Input 'DOTFILES_ROLE' 'workstation'
@@ -76,10 +175,9 @@ function Get-Agents {
     $selection = Get-Input 'DOTFILES_AGENTS' 'all'
     if ($script:EntryParameters.ContainsKey('Agents')) { $selection = $Agents }
     $catalog = @()
-    foreach ($row in (Read-Catalog 'deployment/agents/catalog.tsv')) {
-        if ($row.columns[0] -ne 'codegraph') { $catalog += [string]$row.columns[0] }
+    foreach ($row in (Get-AgentCatalog)) {
+        if ($row.selection -eq 'selectable') { $catalog += [string]$row.agent }
     }
-    foreach ($row in (Read-Catalog 'deployment/agents/native.tsv')) { $catalog += [string]$row.columns[0] }
     if ($selection -eq 'all') { return $catalog }
     if ($selection -eq 'none') { return @() }
     if (-not $selection -or $selection -match '(^,|,$|,,)') { Stop-Deployment 'invalid agent selection' }
@@ -143,6 +241,7 @@ try {
     if ([string]::IsNullOrWhiteSpace($Source)) { Stop-Deployment 'Source must identify the dotfiles working tree' }
     $Source = [IO.Path]::GetFullPath($Source)
     if (-not [IO.File]::Exists((Join-Path $Source '.chezmoi.toml.tmpl'))) { Stop-Deployment 'Source must be the dotfiles working tree' }
+    Test-AgentCatalog
     $selectedAgents = @(Get-Agents)
     $selectedBundles = @(Get-Bundles)
     $packages = @(Get-Packages)
@@ -168,17 +267,27 @@ try {
     $agentPackages = @(); $tools = @('pixi', 'chezmoi', 'rustup', 'bun', 'bunx', 'atuin', 'hx', 'jq', 'bash', 'sh')
     foreach ($package in $packages) { $tools += @($package.exposed.Keys) }
     foreach ($package in $bundlePackages) { $tools += @($package.exposed.Keys) }
-    foreach ($row in (Read-Catalog 'deployment/agents/catalog.tsv')) {
-        if ($row.columns[0] -eq 'codegraph' -or $row.columns[0] -in $selectedAgents) {
-            $tools += $row.columns[3].Split(',')
-            $agentPackages += [ordered]@{ name = $row.columns[0]; package = $row.columns[1]; version = $row.columns[2]; manager = 'bun'; commands = @($row.columns[3].Split(',')); minimumNode = $row.columns[4]; lock = "deployment/agents/$($row.columns[0])/bun.lock" }
+    $agentCatalog = @(Get-AgentCatalog)
+    foreach ($agent in @($agentCatalog | ForEach-Object { $_.agent } | Select-Object -Unique)) {
+        $records = @($agentCatalog | Where-Object { $_.agent -eq $agent })
+        if ($records[0].selection -ne 'always' -and $agent -notin $selectedAgents) { continue }
+        $viable = @(Select-AgentRecords $agentCatalog $agent)
+        if ($viable.Count -eq 0) { continue }
+        $row = $viable[0]
+        $ownedRecords = @($records | Where-Object { $_.provider -in @('bun', 'native') })
+        $owned = $ownedRecords[0]
+        $tools += $row.commands.Split(',')
+        $entry = [ordered]@{
+            name = $agent; provider = $row.provider; policy = $row.policy; version = $row.version
+            commands = @($row.commands.Split(',')); herdr = $(if ($row.herdr -eq '-') { $null } else { $row.herdr })
         }
-    }
-    foreach ($row in (Read-Catalog 'deployment/agents/native.tsv')) {
-        if ($row.columns[0] -in $selectedAgents) {
-            $tools += $row.columns[2].Split(',')
-            $agentPackages += [ordered]@{ name = $row.columns[0]; package = $null; version = $row.columns[1]; manager = 'native'; commands = @($row.columns[2].Split(',')); manifest = $row.columns[4] }
+        if ($owned.provider -eq 'bun') {
+            $entry['package'] = $owned.package; $entry['manager'] = 'bun'
+            $entry['minimumNode'] = $owned.minimumNode; $entry['lock'] = $owned.lock
+        } else {
+            $entry['package'] = $null; $entry['manager'] = 'native'; $entry['manifest'] = $owned.lock
         }
+        $agentPackages += $entry
     }
     $actions = @('install-managers', 'apply-source', 'install-common', 'install-agents', 'prepare-shell')
     if ($ApplyOnly) { $actions = @('apply-source') }

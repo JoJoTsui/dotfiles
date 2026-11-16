@@ -12,10 +12,27 @@ executables at the same versions as before.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The catalog is the only source of agent installation data in both bootstrap adapters; no per-agent name branch remains in plan output.
-- [ ] Plan output names provider, effective version, commands, and Herdr kind for every selected agent on macOS, Linux, WSL, and native Windows.
-- [ ] Codex still adopts an exact-matching macOS executable and otherwise uses Bun.
-- [ ] Invalid catalog rows fail before any state or file is created, naming the row.
-- [ ] Existing agent, installer, Codex-adoption, Windows, and plan tests pass unchanged.
+- [x] The catalog is the only source of agent installation data in both bootstrap adapters; no per-agent name branch remains in plan output.
+- [x] Plan output names provider, effective version, commands, and Herdr kind for every selected agent on macOS, Linux, WSL, and native Windows.
+- [x] Codex still adopts an exact-matching macOS executable and otherwise uses Bun.
+- [x] Invalid catalog rows fail before any state or file is created, naming the row.
+- [x] Existing agent, installer, Codex-adoption, Windows, and plan tests pass unchanged.
+
+## Comments
+
+`deployment/agents/providers.tsv` replaces `deployment/agents/catalog.tsv` and
+`deployment/agents/native.tsv` with one record per agent and provider, and
+`deployment/agents/herdr-kinds.tsv` declares the Herdr kinds a record may name.
+The POSIX adapter (`deployment/agents.sh`) and the native Windows adapter
+(`bootstrap.ps1` with `deployment/windows.ps1`) read the same records; the plan
+reports provider, version policy, effective version, commands, and Herdr kind
+per selected agent. Validation runs before any state or file is created.
+
+The macOS Codex adoption is now a catalog record ahead of the frozen Bun
+record, so the plan names `homebrew` as Codex's first provider on macOS and
+`bun` everywhere else. Installation still selects the same executables at the
+same versions: the adoption requires the exact `codex-cli <version>` diagnostic,
+and every other agent keeps its frozen Bun project or verified native release.
+The macOS Homebrew-first resolution with version floors remains ticket 02.

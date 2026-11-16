@@ -76,7 +76,7 @@ class CodexAdoptionTests(unittest.TestCase):
                 if (event := json.loads(line))[0] == kind]
 
     def install(self, *, platform="macos", native_platform="macos", arch="aarch64",
-                native_arch="arm64", selection="codex", extra_path=()):
+                native_arch="arm64", selection="codex", extra_path=(), source=SOURCE):
         environment = {"HOME": str(self.home), "BUN_INSTALL": str(self.home / ".bun"),
                        "PIXI_HOME": str(self.home / ".pixi"), "ADOPTION_LOG": str(self.log),
                        "PATH": os.pathsep.join(map(str, (self.home / ".local/bin", self.home / ".bun/bin",
@@ -86,7 +86,7 @@ class CodexAdoptionTests(unittest.TestCase):
                        "DOTFILES_NODE_BIN": str(self.tools / "node")}
         script = "\n".join((
             "set -euo pipefail",
-            "DEPLOY_SOURCE=" + shlex.quote(str(SOURCE)),
+            "DEPLOY_SOURCE=" + shlex.quote(str(source)),
             "DEPLOY_PLATFORM=" + shlex.quote(platform),
             "DEPLOY_ARCH=" + shlex.quote(arch),
             "DEPLOY_TOOLS=()",
@@ -202,6 +202,17 @@ class CodexAdoptionTests(unittest.TestCase):
         self.assertTrue(all("--frozen-lockfile" in event for event in self.events("bun")))
         self.assertEqual([event[3] for event in self.events("wt")], ["claude", "codex", "opencode", "pi"])
         self.assertEqual(len(self.events("settings")), 1)
+
+    def test_the_catalog_diagnostic_decides_whether_the_device_command_is_adopted(self):
+        # The catalog states the diagnostic an installer-owned provider must
+        # report. A record that accepts another diagnostic is not adopted.
+        source = self.root / "source"
+        source.mkdir()
+        shutil.copytree(SOURCE / "deployment", source / "deployment")
+        catalog = source / "deployment/agents/providers.tsv"
+        catalog.write_text(catalog.read_text().replace("codex-cli {version}", "never-matches {version}"))
+        self.install(source=source)
+        self.assert_frozen_codex()
 
 
 if __name__ == "__main__":

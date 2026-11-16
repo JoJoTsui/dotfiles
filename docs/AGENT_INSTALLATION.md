@@ -83,9 +83,24 @@ state/config roots still follow the designated `--home`.
 
 ## Ownership, versions, and lifecycle scripts
 
-The portable Bun catalog is `deployment/agents/catalog.tsv`; native packages
-are declared separately in `deployment/agents/native.tsv`. Each Bun package has
-its own exact `package.json` and real text `bun.lock`. A project under
+The provider catalog is `deployment/agents/providers.tsv`. One record per agent
+and provider names the provider (`bun`, `native`, or `homebrew`), the package or
+release, the version, the version policy, the exposed commands, the platforms
+it serves, its place in the provider chain, whether the agent joins the named
+selection or is always installed, the Herdr integration kind, the runtime
+floor, the lifecycle trust list, the lock or release manifest, and the expected
+`--version` diagnostic. `deployment/agents/herdr-kinds.tsv` lists the Herdr
+kinds a record may name. Both bootstrap adapters read these files, so the
+catalog is the only source of agent installation data.
+
+The plan reports every selected agent with its provider, version policy,
+effective version, commands, and Herdr kind. The provider it names is the first
+one in the agent's chain that can serve the platform; the deployment-owned
+project fields (`manager`, `package`, `minimumNode`, `lock`, `manifest`) describe
+the pinned fallback the deployment owns.
+
+Each Bun package has its own exact `package.json` and real text `bun.lock`. A
+project under
 `~/.bun/managed/<name>` installs with `bun install --frozen-lockfile`; an absent
 lock is an error. Separate projects allow arbitrary selections while keeping
 each manifest consistent with its lock. Locks contain upstream integrity
@@ -106,7 +121,9 @@ mechanism; a filtered monolithic manifest is not used.
 | independent default | `@colbymchenry/codegraph` 1.6.2 | `codegraph` |
 
 On native macOS, an existing Codex is adopted only when its successful
-`codex-cli <version>` diagnostic exactly matches the catalog pin. Both regular
+`codex-cli <version>` diagnostic exactly matches the catalog pin. The catalog
+declares that adoption as the macOS provider record of Codex, ahead of the
+frozen Bun project. Both regular
 managed launchers point to its physical executable, and every deployment
 rechecks it. Missing, mismatched, suffixed, or failing diagnostics use the frozen
 Bun installation. Other platforms retain Bun ownership; Pixi does not declare

@@ -567,11 +567,19 @@ $selectedAgents = @('codex')
 function Read-Catalog([string]$Relative) {
     if ($Relative -eq 'deployment/common-tools.tsv') {
         @{ columns = @('runtimes', "bun==$env:DOTFILES_TEST_BUN_VERSION,nodejs==$env:DOTFILES_TEST_NODE_VERSION") }
-    } elseif ($Relative -eq 'deployment/agents/catalog.tsv') {
-        @{ columns = @('codegraph', 'fixture-js', '1.2.3', 'fixture-js', '0.0.0') }
-        @{ columns = @('codex', 'fixture-native', '4.5.6', 'fixture-native', '0.0.0') }
-    } elseif ($Relative -ne 'deployment/agents/native.tsv') { throw 'unexpected catalog' }
+    } else { throw 'unexpected catalog' }
 }
+function Get-AgentCatalog {
+    @(
+        [pscustomobject]@{ record = 'codegraph'; agent = 'codegraph'; provider = 'bun'; package = 'fixture-js'
+            version = '1.2.3'; policy = 'exact'; commands = 'fixture-js'; platforms = 'all'; order = 1
+            selection = 'always'; herdr = '-'; minimumNode = '0.0.0'; trusted = ''; lock = ''; diagnostic = '-' }
+        [pscustomobject]@{ record = 'codex'; agent = 'codex'; provider = 'bun'; package = 'fixture-native'
+            version = '4.5.6'; policy = 'exact'; commands = 'fixture-native'; platforms = 'all'; order = 1
+            selection = 'selectable'; herdr = 'codex'; minimumNode = '0.0.0'; trusted = ''; lock = ''; diagnostic = '-' }
+    )
+}
+function Test-AgentPlatform([string]$Platforms) { return $true }
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
     # The portable native-entry fixture contains Python source, rather than PE.
     $script:FixtureInvokeTool = ${function:Invoke-Tool}

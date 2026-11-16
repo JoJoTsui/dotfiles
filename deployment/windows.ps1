@@ -719,69 +719,70 @@ function Install-Agents {
     if ((Invoke-Tool $bun @('--version') -Quiet).Trim() -ne (Get-Pin 'bun')) { Stop-Deployment 'Bun must match the common runtime pin' }
     if ((Invoke-Tool $node @('--version') -Quiet).Trim() -ne ('v' + (Get-Pin 'nodejs'))) { Stop-Deployment 'Node must match the common runtime pin' }
     $env:PATH = [IO.Path]::GetDirectoryName($node) + ';' + [IO.Path]::GetDirectoryName($bun) + ';' + $env:PATH
-    foreach ($row in (Read-Catalog 'deployment/agents/catalog.tsv')) {
-        $name = $row.columns[0]
-        if ($name -ne 'codegraph' -and $name -notin $selectedAgents) { continue }
-        if ([version](Get-Pin 'nodejs') -lt [version]$row.columns[4]) { Stop-Deployment "Node does not meet $name's minimum version" }
-        $project = Join-Path $roots.bun "managed/$name"
-        foreach ($relative in @('', 'node_modules', 'package.json', 'bun.lock')) { Assert-SafePath (Join-Path $project $relative) }
-        [IO.Directory]::CreateDirectory($project) | Out-Null
-        foreach ($filename in @('package.json', 'bun.lock')) { Copy-RegularTree (Join-Path $Source "deployment/agents/$name/$filename") (Join-Path $project $filename) }
-        $script:Step = "install-agents.$name.install"
-        $env:npm_config_global = 'false'; $env:pnpm_config_global = 'false'; $env:npm_config_location = 'project'
-        Invoke-Tool $bun @('install', '--cwd', $project, '--frozen-lockfile') -Quiet | Out-Null
-        $packageDirectory = Join-Path $project ('node_modules/' + $row.columns[1])
-        $package = [IO.File]::ReadAllText((Join-Path $packageDirectory 'package.json')) | ConvertFrom-Json
-        foreach ($command in $row.columns[3].Split(',')) {
-            $entry = $package.bin
-            if ($entry -isnot [string]) { $entry = $package.bin.$command }
-            Assert-Relative $entry
-            $javascript = Join-Path $packageDirectory $entry
-            if (-not [IO.File]::Exists($javascript)) { Stop-Deployment "$name did not expose $command" }
-            $usesNode = -not $entry.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)
-            foreach ($relative in @('.bun/bin', '.local/bin')) {
-                $launcher = Join-Path $TargetHome "$relative/$command.cmd"
-                $relativeEntry = ('.bun/managed/' + $name + '/node_modules/' + $row.columns[1] + '/' + $entry).Replace('/', '\')
-                if ($usesNode) {
-                    $nodeCmd = $node.Replace('%', '%%')
-                    $launcherText = "@echo off`r`nsetlocal DisableDelayedExpansion`r`n`"$nodeCmd`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
-                } else {
-                    # Some platform-specific packages expose a native .exe bin.
-                    # Do not pass a PE executable to Node as a JavaScript file.
-                    $launcherText = "@echo off`r`n`"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
+    foreach ($row in (Get-AgentCatalog)) {
+        if (-not (Test-AgentPlatform $row.platforms)) { continue }
+        $name = $row.agent
+        if ($row.selection -ne 'always' -and $name -notin $selectedAgents) { continue }
+        if ($row.provider -eq 'bun') {
+            if ([version](Get-Pin 'nodejs') -lt [version]$row.minimumNode) { Stop-Deployment "Node does not meet $name's minimum version" }
+            $project = Join-Path $roots.bun "managed/$name"
+            foreach ($relative in @('', 'node_modules', 'package.json', 'bun.lock')) { Assert-SafePath (Join-Path $project $relative) }
+            [IO.Directory]::CreateDirectory($project) | Out-Null
+            foreach ($filename in @('package.json', 'bun.lock')) { Copy-RegularTree (Join-Path $Source "deployment/agents/$name/$filename") (Join-Path $project $filename) }
+            $script:Step = "install-agents.$name.install"
+            $env:npm_config_global = 'false'; $env:pnpm_config_global = 'false'; $env:npm_config_location = 'project'
+            Invoke-Tool $bun @('install', '--cwd', $project, '--frozen-lockfile') -Quiet | Out-Null
+            $packageDirectory = Join-Path $project ('node_modules/' + $row.package)
+            $package = [IO.File]::ReadAllText((Join-Path $packageDirectory 'package.json')) | ConvertFrom-Json
+            foreach ($command in $row.commands.Split(',')) {
+                $entry = $package.bin
+                if ($entry -isnot [string]) { $entry = $package.bin.$command }
+                Assert-Relative $entry
+                $javascript = Join-Path $packageDirectory $entry
+                if (-not [IO.File]::Exists($javascript)) { Stop-Deployment "$name did not expose $command" }
+                $usesNode = -not $entry.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)
+                foreach ($relative in @('.bun/bin', '.local/bin')) {
+                    $launcher = Join-Path $TargetHome "$relative/$command.cmd"
+                    $relativeEntry = ('.bun/managed/' + $name + '/node_modules/' + $row.package + '/' + $entry).Replace('/', '\')
+                    if ($usesNode) {
+                        $nodeCmd = $node.Replace('%', '%%')
+                        $launcherText = "@echo off`r`nsetlocal DisableDelayedExpansion`r`n`"$nodeCmd`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
+                    } else {
+                        # Some platform-specific packages expose a native .exe bin.
+                        # Do not pass a PE executable to Node as a JavaScript file.
+                        $launcherText = "@echo off`r`n`"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
+                    }
+                    Write-Utf8 $launcher $launcherText
+                    # Match npm's Windows discovery contract: native clients use
+                    # .cmd, while Git Bash resolves the bare POSIX companion.
+                    $singleQuote = [string][char]39; $doubleQuote = [string][char]34
+                    $quotedEntry = $singleQuote + $relativeEntry.Replace('\', '/').Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
+                    $posix = '#!/bin/sh' + "`n" + 'dotfiles_device=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) || exit 1' + "`n"
+                    $posix += '. "$dotfiles_device/.env_core"' + "`n"
+                    if ($usesNode) {
+                        $quotedNode = $singleQuote + $node.Replace('\', '/').Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
+                        $posix += 'exec ' + $quotedNode + ' "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                    } else {
+                        $posix += 'exec "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                    }
+                    Write-Utf8 (Join-Path $TargetHome "$relative/$command") $posix
                 }
-                Write-Utf8 $launcher $launcherText
-                # Match npm's Windows discovery contract: native clients use
-                # .cmd, while Git Bash resolves the bare POSIX companion.
-                $singleQuote = [string][char]39; $doubleQuote = [string][char]34
-                $quotedEntry = $singleQuote + $relativeEntry.Replace('\', '/').Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
-                $posix = '#!/bin/sh' + "`n" + 'dotfiles_device=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) || exit 1' + "`n"
-                $posix += '. "$dotfiles_device/.env_core"' + "`n"
+                $script:Step = "install-agents.$name.diagnostic"
+                # Probe the package bin using its native format; the acceptance
+                # runner also checks the public .cmd launchers.
                 if ($usesNode) {
-                    $quotedNode = $singleQuote + $node.Replace('\', '/').Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
-                    $posix += 'exec ' + $quotedNode + ' "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                    $diagnostic = Invoke-Tool $node @($javascript, '--version') -Quiet -ShowFailureOutput
                 } else {
-                    $posix += 'exec "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
+                    $diagnostic = Invoke-Tool $javascript @('--version') -Quiet -ShowFailureOutput
                 }
-                Write-Utf8 (Join-Path $TargetHome "$relative/$command") $posix
+                if (-not $diagnostic.Contains($row.version)) { Stop-Deployment "$name diagnostic did not report its pinned version" }
+                [Console]::Out.Write($diagnostic)
             }
-            $script:Step = "install-agents.$name.diagnostic"
-            # Probe the package bin using its native format; the acceptance
-            # runner also checks the public .cmd launchers.
-            if ($usesNode) {
-                $diagnostic = Invoke-Tool $node @($javascript, '--version') -Quiet -ShowFailureOutput
-            } else {
-                $diagnostic = Invoke-Tool $javascript @('--version') -Quiet -ShowFailureOutput
-            }
-            if (-not $diagnostic.Contains($row.columns[2])) { Stop-Deployment "$name diagnostic did not report its pinned version" }
-            [Console]::Out.Write($diagnostic)
+        } elseif ($row.provider -eq 'native') {
+            Install-Qoder $row.version $row.lock
+        } else {
+            Stop-Deployment "unsupported agent provider '$($row.provider)' for $name"
         }
-    }
-    foreach ($row in (Read-Catalog 'deployment/agents/native.tsv')) {
-        $name = $row.columns[0]
-        if ($name -notin $selectedAgents) { continue }
-        if ($name -eq 'qoder') { Install-Qoder $row.columns[1] $row.columns[4] }
-        else { Stop-Deployment "unsupported native agent: $name" }
     }
 }
 function Prepare-Shell {
