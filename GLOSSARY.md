@@ -66,6 +66,21 @@ _Avoid_: Provisioned command
 A command the deployment installed through an installer.
 _Avoid_: Adopted command
 
+**Version floor**:
+The lowest version of an installer-owned command that a deployment accepts. The
+installer still owns the installed version, and the observed version is
+recorded separately.
+_Avoid_: Minimum pin, exact pin
+
+**Agent provider**:
+An installer that supplies one coding agent's command on a platform.
+_Avoid_: Agent manager, package
+
+**Agent provider chain**:
+The ordered agent providers a platform tries for one agent, such as Homebrew
+then Bun on macOS.
+_Avoid_: Installer order, agent order
+
 **Shared agent instructions**:
 The personal operating rules that apply to coding agents across projects and
 devices. A project's own instructions describe that project's separate contract.
@@ -73,6 +88,40 @@ devices. A project's own instructions describe that project's separate contract.
 **Global agent integration**:
 Skills and guidance available to a coding agent across projects on one device.
 It does not imply that a particular project has been initialized.
+
+**Herdr integration**:
+The agent-side hook, plugin, or extension Herdr writes so it can identify,
+report, and resume a coding agent's session. It is distinct from global agent
+integration, and its bytes are owned by Herdr rather than by this repository.
+_Avoid_: Global agent integration, plugin
+
+**Skill catalog**:
+The repository-owned list of skills, their upstream sources, and their pinned
+bytes.
+_Avoid_: Skill library, installed skills
+
+**Skill lock**:
+The pinned commit or archive digest that a skill catalog row resolves to.
+_Avoid_: Skill version
+
+**Skill profile**:
+The set of catalog skills one client receives.
+_Avoid_: Skill list, skill set
+
+**Managed skill**:
+A skill directory the deployment wrote into a discovery root and may prune when
+it leaves the profile.
+_Avoid_: Installed skill
+
+**Device skill**:
+A skill present in a discovery root that the catalog does not own.
+_Avoid_: Extra skill, unmanaged skill
+
+**Generated skill**:
+A skill whose bytes come from a tool installed on the device, such as Herdr's
+own instructions, rather than from the pinned catalog. It is refreshed from the
+tool and included in every profile.
+_Avoid_: Vendored skill
 
 **Project initialization**:
 The deliberate creation of a tool's working state for a selected project.

@@ -1,0 +1,62 @@
+---
+status: accepted
+---
+
+# One catalog owns the shared skill library
+
+The shared skill tree had two writers. The repository catalog pinned 94 skills
+and copied them into `~/.agents/skills`; the `bunx skills` CLI kept a second
+lockfile at `~/.agents/.skill-lock.json` with 130 entries and wrote into the
+same root. Verified on one device: 93 names overlapped, 37 CLI entries were the
+DeepMind skills the deployment deliberately disables, six skills existed only
+in the CLI's record, and `impeccable` was in neither. The tree held 100 skills,
+every agent saw a different subset, Claude's root mixed 33 device symlinks with
+managed copies, and MiniMax and Qoder carried stale copies of 66 and 61.
+
+The repository catalog is now the sole owner. Skill bytes still come from
+upstream and stay hash-pinned; `bunx skills` is not run against a managed root.
+The CLI's lockfile is device state: the deployment reads it, reports every
+uncatalogued or disabled skill it names, and prints the `bunx skills remove`
+commands that tidy the device. It never edits the third-party lockfile. The six
+skills that only the CLI knew are adopted as catalog rows seeded from their
+recorded source, path, and folder hash, which is what makes them reviewable and
+prunable.
+
+Selection becomes explicit. The catalog's selection column keeps `auto` for the
+reviewed default set and uses tags for groups a host opts into with
+`DOTFILES_SKILLS`: `lark`, `design` for the diagram, slide-deck, PPT, and
+front-end design skills, and `caveman` for the caveman-branded skills other than
+the mode and its compress skill. The six generic engineering skills from the
+caveman repository stay in `auto`; they are general workflows, not caveman
+voice. Mattpocock, Herdr, Worktrunk, and RTK guidance are named as preferred
+workflows in the shared instructions so their priority is visible to every
+client.
+
+Per-client sets apply only where the deployment controls discovery. Claude and
+MiniMax receive filtered copies; Pi and OpenCode receive a profile root through
+the `skills` path already present in their merged settings. Codex, Kimi, and
+Qoder keep the reviewed global set because they have no supported persistent
+filter, and the per-client matrix records that limit. The deployment records
+the skill directories it deployed per root in device state and prunes only
+those when they leave a profile. Device-created skills are never removed.
+
+The review is guarded, not just documented. New or changed catalog rows must
+have a description of 240 characters or fewer and a root document of 200 lines
+or fewer unless it ships a reference file; the current 30 over-budget
+descriptions and 3 long root documents are listed as reviewed exceptions. The
+check reports the per-client inventory, the budget findings, and the ratchet
+failures. Upstream prose is not rewritten, because the lock's value is that the
+bytes are upstream's.
+
+RTK remains instruction-only: an always-applicable rule belongs in the shared
+instructions, not in a skill a client may or may not select. Herdr's own skill
+is generated from `herdr --skill` when the multiplexer is present and is
+included in every profile; it is not vendored, and it is not a catalog pin.
+Instruction files stay one shared block deployed to all seven clients, with
+per-client caveats in the documented delta table rather than seven forks.
+
+Consequences: enabling `bunx skills add` on a managed root breaks the ownership
+model and is reported as drift. A host that wants the design or caveman groups
+must select them. Pruning makes tags real but deletes only managed entries. The
+existing exceptions stay until they are reviewed, and any new skill above the
+budget fails the check before it ships.

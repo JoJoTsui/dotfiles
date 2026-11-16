@@ -17,6 +17,23 @@ Rules that follow from it:
 - The legacy T9K live tree predates Chezmoi and remains outside ordinary
   deployment; its explicit legacy adapters preserve that separate boundary.
 
+## Agent skills
+
+### Issue tracker
+
+Work is tracked as local markdown under `.scratch/`. See
+`docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Tickets use the canonical five-role vocabulary. See
+`docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` plus `docs/adr/`. See
+`docs/agents/domain.md`.
+
 ## Naming
 
 - `dot_x` → `~/x`; `dot_config/...` → `~/.config/...`; nested names map 1:1
