@@ -1,0 +1,70 @@
+# Profile Enhancement Rules Template for Clash Verge
+#
+# Reference copy of the live rules enhancement for the active profile:
+#   ~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles/rtnCo6csuL7R.yaml
+# `clash/` is chezmoi-ignored, so this file is never applied to $HOME.
+#
+# `prepend:` lands ahead of the subscription's own rules, so the vendor policy
+# keeps working and keeps updating. `rules:` in Merge.yaml REPLACES that list
+# and discards these entries with it, which is why that key is gone from there.
+#
+# The RULE-SET lines resolve against the Loyalsoldier providers defined in
+# Merge.yaml. Every profile keeps its own copy of this file (profiles.yaml,
+# `rules:`), so this policy follows one subscription: repeat it in the other
+# profiles you activate.
+#
+# Groups: PROXY, 🚀节点选择, ♻️自动选择, 🐟漏网之鱼, 🎬媒体解锁, 🤖AI网站,
+#   🛑广告拦截, 🇯🇵日本节点, 🇸🇬狮城节点, 🇺🇸美国节点
+#
+# ---- personal rules --------------------------------------------------------
+prepend:
+  # Mainland EdgeOne edges accept TCP and then stall TLS; the overseas edges
+  # serve. Reachability depends on dns.nameserver-policy in Merge.yaml.
+  - "DOMAIN-SUFFIX,aihot.news,PROXY"
+  # Add your own here, one per line:
+  # - "DOMAIN-SUFFIX,example.com,PROXY"
+  # - "DOMAIN-SUFFIX,another.com,🤖AI网站"
+
+  # ---- routing policy (moved out of Merge.yaml rules:) --------------------
+  # Custom IP rules (highest priority)
+  - "IP-CIDR,34.102.215.99/32,PROXY"
+  # Private-range host that must stay off the proxy; RULE-SET,private is a
+  # domain set and cannot match an address.
+  - "IP-CIDR,10.31.3.142/32,DIRECT"
+
+  # Local applications
+  - "RULE-SET,applications,DIRECT"
+
+  # Dashboard domains
+  - "DOMAIN,clash.razord.top,DIRECT"
+  - "DOMAIN,yacd.haishan.me,DIRECT"
+
+  # Private networks
+  - "RULE-SET,private,DIRECT"
+
+  # Ad blocking
+  - "RULE-SET,reject,REJECT"
+
+  # Apple services
+  - "RULE-SET,icloud,DIRECT"
+  - "RULE-SET,apple,DIRECT"
+
+  # Proxy rules (Google, GFW, etc.)
+  - "RULE-SET,google,PROXY"
+  - "RULE-SET,gfw,PROXY"
+  - "RULE-SET,tld-not-cn,PROXY"
+  - "RULE-SET,telegramcidr,PROXY"
+  - "RULE-SET,proxy,PROXY"
+
+  # Direct rules (China)
+  - "RULE-SET,direct,DIRECT"
+  - "RULE-SET,lancidr,DIRECT"
+  - "RULE-SET,cncidr,DIRECT"
+  - "GEOIP,LAN,DIRECT"
+  - "GEOIP,CN,DIRECT"
+
+# The vendor list ends with its own MATCH; keep the historical direct default.
+append:
+  - "MATCH,DIRECT"
+
+delete: []
