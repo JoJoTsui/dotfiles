@@ -25,3 +25,17 @@ profile. `dotfiles-agents status` reports each agent's Herdr state, and
 - [x] Herdr's generated skill exists in the shared tree when Herdr is present, is refreshed on reapply, and is exempt from pruning.
 - [x] `status` shows current/outdated/missing/unsupported per selected agent; health reports drift without failing the check.
 - [x] Tests with a fake Herdr log the invoked kinds and status reads, and cover the skip and apply-only paths.
+
+## Comments
+
+Review of commit `27577e6` found that the generated-skill writer followed a
+symlink at `~/.agents/skills/herdr` or at `SKILL.md`, so `cp` wrote the skill
+outside the managed tree, and that it ignored a failed `mkdir`/`cp`, so the
+deployment reported success with no generated skill.
+
+The writer now refuses a symlink at the skill directory and at the skill file
+and names the path it refused, and a failed directory creation or write fails
+the step `install-agents.herdr.skill`. The unchanged-bytes skip, the skip when
+Herdr is absent or produced no bytes, and the `generated-skills.tsv` record
+stay as they were. `tests/test_herdr_integrations.py` covers the symlinked
+directory, the symlinked file, and a normal refresh.

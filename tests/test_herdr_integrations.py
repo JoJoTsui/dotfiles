@@ -302,6 +302,14 @@ class HerdrSkillRefreshTests(unittest.TestCase, HerdrFixture):
         self.assertEqual(third.returncode, 0, third.stderr[-4000:])
         self.assertEqual(skill.read_text(encoding="utf-8"), FAKE_SKILL + "\nrefreshed\n")
 
+    def test_herdr_without_skill_bytes_still_skips_the_write(self):
+        empty = Path(self.temporary.name) / "empty-skill.md"
+        empty.write_text("", encoding="utf-8")
+        result = self.fixture.deploy("--agents-only", "--agents", "codex",
+                                     env={"HERDR_SKILL": str(empty)})
+        self.assertEqual(result.returncode, 0, result.stderr[-4000:])
+        self.assertFalse((self.fixture.home / ".agents/skills/herdr/SKILL.md").exists())
+
     def test_the_generated_skill_does_not_depend_on_the_agent_selection(self):
         result = self.fixture.deploy("--agents-only", "--agents", "none")
         self.assertEqual(result.returncode, 0, result.stderr[-4000:])
@@ -321,6 +329,49 @@ class HerdrSkillRefreshTests(unittest.TestCase, HerdrFixture):
         second = self.fixture.deploy("--agents-only", "--agents", "codex", herdr=False)
         self.assertEqual(second.returncode, 0, second.stderr[-4000:])
         self.assertTrue((self.fixture.home / ".agents/skills/herdr/SKILL.md").is_file())
+        self.assertIn("herdr|.agents/skills|herdr --skill",
+                      self.fixture.state_rows("generated-skills.tsv"))
+
+
+@unittest.skipUnless(shutil.which("chezmoi"), "the deployment boundary requires chezmoi")
+class HerdrSkillSymlinkTests(unittest.TestCase, HerdrFixture):
+    """The generated skill never writes through a symlink."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-herdr-symlink-")
+        self.addCleanup(self.temporary.cleanup)
+        self.fixture = HerdrFixture()
+        self.fixture.build(Path(self.temporary.name))
+        self.fixture.write_state([("codex", "current")])
+        self.skills = self.fixture.home / ".agents/skills"
+
+    def test_a_symlinked_skill_directory_is_refused(self):
+        outside = Path(self.temporary.name) / "outside-skill"
+        outside.mkdir()
+        self.skills.mkdir(parents=True)
+        (self.skills / "herdr").symlink_to(outside)
+        result = self.fixture.deploy("--agents-only", "--agents", "codex")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(self.skills / "herdr"), result.stderr)
+        # The write never crossed the link.
+        self.assertFalse((outside / "SKILL.md").exists())
+
+    def test_a_symlinked_skill_file_is_refused(self):
+        outside = Path(self.temporary.name) / "outside-skill.md"
+        outside.write_text("device bytes\n", encoding="utf-8")
+        (self.skills / "herdr").mkdir(parents=True)
+        (self.skills / "herdr/SKILL.md").symlink_to(outside)
+        result = self.fixture.deploy("--agents-only", "--agents", "codex")
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(str(self.skills / "herdr/SKILL.md"), result.stderr)
+        # The device bytes outside the managed tree are untouched.
+        self.assertEqual(outside.read_text(encoding="utf-8"), "device bytes\n")
+
+    def test_a_normal_refresh_still_writes_the_skill(self):
+        result = self.fixture.deploy("--agents-only", "--agents", "codex")
+        self.assertEqual(result.returncode, 0, result.stderr[-4000:])
+        skill = self.skills / "herdr/SKILL.md"
+        self.assertEqual(skill.read_text(encoding="utf-8"), FAKE_SKILL)
         self.assertIn("herdr|.agents/skills|herdr --skill",
                       self.fixture.state_rows("generated-skills.tsv"))
 

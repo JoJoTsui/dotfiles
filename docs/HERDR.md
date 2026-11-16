@@ -70,6 +70,13 @@ catalog pin, so it is recorded in
 `~/.local/state/dotfiles/generated-skills.tsv` as `name|root|generator`. The
 skill pruning step reads that record and leaves the generated skill alone.
 
+The generated skill belongs to the managed tree, so the step refuses a symlink
+at `~/.agents/skills/herdr` or at `SKILL.md` and names the path it refused
+instead of writing through the link. A failed directory creation or write
+fails the deployment step, so a tree without the generated skill is never
+reported as a successful deployment. A host without Herdr, or a Herdr that
+produced no skill bytes, still skips the step and succeeds.
+
 ## Collaboration use
 
 Only use Herdr from inside a Herdr pane. The check is:

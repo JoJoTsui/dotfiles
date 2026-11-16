@@ -652,12 +652,21 @@ codex_herdr_register() {
 # generates it into the shared tree and refreshes it when the installed
 # binary changed; unchanged bytes are never rewritten.
 herdr_generate_skill() {
-    local herdr=$1 target="$HOME/.agents/skills/herdr/SKILL.md" temporary=''
+    local herdr=$1 target="$HOME/.agents/skills/herdr/SKILL.md" directory temporary=''
+    directory=${target%/*}
     if [ -n "$herdr" ]; then
         if temporary=$(mktemp "${TMPDIR:-/tmp}/herdr-skill.XXXXXX" 2>/dev/null) &&
             "$herdr" --skill > "$temporary" 2>/dev/null && [ -s "$temporary" ]; then
+            # The generated skill belongs to the managed tree. A symlink at
+            # the skill directory or at the file itself would carry the
+            # write outside it, so the step refuses the path by name
+            # instead of following the link.
+            [ ! -L "$directory" ] || fail "the Herdr skill directory is a symlink: $directory"
+            [ ! -L "$target" ] || fail "the Herdr skill file is a symlink: $target"
             if [ ! -f "$target" ] || ! cmp -s "$temporary" "$target"; then
-                mkdir -p "$(dirname "$target")" && cp "$temporary" "$target" && chmod 644 "$target"
+                mkdir -p "$directory" || fail "cannot create the Herdr skill directory: $directory"
+                cp "$temporary" "$target" || fail "cannot write the Herdr skill: $target"
+                chmod 644 "$target" || fail "cannot set the permissions of the Herdr skill: $target"
             fi
         else
             printf 'dotfiles: Herdr did not produce a skill; skipped\n' >&2
