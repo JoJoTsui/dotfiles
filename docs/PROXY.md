@@ -29,9 +29,10 @@ and refreshes the profile. It requires a full deployment; it conflicts with
 equivalent.
 
 The pinned release is a Linux build, so the long-standing service belongs to
-Linux and WSL. macOS applies none of the managed proxy payload, `--proxy`
-fails there with that reason instead of installing a Linux binary, and the
-Codex launcher runs directly rather than through `with-proxy`.
+Linux and WSL. macOS applies none of the managed proxy payload and `--proxy`
+fails there with that reason instead of installing a Linux binary. The Codex
+launcher still asks `with-proxy --if-available`, which uses whatever proxy the
+device runs (Clash Verge on macOS) and otherwise starts direct.
 
 ## The deployment proxy
 

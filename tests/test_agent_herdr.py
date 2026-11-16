@@ -140,7 +140,7 @@ class AgentHerdrTests(unittest.TestCase):
         result = self.run_wrapper()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.args.read_text(encoding="utf-8").splitlines(),
-                         ["codex", "--no-daemon", "--version"])
+                         ["--if-available", "codex", "--no-daemon", "--version"])
 
     def test_wrapper_refuses_when_health_fails(self):
         self.env["HEALTH_EXIT"] = "1"

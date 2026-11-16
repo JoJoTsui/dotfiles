@@ -68,7 +68,10 @@ retains the environment of the pane that first started it. Under Herdr that
 pane identity is wrong, so every Codex session is reported to another pane and
 cannot be resumed with the right command. Inside interactive Herdr shells,
 `codex` resolves to `codex-herdr`: it checks `dotfiles-agent-health --codex`,
-then runs `with-proxy codex --no-daemon`, so hooks stay in the pane process.
+then runs `with-proxy --if-available codex --no-daemon`, so hooks stay in the
+pane process. `--if-available` is what makes this safe on a host with no proxy:
+the launcher then drops inherited variables instead of pointing Codex at a port
+nothing serves.
 Non-interactive `with-proxy codex exec` bypasses the shell wrapper and keeps
 the shared daemon; it has no pane identity to preserve. Outside Herdr, `codex`
 keeps the shared daemon.

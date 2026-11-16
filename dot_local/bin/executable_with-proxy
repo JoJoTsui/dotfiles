@@ -32,11 +32,23 @@
 set -euo pipefail
 
 PROXY_NO=${PROXY_NO:-localhost,127.0.0.1,::1}
+mode=exec
+if_available=0
 
-if [[ -z ${PROXY_HTTP:-} ]]; then
+case ${1:-} in
+    --print) mode=print; shift ;;
+    --print-url) mode=url; shift ;;
+    --if-available) if_available=1; shift ;;
+esac
+
+available=0
+if [[ -n ${PROXY_HTTP:-} ]]; then
+    available=1
+else
     for _port in 7897 7890; do
         if nc -z 127.0.0.1 "$_port" 2>/dev/null; then
             PROXY_HTTP="http://127.0.0.1:$_port"
+            available=1
             break
         fi
     done
@@ -44,12 +56,12 @@ fi
 PROXY_HTTP=${PROXY_HTTP:-http://127.0.0.1:7890}
 PROXY_SOCKS=${PROXY_SOCKS:-socks5h://${PROXY_HTTP#http://}}
 
-if [[ ${1:-} == --print-url ]]; then
+if [[ $mode == url ]]; then
     printf '%s\n' "$PROXY_HTTP"
     exit 0
 fi
 
-if [[ ${1:-} == --print ]]; then
+if [[ $mode == print ]]; then
     printf 'export HTTP_PROXY=%q\n' "$PROXY_HTTP"
     printf 'export HTTPS_PROXY=%q\n' "$PROXY_HTTP"
     printf 'export http_proxy=%q\n' "$PROXY_HTTP"
@@ -63,8 +75,18 @@ if [[ ${1:-} == --print ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    echo "usage: with-proxy [--print] command [args...]" >&2
+    echo "usage: with-proxy [--print|--print-url|--if-available] command [args...]" >&2
     exit 64
+fi
+
+# --if-available: a caller that only wants the proxy when one exists. Without a
+# reachable endpoint it runs direct and drops inherited variables, so a stale
+# http_proxy in the parent cannot make the command fail against a dead port.
+if [[ $mode == exec && $if_available == 1 && $available == 0 ]]; then
+    unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
+    unset ALL_PROXY all_proxy FTP_PROXY ftp_proxy
+    unset NO_PROXY no_proxy PROXY
+    exec -- "$@"
 fi
 
 export HTTP_PROXY="$PROXY_HTTP"
