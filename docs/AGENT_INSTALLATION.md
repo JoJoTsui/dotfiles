@@ -96,9 +96,14 @@ agent installation data.
 
 The plan reports every selected agent with its provider, version policy,
 effective version, commands, and Herdr kind. The provider it names is the first
-one in the agent's chain that can serve the platform; the deployment-owned
-project fields (`manager`, `package`, `minimumNode`, `lock`, `manifest`) describe
-the pinned fallback the deployment owns.
+one in the agent's chain that can serve the platform, and the entry describes
+that provider. A Homebrew entry names the Homebrew package and its package
+kind (`formula` or `cask`) and reports `manager` `homebrew`. A Bun entry names
+its package, its minimum Node, and its lock. A native entry names its release
+manifest. An installer-owned entry never carries a deployment-owned lock.
+The deployment-owned project of an installer-owned agent stays visible as the
+entry's explicit `fallback` field, with its own provider, package, minimum
+Node, and lock.
 
 Each Bun package has its own exact `package.json` and real text `bun.lock`. A
 project under

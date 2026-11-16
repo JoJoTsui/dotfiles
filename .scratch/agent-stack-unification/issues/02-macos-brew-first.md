@@ -48,3 +48,22 @@ and is reported as device-owned.
 `deployment/agents/providers.tsv` gained a package-kind column, so both
 bootstrap adapters and the update tool read the new layout. ADR 0009 is
 superseded by ADR 0011: the exact-match exception became the first floor.
+
+A review of the plan output found that a Homebrew-resolved entry reported the
+deployment-owned Bun project: `print_agent_packages` split the owned row into
+`AGENT_ROW` before the provider case, so the case switched on the Bun row and
+a Homebrew agent carried the Bun package, `manager` `bun`, and the Bun lock.
+The native Windows adapter built the same shape from `$owned`.
+
+Both adapters now build the entry from the record the plan selects. A Homebrew
+entry names the Homebrew package and its package kind and reports `manager`
+`homebrew`; a Bun entry names its package, minimum Node, and lock; a native
+entry names its release manifest. The deployment-owned project of an
+installer-owned agent stays visible as the entry's explicit `fallback` field, so
+an installer-owned entry never carries a deployment-owned lock.
+
+The macOS plan test asserts the Homebrew package and kind for Kimi and Codex,
+that no Homebrew entry reports `manager` `bun`, and that no Homebrew entry
+contains a Bun lock. The portable matrix accepts the Homebrew manager, and the
+native macOS verifier compares an installer-owned agent against the catalog
+floor instead of the pin.

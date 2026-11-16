@@ -69,6 +69,30 @@ function Select-AgentRecords {
     $viable = @($Catalog | Where-Object { $_.agent -eq $Agent -and (Test-AgentPlatform $_.platforms) })
     return @($viable | Sort-Object order)
 }
+function Set-AgentProviderFields($Entry, $Record) {
+    # The provider-specific fields of one catalog record. The record's
+    # provider decides which fields exist, so an installer-owned record never
+    # carries a deployment-owned lock and a deployment-owned record never
+    # carries a package kind.
+    switch ($Record.provider) {
+        'homebrew' {
+            $Entry['package'] = $Record.package
+            $Entry['packageKind'] = $Record.packageKind
+            $Entry['manager'] = 'homebrew'
+        }
+        'bun' {
+            $Entry['package'] = $Record.package
+            $Entry['manager'] = 'bun'
+            $Entry['minimumNode'] = $Record.minimumNode
+            $Entry['lock'] = $Record.lock
+        }
+        'native' {
+            $Entry['package'] = $null
+            $Entry['manager'] = 'native'
+            $Entry['manifest'] = $Record.lock
+        }
+    }
+}
 function Test-AgentCatalog {
     # An invalid record stops the deployment before it creates any state or
     # file, and the message names the offending record.
@@ -303,11 +327,15 @@ try {
             name = $agent; provider = $row.provider; policy = $row.policy; version = $row.version
             commands = @($row.commands.Split(',')); herdr = $(if ($row.herdr -eq '-') { $null } else { $row.herdr })
         }
-        if ($owned.provider -eq 'bun') {
-            $entry['package'] = $owned.package; $entry['manager'] = 'bun'
-            $entry['minimumNode'] = $owned.minimumNode; $entry['lock'] = $owned.lock
-        } else {
-            $entry['package'] = $null; $entry['manager'] = 'native'; $entry['manifest'] = $owned.lock
+        # The entry describes the provider the plan selects. Its own record
+        # decides the fields.
+        Set-AgentProviderFields $entry $row
+        # The deployment-owned fallback of an installer-owned provider stays
+        # in its own field; it never mixes into the selected provider.
+        if ($row.provider -notin @('bun', 'native')) {
+            $fallback = [ordered]@{ provider = $owned.provider }
+            Set-AgentProviderFields $fallback $owned
+            $entry['fallback'] = $fallback
         }
         $agentPackages += $entry
     }

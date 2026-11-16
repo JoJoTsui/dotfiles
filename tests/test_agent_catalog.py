@@ -103,9 +103,64 @@ class ProviderCatalogTests(unittest.TestCase):
                         self.assertEqual(entry["commands"], record[6].split(","))
                         self.assertEqual(entry["herdr"], None if record[10] == "-" else record[10])
                         self.assertEqual(entry["version"], record[4])
-                        self.assertEqual(entry["manager"], "bun" if owned[1] == "bun" else "native")
-                        self.assertEqual(entry["package"], owned[2] if owned[1] == "bun" else None)
+                        # The entry describes the provider the plan selects.
+                        self.assertEqual(entry["manager"], provider)
+                        if provider == "homebrew":
+                            self.assertEqual(entry["package"], record[2])
+                            self.assertEqual(entry["packageKind"], record[3])
+                            self.assertNotIn("minimumNode", entry)
+                            self.assertNotIn("lock", entry)
+                            # The deployment-owned fallback keeps its own field.
+                            fallback = entry["fallback"]
+                            self.assertEqual(fallback["provider"], owned[1])
+                            self.assertEqual(fallback["package"], owned[2])
+                            self.assertEqual(fallback["lock"], owned[13])
+                        elif provider == "bun":
+                            self.assertEqual(entry["package"], record[2])
+                            self.assertEqual(entry["minimumNode"], record[11])
+                            self.assertEqual(entry["lock"], record[13])
+                            self.assertNotIn("fallback", entry)
+                        else:
+                            self.assertEqual(entry["package"], None)
+                            self.assertEqual(entry["manifest"], record[13])
+                            self.assertNotIn("fallback", entry)
                 self.assertFalse(self.home.exists())
+
+    def test_a_homebrew_plan_entry_names_the_homebrew_package_and_kind(self):
+        result = self.plan("macos")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        packages = {entry["name"]: entry for entry in json.loads(result.stdout)["agentPackages"]}
+        for name, kind in (("kimi", "formula"), ("codex", "cask")):
+            with self.subTest(agent=name):
+                entry = packages[name]
+                homebrew = next(item for item in self.catalog_records()
+                                if item[0] == name and item[1] == "homebrew")
+                owned = next(item for item in self.catalog_records()
+                             if item[0] == name and item[1] in ("bun", "native"))
+                self.assertEqual(entry["provider"], "homebrew")
+                self.assertEqual(entry["manager"], "homebrew")
+                self.assertEqual(entry["package"], homebrew[2])
+                self.assertEqual(entry["packageKind"], kind)
+                # A Homebrew entry never carries the deployment-owned project.
+                self.assertNotEqual(entry["manager"], "bun")
+                self.assertNotIn("lock", entry)
+                self.assertNotIn("minimumNode", entry)
+                selected = {key: value for key, value in entry.items() if key != "fallback"}
+                self.assertNotIn("bun.lock", json.dumps(selected))
+                # The deployment-owned fallback is explicit and separate.
+                fallback = entry["fallback"]
+                self.assertEqual(fallback["provider"], "bun")
+                self.assertEqual(fallback["manager"], "bun")
+                self.assertEqual(fallback["package"], owned[2])
+                self.assertEqual(fallback["lock"], owned[13])
+                self.assertEqual(fallback["minimumNode"], owned[11])
+        # Every Homebrew entry of the plan stays free of a deployment lock.
+        for name, entry in packages.items():
+            if entry["provider"] != "homebrew":
+                continue
+            with self.subTest(agent=name):
+                self.assertNotIn("lock", entry)
+                self.assertIn("fallback", entry)
 
     def test_the_catalog_declares_the_homebrew_package_of_every_agent_homebrew_ships(self):
         expected = {
@@ -179,11 +234,23 @@ class ProviderCatalogTests(unittest.TestCase):
                 result = self.plan(platform)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 packages = {entry["name"]: entry for entry in json.loads(result.stdout)["agentPackages"]}
-                self.assertEqual(packages["codex"]["provider"], provider)
-                self.assertEqual(packages["codex"]["herdr"], "codex")
-                # The deployment-owned project stays the pinned fallback.
-                self.assertEqual(packages["codex"]["manager"], "bun")
-                self.assertEqual(packages["codex"]["package"], "@openai/codex")
+                entry = packages["codex"]
+                self.assertEqual(entry["provider"], provider)
+                self.assertEqual(entry["herdr"], "codex")
+                if provider == "homebrew":
+                    # The Homebrew package is named; the deployment-owned
+                    # project stays the fallback in its own field.
+                    self.assertEqual(entry["manager"], "homebrew")
+                    self.assertEqual(entry["package"], "codex")
+                    self.assertEqual(entry["packageKind"], "cask")
+                    self.assertNotIn("lock", entry)
+                    self.assertEqual(entry["fallback"]["package"], "@openai/codex")
+                    self.assertEqual(entry["fallback"]["lock"], "deployment/agents/codex/bun.lock")
+                else:
+                    self.assertEqual(entry["manager"], "bun")
+                    self.assertEqual(entry["package"], "@openai/codex")
+                    self.assertEqual(entry["lock"], "deployment/agents/codex/bun.lock")
+                    self.assertNotIn("fallback", entry)
 
     def test_a_catalog_record_drives_the_plan_without_a_named_branch(self):
         source = self.source_copy()
@@ -286,7 +353,10 @@ class WindowsProviderCatalogTests(unittest.TestCase):
                 self.assertIn(entry["provider"], ("bun", "native", "homebrew"))
                 self.assertEqual(entry["policy"], "exact")
                 self.assertTrue(entry["commands"])
-                self.assertEqual(entry["manager"], "bun" if entry["package"] else "native")
+                # The Windows plan resolves a deployment-owned provider, so
+                # the entry names it and carries no separate fallback.
+                self.assertEqual(entry["manager"], entry["provider"])
+                self.assertNotIn("fallback", entry)
         self.assertEqual(packages["codex"]["provider"], "bun")
         self.assertEqual(packages["codex"]["herdr"], "codex")
         self.assertEqual(packages["minimax"]["herdr"], None)

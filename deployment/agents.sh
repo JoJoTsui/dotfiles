@@ -344,6 +344,30 @@ resolve_agent_selection() {
     done
 }
 
+# The provider-specific fields of one catalog record. The record's provider
+# decides which fields exist, so an installer-owned record never carries a
+# deployment-owned lock and a deployment-owned record never carries a package
+# kind. The caller names the provider, package, package kind, minimum Node,
+# and lock or release manifest of the record.
+print_agent_provider_fields() {
+    local provider=$1 package=$2 kind=$3 minimum=$4 lock=$5
+    case "$provider" in
+        homebrew)
+            printf ',"package":'; json_string "$package"
+            printf ',"packageKind":'; json_string "$kind"
+            printf ',"manager":"homebrew"' ;;
+        bun)
+            printf ',"package":'; json_string "$package"
+            printf ',"manager":"bun"'
+            printf ',"minimumNode":'; json_string "$minimum"
+            printf ',"lock":'; json_string "$lock" ;;
+        native)
+            printf ',"package":null'
+            printf ',"manager":"native"'
+            printf ',"manifest":'; json_string "$lock" ;;
+    esac
+}
+
 print_agent_packages() {
     local name row resolved owned provider policy version commands herdr separator='' command
     local exposed_commands=() first=''
@@ -358,8 +382,6 @@ print_agent_packages() {
         commands=${AGENT_ROW[6]}
         herdr=${AGENT_ROW[10]}
         version=$(agent_effective_version "$name" "${AGENT_ROW[4]}")
-        owned=$(agent_owned_row "$name")
-        agent_row_split "$owned"
         printf '%s{"name":' "$separator"; json_string "$name"
         printf ',"provider":'; json_string "$provider"
         printf ',"policy":'; json_string "$policy"
@@ -373,17 +395,22 @@ print_agent_packages() {
         printf ']'
         printf ',"herdr":'
         if [ "$herdr" = '-' ]; then printf 'null'; else json_string "$herdr"; fi
-        case "${AGENT_ROW[1]}" in
-            bun)
-                printf ',"package":'; json_string "${AGENT_ROW[2]}"
-                printf ',"manager":"bun"'
-                printf ',"minimumNode":'; json_string "${AGENT_ROW[11]}"
-                printf ',"lock":'; json_string "${AGENT_ROW[13]}" ;;
-            native)
-                printf ',"package":null'
-                printf ',"manager":"native"'
-                printf ',"manifest":'; json_string "${AGENT_ROW[13]}" ;;
-        esac
+        # The entry describes the provider the plan selects. Its own record
+        # decides the fields: a Homebrew record names its package and kind, a
+        # Bun record names its package, minimum Node, and lock, and a native
+        # record names its release manifest.
+        print_agent_provider_fields "$provider" "${AGENT_ROW[2]}" "${AGENT_ROW[3]}" \
+            "${AGENT_ROW[11]}" "${AGENT_ROW[13]}"
+        # The deployment-owned fallback of an installer-owned provider stays
+        # in its own field; it never mixes into the selected provider.
+        if [ "$provider" != bun ] && [ "$provider" != native ]; then
+            owned=$(agent_owned_row "$name")
+            agent_row_split "$owned"
+            printf ',"fallback":{"provider":'; json_string "${AGENT_ROW[1]}"
+            print_agent_provider_fields "${AGENT_ROW[1]}" "${AGENT_ROW[2]}" "${AGENT_ROW[3]}" \
+                "${AGENT_ROW[11]}" "${AGENT_ROW[13]}"
+            printf '}'
+        fi
         printf '}'
         separator=,
     done

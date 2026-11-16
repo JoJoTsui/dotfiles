@@ -19,6 +19,13 @@ pinned native release stays only where Bun cannot ship the client. This applies
 the installer order from ADR 0008 to agents instead of keeping a separate
 ownership rule per client.
 
+The plan reports the provider the chain selects, and that entry describes only
+that provider: a Homebrew entry names its package and package kind, a Bun
+entry names its package, minimum Node, and lock, and a native entry names its
+release manifest. The deployment-owned project stays visible as an explicit
+fallback field, so an installer-owned entry never carries a deployment-owned
+lock.
+
 The version policy follows ownership. A provider the deployment installs — a
 frozen Bun project or a verified native release — keeps an exact pin and its
 lock or manifest. A provider the device's installer owns carries a floor, and

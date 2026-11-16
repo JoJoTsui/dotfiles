@@ -142,9 +142,20 @@ def matrix_plan(root: Path, platform: str, arch: str, role: str,
             f"agent packages do not match selection on {platform}-{arch}-{role}: {sorted(packages)}")
     require(set(AGENTS) <= set(selected_agents) if not selection else True,
             f"default agent selection is incomplete on {platform}-{arch}-{role}")
-    require(all(item.get("manager") in ("bun", "native") for item in packages.values()),
+    require(all(item.get("manager") in ("bun", "native", "homebrew") for item in packages.values()),
             "an agent or CodeGraph package has an unknown installation manager")
     require(packages["codegraph"]["manager"] == "bun", "CodeGraph is not assigned to Bun")
+    # Every entry describes its own provider: an installer-owned entry names
+    # the Homebrew package and carries no deployment-owned lock.
+    for name, item in packages.items():
+        if item.get("manager") != "homebrew":
+            continue
+        require(item.get("package") and item.get("packageKind") in ("formula", "cask"),
+                f"a Homebrew agent entry does not name its package: {name}")
+        require("lock" not in item and "minimumNode" not in item,
+                f"a Homebrew agent entry carries a deployment-owned project field: {name}")
+        require(item.get("fallback", {}).get("provider") in ("bun", "native"),
+                f"a Homebrew agent entry does not name its fallback: {name}")
     if "qoder" in selected_agents:
         require(packages["qoder"]["manager"] == "native", "Qoder is not assigned to its native installer")
     else:

@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import signal
 import stat
@@ -297,6 +298,26 @@ def check_native_discovery(home, role):
                 f"canonical startup copy: {name}")
 
 
+def reported_version(output):
+    """The first dotted version a diagnostic reports."""
+    match = re.search(r"\d+(?:\.\d+)+", output)
+    return match.group(0) if match else ""
+
+
+def version_at_least(output, minimum):
+    """Whether a diagnostic reports a version at or above the minimum."""
+    actual = reported_version(output)
+    if not actual:
+        return False
+    def parts(value):
+        return [int(part) for part in value.split(".")]
+    reported, floor = parts(actual), parts(minimum)
+    width = max(len(reported), len(floor))
+    reported += [0] * (width - len(reported))
+    floor += [0] * (width - len(floor))
+    return reported >= floor
+
+
 def check_pinned_tools(home, plan, report):
     env = managed_environment(home)
     versions = {}
@@ -324,11 +345,18 @@ def check_pinned_tools(home, plan, report):
             continue
         for command in package["commands"]:
             location = home / ".bun/bin" / command
-            require(location.is_file() and not location.is_symlink(), f"owned Bun launcher: {command}")
+            require(location.is_file() and not location.is_symlink(), f"owned agent launcher: {command}")
             require(location.read_bytes() == (home / ".local/bin" / command).read_bytes(), f"owned agent copy: {command}")
             result = run([str(location), "--version"], env=env, cwd=home)
-            require(package["version"] in result.stdout + result.stderr, f"pinned agent version: {command}")
-            versions[command] = (result.stdout + result.stderr).strip().splitlines()[0]
+            output = result.stdout + result.stderr
+            if package["policy"] == "floor":
+                # The device's installer owns the version; the plan names the
+                # floor the deployment accepts.
+                require(version_at_least(output, package["version"]),
+                        f"installer-owned agent version: {command}")
+            else:
+                require(package["version"] in output, f"pinned agent version: {command}")
+            versions[command] = output.strip().splitlines()[0]
     report["versions"] = versions
     status = run([str(home / ".local/bin/dotfiles-history"), "status"], env=env, cwd=home)
     require("pending activation" in status.stdout, "history stays pending without account setup")
