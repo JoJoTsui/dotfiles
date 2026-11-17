@@ -44,10 +44,10 @@ applied to the account home.
 | Agent | Current device | Planned provider and floor | Effective on this device |
 | --- | --- | --- | --- |
 | kimi | Bun 2.4.1 | Homebrew `kimi-code` floor 2.4.1 | Homebrew 2.6.2 |
-| pi | Bun 1.5.2 | Homebrew `pi-coding-agent` floor 1.5.2 | Homebrew 1.5.2 |
+| pi | Bun 1.5.2 | Homebrew `pi-coding-agent` floor 1.5.2 | **Bun 1.5.2**: the formula is available but not installed, and the deployment adopts, never installs |
 | opencode | Bun 2.2.5 | Homebrew `opencode-v2` floor 2.2.5 | Homebrew 2.3.0 (third-party tap) |
 | claude | Bun 2.1.325 | Homebrew `claude-code` floor 2.1.325 | **Bun 2.1.325**: the cask is 2.1.311, below the floor |
-| codex | Homebrew 0.169.0 (device-owned) | Homebrew `codex` floor 0.166.0 | Homebrew 0.169.0 |
+| codex | Homebrew 0.169.0 (device-owned) | Homebrew `codex` floor 0.166.0 | **Homebrew 0.169.0** after removing the redundant `agent|codex|0.169.0` override; with the override it is Bun 0.169.0 |
 | minimax | Bun 0.7.0 | Bun | Bun 0.7.0 |
 | codegraph | Bun 1.6.2 | Bun | Bun 1.6.2 |
 | qoder | Native 1.1.82 | Native 1.1.82 | Native 1.1.82 |
@@ -55,7 +55,10 @@ applied to the account home.
 The macOS plan reports Homebrew as the first provider for the five agents
 Homebrew ships and the Bun fallback in the `fallback` field. The actual selection
 also requires the installed package to meet the floor, which is why Claude stays
-on Bun until the cask reaches 2.1.325.
+on Bun until the cask reaches 2.1.325, and Pi stays on Bun because its formula is
+not installed. The existing `agent|codex|0.169.0` override forced a
+deployment-owned Bun install; the migration removes it, and the rehearsal then
+adopted Homebrew 0.169.0.
 
 The current device still resolves Kimi and OpenCode from `~/.bun/bin` because the
 change has not been applied. Ticket 03 makes `~/.local/bin` win on macOS, so the
