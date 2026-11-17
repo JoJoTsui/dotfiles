@@ -331,14 +331,15 @@ accounts, the usage store, and the generated agent files.
 bash bootstrap.sh --plan | grep magpie    # what the run would do
 dotfiles-magpie status                    # gateway, plugins, providers, groups, visibility, picks
 dotfiles-magpie providers                 # the catalog and its credential sources
-dotfiles-magpie test                      # one tiny completion per model role
+dotfiles-magpie test                      # one small completion per model role
 ```
 
 The step runs on macOS by default and is turned off with `--no-magpie` or
 `DOTFILES_MAGPIE=false`. The Homebrew cask owns the app; the deployment adopts
-it and never installs it. Claude Code runs on `group/conductor`, which drains
-the ChatGPT weekly quota, then the paid OpenAI API key, then Kimi K3.1 Pro at
-max reasoning; Pi and `dsh` run on `group/workhorse`. Codex stays on its own
+it and never installs it. Claude Code runs on `group/conductor`: Codex
+GPT-6.1 Sol at medium, then the paid OpenAI API's GPT-6.1 Sol, then Kimi
+K3.1 Pro at max. `group/openai-stack` keeps GPT-6.1 Terra for manual use. Pi
+and `dsh` run on `group/workhorse` (MiniMax and DeepSeek, both at max). Codex stays on its own
 ChatGPT Pro configuration, which the deployment never writes. Provider
 credentials are read from the stores that already hold them; the Kimi Code
 China plan key lives in `~/.config/dotfiles/magpie.env` as
