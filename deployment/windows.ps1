@@ -404,6 +404,36 @@ function Import-SkillLibrary {
         $script:SkillLibrary = $env:DOTFILES_SKILLS_DIR
         return
     }
+    # A reviewed lock is mandatory: every selected skill needs a matching
+    # valid pin before any remote fetch or staging mutation. The explicit
+    # offline library (DOTFILES_SKILLS_DIR) above is the only bypass.
+    $lockRelative = 'deployment/skills.lock.tsv'
+    if (-not (Test-Path -LiteralPath (Join-Path $Source $lockRelative))) { Stop-Deployment "missing skill lock: $lockRelative" }
+    $pins = @{}
+    foreach ($entry in (Read-Catalog $lockRelative)) {
+        if ($entry.columns.Count -lt 4 -or -not $entry.columns[0]) { Stop-Deployment 'malformed skill lock entry' }
+        $lockName = [string]$entry.columns[0]; $lockKind = [string]$entry.columns[1]; $lockPin = [string]$entry.columns[3]
+        if ($pins.ContainsKey($lockName)) { Stop-Deployment 'duplicate skill lock entry' }
+        if (($lockKind -eq 'git' -and $lockPin -cnotmatch '^[a-f0-9]{40}$') -or
+            ($lockKind -eq 'tarball' -and $lockPin -cnotmatch '^[a-f0-9]{64}$') -or
+            ($lockKind -ne 'git' -and $lockKind -ne 'tarball')) { Stop-Deployment "invalid skill pin: $lockName" }
+        $pins[$lockName] = $entry.columns
+    }
+    if (-not $pins.Count) { Stop-Deployment "empty skill lock: $lockRelative" }
+    $selected = @()
+    foreach ($row in (Read-Catalog 'deployment/skills.tsv')) {
+        $name = [string]$row.columns[0]
+        $skillSelection = $row.columns[5]; if (-not $skillSelection) { $skillSelection = 'auto' }
+        if (-not $name -or $name.StartsWith('#')) { continue }
+        # Tagged skills are not deployed automatically; a host asks for them.
+        if ($skillSelection -ne 'auto') {
+            $requested = ",$env:DOTFILES_SKILLS,"
+            if ($requested -notlike "*,$skillSelection,*" -and $requested -notlike "*,$name,*") { continue }
+        }
+        $locked = $pins[$name]
+        if (-not $locked -or $locked[1] -ne $row.columns[1] -or $locked[2] -ne $row.columns[2]) { Stop-Deployment "skill lock source mismatch: $name" }
+        $selected += ,$row
+    }
     $stage = Join-Path $env:TEMP ('skills-' + [Guid]::NewGuid().ToString('N'))
     $cache = Join-Path $roots.cache 'dotfiles/skills'
     Assert-InstallerDirectory $cache
@@ -419,53 +449,21 @@ function Import-SkillLibrary {
         $refresh = $age -ge [int64]$maxAge
     }
     $refreshSucceeded = $true
-    $pins = @{}
-    if (Test-Path -LiteralPath (Join-Path $Source 'deployment/skills.lock.tsv')) {
-        foreach ($entry in (Read-Catalog 'deployment/skills.lock.tsv')) {
-            if ($pins.ContainsKey($entry.columns[0])) { Stop-Deployment 'duplicate skill lock entry' }
-            $pins[$entry.columns[0]] = $entry.columns
-        }
-    }
     $lockRows = @('# name|kind|source|resolved')
-    foreach ($row in (Read-Catalog 'deployment/skills.tsv')) {
+    foreach ($row in $selected) {
         $name = $row.columns[0]; $kind = $row.columns[1]; $sourceUrl = $row.columns[2]
-        $ref = $row.columns[3]; $path = $row.columns[4]; if (-not $path) { $path = '' }
-        $skillSelection = $row.columns[5]; if (-not $skillSelection) { $skillSelection = 'auto' }
-        if (-not $name -or $name.StartsWith('#')) { continue }
-        # Tagged skills are not deployed automatically; a host asks for them.
-        if ($skillSelection -ne 'auto') {
-            $requested = ",$env:DOTFILES_SKILLS,"
-            if ($requested -notlike "*,$skillSelection,*" -and $requested -notlike "*,$name,*") { continue }
-        }
-        $pin = ''
-        if ($pins.Count) {
-            $locked = $pins[$name]
-            if (-not $locked -or $locked[1] -ne $kind -or $locked[2] -ne $sourceUrl) { Stop-Deployment "skill lock source mismatch: $name" }
-            $pin = $locked[3]
-            if (($kind -eq 'git' -and $pin -cnotmatch '^[a-f0-9]{40}$') -or ($kind -eq 'tarball' -and $pin -cnotmatch '^[a-f0-9]{64}$')) { Stop-Deployment "invalid skill pin: $name" }
-        }
+        $path = $row.columns[4]; if (-not $path) { $path = '' }
+        $pin = [string]$pins[$name][3]
         if ($kind -eq 'git') {
             $slug = $sourceUrl -replace '^[A-Za-z][A-Za-z0-9+.-]*://', '' -replace '/+$', '' -replace '[^A-Za-z0-9._-]', '_'
             $repo = Join-Path $cache "git/$slug"
-            if ($pin) {
-                if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
-                    Invoke-Tool git @('init', '--quiet', $repo) -Quiet | Out-Null
-                    Invoke-Tool git @('-C', $repo, 'remote', 'add', 'origin', $sourceUrl) -Quiet | Out-Null
-                }
-                & git -C $repo cat-file -e "$pin^{commit}" 2>$null | Out-Null
-                if ($LASTEXITCODE -ne 0) { Invoke-Tool git @('-C', $repo, 'fetch', '--quiet', '--depth', '1', 'origin', $pin) -Quiet | Out-Null }
-                $resolved = $pin
-            } elseif (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
-                Invoke-Tool git @('clone', '--quiet', '--no-checkout', '--depth', '1', '--branch', $ref, $sourceUrl, $repo) -Quiet | Out-Null
-            } elseif ($refresh) {
-                & git -C $repo fetch --quiet --depth 1 origin $ref 2>$null | Out-Null
-                if ($LASTEXITCODE -ne 0) { $refreshSucceeded = $false }
+            if (-not (Test-Path -LiteralPath (Join-Path $repo '.git'))) {
+                Invoke-Tool git @('init', '--quiet', $repo) -Quiet | Out-Null
+                Invoke-Tool git @('-C', $repo, 'remote', 'add', 'origin', $sourceUrl) -Quiet | Out-Null
             }
-            if (-not $pin) {
-                $resolved = (& git -C $repo rev-parse FETCH_HEAD 2>$null)
-                if (-not $resolved) { $resolved = (& git -C $repo rev-parse HEAD 2>$null) }
-            }
-            if (-not $resolved) { Stop-Deployment "cannot resolve skill source: $name" }
+            & git -C $repo cat-file -e "$pin^{commit}" 2>$null | Out-Null
+            if ($LASTEXITCODE -ne 0) { Invoke-Tool git @('-C', $repo, 'fetch', '--quiet', '--depth', '1', 'origin', $pin) -Quiet | Out-Null }
+            $resolved = $pin
             $archive = Join-Path $stage "$name.tar"
             $depth = ($path -split '/').Count
             # Git archive emits no enclosing directory for a repository-root skill.
@@ -513,7 +511,7 @@ function Import-SkillLibrary {
                     if (-not (Test-Path -LiteralPath $cached)) { Stop-Deployment "cannot download skill $name" }
                 }
                 if (Test-Path -LiteralPath $download) {
-                    if ($pin -and (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -ne $pin) {
+                    if ((Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant() -ne $pin) {
                         Remove-Item -LiteralPath $download -Force
                         Stop-Deployment "skill archive checksum mismatch: $name; review an explicit skill update"
                     }
@@ -521,7 +519,7 @@ function Import-SkillLibrary {
                 }
             }
             $digest = (Get-FileHash -LiteralPath $cached -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($pin -and $digest -ne $pin) { Stop-Deployment "skill archive checksum mismatch: $name" }
+            if ($digest -ne $pin) { Stop-Deployment "skill archive checksum mismatch: $name" }
             if (-not (Test-SkillArchive $cached)) { Stop-Deployment "unsafe skill archive: $name" }
             $destination = Join-Path $stage $name
             [IO.Directory]::CreateDirectory($destination) | Out-Null

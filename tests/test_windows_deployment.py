@@ -354,6 +354,122 @@ Import-SkillLibrary
                 for relative in ('SKILL.md', 'agents/openai.yaml', 'LICENSE'):
                     self.assertEqual((copied / relative).read_bytes(), (package / relative).read_bytes())
 
+    def skill_lock_gate_fixture(self, name):
+        # A fixture source decouples the lock under test from the repo's real
+        # lock; the catalog selects one auto tarball skill plus one tagged
+        # skill that only a DOTFILES_SKILLS request selects.
+        source = self.root / f'{name}-source'
+        (source / 'deployment').mkdir(parents=True)
+        (source / 'deployment/skills.tsv').write_text(
+            '# name|kind|source|ref|path|selection\n'
+            'demo|tarball|https://example.invalid/skill.tgz|||auto\n'
+            'extra|tarball|https://example.invalid/other.tgz|||optional\n')
+        script = self.root / f'{name}.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{ cache = (Join-Path $TargetHome '.cache'); state = (Join-Path $TargetHome '.local/state') }
+function Read-Catalog([string]$Relative) {
+    foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source $Relative))) {
+        if ($line -and -not $line.StartsWith('#')) { @{ columns = $line.Split('|') } }
+    }
+}
+. (Join-Path $env:DOTFILES_TEST_WINDOWS 'deployment/windows.ps1')
+function Invoke-WebRequest { throw 'unexpected network request' }
+function Invoke-Tool { throw 'unexpected tool invocation' }
+Import-SkillLibrary
+[Console]::Out.Write($script:SkillLibrary)
+''')
+        return source, script
+
+    def run_skill_lock_gate(self, script, source, home, **overrides):
+        temporary = home / '.cache/tmp'
+        temporary.mkdir(parents=True)
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(source), DOTFILES_TEST_WINDOWS=str(SOURCE),
+                           DOTFILES_TEST_TARGET_HOME=str(home), DOTFILES_SKILLS_DIR='',
+                           DOTFILES_SKILLS_REFRESH='0', TEMP=str(temporary))
+        environment.update(overrides)
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=environment, capture_output=True, text=True, timeout=30)
+        return result, temporary
+
+    def test_skill_lock_gate_fails_before_remote_fetch(self):
+        source, script = self.skill_lock_gate_fixture('skill-lock-gate')
+        lock = source / 'deployment/skills.lock.tsv'
+        valid = 'demo|tarball|https://example.invalid/skill.tgz|' + 'a' * 64 + '\n'
+        cases = (
+            ('missing', None, 'missing skill lock'),
+            ('empty', '', 'empty skill lock'),
+            ('comments-only', '# name|kind|source|resolved\n', 'empty skill lock'),
+            ('malformed', 'demo|tarball|https://example.invalid/skill.tgz\n', 'malformed skill lock entry'),
+            ('invalid-pin', 'demo|tarball|https://example.invalid/skill.tgz|not-a-sha\n', 'invalid skill pin: demo'),
+            ('unknown-kind', 'demo|zip|https://example.invalid/skill.tgz|' + 'a' * 64 + '\n', 'invalid skill pin: demo'),
+            ('duplicate', valid + valid, 'duplicate skill lock entry'),
+            ('other-entry-only', 'other|tarball|https://example.invalid/skill.tgz|' + 'a' * 64 + '\n',
+             'skill lock source mismatch: demo'),
+            ('kind-mismatch', 'demo|git|https://example.invalid/skill.tgz|' + 'a' * 40 + '\n',
+             'skill lock source mismatch: demo'),
+            ('source-mismatch', 'demo|tarball|https://example.invalid/elsewhere.tgz|' + 'a' * 64 + '\n',
+             'skill lock source mismatch: demo'),
+        )
+        for index, (label, content, message) in enumerate(cases):
+            with self.subTest(case=label):
+                if content is None:
+                    if lock.exists():
+                        lock.unlink()
+                else:
+                    lock.write_text(content)
+                home = self.root / f'lock-gate-{index}'
+                result, temporary = self.run_skill_lock_gate(script, source, home)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIn(message, result.stderr)
+                self.assertNotIn('unexpected network request', result.stderr)
+                self.assertNotIn('unexpected tool invocation', result.stderr)
+                self.assertEqual(list(temporary.iterdir()), [], 'created skill staging before lock rejection')
+                self.assertFalse((home / '.cache/dotfiles').exists(), 'created skill cache before lock rejection')
+                self.assertFalse((home / '.local').exists(), 'wrote state before lock rejection')
+
+    def test_skill_lock_gate_accepts_valid_pin_selection_and_offline_bypass(self):
+        source, script = self.skill_lock_gate_fixture('skill-lock-accept')
+        skill_file = self.root / 'lock-accept-SKILL.md'
+        skill_file.write_text('# locked skill\n')
+        home = self.root / 'lock-accept-device'
+        archive = home / '.cache/dotfiles/skills/tarballs/example.invalid_skill.tgz.tgz'
+        archive.parent.mkdir(parents=True)
+        with tarfile.open(archive, 'w:gz') as payload:
+            payload.add(skill_file, arcname='SKILL.md')
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        (source / 'deployment/skills.lock.tsv').write_text(
+            f'demo|tarball|https://example.invalid/skill.tgz|{digest}\n')
+        # The locked auto skill imports from the cached archive without any
+        # network access; the unselected tagged skill needs no lock entry.
+        result, _ = self.run_skill_lock_gate(script, source, home)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((Path(result.stdout) / 'demo/SKILL.md').read_text(), skill_file.read_text())
+        state_lock = (home / '.local/state/dotfiles/skills.lock.tsv').read_text()
+        self.assertIn(f'demo|tarball|https://example.invalid/skill.tgz|{digest}', state_lock)
+        self.assertNotIn('extra', state_lock)
+        # Requesting the tagged skill without a lock entry fails before fetch.
+        tagged_home = self.root / 'lock-accept-tagged'
+        result, temporary = self.run_skill_lock_gate(script, source, tagged_home, DOTFILES_SKILLS='optional')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('skill lock source mismatch: extra', result.stderr)
+        self.assertEqual(list(temporary.iterdir()), [], 'created skill staging before lock rejection')
+        # The documented offline bypass works even without a lock file.
+        (source / 'deployment/skills.lock.tsv').unlink()
+        offline_home = self.root / 'lock-accept-offline'
+        offline = SOURCE / 'tests/fixtures/skill-library'
+        result, _ = self.run_skill_lock_gate(script, source, offline_home, DOTFILES_SKILLS_DIR=str(offline))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(Path(result.stdout), offline)
+        # The fixture creates the temporary directory the run needs, so the
+        # offline library itself must not add a cache or a state to the home.
+        self.assertEqual(sorted(path.name for path in offline_home.iterdir()), ['.cache'],
+                         'offline library unexpectedly created cache or state')
+        self.assertEqual(sorted(path.name for path in (offline_home / '.cache').iterdir()), ['tmp'],
+                         'offline library unexpectedly created a skill cache')
+
     def qoder_fixture(self, reported_version=None, exit_code=0):
         version = native_agent_pins()['qoder']['version']
         if reported_version is None:
