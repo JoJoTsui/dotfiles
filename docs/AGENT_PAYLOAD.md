@@ -162,7 +162,13 @@ device entry never loses to the deployment:
 
 An entry the deployment does not own is never recorded, so it stays device
 content. The stale copy a device carried before the inventory existed is
-reported rather than deleted.
+reported rather than deleted. To migrate one deliberately, run the deployment
+once with the tags the device should keep (`DOTFILES_SKILLS=design,caveman,lark`
+for all three groups); a directory that already holds the selected bytes is
+adopted and recorded, and a later apply without the tag prunes it. A catalog
+directory whose bytes differ from the pinned copy is preserved and reported until
+the operator removes that directory; a device-created skill is never removed.
+The report names the skill and the root for each decision.
 
 The repository catalog is the only writer of a managed skill root. `bunx skills
 add` and `bunx skills update` must not target `~/.agents/skills` or a client

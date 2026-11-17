@@ -276,20 +276,33 @@ can be retained safely during migration. See the
 | **Qoder** | merged `~/.qoder/AGENTS.md` | login/session under `~/.qoder` | native release pin with manifest SHA-256 verification; `qoder` and `qodercli` launchers |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu-login"`, `shell_mode = "non_login"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
-All seven clients install by default: six through fresh Bun projects and Qoder
-from its pinned native release manifest. Native macOS reuses an existing Codex
-when it exactly matches the catalog pin, with frozen Bun installation as fallback.
-`--agents none` or
-`--agents codex,qoder` controls installation without removing omitted clients;
-CodeGraph remains a default independent of selection. Each exact manifest and
-frozen Bun lock installs into `~/.bun/managed/<name>` and exposes real launchers
-under `~/.bun/bin` and `~/.local/bin` using managed Node. Qoder's verified
-archive installs under `~/.qoder` with managed `qoder`/`qodercli` launchers. The
-existing global Bun registry remains intact. `dotfiles-agents install|update|
-status` wraps selection, pin refresh, lock regeneration, reinstallation, and
-version reporting. Legacy clients and optional integrations remain documented
-under `deployment/inventory`. See [agent installation](docs/AGENT_INSTALLATION.md)
-for versions, lifecycle trust, update policy, and isolated diagnostic checks.
+All seven clients install by default through a per-agent provider chain. macOS
+tries Homebrew first and adopts a formula or cask at or above the catalog floor;
+a missing or below-floor package falls back to the frozen Bun project. Linux,
+WSL, and native Windows use Bun, and Qoder keeps its pinned native release
+manifest. The Codex exact-match exception is now a floor, so a newer Homebrew
+Codex is adopted. `--agents none` or `--agents codex,qoder` controls installation
+without removing omitted clients; CodeGraph remains a default independent of
+selection. Both managed launchers point at the selected provider's executable
+and are revalidated on every apply; the frozen Bun project stays on disk as the
+offline fallback. Qoder's verified archive installs under `~/.qoder` with
+managed `qoder`/`qodercli` launchers. The existing global Bun registry remains
+intact. `dotfiles-agents install|update|status` wraps selection, pin refresh,
+lock regeneration, reinstallation, and provider/version reporting. See
+[agent installation](docs/AGENT_INSTALLATION.md),
+[ADR 0011](docs/adr/0011-agent-provider-chain.md), and the
+[device version overrides](docs/adr/0010-device-version-overrides.md).
+
+Herdr integrations are installed or repaired for the selected managed agents
+after the agent step, and Herdr's own skill is generated into the shared tree.
+The shared skill library is one catalog with `auto` and the `caveman`, `design`,
+and `lark` tags; Claude and MiniMax receive filtered copies, the shared-tree
+clients read the same profile, and a managed inventory prunes only what the
+deployment wrote. The measured review gate and the client matrix are in
+[skill review](docs/SKILL_REVIEW.md). See
+[ADR 0012](docs/adr/0012-herdr-owned-integrations.md) and
+[ADR 0013](docs/adr/0013-single-owner-skill-library.md). Legacy clients and
+optional integrations remain documented under `deployment/inventory`.
 Runtime configs merge through the public bootstrap, retaining existing settings
 and authentication. [Client settings](docs/AGENT_SETTINGS.md) describes ownership,
 CodeGraph discovery, and the checks for indexed and unindexed projects.

@@ -151,6 +151,25 @@ the reason the row stays. The ratchet has three rules:
 - An exception for a row that is now inside the budget fails as well, because
   the record is stale.
 
+## Migrating a pre-inventory device
+
+A device that installed skills before the managed inventory existed has
+directories the deployment never recorded. It reports each one rather than
+deleting it. To migrate deliberately:
+
+1. Run the deployment once with the tags the device should keep, for example
+   `DOTFILES_SKILLS=design,caveman,lark`. A directory that already holds the
+   selected bytes is adopted and recorded without a rewrite.
+2. Run it again with the desired selection. A recorded directory that leaves
+   the selection is pruned from each managed root.
+3. A catalog directory whose bytes differ from the pinned copy is preserved and
+   reported. Remove that directory deliberately to let the pinned copy replace
+   it; keep it if it is device content the catalog does not own.
+
+The deployment never deletes a device-created skill and never follows a
+symlink. The report names the skill and the root for every preserved entry, so
+the migration is a sequence of reviewed decisions, not a bulk delete.
+
 ## The commands
 
 ```bash
