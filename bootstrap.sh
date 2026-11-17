@@ -163,15 +163,13 @@ if [ "$DEPLOY_PLATFORM" = macos ]; then
     DEPLOY_MAGPIE=true
     DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
 fi
-if [ "${DOTFILES_MAGPIE:-true}" = false ]; then
+if [ "${DOTFILES_MAGPIE:-true}" = false ] || "$CLI_NO_MAGPIE"; then
     DEPLOY_MAGPIE=false
     DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
 fi
-if "$CLI_NO_MAGPIE"; then
-    DEPLOY_MAGPIE=false
-    DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
-fi
-if "$DEPLOY_APPLY_ONLY"; then
+if [ "$DEPLOY_PLATFORM" != macos ]; then
+    DEPLOY_MAGPIE_REASON='Magpie is not available on this platform'
+elif "$DEPLOY_APPLY_ONLY"; then
     DEPLOY_MAGPIE_REASON='--apply-only applies files without the gateway'
 elif "$DEPLOY_AGENTS_ONLY"; then
     DEPLOY_MAGPIE_REASON='--agents-only installs agents without the gateway'
