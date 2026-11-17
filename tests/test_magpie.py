@@ -772,7 +772,7 @@ class MagpieClientSettingsTests(unittest.TestCase):
         template = (SOURCE / "deployment/client-settings/claude-settings.json.tmpl").read_text()
         self.assertIn('"ANTHROPIC_BASE_URL": "http://127.0.0.1:3425"', template)
         self.assertIn('"ANTHROPIC_AUTH_TOKEN": "magpie"', template)
-        self.assertIn('"model": "group/conductor"', template)
+        self.assertIn('"model": "opus"', template)
         self.assertNotIn('"ANTHROPIC_MODEL"', template)
         for tier in ("ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
                      "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -816,7 +816,7 @@ class MagpieClientSettingsTests(unittest.TestCase):
         settings = json.loads((self.home / ".claude/settings.json").read_text())
         self.assertEqual(settings["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
         self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
-        self.assertEqual(settings["model"], "group/conductor")
+        self.assertEqual(settings["model"], "opus")
         self.assertEqual(settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "group/conductor")
         self.assertEqual(settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "group/conductor")
         self.assertEqual(settings["env"]["ANTHROPIC_SMALL_FAST_MODEL"], "group/conductor")

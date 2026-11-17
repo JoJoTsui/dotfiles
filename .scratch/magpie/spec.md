@@ -165,11 +165,17 @@ A run with nothing to change writes no files and keeps every modification time.
 
 `deployment/client-settings/claude-settings.json.tmpl` becomes the Magpie
 wiring on macOS: `env.ANTHROPIC_BASE_URL=http://127.0.0.1:3425`,
-`env.ANTHROPIC_AUTH_TOKEN=magpie`, `model=group/conductor`, no
-`ANTHROPIC_MODEL`, no `ANTHROPIC_DEFAULT_*_MODEL`, no `ANTHROPIC_SMALL_FAST_MODEL`,
-no `CLAUDE_CODE_SUBAGENT_MODEL`. The exact remaining shape is transcribed from
-what `magpie claude group/conductor` writes into a sandbox `CLAUDE_CONFIG_DIR`,
-so the template and Magpie agree field for field. The template branches on
+`env.ANTHROPIC_AUTH_TOKEN=magpie`, `model=opus` (a Claude Code alias it
+accepts), and every tier and subagent model (`ANTHROPIC_DEFAULT_{OPUS,SONNET,
+HAIKU,FABLE}_MODEL`, `ANTHROPIC_SMALL_FAST_MODEL`, `CLAUDE_CODE_SUBAGENT_MODEL`)
+set to `group/conductor`. Claude Code resolves `opus` through
+`ANTHROPIC_DEFAULT_OPUS_MODEL`, so the gateway receives the group; a bare
+`group/...` main model is rewritten by Claude Code to a bare alias. There is
+no `ANTHROPIC_MODEL`. The exact remaining shape is transcribed from what
+`magpie claude group/conductor` writes into a sandbox `CLAUDE_CONFIG_DIR`, so
+the template and Magpie agree field for field. Claude Code may persist its own
+alias (`sonnet[1m]`) after a run; the enforced sonnet tier still maps it to the
+group. The template branches on
 `.platform`: every other platform keeps the device's existing endpoint and
 model, because Magpie cannot run there. The GLM template data (`glmBaseUrl`,
 `glmToken`) is removed from the template and from `.chezmoi.toml.tmpl`; the

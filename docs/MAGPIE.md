@@ -181,12 +181,14 @@ MiniMax M3.1 Flash, then DeepSeek V4.1 Flash. `group/chatgpt` holds the
 ChatGPT plan models and is listed as its own group, so the Pro plan is spent
 only when Kimi and DeepSeek have no quota left.
 
-Claude Code's `model` field stays client-owned: `/model` writes it. Pick a
-`group/<id>` or `provider/model` reference there. A bare `sonnet` or `opus`
-alias names an Anthropic model, and the gateway has no Anthropic provider
-unless one was added; such a choice reaches the gateway as an unknown model.
-Claude Code may append its `[1m]` marker to a group name and print a local
-`unrecognized_model` notice; Magpie strips the marker and answers.
+The template sets `model: opus` and points every tier and subagent model at
+`group/conductor`. Claude Code accepts the `opus` alias and resolves it
+through `ANTHROPIC_DEFAULT_OPUS_MODEL`, so the gateway receives the group.
+Do not pick a bare `group/<id>` in `/model`: Claude Code rewrites an
+unrecognized main model to a bare alias. A bare alias without the tier
+mapping names an Anthropic model the gateway does not serve. Claude Code may
+save its own alias (`sonnet[1m]`) after a run and append `[1m]` to a tier; the
+sonnet tier still maps to `group/conductor`, and Magpie strips the marker.
 
 A model role contributes the models its candidates resolve to. `group/<id>`
 stays a reference: the apply validates the referenced group's members but
