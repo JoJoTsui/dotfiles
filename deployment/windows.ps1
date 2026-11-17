@@ -1,15 +1,33 @@
 # Native adapters share the source catalogs and Chezmoi merge template.
+# A reparse point is recognized through its directory entry, so a link whose
+# target is missing is detected too: the attributes of a dangling link cannot
+# be read, and a link is never a safe managed path.
+function Test-ReparsePath([string]$Path) {
+    if (-not $Path) { return $false }
+    $attributes = 0
+    try { $attributes = [IO.File]::GetAttributes($Path) }
+    catch [IO.FileNotFoundException] { }
+    catch [IO.DirectoryNotFoundException] { }
+    catch { }
+    if ($attributes -band [IO.FileAttributes]::ReparsePoint) { return $true }
+    $parent = [IO.Path]::GetDirectoryName($Path)
+    $name = [IO.Path]::GetFileName($Path)
+    if (-not $parent -or -not $name) { return $false }
+    if (-not [IO.Directory]::Exists($parent)) { return $false }
+    $entry = Get-ChildItem -LiteralPath $parent -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq $name } | Select-Object -First 1
+    if ($null -eq $entry) { return $false }
+    if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $true }
+    $linkType = $entry.PSObject.Properties['LinkType']
+    return ($null -ne $linkType -and [bool]$linkType.Value)
+}
 function Assert-SafePath([string]$Path, [switch]$SourcePath) {
     $candidate = [IO.Path]::GetFullPath($Path)
     if (-not $SourcePath -and $candidate -ne $TargetHome -and -not $candidate.StartsWith($TargetHome + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
         Stop-Deployment 'managed path is outside TargetHome'
     }
     while ($candidate) {
-        $attributes = 0
-        try { $attributes = [IO.File]::GetAttributes($candidate) }
-        catch [IO.FileNotFoundException] { }
-        catch [IO.DirectoryNotFoundException] { }
-        if ($attributes -band [IO.FileAttributes]::ReparsePoint) { Stop-Deployment "managed path is a symlink or reparse point: $candidate" }
+        if (Test-ReparsePath $candidate) { Stop-Deployment "managed path is a symlink or reparse point: $candidate" }
         if ($candidate -eq $TargetHome -or ($SourcePath -and $candidate -eq $Source)) { break }
         $parent = [IO.Path]::GetDirectoryName($candidate)
         if ($candidate -eq $parent) { break }
@@ -39,11 +57,7 @@ function Assert-OwnedState {
     Assert-SafePath $TargetHome
     $ancestor = [IO.Path]::GetDirectoryName($TargetHome)
     while ($ancestor) {
-        $attributes = 0
-        try { $attributes = [IO.File]::GetAttributes($ancestor) }
-        catch [IO.FileNotFoundException] { }
-        catch [IO.DirectoryNotFoundException] { }
-        if ($attributes -band [IO.FileAttributes]::ReparsePoint) { Stop-Deployment 'TargetHome parent is a symlink or reparse point' }
+        if (Test-ReparsePath $ancestor) { Stop-Deployment 'TargetHome parent is a symlink or reparse point' }
         $ancestor = [IO.Path]::GetDirectoryName($ancestor)
     }
     foreach ($relative in @('.local', '.local/bin', '.local/lib', '.local/share', '.local/state', '.local/run', '.config', '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml', '.bun', '.bun/bin', '.bun/managed', '.bun/install/global', '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin', '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi', '.pi/agent', '.qoder', '.minimax', '.minimax-code', '.minimax-code-install-logs')) {
@@ -65,10 +79,14 @@ function Assert-OwnedState {
         Assert-SafePath $destination
         if ($row.columns[0] -eq 'retire') { continue }
         if ($row.columns[1] -eq 'skills') {
-            # Skills are fetched after preflight. An explicit offline library
-            # can be checked now; fetched trees are checked before copying.
-            if ($env:DOTFILES_SKILLS_DIR) { Assert-CopyTree $env:DOTFILES_SKILLS_DIR $destination }
-            elseif ([IO.Directory]::Exists($destination)) { Assert-InstallerDirectory $destination }
+            # Skills are fetched after this preflight. The library the
+            # deployment copies from is validated now, and the destination
+            # root is a safe parent path. The device entries inside that
+            # root belong to the device: the copy adapter preserves and
+            # reports a collision instead of writing through it, so this
+            # preflight never traverses them.
+            if ([IO.File]::Exists($destination)) { Stop-Deployment 'skill root conflicts with a device file' }
+            if ($env:DOTFILES_SKILLS_DIR) { Assert-SkillSource $env:DOTFILES_SKILLS_DIR }
             continue
         }
         Assert-CopyTree (Join-Path $Source "deployment/agent-payload/$($row.columns[1])") $destination
@@ -153,11 +171,9 @@ function Copy-RegularTree([string]$From, [string]$To) {
     }
 }
 function Test-SkillLink([string]$Path) {
-    if (-not [IO.File]::Exists($Path) -and -not [IO.Directory]::Exists($Path)) { return $false }
-    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-    if ($null -eq $item) { return $false }
-    if ($item.LinkType) { return $true }
-    return (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+    # A link is recognized even when its target is missing: the deployment
+    # preserves it and never writes through it.
+    return (Test-ReparsePath $Path)
 }
 function Test-SkillPath([string]$Path) {
     return ([IO.File]::Exists($Path) -or [IO.Directory]::Exists($Path) -or (Test-SkillLink $Path))
@@ -185,6 +201,36 @@ function Test-SkillSelected([string]$Name, $Selections) {
     if ($Selections[$Name] -eq 'auto') { return $true }
     $requested = ",$env:DOTFILES_SKILLS,"
     return ($requested -like "*,$($Selections[$Name]),*" -or $requested -like "*,$Name,*")
+}
+function Get-DisabledSkills {
+    $disabled = @()
+    if (Test-Path -LiteralPath (Join-Path $Source 'deployment/disabled-skills.tsv')) {
+        $disabled = @(Read-Catalog 'deployment/disabled-skills.tsv' | ForEach-Object { $_.columns[0] })
+    }
+    return $disabled
+}
+# The library the deployment copies the selected skills from. Only a selected
+# skill is written, so only its source is validated: a source that carries a
+# link would copy bytes from outside the library.
+function Assert-SkillSource([string]$Library) {
+    if (-not [IO.Directory]::Exists($Library)) { Stop-Deployment "skill library is not a directory: $Library" }
+    Assert-SafePath $Library -SourcePath
+    $selections = Get-SkillSelections
+    $disabled = Get-DisabledSkills
+    foreach ($entry in (Get-ChildItem -LiteralPath $Library -Force)) {
+        if ($disabled -contains $entry.Name) { continue }
+        if (-not (Test-SkillSelected $entry.Name $selections)) { continue }
+        Assert-SkillTree $entry.FullName
+    }
+}
+# A skill source holds regular files and directories only.
+function Assert-SkillTree([string]$Path) {
+    Assert-SafePath $Path -SourcePath
+    if ([IO.Directory]::Exists($Path)) {
+        foreach ($item in (Get-ChildItem -LiteralPath $Path -Force)) { Assert-SkillTree $item.FullName }
+    } elseif (-not [IO.File]::Exists($Path)) {
+        Stop-Deployment "skill source is not a regular file or directory: $Path"
+    }
 }
 function Get-SkillRoots {
     $owned = @()
@@ -221,17 +267,57 @@ function Test-GeneratedSkill([string]$Name, [string]$Root) {
     }
     return $false
 }
+# The entries of a skill tree, relative to its root. A link is an entry of
+# its own: the comparison never follows it, so a device link is never read
+# through and never mistaken for the staged bytes.
+function Get-SkillTreeEntries([string]$Root, [string]$Base = '') {
+    if (-not [IO.Directory]::Exists($Root)) { return @() }
+    if (-not $Base) { $Base = $Root }
+    $entries = @()
+    foreach ($item in (Get-ChildItem -LiteralPath $Root -Force)) {
+        $relative = $item.FullName.Substring($Base.Length).TrimStart([char[]]@('\', '/'))
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $entries += ('l ' + $relative); continue }
+        if ($item.PSIsContainer) { $entries += ('d ' + $relative); $entries += @(Get-SkillTreeEntries $item.FullName $Base) }
+        else { $entries += ('f ' + $relative) }
+    }
+    return $entries
+}
 function Test-SkillTreeIdentical([string]$From, [string]$To) {
-    if (-not [IO.Directory]::Exists($To)) { return $false }
-    $fromFiles = @(Get-ChildItem -LiteralPath $From -Recurse -File -Force |
-        ForEach-Object { $_.FullName.Substring($From.Length).TrimStart([char[]]@('\', '/')) } | Sort-Object)
-    $toFiles = @(Get-ChildItem -LiteralPath $To -Recurse -File -Force |
-        ForEach-Object { $_.FullName.Substring($To.Length).TrimStart([char[]]@('\', '/')) } | Sort-Object)
-    if (Compare-Object $fromFiles $toFiles) { return $false }
-    foreach ($relative in $fromFiles) {
+    if (-not [IO.Directory]::Exists($From) -or -not [IO.Directory]::Exists($To)) { return $false }
+    $fromEntries = @(Get-SkillTreeEntries $From | Sort-Object)
+    $toEntries = @(Get-SkillTreeEntries $To | Sort-Object)
+    if (Compare-Object $fromEntries $toEntries) { return $false }
+    foreach ($entry in $fromEntries) {
+        if (-not $entry.StartsWith('f ')) { continue }
+        $relative = $entry.Substring(2)
         $left = Join-Path $From $relative; $right = Join-Path $To $relative
         if ((Get-FileHash -LiteralPath $left -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $right -Algorithm SHA256).Hash) { return $false }
     }
+    return $true
+}
+# Whether a tree holds a link. The walk never descends into one, so the
+# target of a link is never read.
+function Test-TreeHasLink([string]$Path) {
+    if (-not $Path) { return $false }
+    if (Test-ReparsePath $Path) { return $true }
+    foreach ($item in (Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)) {
+        if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { return $true }
+        if ($item.PSIsContainer -and (Test-TreeHasLink $item.FullName)) { return $true }
+    }
+    return $false
+}
+# Remove a tree the deployment owns. The removal never follows a link:
+# Windows PowerShell 5.1 deletes the target of a junction when a recursive
+# removal reaches it, and that target belongs to the device, not to the
+# deployment. A tree that holds a link is refused instead, so the caller
+# preserves and reports it.
+function Remove-OwnedTree([string]$Path) {
+    if (Test-TreeHasLink $Path) { return $false }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) { return $true }
+    if (-not $item.PSIsContainer) { Remove-Item -LiteralPath $Path -Force; return $true }
+    foreach ($child in (Get-ChildItem -LiteralPath $Path -Force)) { Remove-OwnedTree $child.FullName }
+    Remove-Item -LiteralPath $Path -Force
     return $true
 }
 function Copy-ManagedSkill([string]$From, [string]$To, [string]$Name, [string]$Root) {
@@ -245,7 +331,10 @@ function Copy-ManagedSkill([string]$From, [string]$To, [string]$Name, [string]$R
             return
         }
         if ($script:PreviousManaged -contains ($Name + '|' + $Root)) {
-            Remove-Item -LiteralPath $To -Recurse -Force
+            if (-not (Remove-OwnedTree $To)) {
+                [Console]::Error.WriteLine("dotfiles: preserved managed skill $Name in $Root; it holds a link, so the deployment did not replace it")
+                return
+            }
         } elseif (Test-SkillTreeIdentical $From $To) {
             $script:SkillWritten += ($Name + '|' + $Root)
             return
@@ -257,24 +346,52 @@ function Copy-ManagedSkill([string]$From, [string]$To, [string]$Name, [string]$R
     Copy-RegularTree $From $To
     $script:SkillWritten += ($Name + '|' + $Root)
 }
+# A generated skill owns one file. A device directory that holds exactly
+# these bytes is adopted without a rewrite; a directory that holds anything
+# else keeps its own bytes and stays the device's.
+function Test-GeneratedSkillIdentical([string]$From, [string]$To) {
+    if (-not [IO.Directory]::Exists($To)) { return $false }
+    $source = Join-Path $From 'SKILL.md'
+    $target = Join-Path $To 'SKILL.md'
+    if (-not [IO.File]::Exists($source) -or -not [IO.File]::Exists($target)) { return $false }
+    if (Test-SkillLink $target) { return $false }
+    $entries = @(Get-ChildItem -LiteralPath $To -Force)
+    if ($entries.Count -ne 1 -or $entries[0].Name -ne 'SKILL.md') { return $false }
+    return ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -eq
+        (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash)
+}
+# Copy one generated skill into a managed root. Returns $true only when the
+# deployment owns the destination afterwards (copied, refreshed, adopted
+# identical bytes, or kept unchanged because a link made a replacement
+# unsafe); a preserved device entry returns $false so the caller never
+# records it as owned.
 function Copy-GeneratedSkill([string]$From, [string]$To, [string]$Name, [string]$Root) {
     if (Test-SkillLink $To) {
         [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device symlink has that name")
-        return
+        return $false
     }
     if (Test-SkillPath $To) {
         if (-not [IO.Directory]::Exists($To)) {
             [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device file has that name")
-            return
+            return $false
         }
-        if (Test-SkillTreeIdentical $From $To) { return }
+        if (Test-SkillLink (Join-Path $To 'SKILL.md')) {
+            [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device symlink has that name")
+            return $false
+        }
         if (-not (Test-GeneratedSkill $Name $Root)) {
-            [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device directory has that name")
-            return
+            if (Test-GeneratedSkillIdentical $From $To) { return $true }
+            [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device directory has that name and its bytes differ")
+            return $false
         }
-        Remove-Item -LiteralPath $To -Recurse -Force
+        if (Test-GeneratedSkillIdentical $From $To) { return $true }
+        if (-not (Remove-OwnedTree $To)) {
+            [Console]::Error.WriteLine("dotfiles: preserved generated skill $Name in $Root; it holds a link, so the deployment did not replace it")
+            return $true
+        }
     }
     Copy-RegularTree $From $To
+    return $true
 }
 function Copy-GeneratedSkills {
     $rows = @(Get-GeneratedSkillRows)
@@ -286,9 +403,12 @@ function Copy-GeneratedSkills {
         if (-not [IO.Directory]::Exists($generatedSource)) { continue }
         foreach ($targetRoot in (Get-SkillRoots)) {
             if ($targetRoot -eq $root) { continue }
-            Copy-GeneratedSkill $generatedSource (Join-Path $TargetHome "$targetRoot/$name") $name $targetRoot
-            $generator = if ($fields.Count -ge 3) { $fields[2] } else { 'generated' }
-            $wanted += ($name + '|' + $targetRoot + '|' + $generator)
+            # Only an owned destination is recorded: a preserved device entry
+            # must stay unrecorded so a later apply never claims it.
+            if (Copy-GeneratedSkill $generatedSource (Join-Path $TargetHome "$targetRoot/$name") $name $targetRoot) {
+                $generator = if ($fields.Count -ge 3) { $fields[2] } else { 'generated' }
+                $wanted += ($name + '|' + $targetRoot + '|' + $generator)
+            }
         }
     }
     if ($wanted.Count) {
@@ -322,7 +442,10 @@ function Complete-SkillInventory {
             [Console]::Error.WriteLine("dotfiles: preserved managed skill $name in $root; it is not a managed directory")
             $kept += $row; continue
         }
-        Remove-Item -LiteralPath $path -Recurse -Force
+        if (-not (Remove-OwnedTree $path)) {
+            [Console]::Error.WriteLine("dotfiles: preserved managed skill $name in $root; it holds a link, so the deployment did not prune it")
+            $kept += $row; continue
+        }
         [Console]::Error.WriteLine("dotfiles: pruned managed skill $name from $root")
     }
     $all = @($script:SkillWritten + $kept | Sort-Object -Unique)
@@ -537,10 +660,7 @@ function Import-SkillLibrary {
 }
 function Copy-AgentPayload {
     $script:Step = 'apply-source.agent-payload'
-    $disabled = @()
-    if (Test-Path -LiteralPath (Join-Path $Source 'deployment/disabled-skills.tsv')) {
-        $disabled = @(Read-Catalog 'deployment/disabled-skills.tsv' | ForEach-Object { $_.columns[0] })
-    }
+    $disabled = Get-DisabledSkills
     $backup = $null
     $selections = Get-SkillSelections
     $script:SkillWritten = @()

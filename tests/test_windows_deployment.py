@@ -687,6 +687,334 @@ Install-Qoder $env:DOTFILES_TEST_QODER_VERSION 'https://example.invalid'
         self.assertEqual((self.home / '.claude/skills/herdr/SKILL.md').read_bytes(),
                          (generated / 'SKILL.md').read_bytes())
 
+    def generated_skill_fixture(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual source apply needs Chezmoi')
+        generated = self.home / '.agents/skills/herdr'
+        generated.mkdir(parents=True)
+        (generated / 'SKILL.md').write_text('---\nname: herdr\ndescription: generated skill\n---\n')
+        state = self.home / '.local/state/dotfiles/generated-skills.tsv'
+        state.parent.mkdir(parents=True)
+        state.write_text('# name|root|generator\nherdr|.agents/skills|herdr --skill\n')
+        return chezmoi, generated, state
+
+    def deploy_generated(self, chezmoi):
+        return self.deploy('-ApplyOnly', env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi,
+            DOTFILES_SKILLS_DIR=str(SOURCE / 'tests/fixtures/skill-library')))
+
+    def test_generated_skill_collisions_stay_device_owned_on_repeated_apply(self):
+        chezmoi, generated, state = self.generated_skill_fixture()
+        device = self.home / '.claude/skills/herdr'
+        device.mkdir(parents=True)
+        (device / 'SKILL.md').write_text('device herdr bytes\n')
+        device_file = self.home / '.minimax/skills/herdr'
+        device_file.parent.mkdir(parents=True)
+        device_file.write_text('device file\n')
+        for _ in range(2):
+            result = self.deploy_generated(chezmoi)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((device / 'SKILL.md').read_text(), 'device herdr bytes\n')
+            self.assertEqual(device_file.read_text(), 'device file\n')
+            self.assertIn('preserved skill herdr in .claude/skills; '
+                          'a device directory has that name and its bytes differ', result.stderr)
+            self.assertIn('preserved skill herdr in .minimax/skills; a device file has that name',
+                          result.stderr)
+            rows = state.read_text()
+            self.assertNotIn('herdr|.claude/skills', rows)
+            self.assertNotIn('herdr|.minimax/skills', rows)
+            self.assertIn('herdr|.agents/skills|herdr --skill', rows)
+
+    def test_generated_skill_identical_directory_is_adopted_and_later_refreshed(self):
+        chezmoi, generated, state = self.generated_skill_fixture()
+        device = self.home / '.claude/skills/herdr'
+        device.mkdir(parents=True)
+        skill = device / 'SKILL.md'
+        skill.write_bytes((generated / 'SKILL.md').read_bytes())
+        stamp = 1000000000
+        os.utime(skill, (stamp, stamp))
+        result = self.deploy_generated(chezmoi)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # Adoption records the entry without rewriting the device's file.
+        self.assertEqual(skill.stat().st_mtime, stamp)
+        self.assertIn('herdr|.claude/skills|herdr --skill', state.read_text())
+        # The adopted entry is owned now, so changed source bytes refresh it.
+        (generated / 'SKILL.md').write_text('---\nname: herdr\ndescription: refreshed\n---\n')
+        refreshed = self.deploy_generated(chezmoi)
+        self.assertEqual(refreshed.returncode, 0, refreshed.stderr)
+        self.assertEqual(skill.read_bytes(), (generated / 'SKILL.md').read_bytes())
+        self.assertIn('herdr|.claude/skills|herdr --skill', state.read_text())
+
+    def test_generated_skill_extra_file_prevents_adoption(self):
+        chezmoi, generated, state = self.generated_skill_fixture()
+        device = self.home / '.minimax/skills/herdr'
+        device.mkdir(parents=True)
+        (device / 'SKILL.md').write_bytes((generated / 'SKILL.md').read_bytes())
+        (device / 'notes.md').write_text('device notes\n')
+        for _ in range(2):
+            result = self.deploy_generated(chezmoi)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((device / 'notes.md').read_text(), 'device notes\n')
+            self.assertIn('preserved skill herdr in .minimax/skills; '
+                          'a device directory has that name and its bytes differ', result.stderr)
+            self.assertNotIn('herdr|.minimax/skills', state.read_text())
+
+    def test_generated_skill_symlink_is_preserved_and_unrecorded(self):
+        chezmoi, generated, state = self.generated_skill_fixture()
+        outside = self.root / 'outside-herdr'
+        outside.mkdir()
+        (outside / 'SKILL.md').write_text('outside bytes\n')
+        root = self.home / '.claude/skills'
+        root.mkdir(parents=True)
+        try:
+            (root / 'herdr').symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        for _ in range(2):
+            result = self.deploy_generated(chezmoi)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn('preserved skill herdr in .claude/skills; a device symlink has that name',
+                          result.stderr)
+            self.assertNotIn('herdr|.claude/skills', state.read_text())
+        self.assertEqual((outside / 'SKILL.md').read_text(), 'outside bytes\n')
+
+    def device_skill_collisions(self, outside):
+        """Device entries that carry the name of a selected skill."""
+        link = self.home / '.claude/skills/tdd'
+        link.parent.mkdir(parents=True)
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        device_file = self.home / '.minimax/skills/tdd'
+        device_file.parent.mkdir(parents=True)
+        device_file.write_text('device file\n')
+        device_directory = self.home / '.agents/skills/tdd'
+        device_directory.mkdir(parents=True)
+        (device_directory / 'SKILL.md').write_text('device skill bytes\n')
+        nested = self.root / 'nested-device-link'
+        nested.mkdir()
+        (nested / 'untouched').write_text('device bytes\n')
+        try:
+            (device_directory / 'linked').symlink_to(nested, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        return link, device_file, device_directory
+
+    def test_skill_collisions_are_preserved_with_an_offline_library(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual source apply needs Chezmoi')
+        outside = self.root / 'outside-tdd'
+        outside.mkdir()
+        (outside / 'untouched').write_text('device bytes\n')
+        link, device_file, device_directory = self.device_skill_collisions(outside)
+        for _ in range(2):
+            result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            # A device link is preserved, reported, and never followed.
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(sorted(path.name for path in outside.iterdir()), ['untouched'])
+            self.assertIn('preserved skill tdd in .claude/skills; a device symlink has that name',
+                          result.stderr)
+            # A device file keeps its bytes.
+            self.assertTrue(device_file.is_file())
+            self.assertEqual(device_file.read_text(), 'device file\n')
+            self.assertIn('preserved skill tdd in .minimax/skills; a device file has that name',
+                          result.stderr)
+            # A device directory keeps its bytes, and the preflight never
+            # traverses the link inside it.
+            self.assertEqual((device_directory / 'SKILL.md').read_text(), 'device skill bytes\n')
+            self.assertTrue((device_directory / 'linked').is_symlink())
+            self.assertEqual(sorted(path.name for path in (self.root / 'nested-device-link').iterdir()),
+                             ['untouched'])
+            self.assertIn('preserved skill tdd in .agents/skills; '
+                          'a device directory has that name and its bytes differ', result.stderr)
+            # A preserved entry is never recorded, so the device keeps it.
+            inventory = (self.home / '.local/state/dotfiles/managed-skills.tsv').read_text()
+            for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
+                self.assertNotIn(f'tdd|{root}', inventory)
+
+    def test_skill_collisions_are_preserved_with_a_fetched_library(self):
+        # The fetched library is staged by the import step; the copy adapter
+        # preserves the same collisions the offline library produces.
+        skill_file = self.root / 'fetched-SKILL.md'
+        skill_file.write_text('# fetched skill\n')
+        home = self.root / 'fetched-device'
+        archive = home / '.cache/dotfiles/skills/tarballs/example.invalid_skill.tgz.tgz'
+        archive.parent.mkdir(parents=True)
+        with tarfile.open(archive, 'w:gz') as payload:
+            payload.add(skill_file, arcname='SKILL.md')
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        outside = self.root / 'outside-fetched'
+        outside.mkdir()
+        (outside / 'untouched').write_text('device bytes\n')
+        link = home / '.claude/skills/demo'
+        link.parent.mkdir(parents=True)
+        try:
+            link.symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        device_file = home / '.minimax/skills/demo'
+        device_file.parent.mkdir(parents=True)
+        device_file.write_text('device file\n')
+        adopted = home / '.agents/skills/demo'
+        adopted.mkdir(parents=True)
+        (adopted / 'SKILL.md').write_bytes(skill_file.read_bytes())
+        temporary = home / '.cache/tmp'
+        temporary.mkdir(parents=True, exist_ok=True)
+        script = self.root / 'fetched-collisions.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{
+    cache = (Join-Path $TargetHome '.cache')
+    state = (Join-Path $TargetHome '.local/state')
+    appData = (Join-Path $TargetHome 'AppData/Roaming')
+}
+$exceptions = @()
+function Read-Catalog([string]$Relative) {
+    if ($Relative -eq 'deployment/skills.lock.tsv') {
+        @{ columns = @('demo', 'tarball', 'https://example.invalid/skill.tgz', $env:DOTFILES_TEST_DIGEST) }
+    } elseif ($Relative -eq 'deployment/skills.tsv') {
+        @{ columns = @('demo', 'tarball', 'https://example.invalid/skill.tgz', '', '', 'auto') }
+    } else {
+        foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source $Relative))) {
+            if ($line -and -not $line.StartsWith('#')) { @{ columns = $line.Split('|') } }
+        }
+    }
+}
+. (Join-Path $Source 'deployment/windows.ps1')
+function Invoke-WebRequest { throw 'unexpected network request' }
+Assert-OwnedState
+Import-SkillLibrary
+Copy-AgentPayload
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(home),
+                           DOTFILES_TEST_DIGEST=digest, DOTFILES_SKILLS_DIR='', DOTFILES_SKILLS_REFRESH='0',
+                           TEMP=str(temporary))
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(sorted(path.name for path in outside.iterdir()), ['untouched'])
+        self.assertIn('preserved skill demo in .claude/skills; a device symlink has that name', result.stderr)
+        self.assertEqual(device_file.read_text(), 'device file\n')
+        self.assertIn('preserved skill demo in .minimax/skills; a device file has that name', result.stderr)
+        inventory = (home / '.local/state/dotfiles/managed-skills.tsv').read_text()
+        self.assertNotIn('demo|.claude/skills', inventory)
+        self.assertNotIn('demo|.minimax/skills', inventory)
+        # A device directory that already holds the fetched bytes is adopted.
+        self.assertIn('demo|.agents/skills', inventory)
+
+    def test_dangling_skill_link_is_preserved_and_never_written_through(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual source apply needs Chezmoi')
+        missing = self.root / 'missing-target'
+        link = self.home / '.claude/skills/tdd'
+        link.parent.mkdir(parents=True)
+        try:
+            link.symlink_to(missing, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(link.is_symlink())
+        self.assertFalse(missing.exists(), 'the deployment created the target of a device link')
+        self.assertIn('preserved skill tdd in .claude/skills; a device symlink has that name', result.stderr)
+        inventory = (self.home / '.local/state/dotfiles/managed-skills.tsv').read_text()
+        self.assertNotIn('tdd|.claude/skills', inventory)
+
+    def test_recorded_skill_with_a_nested_junction_keeps_the_external_target(self):
+        # Windows PowerShell 5.1 follows a junction during a recursive
+        # removal, so replacing a recorded skill tree would delete the
+        # target of a link inside it. The deployment must refuse that tree.
+        if os.name != 'nt':
+            self.skipTest('a nested junction requires native Windows')
+        home = self.root / 'junction-device'
+        skill = home / '.claude/skills/tdd'
+        skill.mkdir(parents=True)
+        (skill / 'SKILL.md').write_text('# device bytes\n')
+        state = home / '.local/state/dotfiles/managed-skills.tsv'
+        state.parent.mkdir(parents=True)
+        state.write_text('# name|root\ntdd|.claude/skills\n')
+        outside = self.root / 'junction-outside'
+        outside.mkdir()
+        sentinel = outside / 'sentinel.txt'
+        sentinel.write_bytes(b'external sentinel\n')
+        temporary = home / '.cache/tmp'
+        temporary.mkdir(parents=True)
+        script = self.root / 'junction-skill.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{
+    cache = (Join-Path $TargetHome '.cache')
+    state = (Join-Path $TargetHome '.local/state')
+    appData = (Join-Path $TargetHome 'AppData/Roaming')
+}
+$exceptions = @()
+function Read-Catalog([string]$Relative) {
+    foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source $Relative))) {
+        if ($line -and -not $line.StartsWith('#')) { @{ columns = $line.Split('|') } }
+    }
+}
+. (Join-Path $Source 'deployment/windows.ps1')
+function Invoke-WebRequest { throw 'unexpected network request' }
+# The deployment owns the recorded directory, but the link inside it points
+# outside the home.
+New-Item -ItemType Junction -Path (Join-Path $TargetHome '.claude/skills/tdd/linked') -Value $env:DOTFILES_TEST_OUTSIDE | Out-Null
+Assert-OwnedState
+Import-SkillLibrary
+Copy-AgentPayload
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(home),
+                           DOTFILES_TEST_OUTSIDE=str(outside),
+                           DOTFILES_SKILLS_DIR=str(SOURCE / 'tests/fixtures/skill-library'),
+                           TEMP=str(temporary))
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # The external target survives: the deployment refused to remove a
+        # tree that holds a link.
+        self.assertTrue(sentinel.is_file())
+        self.assertEqual(sentinel.read_bytes(), b'external sentinel\n')
+        self.assertEqual(sorted(path.name for path in outside.iterdir()), ['sentinel.txt'])
+        self.assertIn('preserved managed skill tdd in .claude/skills; it holds a link, '
+                      'so the deployment did not replace it', result.stderr)
+        # The recorded tree keeps its bytes and its link, and stays recorded.
+        self.assertEqual((skill / 'SKILL.md').read_text(), '# device bytes\n')
+        self.assertTrue((skill / 'linked').is_dir())
+        self.assertIn('tdd|.claude/skills', state.read_text())
+        # The other managed roots receive the skill unchanged.
+        for root in ('.agents/skills', '.minimax/skills'):
+            self.assertTrue((home / root / 'tdd/SKILL.md').is_file(), root)
+
+    def test_unsafe_skill_parent_path_fails_without_writing_through(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual source apply needs Chezmoi')
+        outside = self.root / 'outside-root'
+        outside.mkdir()
+        (outside / 'untouched').write_text('device bytes\n')
+        root = self.home / '.claude/skills'
+        root.parent.mkdir(parents=True)
+        try:
+            root.symlink_to(outside, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('symlink or reparse', result.stderr)
+        # The deployment refused the root instead of writing the skills
+        # through the device link.
+        self.assertEqual(sorted(path.name for path in outside.iterdir()), ['untouched'])
+        self.assert_original_profile_unchanged()
+
     def test_agent_launchers_use_validated_external_node_and_preserve_native_entries(self):
         node = os.environ.get('DOTFILES_TEST_NODE') or shutil.which('node')
         if not node:
@@ -1065,7 +1393,7 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertEqual(Path(values[0]), self.home / '.config/nushell')
         self.assertEqual(values[1:], ['hx', 'managed'])
 
-    def test_invalid_selections_and_nested_symlinks_fail_before_mutation(self):
+    def test_invalid_selections_fail_before_mutation(self):
         for args in (('-Plan', '-Arch', 'arm64'), ('-Plan', '-Bundles', 'bio'),
                      ('-Plan', '-Profile', 'windows-workstation', '-Role', 'remote-compute'),
                      ('-Plan', '-Agents', 'unknown'), ('-ApplyOnly', '-AgentsOnly')):
@@ -1073,17 +1401,6 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
                 result = self.deploy(*args)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse(self.home.exists())
-        self.home.mkdir()
-        target = self.home / '.agents/skills/tdd'
-        target.parent.mkdir(parents=True)
-        try:
-            target.symlink_to(self.original, target_is_directory=True)
-        except OSError:
-            self.skipTest('OS policy prohibits creating the test symlink')
-        result = self.deploy('-ApplyOnly')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn('symlink or reparse', result.stderr)
-        self.assert_original_profile_unchanged()
 
     def test_native_installer_directory_rejects_nested_reparse_paths_before_application(self):
         chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
