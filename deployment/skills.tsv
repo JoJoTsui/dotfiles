@@ -4,6 +4,9 @@
 # selection auto: the deployment fetches and installs the skill.
 # selection <tag>: the skill is not deployed automatically; a host asks for it
 # with DOTFILES_SKILLS=<tag> (or by name).
+academic-paper|git|https://github.com/Imbad0202/academic-research-skills|main|academic-paper|auto
+academic-paper-reviewer|git|https://github.com/Imbad0202/academic-research-skills|main|academic-paper-reviewer|auto
+academic-pipeline|git|https://github.com/Imbad0202/academic-research-skills|main|academic-pipeline|auto
 ask-matt|git|https://github.com/mattpocock/skills|main|skills/engineering/ask-matt|auto
 baoyu-diagram|git|https://github.com/jimliu/baoyu-skills|main|skills/baoyu-diagram|auto
 baoyu-slide-deck|git|https://github.com/jimliu/baoyu-skills|main|skills/baoyu-slide-deck|auto
@@ -25,6 +28,7 @@ chief-of-staff|git|https://github.com/mattpocock/skills|main|skills/in-progress/
 claude-handoff|git|https://github.com/mattpocock/skills|main|skills/in-progress/claude-handoff|auto
 code-review|git|https://github.com/mattpocock/skills|main|skills/engineering/code-review|auto
 codebase-design|git|https://github.com/mattpocock/skills|main|skills/engineering/codebase-design|auto
+deep-research|git|https://github.com/Imbad0202/academic-research-skills|main|deep-research|auto
 diagnosing-bugs|git|https://github.com/mattpocock/skills|main|skills/engineering/diagnosing-bugs|auto
 domain-modeling|git|https://github.com/mattpocock/skills|main|skills/engineering/domain-modeling|auto
 git-guardrails-claude-code|git|https://github.com/mattpocock/skills|main|skills/misc/git-guardrails-claude-code|auto
@@ -85,6 +89,7 @@ setup-matt-pocock-skills|git|https://github.com/mattpocock/skills|main|skills/en
 setup-pre-commit|git|https://github.com/mattpocock/skills|main|skills/misc/setup-pre-commit|auto
 setup-ts-deep-modules|git|https://github.com/mattpocock/skills|main|skills/in-progress/setup-ts-deep-modules|auto
 show-me|git|https://github.com/humanlayer/skills|main|plugins/show-me/skills/show-me|auto
+sr-screener|git|https://github.com/Imbad0202/academic-research-skills|main|sr-screener|auto
 surgical-patch|git|https://github.com/JuliusBrussee/caveman|main|skills/surgical-patch|auto
 tdd|git|https://github.com/mattpocock/skills|main|skills/engineering/tdd|auto
 teach|git|https://github.com/mattpocock/skills|main|skills/productivity/teach|auto

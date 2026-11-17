@@ -18,12 +18,16 @@
 # reference file         whether the skill ships a reference file beside the
 #                        root document. A root document with a reference file
 #                        may be longer, because the detail lives beside it.
+academic-paper|1003|683|yes|the upstream description lists the modes, paper types, citation formats, and multilingual triggers; the root ships references and the bytes are upstream's
+academic-paper-reviewer|878|562|yes|the upstream description lists the review modes, panel roles, and multilingual triggers; the root ships references and the bytes are upstream's
+academic-pipeline|783|777|yes|the upstream description names the pipeline stages and multilingual triggers; the root ships references and the bytes are upstream's
 baoyu-diagram|586|307|yes|the upstream description names every diagram type and trigger; the bytes are upstream's and are not rewritten
 caveman-explore|246|42|no|the upstream description names the situations to skip and the one to use; the bytes are upstream's and are not rewritten
 caveman-learn|293|176|yes|the upstream description names every trigger and the per-edit consent flow; the bytes are upstream's and are not rewritten
 caveman-setup|170|222|no|the root document carries the upstream gateway guide and the skill ships no reference file; the bytes are upstream's and are not rewritten
 code-review|419|89|no|the upstream description names both review axes and the parallel reviews; the bytes are upstream's and are not rewritten
 codebase-design|265|114|yes|the upstream description lists the design questions the vocabulary answers; the bytes are upstream's and are not rewritten
+deep-research|1021|729|yes|the upstream description names the research modes, methods, and multilingual triggers; the root ships references and the bytes are upstream's
 git-guardrails-claude-code|243|95|no|the upstream description names the commands the hooks block; the bytes are upstream's and are not rewritten
 graphify|353|795|yes|the upstream description names the query path and the graph tools; the root document is long and the skill ships eight reference files
 guizang-ppt-skill|247|636|yes|the upstream description names both visual styles and the web-PPT routes; the bytes are upstream's and are not rewritten
@@ -37,6 +41,7 @@ lark-event|265|158|yes|the upstream description names the event stream and the r
 lark-sheets|464|139|yes|the upstream description names the sheet operations, formulas, and hand-offs; the bytes are upstream's and are not rewritten
 lark-slides|265|310|yes|the upstream description names the slide operations and the routing rules; the bytes are upstream's and are not rewritten
 lark-wiki|303|118|yes|the upstream description names the wiki spaces, members, and nodes; the bytes are upstream's and are not rewritten
+sr-screener|1015|516|yes|the upstream description names the screening modes, inputs, and multilingual triggers; the root ships references and the bytes are upstream's
 to-tickets|247|105|no|the upstream description names the ticket shape and the tracker the tickets reach; the bytes are upstream's and are not rewritten
 wizard|313|44|no|the upstream description names the steps only a human can perform; the bytes are upstream's and are not rewritten
 worktrunk|503|166|yes|the upstream description names every hook and configuration path the skill covers; the bytes are upstream's and are not rewritten

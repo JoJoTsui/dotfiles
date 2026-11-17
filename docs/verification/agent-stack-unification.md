@@ -83,25 +83,30 @@ preferred-workflows section is present, and the retired Kimi file is absent.
 
 ## Skill evidence
 
-The active catalog holds 99 rows: 66 `auto`, 14 `caveman`, 19 `lark`.
+The active catalog holds 104 rows: 71 `auto`, 14 `caveman`, 19 `lark`.
 `find-skills` is disabled and is no longer in the active catalog. The live
 device loads the reviewed profile:
 
-- 67 skills per managed root: the 66 automatic entries plus the generated
+- 72 skills per managed root: the 71 automatic entries plus the generated
   `herdr` skill. The shared tree, Claude's copy, and MiniMax's copy all agree.
-- The four design skills and the nine lark documentation skills are in the
-  automatic core: `lark-doc`, `lark-sheets`, `lark-shared`, `lark-drive`,
-  `lark-whiteboard`, `lark-base`, `lark-wiki`, `lark-markdown`, and
-  `lark-openapi-explorer`. The remaining 33 tagged entries (14 `caveman`, 19
-  `lark`) are not loaded.
+- The four design skills, the nine lark documentation skills, and the five
+  `Imbad0202/academic-research-skills` skills (`academic-paper`,
+  `academic-paper-reviewer`, `academic-pipeline`, `deep-research`, and
+  `sr-screener`) are in the automatic core. The remaining 33 tagged entries
+  (14 `caveman`, 19 `lark`) are not loaded.
+- The academic suite is copied as the upstream's standalone skill folders: each
+  carries its `agents/`, `references/`, `examples/`, and `templates/` (and
+  `sr-screener` its `scripts/`). The repository-level `shared/` protocols and
+  the plugin commands/hooks are not part of a standalone copy; the full plugin
+  orchestration is a separate upstream install route.
 - `find-skills` is quarantined under
   `~/.local/state/dotfiles/disabled-integrations/` in the shared tree and both
   copy roots. The Claude symlink for `resolving-merge-conflicts` is a device
   entry and remains untouched.
-- `managed-skills.tsv` records 197 managed directories (66 × 3 minus the one
+- `managed-skills.tsv` records 212 managed directories (71 × 3 minus the one
   device symlink that the deployment preserves rather than owns).
-- `python3 deployment/update_skills.py check`: 17 catalog rows over the budget,
-  22 reviewed exceptions (5 name tagged rows outside the current library), the
+- `python3 deployment/update_skills.py check`: 22 catalog rows over the budget,
+  27 reviewed exceptions (5 name tagged rows outside the current library), the
   generated `herdr` skill reported outside the catalog budget, and **no ratchet
   failures**.
 - The CLI lockfile reports its disabled/uncatalogued entries with exact

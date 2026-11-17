@@ -214,6 +214,15 @@ The four design skills (`baoyu-diagram`, `baoyu-slide-deck`,
 lock pins an upstream commit that ships the declared path. `impeccable` was in
 neither record, so its upstream path is the one its repository publishes.
 
+The five skills of `Imbad0202/academic-research-skills` (`academic-paper`,
+`academic-paper-reviewer`, `academic-pipeline`, `deep-research`, and
+`sr-screener`) are also automatic. The catalog copies each upstream skill
+folder, matching the project's standalone layout: the skill's own agents,
+references, examples, and templates are included (`sr-screener` also its
+scripts). The repository-level `shared/` protocols and the plugin commands and
+hooks are not part of a standalone copy; the full plugin orchestration remains
+a separate upstream install route.
+
 One name belongs to one discovery root per client. Pi reads the shared tree
 natively and also scans its own user root (`~/.pi/agent/skills`), so a name in
 both roots is a collision: Pi keeps the first copy it finds and warns about

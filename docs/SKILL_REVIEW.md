@@ -78,7 +78,13 @@ the caveman mode with its compress skill, the six generic engineering skills of
 the caveman repository, the four design skills, and the lark documentation
 cluster (`lark-doc`, `lark-sheets`, `lark-shared`, `lark-drive`,
 `lark-whiteboard`, `lark-base`, `lark-wiki`, `lark-markdown`,
-`lark-openapi-explorer`). The other caveman-branded skills and the remaining
+`lark-openapi-explorer`). The five `Imbad0202/academic-research-skills` suite
+skills (`academic-paper`, `academic-paper-reviewer`, `academic-pipeline`,
+`deep-research`, `sr-screener`) are also automatic. They are copied as the
+upstream's standalone skill folders, which carry their own agents, references,
+examples, and templates, but not the repository-level `shared/` protocols or
+the plugin commands and hooks; the full plugin orchestration is a separate
+upstream install route. The other caveman-branded skills and the remaining
 Feishu skills stay behind their tags. `find-skills` is disabled.
 
 ## The ownership rules
