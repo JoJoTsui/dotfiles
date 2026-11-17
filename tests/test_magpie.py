@@ -975,6 +975,24 @@ class MagpieApplyTests(unittest.TestCase):
         self.apply()
         self.assertEqual(codex.read_text(encoding="utf-8"), 'model = "gpt-6-luna"\n')
 
+    def test_the_reapply_repairs_a_missing_pi_model_file(self):
+        self.assertEqual(self.apply().returncode, 0)
+        models = self.home / ".pi/agent/models.json"
+        self.assertTrue(models.is_file())
+        # Magpie generates the model file when it wires Pi. A device that lost
+        # it keeps the recorded wiring, so only the file proves the wiring is
+        # gone.
+        models.unlink()
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the Pi model file is missing", result.stdout)
+        self.assertTrue(models.is_file())
+        # The agent is wired again even though the recorded state still names
+        # the group.
+        self.assertEqual([command for command in self.commands() if command == "pi group/workhorse"],
+                         ["pi group/workhorse", "pi group/workhorse"])
+        self.assertIn("wiring|pi|group/workhorse", self.state_file().read_text(encoding="utf-8"))
+
 
 class MagpieSwitchTests(unittest.TestCase):
     """The bootstrap switch decides whether the gateway is wired."""
@@ -1088,6 +1106,7 @@ class MagpieCommandTests(MagpieApplyTests):
 
     def healthy_gateway(self):
         """A gateway that answers with every provider, group, visibility and pick."""
+        self.healthy_client_wiring()
         self.state.mkdir(parents=True, exist_ok=True)
         (self.state / "providers.json").write_text(
             json.dumps(["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]),
@@ -1141,6 +1160,36 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertIn("gateway|", result.stdout)
         self.assertIn("group|workhorse|", result.stdout)
         self.assertIn("wiring|pi|group/workhorse", result.stdout)
+
+    def test_the_status_names_the_drifted_client_wiring(self):
+        self.seed_home()
+        self.healthy_gateway()
+        claude = self.home / ".claude/settings.json"
+        settings = json.loads(claude.read_text(encoding="utf-8"))
+        settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"] = "group/workhorse"
+        claude.write_text(json.dumps(settings), encoding="utf-8")
+        pi = self.home / ".pi/agent/settings.json"
+        settings = json.loads(pi.read_text(encoding="utf-8"))
+        settings["defaultProvider"] = "other"
+        pi.write_text(json.dumps(settings), encoding="utf-8")
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("wiring|claude|drift (env.ANTHROPIC_DEFAULT_SONNET_MODEL)", result.stdout)
+        self.assertIn("wiring|pi|drift (defaultProvider)", result.stdout)
+        self.assertIn("wiring claude", result.stderr)
+        self.assertIn("wiring pi", result.stderr)
+
+    def test_the_status_names_a_missing_client_file_and_model_file(self):
+        self.seed_home()
+        self.healthy_gateway()
+        (self.home / ".claude/settings.json").unlink()
+        (self.home / ".pi/agent/models.json").unlink()
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("wiring|claude|missing", result.stdout)
+        self.assertIn("models|pi|missing", result.stdout)
+        self.assertIn("wiring claude", result.stderr)
+        self.assertIn("models pi", result.stderr)
 
     def test_the_status_reports_the_dsh_group_and_the_official_row(self):
         self.seed_home()

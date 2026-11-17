@@ -337,6 +337,11 @@ dotfiles-magpie test conductor.deepseek   # one role
 `providers` prints the catalog with the state of each credential source and
 never a value.
 
+`apply` runs the same engine as the deployment step and wires the
+Magpie-owned agents. The repo-owned Claude Code and Pi settings migrate
+through the deployment's client-settings merger, which the standalone
+command does not carry; it reports that it leaves them to the deployment.
+
 ### `dotfiles-magpie test`
 
 `test [role…]` sends one completion to each requested model role, or to every

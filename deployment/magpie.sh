@@ -1723,6 +1723,13 @@ picked:$agent"
            printf '%s\n' "$change" | grep -qx "picked:$agent"; then
             forced=yes
         fi
+        # Magpie generates Pi's model file when it wires the agent. A missing
+        # one means the wiring is gone even when the recorded state still
+        # names the group, so the agent is wired again and the file returns.
+        if [ "$agent" = pi ] && [ ! -f "$HOME/.pi/agent/models.json" ]; then
+            forced=yes
+            printf 'dotfiles: magpie: the Pi model file is missing; the agent %s will be wired again\n' "$agent"
+        fi
         if [ "$recorded" = "$group" ] && [ "$forced" = no ]; then
             printf 'dotfiles: magpie: the agent %s is already wired to %s\n' "$agent" "$group"
             continue
@@ -2096,12 +2103,118 @@ magpie_test() {
     return "$failed"
 }
 
+# The routing group one agent's wiring row names.
+magpie_wiring_group() {
+    local agent=$1 index
+    for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
+        if [ "${MAGPIE_WIRING_AGENT[index]}" = "$agent" ]; then
+            printf '%s' "${MAGPIE_WIRING_GROUP[index]}"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# The client settings file that holds one agent's repo-owned wiring. Only the
+# agents whose settings the deployment writes have one.
+magpie_client_settings_file() {
+    case "$1" in
+        claude) printf '%s/.claude/settings.json' "$HOME" ;;
+        pi) printf '%s/.pi/agent/settings.json' "$HOME" ;;
+        *) return 1 ;;
+    esac
+}
+
+# The required client wiring of one agent, read from the live settings file.
+# The client-settings templates are the writer and this is the same contract:
+# Claude's gateway endpoint and tier aliases, Pi's default provider, model,
+# and thinking level. Two fields are deliberately never read: the credential
+# ANTHROPIC_AUTH_TOKEN, and Claude's own model alias, which the client may
+# rewrite after a run while the tier aliases keep routing to the group.
+# Prints "state|detail": wired, missing, or unreadable with an empty detail,
+# or drift with the comma-joined key paths that differ. Only the named keys
+# are read; no other setting and no credential value reaches the report.
+magpie_client_wiring_state() {
+    local agent=$1 file group spec python keys spec_file
+    file=$(magpie_client_settings_file "$agent") || return 1
+    [ -f "$file" ] || { printf 'missing|'; return 0; }
+    group=$(magpie_wiring_group "$agent") || return 1
+    case "$agent" in
+        claude)
+            spec=$(printf '%s\n' \
+                "[\"env\",\"ANTHROPIC_BASE_URL\"]|$MAGPIE_GATEWAY_DEFAULT" \
+                "[\"env\",\"ANTHROPIC_DEFAULT_FABLE_MODEL\"]|$group" \
+                "[\"env\",\"ANTHROPIC_DEFAULT_HAIKU_MODEL\"]|$group" \
+                "[\"env\",\"ANTHROPIC_DEFAULT_OPUS_MODEL\"]|$group" \
+                "[\"env\",\"ANTHROPIC_DEFAULT_SONNET_MODEL\"]|$group" \
+                "[\"env\",\"ANTHROPIC_SMALL_FAST_MODEL\"]|$group" \
+                "[\"env\",\"CLAUDE_CODE_SUBAGENT_MODEL\"]|$group")
+            ;;
+        pi)
+            spec=$(printf '%s\n' \
+                '["defaultProvider"]|magpie' \
+                "[\"defaultModel\"]|$group" \
+                "[\"modelThinkingLevels\",\"magpie/$group\"]|high")
+            ;;
+        *) return 1 ;;
+    esac
+    python=$(magpie_python) || { printf 'unreadable|'; return 0; }
+    # The expected keys travel in a file. The Python program itself arrives on
+    # standard input, so a pipe could never carry them beside it.
+    spec_file=$(mktemp "${TMPDIR:-/tmp}/magpie-wiring.XXXXXX") ||
+        { printf 'unreadable|'; return 0; }
+    printf '%s\n' "$spec" > "$spec_file"
+    if ! keys=$("$python" - "$file" "$spec_file" <<'PYTHON'
+import json
+import sys
+
+path, spec_path = sys.argv[1], sys.argv[2]
+try:
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+except Exception:
+    print("!unreadable")
+    raise SystemExit(0)
+drift = []
+with open(spec_path, encoding="utf-8") as handle:
+    for line in handle:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        keypath, expected = line.split("|", 1)
+        parts = json.loads(keypath)
+        node = data
+        for part in parts:
+            if isinstance(node, dict) and part in node:
+                node = node[part]
+            else:
+                node = None
+                break
+        if node != expected:
+            drift.append(".".join(parts))
+print(",".join(drift))
+PYTHON
+    ); then
+        rm -f "$spec_file"
+        printf 'unreadable|'
+        return 0
+    fi
+    rm -f "$spec_file"
+    case "$keys" in
+        '!unreadable') printf 'unreadable|' ;;
+        '') printf 'wired|' ;;
+        *) printf 'drift|%s' "$keys" ;;
+    esac
+    return 0
+}
+
 # The state of the gateway, the proxy, the providers, the groups, the wiring,
 # and the last Codex guard result. A missing required piece is a failing
 # status.
 magpie_status() {
     local index role preset source required group agent proxy output models
     local known guard='' missing='' state credential version name plugin_state current desired count
+    local enabled report keys
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
     if magpie_gateway_status; then
         printf 'gateway|%s|answers\n' "$MAGPIE_GATEWAY"
@@ -2166,7 +2279,45 @@ magpie_status() {
     done
     for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
         agent=${MAGPIE_WIRING_AGENT[index]}
-        printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
+        group=${MAGPIE_WIRING_GROUP[index]}
+        enabled=${MAGPIE_WIRING_ENABLED[index]}
+        # Claude's and Pi's settings are the deployment's own wiring, so the
+        # status reads the live files instead of echoing the catalog intent.
+        # A parked agent keeps the catalog row; its wiring is not required.
+        case "$agent" in
+            claude|pi)
+                if [ "$enabled" != yes ]; then
+                    printf 'wiring|%s|%s\n' "$agent" "$group"
+                    continue
+                fi
+                report=$(magpie_client_wiring_state "$agent") || report='unreadable|'
+                state=${report%%|*}
+                keys=${report#*|}
+                case "$state" in
+                    wired) printf 'wiring|%s|%s\n' "$agent" "$group" ;;
+                    drift)
+                        printf 'wiring|%s|drift (%s)\n' "$agent" "$keys"
+                        missing="$missing wiring $agent"
+                        ;;
+                    *)
+                        printf 'wiring|%s|%s\n' "$agent" "$state"
+                        missing="$missing wiring $agent"
+                        ;;
+                esac
+                # Magpie generates Pi's model file when it wires the agent.
+                # A missing one leaves the gateway provider unavailable to the
+                # client even when the settings name it.
+                if [ "$agent" = pi ]; then
+                    if [ -f "$HOME/.pi/agent/models.json" ]; then
+                        printf 'models|%s|present\n' "$agent"
+                    else
+                        printf 'models|%s|missing\n' "$agent"
+                        missing="$missing models $agent"
+                    fi
+                fi
+                ;;
+            *) printf 'wiring|%s|%s\n' "$agent" "$group" ;;
+        esac
     done
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
         agent=${MAGPIE_VISIBLE_AGENT[index]}
