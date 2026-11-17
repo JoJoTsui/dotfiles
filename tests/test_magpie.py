@@ -438,3 +438,122 @@ class MagpieSwitchTests(unittest.TestCase):
                                 cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=300)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("dotfiles: magpie: skipped;", result.stdout)
+
+
+class MagpieCommandTests(MagpieApplyTests):
+    """The managed command runs the same engine the deployment step runs."""
+
+    def setUp(self):
+        super().setUp()
+        self.command = self.home / ".local/bin/dotfiles-magpie"
+        self.command.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / "dot_local/bin/executable_dotfiles-magpie", self.command)
+        self.command.chmod(0o755)
+        engine = self.home / ".local/share/dotfiles/magpie/engine.sh"
+        engine.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ENGINE, engine)
+        catalogs = self.home / ".config/dotfiles/magpie"
+        catalogs.mkdir(parents=True, exist_ok=True)
+        for name in CATALOGS:
+            shutil.copy2(CATALOG / name, catalogs / name)
+
+    def run_command(self, *arguments, environment=None):
+        environ = {
+            "HOME": str(self.home),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "MAGPIE_BIN": str(self.fake),
+            "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
+            "FAKE_MAGPIE_STATE": str(self.state),
+            "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
+            "DEPLOY_PLATFORM": "macos",
+            "XDG_STATE_HOME": str(self.home / ".local/state"),
+            "XDG_CONFIG_HOME": str(self.home / ".config"),
+        }
+        environ.update(environment or {})
+        return subprocess.run([str(self.command), *arguments], env=environ,
+                              capture_output=True, text=True, timeout=120)
+
+    def healthy_gateway(self):
+        """A gateway that answers with every provider and group in place."""
+        self.state.mkdir(parents=True, exist_ok=True)
+        (self.state / "providers.json").write_text(
+            json.dumps(["codex", "opencode-go", "kimi-code-cn", "minimax-cn"]), encoding="utf-8")
+        (self.state / "groups.json").write_text(json.dumps({
+            "chatgpt": "codex/gpt-6.1-sol,codex/gpt-6.1-terra",
+            "conductor": "kimi-code-cn/k3.1-pro,opencode-go/deepseek-v4.1-flash,codex/gpt-6.1-sol,codex/gpt-6.1-terra",
+            "workhorse": "minimax-cn/MiniMax-M3.1-Flash,opencode-go/deepseek-v4.1-flash",
+        }), encoding="utf-8")
+        (self.state / "proxy.txt").write_text(json.dumps("http://127.0.0.1:7897"), encoding="utf-8")
+
+    def test_the_command_applies_the_same_engine(self):
+        self.seed_home()
+        result = self.run_command("apply")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("provider add kimi-code-cn sk-fixture-kimi", self.commands())
+        self.assertTrue(self.state_file().is_file())
+
+    def test_the_status_exits_zero_on_a_healthy_gateway(self):
+        self.seed_home()
+        self.healthy_gateway()
+        result = self.run_command("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("gateway|", result.stdout)
+        self.assertIn("group|workhorse|", result.stdout)
+        self.assertIn("wiring|pi|group/workhorse", result.stdout)
+
+    def test_the_status_names_a_missing_piece_and_fails(self):
+        self.seed_home()
+        self.healthy_gateway()
+        (self.state / "providers.json").write_text(json.dumps(["codex"]), encoding="utf-8")
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing:", result.stderr)
+        self.assertIn("kimi-code-cn", result.stderr)
+
+    def test_no_subcommand_prints_a_credential(self):
+        self.seed_home()
+        self.healthy_gateway()
+        for arguments in (("providers",), ("status",)):
+            with self.subTest(arguments=arguments):
+                result = self.run_command(*arguments)
+                self.assertNotIn("sk-fixture", result.stdout)
+                self.assertNotIn("sk-fixture", result.stderr)
+
+    def test_the_providers_report_names_the_source_and_never_the_value(self):
+        self.seed_home(credentials=False)
+        result = self.run_command("providers")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("env:KIMI_CODE_CN_API_KEY", result.stdout)
+        self.assertIn("missing", result.stdout)
+        self.assertNotIn("sk-fixture", result.stdout)
+
+    def test_the_command_refuses_a_host_that_cannot_run_magpie(self):
+        self.seed_home()
+        result = self.run_command("status", environment={"DEPLOY_PLATFORM": "linux"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Magpie is not available on this platform", result.stderr)
+
+    def test_the_launcher_reports_the_missing_app_with_the_cask_command(self):
+        launcher = self.home / ".local/bin/magpie"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / "dot_local/bin/executable_magpie", launcher)
+        launcher.chmod(0o755)
+        result = subprocess.run([str(launcher), "--version"], env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"},
+                                capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("brew install --cask magpie", result.stderr)
+
+    def test_the_launcher_runs_the_app_binary(self):
+        launcher = self.home / ".local/bin/magpie"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / "dot_local/bin/executable_magpie", launcher)
+        launcher.chmod(0o755)
+        app = self.root / "magpie.app/Contents/MacOS/magpie"
+        app.parent.mkdir(parents=True, exist_ok=True)
+        app.write_text("#!/bin/sh\necho \"magpie 0.1.0\"\n", encoding="utf-8")
+        app.chmod(0o755)
+        result = subprocess.run([str(launcher), "--version"],
+                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin", "MAGPIE_APP": str(app)},
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("magpie 0.1.0", result.stdout)

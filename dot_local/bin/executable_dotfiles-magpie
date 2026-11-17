@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Managed by dotfiles; the Magpie model gateway command.
+#
+# The engine is the deployment's Magpie half, copied into the home by the
+# source application. The command runs the same functions the bootstrap step
+# runs, so the deployment and the operator never disagree.
+set -euo pipefail
+
+usage() {
+    printf 'usage: dotfiles-magpie apply|status|providers\n' >&2
+    printf '  apply      apply the model catalogs to the local gateway\n' >&2
+    printf '  status     report the gateway, the providers, the groups, and the wiring\n' >&2
+    printf '  providers  report the model provider catalog and its credential sources\n' >&2
+}
+
+command=${1:-}
+[ "$#" -gt 0 ] && shift
+case "$command" in
+    apply|status|providers) ;;
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    *)
+        usage
+        exit 64
+        ;;
+esac
+
+# Magpie is a macOS application. A host that cannot run it says so instead of
+# failing on a missing engine. The deployment selector decides the platform,
+# so the command and the deployment step agree.
+platform=${DEPLOY_PLATFORM:-}
+if [ -z "$platform" ]; then
+    case "$(uname -s)" in
+        Darwin) platform=macos ;;
+        *) platform=unsupported ;;
+    esac
+fi
+if [ "$platform" != macos ]; then
+    if [ "$command" = apply ]; then
+        printf 'dotfiles: magpie: Magpie is not available on this platform; skipped\n'
+        exit 0
+    fi
+    printf 'dotfiles: magpie: Magpie is not available on this platform\n' >&2
+    exit 1
+fi
+
+engine="${DOTFILES_MAGPIE_ENGINE:-$HOME/.local/share/dotfiles/magpie/engine.sh}"
+if [ ! -f "$engine" ]; then
+    printf 'dotfiles: magpie: the Magpie engine is missing: %s\n' "$engine" >&2
+    exit 1
+fi
+# shellcheck source=/dev/null
+source "$engine"
+
+case "$command" in
+    apply) magpie_apply "$@" ;;
+    status) magpie_status "$@" ;;
+    providers) magpie_providers "$@" ;;
+esac

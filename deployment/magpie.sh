@@ -1212,3 +1212,107 @@ magpie_apply_summary() {
         printf 'dotfiles: magpie: the agent %s uses %s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
     done
 }
+
+# Whether one credential source resolves. The value is never printed.
+magpie_credential_resolves() {
+    local source=$1
+    case "$source" in
+        codex-account) magpie_account_present ;;
+        *) magpie_provider_credential "$source" >/dev/null 2>&1 ;;
+    esac
+}
+
+# Every model id the catalog knows, space separated.
+magpie_catalog_model_ids() {
+    local index candidates candidate id known=''
+    local -a candidate_list
+    for (( index=0; index<${#MAGPIE_MODEL_ROLE[@]}; index++ )); do
+        candidates=${MAGPIE_MODEL_CANDIDATES[index]}
+        IFS=, read -r -a candidate_list <<< "$candidates"
+        for candidate in "${candidate_list[@]}"; do
+            id=$candidate
+            case "$candidate" in
+                *'?'*) id=${candidate%?} ;;
+            esac
+            known="$known $id"
+        done
+    done
+    printf '%s' "$known"
+}
+
+# The model provider catalog with the state of every credential source. The
+# value of a credential is never printed.
+magpie_providers() {
+    local index role preset source required state
+    magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
+    printf 'role|magpie provider|key source|required|credential\n'
+    for (( index=0; index<${#MAGPIE_PROVIDER_ROLE[@]}; index++ )); do
+        role=${MAGPIE_PROVIDER_ROLE[index]}; preset=${MAGPIE_PROVIDER_PRESET[index]}
+        source=${MAGPIE_PROVIDER_SOURCE[index]}; required=${MAGPIE_PROVIDER_REQUIRED[index]}
+        if magpie_credential_resolves "$source"; then state=resolves; else state=missing; fi
+        printf '%s|%s|%s|%s|%s\n' "$role" "$preset" "$source" "$required" "$state"
+    done
+    return 0
+}
+
+# The state of the gateway, the proxy, the providers, the groups, the wiring,
+# and the last Codex guard result. A missing required piece is a failing
+# status.
+magpie_status() {
+    local index role preset source required group agent proxy output models
+    local known guard='' missing='' state credential
+    magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
+    if magpie_gateway_status; then
+        printf 'gateway|%s|answers\n' "$MAGPIE_GATEWAY"
+    else
+        printf 'gateway|%s|does not answer\n' "$MAGPIE_GATEWAY_DEFAULT"
+        missing="$missing gateway"
+    fi
+    proxy=$(magpie_proxy_current)
+    if [ -n "$proxy" ]; then
+        printf 'proxy|%s\n' "$proxy"
+    else
+        printf 'proxy|none\n'
+        missing="$missing proxy"
+    fi
+    for (( index=0; index<${#MAGPIE_PROVIDER_ROLE[@]}; index++ )); do
+        role=${MAGPIE_PROVIDER_ROLE[index]}; preset=${MAGPIE_PROVIDER_PRESET[index]}
+        source=${MAGPIE_PROVIDER_SOURCE[index]}; required=${MAGPIE_PROVIDER_REQUIRED[index]}
+        if magpie_provider_present "$preset"; then state=present; else state=missing; fi
+        if magpie_credential_resolves "$source"; then credential=resolves; else credential=missing; fi
+        printf 'provider|%s|%s|credential %s\n' "$role" "$state" "$credential"
+        if [ "$state" = missing ] && [ "$required" = yes ]; then
+            missing="$missing provider $role"
+        fi
+        if [ "$credential" = missing ] && [ "$required" = yes ]; then
+            missing="$missing credential $role"
+        fi
+    done
+    known=$(magpie_catalog_model_ids)
+    for (( index=0; index<${#MAGPIE_GROUP_ID[@]}; index++ )); do
+        group=${MAGPIE_GROUP_ID[index]}
+        if output=$(magpie_run group "$group" 2>/dev/null); then
+            models=$(magpie_group_models "$output" "$known")
+            printf 'group|%s|%s\n' "$group" "$models"
+        else
+            printf 'group|%s|missing\n' "$group"
+            missing="$missing group $group"
+        fi
+    done
+    for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
+        agent=${MAGPIE_WIRING_AGENT[index]}
+        printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
+    done
+    if [ -f "$(magpie_state_dir)/state.tsv" ]; then
+        guard=$(grep '^codex-guard|' "$(magpie_state_dir)/state.tsv" 2>/dev/null | head -n1)
+        [ -n "$guard" ] || guard='codex-guard|unknown'
+    else
+        guard='codex-guard|not recorded'
+    fi
+    printf '%s\n' "$guard"
+    if [ -n "$missing" ]; then
+        printf 'dotfiles: magpie: missing:%s\n' "$missing" >&2
+        return 1
+    fi
+    return 0
+}

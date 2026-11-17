@@ -52,6 +52,12 @@ clash
 .bash_profile
 .bash_logout
 {{- end }}
+# The Magpie model gateway is a macOS application. Its engine and catalogs
+# stay out of the homes that cannot run it.
+{{- if ne .platform "macos" }}
+.config/dotfiles/magpie
+.local/share/dotfiles/magpie
+{{- end }}
 # The Mihomo proxy stack is Linux/WSL only: the pinned release is a Linux
 # build, its supervisor is a systemd unit, and its scripts need procps and
 # util-linux.

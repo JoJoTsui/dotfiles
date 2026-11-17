@@ -1,0 +1,11 @@
+#!/bin/sh
+# Managed by dotfiles; the Magpie application launcher.
+#
+# The Homebrew cask owns the app and the gateway process. The launcher only
+# starts the binary the app ships, so the CLI and the GUI are one install.
+APP="${MAGPIE_APP:-/Applications/magpie.app/Contents/MacOS/magpie}"
+if [ ! -x "$APP" ]; then
+    printf 'the Magpie app is not installed; install it with: brew install --cask magpie\n' >&2
+    exit 127
+fi
+exec "$APP" "$@"
