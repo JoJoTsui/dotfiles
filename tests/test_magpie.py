@@ -60,6 +60,11 @@ elif argv[:2] == ["group", "add"] or argv[:2] == ["group", "set"]:
     fields = dict(item.split("=", 1) for item in argv[3:])
     groups[argv[2]] = fields.get("models", "")
     save("groups.json", groups)
+elif argv[:1] == ["dsh"]:
+    if os.environ.get("FAKE_MAGPIE_TOUCH_DSH") == "1":
+        patch = pathlib.Path(os.environ["HOME"]) / ".dsh/profiles/default/cordis.patch.yml"
+        patch.write_text(patch.read_text().replace('name: "official"', 'name: "changed"'))
+    print("ok")
 elif argv[:1] == ["group"]:
     groups = load("groups.json", {})
     if argv[1] not in groups:
@@ -382,6 +387,41 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertTrue(backups)
         self.assertTrue((backups[0] / "config.toml").is_file())
 
+    def test_the_apply_leaves_the_dsh_profile_alone(self):
+        self.seed_home()
+        patch = self.home / ".dsh/profiles/default/cordis.patch.yml"
+        before = patch.read_bytes()
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(patch.read_bytes(), before)
+        self.assertNotIn("codex", [command.split(" ")[0] for command in self.commands()])
+
+    def test_a_changed_official_deepseek_row_aborts_the_apply(self):
+        self.seed_home()
+        script = self.root / "apply.sh"
+        script.write_text(
+            "export HOME=" + repr(str(self.home)) + "\n"
+            "source " + repr(str(ENGINE)) + "\n"
+            "magpie_apply\n",
+            encoding="utf-8")
+        environment = {
+            "HOME": str(self.home),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "MAGPIE_BIN": str(self.fake),
+            "MAGPIE_CATALOG_DIR": str(self.catalog),
+            "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
+            "FAKE_MAGPIE_STATE": str(self.state),
+            "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
+            "FAKE_MAGPIE_TOUCH_DSH": "1",
+            "DEPLOY_PLATFORM": "macos",
+            "XDG_STATE_HOME": str(self.home / ".local/state"),
+            "XDG_CONFIG_HOME": str(self.home / ".config"),
+        }
+        result = subprocess.run(["/bin/bash", str(script)], env=environment,
+                                capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the official DeepSeek row of the DSH profile default changed", result.stderr)
+
     def test_the_apply_keeps_the_codex_configuration_untouched(self):
         codex = self.home / ".codex/config.toml"
         self.apply()
@@ -502,6 +542,14 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertIn("gateway|", result.stdout)
         self.assertIn("group|workhorse|", result.stdout)
         self.assertIn("wiring|pi|group/workhorse", result.stdout)
+
+    def test_the_status_reports_the_dsh_group_and_the_official_row(self):
+        self.seed_home()
+        self.healthy_gateway()
+        result = self.run_command("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("wiring|dsh|group/workhorse", result.stdout)
+        self.assertIn("dsh-official-row|default|present", result.stdout)
 
     def test_the_status_names_a_missing_piece_and_fails(self):
         self.seed_home()

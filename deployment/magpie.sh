@@ -826,6 +826,58 @@ magpie_backup_create() {
     printf '%s' "$root"
 }
 
+# The official DeepSeek row of one DSH profile patch. The patch is a YAML
+# list of entries; the row is the entry whose id is llm-deepseek. The
+# deployment reads it and never writes it.
+magpie_dsh_official_row() {
+    local file=$1
+    [ -f "$file" ] || return 1
+    awk '
+        /^- id: / {
+            if (capture) { exit }
+            capture = ($0 ~ /^- id: "?llm-deepseek"?$/)
+        }
+        capture { print }
+    ' "$file"
+}
+
+# The official DeepSeek row must survive the wiring. Magpie adds its own
+# route; the official row keeps its own settings, so the DeepSeek entry in
+# DSH's Models page still switches back.
+magpie_dsh_verify_official_row() {
+    local backup=$1 file profile before after
+    for file in "$HOME"/.dsh/profiles/*/cordis.patch.yml; do
+        [ -f "$file" ] || continue
+        profile=$(basename "$(dirname "$file")")
+        [ -f "$backup/dsh-$profile/cordis.patch.yml" ] || continue
+        before=$(magpie_dsh_official_row "$backup/dsh-$profile/cordis.patch.yml" || true)
+        after=$(magpie_dsh_official_row "$file" || true)
+        if [ "$before" != "$after" ]; then
+            magpie_fail "the official DeepSeek row of the DSH profile $profile changed during the apply"
+            return 1
+        fi
+    done
+    return 0
+}
+
+# The state of the official DeepSeek row of every DSH profile, read only.
+magpie_dsh_official_state() {
+    local file profile before after state
+    for file in "$HOME"/.dsh/profiles/*/cordis.patch.yml; do
+        [ -f "$file" ] || continue
+        profile=$(basename "$(dirname "$file")")
+        before=$(magpie_dsh_official_row "$file" || true)
+        [ -n "$before" ] || { printf 'dsh-official-row|%s|absent\n' "$profile"; continue; }
+        state=present
+        for candidate in "$(magpie_state_dir)"/backups/*/dsh-$profile/cordis.patch.yml; do
+            [ -f "$candidate" ] || continue
+            after=$(magpie_dsh_official_row "$candidate" || true)
+            if [ "$before" != "$after" ]; then state=changed; fi
+        done
+        printf 'dsh-official-row|%s|%s\n' "$profile" "$state"
+    done
+}
+
 # The state the apply records: the providers, the groups with their model
 # order, the wiring, the proxy, and the guard result.
 magpie_state_content() {
@@ -897,7 +949,7 @@ magpie_state_write() {
 magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local credential output live known current desired change='' entry used rest variable servable
-    local fatal='' missing='' guard='unchanged' backup codex_before codex_after
+    local fatal='' missing='' guard='unchanged' backup='' codex_before codex_after
     local id recorded
     local -a candidate_list
     platform=$(magpie_platform)
@@ -1159,6 +1211,12 @@ wiring:$agent:$group"
         done <<< "$change"
     fi
 
+    DEPLOY_STEP=magpie-apply.dsh
+    if [ -n "$backup" ]; then
+        magpie_dsh_verify_official_row "$backup" || return 1
+        printf 'dotfiles: magpie: the official DeepSeek row of every DSH profile is unchanged\n'
+    fi
+
     DEPLOY_STEP=magpie-apply.codex-guard
     codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
     if [ "$codex_before" != "$codex_after" ]; then
@@ -1303,6 +1361,7 @@ magpie_status() {
         agent=${MAGPIE_WIRING_AGENT[index]}
         printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
     done
+    magpie_dsh_official_state
     if [ -f "$(magpie_state_dir)/state.tsv" ]; then
         guard=$(grep '^codex-guard|' "$(magpie_state_dir)/state.tsv" 2>/dev/null | head -n1)
         [ -n "$guard" ] || guard='codex-guard|unknown'
