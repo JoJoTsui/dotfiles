@@ -16,6 +16,7 @@ source "$DEPLOY_SOURCE/deployment/payload.sh"
 source "$DEPLOY_SOURCE/deployment/client-settings.sh"
 source "$DEPLOY_SOURCE/deployment/macos.sh"
 source "$DEPLOY_SOURCE/deployment/system.sh"
+source "$DEPLOY_SOURCE/deployment/magpie.sh"
 DEPLOY_ACTIONS=(install-managers apply-source install-installer-tools install-common install-agents prepare-shell)
 
 install_managers() {
