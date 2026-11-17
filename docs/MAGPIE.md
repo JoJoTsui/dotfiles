@@ -15,7 +15,7 @@ neither side and is never written.
 
 | Owner | Owns | Never owns |
 | --- | --- | --- |
-| The repository | the four catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
+| The repository | the five catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
 | Magpie | provider keys and accounts, the usage store, Pi's `~/.pi/agent/models.json`, DSH's Magpie route | the intent: which models a group holds |
 | Neither | `~/.codex/config.toml` and `~/.codex/auth.json`, the official OpenCode, Kimi Code, and MiniMax Code configurations | — |
 
@@ -61,10 +61,13 @@ Every run prints why the step was skipped: the platform has no Magpie, the
 step is disabled, or the mode applies files and installs agents without the
 gateway (`--apply-only`, `--agents-only`).
 
-## The four catalogs
+## The catalogs
 
 The catalogs live in `deployment/magpie/` and are the only place the model
-intent is written. A vendor rename is a config edit, not a code change.
+intent is written. A vendor rename is a config edit, not a code change. Each
+one reaches the managed command through a `{{ include }}` wrapper under
+`dot_config/dotfiles/magpie/`, so the deployment and `dotfiles-magpie` read
+the same bytes.
 
 ### `providers.tsv` — `role|magpie provider|key source|required`
 
@@ -91,6 +94,13 @@ while it stays reachable as another group's member, but it also removes the
 models the group names from `/v1/models`; the deployment therefore keeps
 `group/chatgpt` listed so the next apply can still resolve its members.
 
+A model role may pin a reasoning effort as `role:<effort>`, where the effort
+is one of `none|minimal|low|medium|high|xhigh|max`. The deployment strips it
+for the role lookup and appends it to every model id the role resolves to, so
+`conductor.kimi:max` becomes `kimi-code-cn/k3.1-pro:max`. A group reference
+carries no effort, because a group keeps its own routing. A group without a
+suffixed member keeps Magpie's `effort=agent` default.
+
 ### `wiring.tsv` — `agent|group|owner|enabled`
 
 `owner` is `repo` when the deployment writes the agent's configuration by
@@ -98,27 +108,56 @@ hand, `magpie` when Magpie generates it, and `inherited` when the agent
 follows another agent. The deployment never wires Codex, and it never lets
 Magpie write Claude Code's settings.
 
+### `visible.tsv` — `agent|names`
+
+`names` is a comma-separated list of declared group ids and Magpie provider
+ids. The apply runs `magpie visible <agent> <names>` after the groups and
+before the agent wiring, and only when the narrowing differs from what
+`magpie visible <agent>` reports. It never passes `--only-picked`: that
+freezes the current list and would hide a model starred later. A provider id
+in a row exposes the models starred for that provider; Magpie's `pickedModels`
+stars stay the app's state. `status` prints the live narrowing as
+`visible|agent|names`.
+
+### `plugins.tsv` — `name|source|version|enabled`
+
+One row per community plugin the deployment pins: the short name
+`magpie plugin on|off` takes, the npm package, the exact version, and whether
+the deployment ensures it. The deployment installs an absent package with
+`magpie plugin add npm:<source>@<version>`, turns an installed-but-off plugin
+on with `magpie plugin on <name>`, and never updates or removes a present one.
+The plugin is community-owned: the repository only pins and installs it.
+
+A plugin that signs in to a provider needs a human sign-in after it is
+installed. For the Zed plugin that is `magpie plugin login zed`, or the
+**Plugins** page of the Magpie app. The deployment never runs the sign-in.
+`status` reports the plugin as `plugin|<name>|loaded`, `off`, or `missing`.
+
 ## The apply order
 
 `magpie-apply` runs after `install-agents` and before `prepare-shell`, so the
 app, the agents, and the client settings exist before the gateway is wired.
 
-1. Validate the four catalogs.
+1. Validate the catalogs.
 2. Ensure the gateway answers: `magpie status --json`. On the real account
    home the app is opened and waited for. A gateway that still does not answer
    fails the step with the install/open command; a non-macOS host is skipped
    before this point.
 3. Resolve the proxy and write it with `magpie settings set proxy` only when
    it differs.
-4. Ensure the providers in catalog order.
-5. Resolve the model roles against `GET /v1/models`.
-6. Ensure the groups: `magpie group add`, or `magpie group set` when the
+4. Ensure the pinned plugins, before the providers: `magpie plugin list
+   --json` reports `.loaded[].spec`, so an absent package is installed and a
+   loaded-but-off one is turned on.
+5. Ensure the providers in catalog order.
+6. Resolve the model roles against `GET /v1/models`.
+7. Ensure the groups: `magpie group add`, or `magpie group set` when the
    member order differs.
-7. Wire the Magpie-owned agents: `magpie pi group/workhorse` and
+8. Narrow each agent: `magpie visible <agent> <names>`, only when it differs.
+9. Wire the Magpie-owned agents: `magpie pi group/workhorse` and
    `magpie dsh group/workhorse`.
-8. Verify that DSH's official `llm-deepseek` row is unchanged and that the
-   Codex configuration still hashes the same.
-9. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
+10. Verify that DSH's official `llm-deepseek` row is unchanged and that the
+    Codex configuration still hashes the same.
+11. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
 
 A run with nothing to change writes no files and keeps every modification
 time.
@@ -175,11 +214,13 @@ magpie settings set proxy http://127.0.0.1:7897
 
 ## Group semantics
 
-`group/conductor` is the Claude Code group: Kimi K3.1 Pro, then DeepSeek V4.1
-Flash, then the ChatGPT group. `group/workhorse` is the Pi and `dsh` group:
+`group/conductor` is the Claude Code group, and it holds one member:
+`group/openai-stack`. The stack drains the ChatGPT weekly quota, then the
+paid OpenAI API key with `openai/gpt-6.1-sol` and `openai/gpt-6.1-terra`, then
+Kimi K3.1 Pro at max reasoning. `group/workhorse` is the Pi and `dsh` group:
 MiniMax M3.1 Flash, then DeepSeek V4.1 Flash. `group/chatgpt` holds the
 ChatGPT plan models and is listed as its own group, so the Pro plan is spent
-only when Kimi and DeepSeek have no quota left.
+only when the stack's own members have no quota left.
 
 The template sets `model: opus` and points every tier and subagent model at
 `group/conductor`. Claude Code accepts the `opus` alias and resolves it

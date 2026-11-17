@@ -1,0 +1,16 @@
+# Magpie plugin catalog. One row per community plugin the deployment pins.
+#
+# name|source|version|enabled
+#
+# name     the plugin's short name, as `magpie plugin on|off` takes it.
+# source   the npm package the plugin is installed from. The plugin is
+#          community-owned: the deployment pins and installs it, and never
+#          owns its bytes.
+# version  the exact version the deployment pins. `latest` is not a pin.
+# enabled  yes when the deployment ensures the plugin is installed and on,
+#          no when the row is parked.
+#
+# A plugin that signs in to a provider needs a human sign-in after it is
+# installed: `magpie plugin login <provider>` or the app's Plugins page. The
+# deployment never signs in.
+zed|@magpie-community/opencode-zed-auth|0.1.19|yes

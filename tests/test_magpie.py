@@ -11,7 +11,7 @@ import unittest
 
 SOURCE = Path(__file__).resolve().parents[1]
 CATALOG = SOURCE / "deployment" / "magpie"
-CATALOGS = ("providers.tsv", "models.tsv", "groups.tsv", "wiring.tsv", "visible.tsv")
+CATALOGS = ("providers.tsv", "models.tsv", "groups.tsv", "wiring.tsv", "visible.tsv", "plugins.tsv")
 ENGINE = SOURCE / "deployment" / "magpie.sh"
 
 FAKE_MAGPIE = '''#!/usr/bin/env python3
@@ -49,6 +49,23 @@ elif argv[:2] == ["provider", "add"]:
     if argv[2] not in providers:
         providers.append(argv[2])
     save("providers.json", providers)
+elif argv[:2] == ["plugin", "list"]:
+    print(json.dumps(load("plugins.json", {"loaded": [], "plugins": []})))
+elif argv[:2] == ["plugin", "add"]:
+    plugins = load("plugins.json", {"loaded": [], "plugins": []})
+    spec = argv[2][len("npm:"):] if argv[2].startswith("npm:") else argv[2]
+    for key in ("loaded", "plugins"):
+        entries = plugins.setdefault(key, [])
+        if not any(entry.get("spec") == spec for entry in entries):
+            entries.append({"spec": spec})
+    save("plugins.json", plugins)
+elif argv[:2] == ["plugin", "on"]:
+    plugins = load("plugins.json", {"loaded": [], "plugins": []})
+    loaded = {entry.get("spec") for entry in plugins.get("loaded", [])}
+    for entry in plugins.get("plugins", []):
+        if entry.get("spec") not in loaded:
+            plugins.setdefault("loaded", []).append(entry)
+    save("plugins.json", plugins)
 elif argv[:1] == ["provider"]:
     sys.exit(0 if argv[1] in load("providers.json", []) else 1)
 elif argv[:2] == ["settings", "get"]:
@@ -266,6 +283,31 @@ class MagpieCatalogTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("visible agent pi names an unknown group or provider: workhors", result.stderr)
 
+    def test_a_plugin_source_that_looks_like_a_credential_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("plugins.tsv").replace(
+            "@magpie-community/opencode-zed-auth", "sk-fixture-plugin-key")
+        self.write_catalog("plugins.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("looks like a credential", result.stderr)
+
+    def test_a_plugin_without_an_exact_version_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("plugins.tsv").replace("|0.1.19|yes", "|latest|yes")
+        self.write_catalog("plugins.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid plugin version: latest", result.stderr)
+
+    def test_a_duplicate_plugin_name_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("plugins.tsv") + "zed|@magpie-community/other|1.0.0|yes\n"
+        self.write_catalog("plugins.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("duplicate plugin name: zed", result.stderr)
+
     def test_a_missing_catalog_is_rejected(self):
         self.catalog_copy()
         (self.catalog / "wiring.tsv").unlink()
@@ -401,7 +443,8 @@ class MagpieApplyTests(unittest.TestCase):
     def test_the_apply_runs_its_commands_in_the_declared_order(self):
         self.assertEqual(self.apply().returncode, 0)
         commands = self.commands()
-        order = ["settings set proxy", "provider add codex", "provider add opencode-go",
+        order = ["settings set proxy", "plugin add npm:@magpie-community/opencode-zed-auth@0.1.19",
+                 "provider add codex", "provider add opencode-go",
                  "provider add kimi-code-cn", "provider add minimax-cn", "provider add openai",
                  "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
                  "visible claude conductor,openai-stack", "visible pi workhorse", "visible dsh workhorse",
@@ -442,6 +485,44 @@ class MagpieApplyTests(unittest.TestCase):
                           and command.startswith("visible ")][-3:],
                          ["visible claude conductor,openai-stack",
                           "visible pi workhorse", "visible dsh workhorse"])
+
+    def test_the_apply_installs_the_pinned_plugin_before_the_providers(self):
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = self.commands()
+        installs = [command for command in commands
+                    if command == "plugin add npm:@magpie-community/opencode-zed-auth@0.1.19"]
+        self.assertEqual(len(installs), 1, commands)
+        self.assertLess(commands.index(installs[0]), commands.index("provider add codex"))
+        self.assertNotIn("plugin on zed", commands)
+
+    def test_a_present_plugin_is_not_installed_or_turned_on_again(self):
+        spec = "@magpie-community/opencode-zed-auth@0.1.19"
+
+        def seed_plugin():
+            self.state.mkdir(parents=True, exist_ok=True)
+            (self.state / "plugins.json").write_text(
+                json.dumps({"loaded": [{"spec": spec}], "plugins": [{"spec": spec}]}), encoding="utf-8")
+
+        result = self.apply(setup=seed_plugin)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = self.commands()
+        self.assertEqual([command for command in commands if command.startswith("plugin add")], [])
+        self.assertEqual([command for command in commands if command.startswith("plugin on")], [])
+
+    def test_a_plugin_that_is_installed_but_off_is_turned_on(self):
+        spec = "@magpie-community/opencode-zed-auth@0.1.19"
+
+        def seed_plugin():
+            self.state.mkdir(parents=True, exist_ok=True)
+            (self.state / "plugins.json").write_text(
+                json.dumps({"loaded": [], "plugins": [{"spec": spec}]}), encoding="utf-8")
+
+        result = self.apply(setup=seed_plugin)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = self.commands()
+        self.assertEqual([command for command in commands if command == "plugin on zed"], ["plugin on zed"])
+        self.assertEqual([command for command in commands if command.startswith("plugin add")], [])
 
     def test_the_openai_stack_drains_the_plan_then_the_api_then_kimi_max(self):
         result = self.apply()
@@ -781,6 +862,9 @@ class MagpieCommandTests(MagpieApplyTests):
             "pi": "workhorse",
             "dsh": "workhorse",
         }), encoding="utf-8")
+        spec = "@magpie-community/opencode-zed-auth@0.1.19"
+        (self.state / "plugins.json").write_text(
+            json.dumps({"loaded": [{"spec": spec}], "plugins": [{"spec": spec}]}), encoding="utf-8")
         (self.state / "proxy.txt").write_text(json.dumps("http://127.0.0.1:7897"), encoding="utf-8")
 
     def test_every_catalog_reaches_the_managed_home(self):
@@ -824,6 +908,13 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertIn("visible|claude|conductor,openai-stack", result.stdout)
         self.assertIn("visible|pi|workhorse", result.stdout)
         self.assertIn("visible|dsh|workhorse", result.stdout)
+
+    def test_the_status_reports_the_plugin_state(self):
+        self.seed_home()
+        self.healthy_gateway()
+        result = self.run_command("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("plugin|zed|loaded", result.stdout)
 
     def test_the_status_names_a_missing_piece_and_fails(self):
         self.seed_home()

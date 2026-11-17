@@ -460,6 +460,45 @@ magpie_catalog_groups() {
     return 0
 }
 
+# The plugin catalog: name, npm package, pinned version, enabled.
+magpie_catalog_plugins() {
+    local file=$1 line name source version enabled
+    MAGPIE_PLUGIN_NAME=(); MAGPIE_PLUGIN_SOURCE=(); MAGPIE_PLUGIN_VERSION=(); MAGPIE_PLUGIN_ENABLED=()
+    MAGPIE_PLUGIN_NAMES=''
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in ''|\#*) continue ;; esac
+        magpie_row_fields "$line" 4 plugin || return 1
+        name=${MAGPIE_ROW_FIELDS[0]}; source=${MAGPIE_ROW_FIELDS[1]}
+        version=${MAGPIE_ROW_FIELDS[2]}; enabled=${MAGPIE_ROW_FIELDS[3]}
+        magpie_name_ok "$name" || { magpie_fail "invalid plugin name: $name"; return 1; }
+        if magpie_list_contains "$MAGPIE_PLUGIN_NAMES" "$name"; then
+            magpie_fail "duplicate plugin name: $name"
+            return 1
+        fi
+        case "$source" in
+            ''|*[!A-Za-z0-9._@/-]*) magpie_fail "invalid plugin source: $source"; return 1 ;;
+        esac
+        case "$source" in
+            @*/?*) ;;
+            @*) magpie_fail "invalid plugin source: $source"; return 1 ;;
+            */?*) ;;
+            */*) magpie_fail "invalid plugin source: $source"; return 1 ;;
+        esac
+        case "$version" in
+            ''|*[!0-9.]*|.*|*.|*..*) magpie_fail "invalid plugin version: $version"; return 1 ;;
+        esac
+        case "$enabled" in
+            yes|no) ;;
+            *) magpie_fail "invalid plugin enabled flag: $enabled"; return 1 ;;
+        esac
+        MAGPIE_PLUGIN_NAME+=("$name"); MAGPIE_PLUGIN_SOURCE+=("$source")
+        MAGPIE_PLUGIN_VERSION+=("$version"); MAGPIE_PLUGIN_ENABLED+=("$enabled")
+        MAGPIE_PLUGIN_NAMES="$MAGPIE_PLUGIN_NAMES|$name|"
+    done < "$file"
+    return 0
+}
+
 # The agent visibility catalog: agent, names the agent is shown.
 magpie_catalog_visible() {
     local file=$1 line agent names name
@@ -525,16 +564,17 @@ magpie_catalog_validate() {
     [ -n "$dir" ] || dir=$(magpie_catalog_dir)
     local providers="$dir/providers.tsv" models="$dir/models.tsv"
     local groups="$dir/groups.tsv" wiring="$dir/wiring.tsv" visible="$dir/visible.tsv"
+    local plugins="$dir/plugins.tsv"
     local file line member role candidates candidate id provider agent names name
     local member_list_text
     local -a candidate_list member_list name_list
-    for file in "$providers" "$models" "$groups" "$wiring" "$visible"; do
+    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins"; do
         [ -f "$file" ] || { magpie_fail "catalog is missing: ${file##*/}"; return 1; }
         [ ! -L "$file" ] || { magpie_fail "catalog is a symlink: ${file##*/}"; return 1; }
     done
     # No catalog value carries a credential. The scan runs before the shape
     # checks, so a pasted key is reported as a credential.
-    for file in "$providers" "$models" "$groups" "$wiring" "$visible"; do
+    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins"; do
         while IFS= read -r line || [ -n "$line" ]; do
             line=${line%$'\r'}
             case "$line" in ''|\#*) continue ;; esac
@@ -552,6 +592,7 @@ magpie_catalog_validate() {
     magpie_catalog_groups "$groups" || return 1
     magpie_catalog_wiring "$wiring" || return 1
     magpie_catalog_visible "$visible" || return 1
+    magpie_catalog_plugins "$plugins" || return 1
     # Every model candidate names a declared Magpie provider.
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}
@@ -788,6 +829,56 @@ magpie_account_present() {
     case "$accounts" in
         '[]'|'{}'|'') return 1 ;;
     esac
+    return 0
+}
+
+# The package a plugin spec names: "pkg@1.2.3" and "@scope/pkg@1.2.3" both
+# report the package without its version.
+magpie_plugin_package() {
+    local spec=$1 rest
+    case "$spec" in
+        @*/*)
+            rest=${spec#@}
+            case "$rest" in
+                *@*) printf '@%s' "${rest%@*}" ;;
+                *) printf '%s' "$spec" ;;
+            esac ;;
+        *@*) printf '%s' "${spec%@*}" ;;
+        *) printf '%s' "$spec" ;;
+    esac
+}
+
+# What Magpie reports for its plugins: one "loaded|<spec>" line for each
+# plugin that is on, then one "plugins|<spec>" line for each installed one.
+magpie_plugin_state() {
+    local output python
+    output=$(magpie_run plugin list --json 2>/dev/null) || return 1
+    python=$(magpie_python) || return 1
+    printf '%s' "$output" | "$python" -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(1)
+for key in ("loaded", "plugins"):
+    for entry in data.get(key) or []:
+        spec = entry.get("spec") if isinstance(entry, dict) else None
+        if spec:
+            print(key + "|" + spec)
+'
+}
+
+# The state of one plugin package in that list: loaded, plugins, or nothing.
+magpie_plugin_state_of() {
+    local specs=$1 package=$2 line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        [ "$(magpie_plugin_package "${line#*|}")" = "$package" ] || continue
+        printf '%s' "${line%%|*}"
+        return 0
+    done <<< "$specs"
     return 0
 }
 
@@ -1161,7 +1252,7 @@ magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local credential output live known current desired change='' entry used rest variable servable
     local fatal='' missing='' guard='unchanged' backup='' codex_before codex_after
-    local id recorded names
+    local id recorded names name version plugin_state state
     local -a candidate_list
     platform=$(magpie_platform)
     if [ "$platform" != macos ]; then
@@ -1197,6 +1288,31 @@ magpie_apply() {
 proxy"
     fi
     printf 'dotfiles: magpie: the providers use the proxy %s\n' "$MAGPIE_PROXY"
+
+    DEPLOY_STEP=magpie-apply.plugins
+    plugin_state=$(magpie_plugin_state || true)
+    for (( index=0; index<${#MAGPIE_PLUGIN_NAME[@]}; index++ )); do
+        name=${MAGPIE_PLUGIN_NAME[index]}; source=${MAGPIE_PLUGIN_SOURCE[index]}
+        version=${MAGPIE_PLUGIN_VERSION[index]}; enabled=${MAGPIE_PLUGIN_ENABLED[index]}
+        state=$(magpie_plugin_state_of "$plugin_state" "$source")
+        if [ "$state" = loaded ]; then
+            printf 'dotfiles: magpie: the plugin %s is loaded\n' "$name"
+            continue
+        fi
+        if [ "$enabled" != yes ]; then
+            printf 'dotfiles: magpie: the plugin %s is parked\n' "$name"
+            continue
+        fi
+        if [ "$state" = plugins ]; then
+            change="$change
+plugin-on:$name"
+            printf 'dotfiles: magpie: the plugin %s will be turned on\n' "$name"
+        else
+            change="$change
+plugin-add:$name"
+            printf 'dotfiles: magpie: the plugin %s will be installed as npm:%s@%s\n' "$name" "$source" "$version"
+        fi
+    done
 
     DEPLOY_STEP=magpie-apply.providers
     MAGPIE_PROVIDER_PRESENT=''
@@ -1394,6 +1510,20 @@ wiring:$agent:$group"
             printf 'dotfiles: magpie: the proxy was set to %s\n' "$MAGPIE_PROXY"
         fi
 
+        DEPLOY_STEP=magpie-apply.plugins
+        for (( index=0; index<${#MAGPIE_PLUGIN_NAME[@]}; index++ )); do
+            name=${MAGPIE_PLUGIN_NAME[index]}
+            if printf '%s\n' "$change" | grep -qx "plugin-add:$name"; then
+                magpie_run plugin add "npm:${MAGPIE_PLUGIN_SOURCE[index]}@${MAGPIE_PLUGIN_VERSION[index]}" >/dev/null ||
+                    { magpie_fail "cannot install the Magpie plugin $name"; return 1; }
+                printf 'dotfiles: magpie: the plugin %s was installed\n' "$name"
+            elif printf '%s\n' "$change" | grep -qx "plugin-on:$name"; then
+                magpie_run plugin on "$name" >/dev/null ||
+                    { magpie_fail "cannot turn on the Magpie plugin $name"; return 1; }
+                printf 'dotfiles: magpie: the plugin %s was turned on\n' "$name"
+            fi
+        done
+
         DEPLOY_STEP=magpie-apply.providers
         while IFS= read -r entry; do
             case "$entry" in
@@ -1577,7 +1707,7 @@ magpie_providers() {
 # status.
 magpie_status() {
     local index role preset source required group agent proxy output models
-    local known guard='' missing='' state credential version
+    local known guard='' missing='' state credential version name plugin_state
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
     if magpie_gateway_status; then
         printf 'gateway|%s|answers\n' "$MAGPIE_GATEWAY"
@@ -1616,6 +1746,20 @@ magpie_status() {
         fi
     done
     known=$(magpie_catalog_model_ids)
+    plugin_state=$(magpie_plugin_state || true)
+    for (( index=0; index<${#MAGPIE_PLUGIN_NAME[@]}; index++ )); do
+        name=${MAGPIE_PLUGIN_NAME[index]}
+        state=$(magpie_plugin_state_of "$plugin_state" "${MAGPIE_PLUGIN_SOURCE[index]}")
+        case "$state" in
+            loaded) printf 'plugin|%s|loaded\n' "$name" ;;
+            plugins)
+                printf 'plugin|%s|off\n' "$name"
+                missing="$missing plugin $name" ;;
+            *)
+                printf 'plugin|%s|missing\n' "$name"
+                missing="$missing plugin $name" ;;
+        esac
+    done
     for (( index=0; index<${#MAGPIE_GROUP_ID[@]}; index++ )); do
         group=${MAGPIE_GROUP_ID[index]}
         if output=$(magpie_run group "$group" 2>/dev/null); then
