@@ -114,7 +114,10 @@ precedence over community modules: uv and selected Just installations use
 their own Nu generators. Normal preparation downloads only selected community
 module files and caches their verified bytes; a changed selection replaces the
 owned loader. Native output and community imports share the same validation
-and publication boundary.
+and publication boundary. Validation fails on a parse error but only reports a
+deprecation warning: a device may run a Nu newer than the pinned revision, and
+that warning belongs in the preparation output rather than in every
+interactive startup.
 
 For an air-gapped preparation, supply `DOTFILES_NU_SCRIPTS_ARCHIVE` with a local
 copy of the pinned archive; checksum verification still applies. Updating the

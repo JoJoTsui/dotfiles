@@ -74,8 +74,8 @@ the normal RoamingAppData files, but this Linux environment cannot establish
 unredirected native discovery. The native disposable-home tests retain the XDG
 startup boundary and use no individual `--config` flags. They never scaffold
 the CI user's actual Known Folder. Redirected enterprise profile policies need
-separate native validation. [Pinned Nu resolver](https://github.com/nushell/nushell/blob/0.116.1/crates/nu-config/src/resolve.rs),
-[native environment access](https://github.com/nushell/nushell/blob/0.116.1/crates/nu-config/src/env_access.rs).
+separate native validation. [Pinned Nu resolver](https://github.com/nushell/nushell/blob/0.117.0/crates/nu-config/src/resolve.rs),
+[native environment access](https://github.com/nushell/nushell/blob/0.117.0/crates/nu-config/src/env_access.rs).
 
 `dotfiles-history.cmd` exposes status, explicit first-device/join setup, import,
 and sync. New deployments report pending activation and retain offline history.

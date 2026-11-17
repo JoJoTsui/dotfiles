@@ -12,7 +12,7 @@ ghostty|homebrew|cask|ghostty|1.4.0|desktop|macos
 uv|homebrew|formula|uv|0.13.6|common|macos
 bun|homebrew|formula|bun|1.4.2|common|macos
 nodejs|homebrew|formula|node|26.12.1|common|macos
-nushell|homebrew|formula|nushell|0.116.1|common|macos
+nushell|homebrew|formula|nushell|0.117.0|common|macos
 zsh|homebrew|formula|zsh|5.9.2|common|macos
 rtk-cli|homebrew|formula|rtk|1.1.0|common|macos
 atuin|homebrew|formula|atuin|18.24.1|common|macos

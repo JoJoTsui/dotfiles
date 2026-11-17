@@ -212,6 +212,12 @@ def validate(nu: Path, loader: Path) -> None:
                             check=False, capture_output=True, text=True, encoding="utf-8", timeout=30)
     if result.returncode:
         raise CompletionError("generated Nu completions failed validation: " + result.stderr.strip())
+    # A deprecation warning still parses, and a device may legitimately run a Nu
+    # newer than the pinned revision. Report it here so the drift surfaces at
+    # preparation instead of as noise on every interactive startup.
+    if "deprecated" in result.stderr:
+        print("dotfiles Nu completions: warning: a pinned completion uses syntax the installed Nu "
+              "deprecated; review the pinned nu_scripts revision", file=sys.stderr)
 
 
 def prepare(config: Path, nu: Path, autoload: Path | None = None) -> int:
