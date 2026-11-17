@@ -10,13 +10,40 @@ through `opencode-go/deepseek-v4.1-flash`, never through its Gemini API.
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] `dotfiles-magpie test conductor.deepseek` sends
+- [x] `dotfiles-magpie test conductor.deepseek` sends
       `opencode-go/deepseek-v4.1-flash` and reports ok.
-- [ ] A missing role or a role with no live candidate fails by name.
-- [ ] The command never calls `magpie provider test`.
-- [ ] `docs/MAGPIE.md` describes the command and its small token cost.
-- [ ] A fake completion endpoint test covers ok, error and an unknown role.
+- [x] A missing role or a role with no live candidate fails by name.
+- [x] The command never calls `magpie provider test`.
+- [x] `docs/MAGPIE.md` describes the command and its small token cost.
+- [x] A fake completion endpoint test covers ok, error and an unknown role.
 
 ## Comments
+
+- `magpie_test` and `magpie_test_role` live in the engine, so the managed
+  command and the deployment run the same probe. `dotfiles-magpie test
+  [role…]` resolves each role against `GET /v1/models`, takes the first
+  candidate the gateway serves, and sends one `max_tokens: 16` turn to
+  `/v1/chat/completions` with `Authorization: Bearer magpie`.
+- The report starts with `role|model|state|detail`; a success is
+  `role|model|ok|<ms>`, a failure `role|model|error|<message>` with the
+  gateway's own message, and a role with no live candidate
+  `role|-|error|no candidate the gateway serves`. Any failure exits non-zero.
+- `magpie provider test` is never called: it reports a provider's own
+  endpoints, not the model the routers hold, which is how OpenCode Go's Gemini
+  endpoint was probed before.
+
+Checks:
+
+```
+bash /tmp/test-check.sh          # the engine probe against the live gateway
+role|model|state|detail
+conductor.deepseek|opencode-go/deepseek-v4.1-flash|ok|53708
+exit=0
+
+DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest tests.test_magpie
+Ran 102 tests ... OK
+
+simulated t9k and linux applies: exit 0
+```

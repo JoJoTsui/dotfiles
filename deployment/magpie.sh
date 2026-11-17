@@ -1702,6 +1702,111 @@ magpie_providers() {
     return 0
 }
 
+# The current time in milliseconds. The gateway report needs a wall clock a
+# shell cannot read portably on macOS.
+magpie_now_ms() {
+    local python
+    python=$(magpie_python) || return 1
+    "$python" -c 'import time; print(int(time.time() * 1000))'
+}
+
+# One completion against the gateway, and its verdict. The model is the first
+# candidate the gateway serves for the role, so OpenCode Go is tested through
+# its DeepSeek model and never through its Gemini endpoint. The request is
+# 16 tokens: the cost of the check is one short turn per role.
+magpie_test_role() {
+    local role=$1 gateway=$2 live=$3 candidates candidate id response code body
+    local start end message
+    local -a candidate_list
+    candidates=$(magpie_list_value "$MAGPIE_MODEL_CANDIDATE_ROWS" "$role") || return 1
+    IFS=, read -r -a candidate_list <<< "$candidates"
+    id=''
+    for candidate in "${candidate_list[@]}"; do
+        case "$candidate" in
+            *'?'*) candidate=${candidate%?} ;;
+        esac
+        if magpie_list_contains "$live" "$candidate" || magpie_list_contains "$live" "${candidate#*/}"; then
+            id=$candidate
+            break
+        fi
+    done
+    if [ -z "$id" ]; then
+        printf '%s|-|error|no candidate the gateway serves\n' "$role"
+        return 1
+    fi
+    start=$(magpie_now_ms || true)
+    response=$(curl --noproxy '*' --silent --show-error --connect-timeout 5 --max-time 120 \
+        -H 'Authorization: Bearer magpie' -H 'Content-Type: application/json' \
+        -d "{\"model\":\"$id\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":16}" \
+        -w '\n%{http_code}' "$gateway/v1/chat/completions" 2>&1 || true)
+    end=$(magpie_now_ms || true)
+    code=${response##*$'\n'}
+    body=${response%$'\n'*}
+    case "$code" in
+        [0-9][0-9][0-9]) ;;
+        *) body=$(printf '%s' "$response" | head -n1); code='' ;;
+    esac
+    if [ "$code" = 200 ] && printf '%s' "$body" | grep -q '"choices"'; then
+        if [ -n "$start" ] && [ -n "$end" ]; then
+            printf '%s|%s|ok|%s\n' "$role" "$id" "$((end - start))"
+        else
+            printf '%s|%s|ok|0\n' "$role" "$id"
+        fi
+        return 0
+    fi
+    message=$(printf '%s' "$body" |
+        sed -n 's/.*"message"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+    [ -n "$message" ] || message=$body
+    [ -n "$message" ] || message="http ${code:-none}"
+    # The report is pipe-separated and one line per role.
+    message=${message//|//}
+    message=${message:0:120}
+    printf '%s|%s|error|%s\n' "$role" "$id" "$message"
+    return 1
+}
+
+# Probe model roles through the gateway's OpenAI-compatible endpoint. A role
+# is tested through the first candidate the gateway serves; a role with no
+# live candidate fails by name. The command never runs `magpie provider test`,
+# which probes a provider's own endpoints rather than the models the routers
+# use.
+magpie_test() {
+    local gateway output live id role
+    local -a roles
+    local failed=0
+    magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
+    if ! magpie_gateway_status; then
+        magpie_fail "the Magpie gateway does not answer on $MAGPIE_GATEWAY_DEFAULT"
+        return 1
+    fi
+    gateway=$MAGPIE_GATEWAY
+    if [ "$#" -gt 0 ]; then
+        for role in "$@"; do
+            if ! magpie_list_contains "$MAGPIE_MODEL_ROLES" "$role"; then
+                magpie_fail "unknown model role: $role"
+                return 1
+            fi
+        done
+        roles=("$@")
+    else
+        roles=("${MAGPIE_MODEL_ROLE[@]}")
+    fi
+    output=$(magpie_models_fetch "$gateway" || true)
+    if [ -z "$output" ]; then
+        magpie_fail "cannot read the model list from $gateway/v1/models"
+        return 1
+    fi
+    live=''
+    for id in $(magpie_model_ids "$output"); do
+        live="$live|$id|"
+    done
+    printf 'role|model|state|detail\n'
+    for role in "${roles[@]}"; do
+        magpie_test_role "$role" "$gateway" "$live" || failed=1
+    done
+    return "$failed"
+}
+
 # The state of the gateway, the proxy, the providers, the groups, the wiring,
 # and the last Codex guard result. A missing required piece is a failing
 # status.

@@ -7,16 +7,17 @@
 set -euo pipefail
 
 usage() {
-    printf 'usage: dotfiles-magpie apply|status|providers\n' >&2
+    printf 'usage: dotfiles-magpie apply|status|providers|test\n' >&2
     printf '  apply      apply the model catalogs to the local gateway\n' >&2
     printf '  status     report the gateway, the providers, the groups, and the wiring\n' >&2
     printf '  providers  report the model provider catalog and its credential sources\n' >&2
+    printf '  test [role...]  send one tiny completion to each model role\n' >&2
 }
 
 command=${1:-}
 if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
-    apply|status|providers) ;;
+    apply|status|providers|test) ;;
     -h|--help|help)
         usage
         exit 0
@@ -58,4 +59,5 @@ case "$command" in
     apply) magpie_apply "$@" ;;
     status) magpie_status "$@" ;;
     providers) magpie_providers "$@" ;;
+    test) magpie_test "$@" ;;
 esac

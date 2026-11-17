@@ -347,19 +347,34 @@ class MagpieApplyTests(unittest.TestCase):
         """A gateway that serves the canned model list on loopback."""
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):
-                body = json.dumps({"object": "list",
-                                   "data": [{"id": model} for model in MODELS]}).encode()
-                self.send_response(200)
+            def reply(self, code, payload):
+                body = json.dumps(payload).encode()
+                self.send_response(code)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
 
+            def do_GET(self):
+                self.reply(200, {"object": "list",
+                                 "data": [{"id": model} for model in MODELS]})
+
+            def do_POST(self):
+                length = int(self.headers.get("Content-Length") or 0)
+                request = json.loads(self.rfile.read(length) or b"{}")
+                self.server.completions.append(request.get("model"))
+                if self.server.reject_completions:
+                    self.reply(500, {"error": {"message": "the provider refused the turn"}})
+                    return
+                self.reply(200, {"choices": [{"message": {"role": "assistant",
+                                                          "content": "pong"}}]})
+
             def log_message(self, *arguments):
                 pass
 
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        server.completions = []
+        server.reject_completions = False
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return server
 
@@ -908,6 +923,52 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertIn("visible|claude|conductor,openai-stack", result.stdout)
         self.assertIn("visible|pi|workhorse", result.stdout)
         self.assertIn("visible|dsh|workhorse", result.stdout)
+
+    def test_the_test_command_probes_a_role_through_its_first_live_candidate(self):
+        self.seed_home()
+        result = self.run_command("test", "conductor.deepseek")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("role|model|state|detail", result.stdout)
+        self.assertIn("conductor.deepseek|opencode-go/deepseek-v4.1-flash|ok|", result.stdout)
+        self.assertEqual(self.server.completions, ["opencode-go/deepseek-v4.1-flash"])
+        # The provider-level probe tests a provider's own endpoints, not the
+        # model the routers hold, so the command never runs it.
+        self.assertFalse(any(command.startswith("provider test") for command in self.commands()))
+
+    def test_the_test_command_probes_every_role_by_default(self):
+        self.seed_home()
+        result = self.run_command("test")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for role in ("chatgpt.sol", "chatgpt.terra", "openai.sol", "openai.terra",
+                     "conductor.kimi", "conductor.deepseek", "workhorse.minimax"):
+            self.assertIn(role + "|", result.stdout)
+
+    def test_the_test_command_reports_an_error_and_fails(self):
+        self.seed_home()
+        self.server.reject_completions = True
+        result = self.run_command("test", "workhorse.minimax")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("workhorse.minimax|minimax-cn/MiniMax-M3.1-Flash|error|the provider refused the turn",
+                      result.stdout)
+
+    def test_the_test_command_rejects_an_unknown_role(self):
+        self.seed_home()
+        result = self.run_command("test", "conductor.absent")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown model role: conductor.absent", result.stderr)
+        self.assertEqual(self.server.completions, [])
+
+    def test_the_test_command_fails_a_role_with_no_live_candidate(self):
+        self.seed_home()
+        catalog = self.home / ".config/dotfiles/magpie"
+        text = (catalog / "models.tsv").read_text(encoding="utf-8").replace(
+            "workhorse.minimax|minimax-cn/MiniMax-M3.1-Flash|yes",
+            "workhorse.minimax|minimax-cn/MiniMax-M9.9|yes")
+        (catalog / "models.tsv").write_text(text, encoding="utf-8")
+        result = self.run_command("test", "workhorse.minimax")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("workhorse.minimax|-|error|no candidate the gateway serves", result.stdout)
+        self.assertEqual(self.server.completions, [])
 
     def test_the_status_reports_the_plugin_state(self):
         self.seed_home()

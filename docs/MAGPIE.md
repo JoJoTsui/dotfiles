@@ -270,10 +270,37 @@ native release can be added without changing the intent.
 
 ```bash
 dotfiles-magpie apply       # apply the catalogs to the local gateway
-dotfiles-magpie status      # gateway, proxy, providers, groups, wiring, guard
+dotfiles-magpie status      # gateway, proxy, plugins, providers, groups, visibility, guard
 dotfiles-magpie providers   # the provider catalog and its credential sources
+dotfiles-magpie test        # one tiny completion per model role
+dotfiles-magpie test conductor.deepseek   # one role
 ```
 
 `status` is read-only and exits non-zero when a required piece is missing.
 `providers` prints the catalog with the state of each credential source and
 never a value.
+
+### `dotfiles-magpie test`
+
+`test [role…]` sends one completion to each requested model role, or to every
+role in `models.tsv` when none is named. A role is tested through the **first
+candidate the gateway serves**, resolved from `GET /v1/models`, so OpenCode Go
+is tested through `opencode-go/deepseek-v4.1-flash` and never through its
+Gemini API. Each role gets one `max_tokens: 16` turn against
+`/v1/chat/completions` with `Authorization: Bearer magpie`.
+
+The report is one line per role:
+
+```
+role|model|state|detail
+conductor.deepseek|opencode-go/deepseek-v4.1-flash|ok|412
+```
+
+`detail` is the round-trip in milliseconds on success and the gateway's own
+message on failure. The command exits non-zero when any role fails, and an
+unknown role fails by name before anything is sent. It never runs
+`magpie provider test`: a provider-level probe reports the provider's own
+endpoints, and the routers hold specific models of it.
+
+The check costs one short turn per role — a handful of tokens against each
+provider in the chain, no streaming, no tools.
