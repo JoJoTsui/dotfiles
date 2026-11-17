@@ -39,3 +39,5 @@ codex|bun|@openai/codex|-|0.166.0|exact|codex|all|2|selectable|codex|16.0.0|-|de
 minimax|bun|@minimax-ai/code|-|0.7.0|exact|mcode|all|1|selectable|-|22.19.0|better-sqlite3|deployment/agents/minimax/bun.lock|-
 codegraph|bun|@colbymchenry/codegraph|-|1.6.2|exact|codegraph|all|1|always|-|24.0.0|-|deployment/agents/codegraph/bun.lock|-
 qoder|native|qodercli|-|1.1.82|exact|qoder,qodercli|all|1|selectable|qodercli|-|-|https://qoder-ide.oss-accelerate.aliyuncs.com/qodercli/channels|{version}
+dsh|bun|@deepseek-ai/dsh|-|0.2.2-rc.1|exact|dsh|all|1|selectable|-|24.9.0|-|deployment/agents/dsh/bun.lock|-
+dsh-tui|bun|@deepseek-harness-tui/dsh-tui|-|0.20.1|exact|dsh-tui,dst|all|1|selectable|-|22.19.0|-|deployment/agents/dsh-tui/bun.lock|-

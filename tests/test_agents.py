@@ -35,7 +35,8 @@ class AgentTests(unittest.TestCase):
         result = self.deploy("--plan")
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
-        self.assertEqual(plan["agents"], ["kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder"])
+        self.assertEqual(plan["agents"], ["kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder",
+                                         "dsh", "dsh-tui"])
         selected = {item["name"]: item for item in plan["agentPackages"]}
         self.assertEqual(selected["codex"]["package"], "@openai/codex")
         self.assertEqual(selected["codex"]["version"], agent_pins()["codex"]["version"])
@@ -47,14 +48,58 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(selected["qoder"]["manager"], "native")
         self.assertEqual(selected["qoder"]["version"], native_agent_pins()["qoder"]["version"])
         self.assertEqual(selected["codegraph"]["version"], agent_pins()["codegraph"]["version"])
-        self.assertEqual(len(selected), 8)
+        self.assertEqual(selected["dsh"]["package"], "@deepseek-ai/dsh")
+        self.assertEqual(selected["dsh"]["commands"], ["dsh"])
+        self.assertEqual(selected["dsh-tui"]["package"], "@deepseek-harness-tui/dsh-tui")
+        self.assertEqual(selected["dsh-tui"]["commands"], ["dsh-tui", "dst"])
+        self.assertEqual(len(selected), 10)
         self.assertFalse(self.home.exists())
+
+    def test_the_dsh_agents_install_their_launchers(self):
+        """The frozen Bun projects expose dsh, dsh-tui, and dst."""
+        pins = agent_pins()
+        tools = self.root / "tools"
+        tools.mkdir()
+        bun = tools / "bun"
+        bun.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, pathlib, sys\n"
+            f"pins = {pins!r}\n"
+            "if sys.argv[1:2] == ['--version']:\n"
+            f"    print({common_pin('bun')!r}); raise SystemExit\n"
+            "project = pathlib.Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
+            "pin = pins[project.name]\n"
+            "for command in pin['commands'].split(','):\n"
+            "    target = project / 'node_modules/.bin' / command\n"
+            "    target.parent.mkdir(parents=True, exist_ok=True)\n"
+            "    target.write_text('#!/bin/sh\\necho ' + pin['version'] + '\\n')\n"
+            "    target.chmod(0o755)\n",
+            encoding="utf-8")
+        bun.chmod(0o755)
+        node = tools / "node"
+        node.write_text("#!/bin/sh\necho v" + common_pin("nodejs") + "\n", encoding="utf-8")
+        node.chmod(0o755)
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("the source application requires chezmoi")
+        environment = dict(self.env, DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node),
+                           DOTFILES_CHEZMOI_BIN=chezmoi)
+        result = self.deploy("--agents-only", "--agents", "dsh,dsh-tui", env=environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for command in ("dsh", "dsh-tui", "dst"):
+            launcher = self.home / ".local/bin" / command
+            self.assertTrue(launcher.is_file(), command)
+            self.assertTrue(launcher.stat().st_mode & 0o111, command)
+            owner = "dsh-tui" if command in ("dsh-tui", "dst") else "dsh"
+            self.assertIn(f"/.bun/managed/{owner}/node_modules/.bin/{command}",
+                          launcher.read_text(encoding="utf-8"))
 
     def test_none_and_named_agents_keep_codegraph_and_reject_unknown_names(self):
         for selector, expected in (("none", []), ("codex,kimi-code,codex", ["kimi", "codex"]),
                                    ("claude-code,pi", ["pi", "claude"]),
                                    ("minimax-code,qoder", ["minimax", "qoder"]),
-                                   ("all", ["kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder"])):
+                                   ("all", ["kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder",
+                                            "dsh", "dsh-tui"])):
             with self.subTest(selector=selector):
                 result = self.deploy("--plan", "--agents", selector)
                 self.assertEqual(result.returncode, 0, result.stderr)

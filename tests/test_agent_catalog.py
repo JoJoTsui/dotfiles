@@ -73,15 +73,35 @@ class ProviderCatalogTests(unittest.TestCase):
         self.assertNotIn("deployment/agents/catalog.tsv", windows)
         self.assertNotIn("deployment/agents/native.tsv", windows)
 
+    def test_the_dsh_agents_are_pinned_bun_projects_without_a_herdr_kind(self):
+        records = {record[0]: record for record in self.catalog_records()}
+        for name, package, version, commands, minimum in (
+                ("dsh", "@deepseek-ai/dsh", "0.2.2-rc.1", "dsh", "24.9.0"),
+                ("dsh-tui", "@deepseek-harness-tui/dsh-tui", "0.20.1", "dsh-tui,dst", "22.19.0")):
+            with self.subTest(agent=name):
+                record = records[name]
+                self.assertEqual(record[1], "bun")
+                self.assertEqual(record[2], package)
+                self.assertEqual(record[4], version)
+                self.assertEqual(record[5], "exact")
+                self.assertEqual(record[6], commands)
+                self.assertEqual(record[7], "all")
+                self.assertEqual(record[9], "selectable")
+                self.assertEqual(record[10], "-")
+                self.assertEqual(record[11], minimum)
+                self.assertTrue((SOURCE / record[13]).is_file())
+                self.assertTrue((SOURCE / f"deployment/agents/{name}/package.json").is_file())
+
     def test_plan_names_provider_version_commands_and_herdr_kind_for_every_platform(self):
         # macOS resolves Homebrew first; the other platforms use the
         # deployment-owned provider alone.
         providers = {
             "macos": {"kimi": "homebrew", "pi": "homebrew", "opencode": "homebrew",
                       "claude": "homebrew", "codex": "homebrew", "minimax": "bun",
-                      "codegraph": "bun", "qoder": "native"},
+                      "codegraph": "bun", "qoder": "native", "dsh": "bun", "dsh-tui": "bun"},
             "linux": {"kimi": "bun", "pi": "bun", "opencode": "bun", "claude": "bun",
-                      "codex": "bun", "minimax": "bun", "codegraph": "bun", "qoder": "native"},
+                      "codex": "bun", "minimax": "bun", "codegraph": "bun", "qoder": "native",
+                      "dsh": "bun", "dsh-tui": "bun"},
         }
         providers["wsl"] = providers["linux"]
         for platform in PLATFORMS:
@@ -184,7 +204,7 @@ class ProviderCatalogTests(unittest.TestCase):
                 self.assertEqual(record[8], "1")
         # The clients Homebrew does not ship stay with the deployment-owned
         # provider alone.
-        for name in ("minimax", "codegraph", "qoder"):
+        for name in ("minimax", "codegraph", "qoder", "dsh", "dsh-tui"):
             with self.subTest(agent=name):
                 self.assertNotIn(name, expected)
 
@@ -361,6 +381,8 @@ class WindowsProviderCatalogTests(unittest.TestCase):
         self.assertEqual(packages["codex"]["herdr"], "codex")
         self.assertEqual(packages["minimax"]["herdr"], None)
         self.assertEqual(packages["qoder"]["herdr"], "qodercli")
+        self.assertEqual(packages["dsh"]["herdr"], None)
+        self.assertEqual(packages["dsh-tui"]["herdr"], None)
         self.assertFalse(self.home.exists())
 
 

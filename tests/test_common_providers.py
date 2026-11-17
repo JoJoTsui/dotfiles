@@ -191,6 +191,16 @@ class CommonProviderTests(unittest.TestCase):
             [str(self.home / ".local/bin/atuin"), "--version"], text=True)
         self.assertEqual(diagnostic.split()[:2], ["atuin", importer_pin])
 
+    def test_the_shipped_catalog_pins_pnpm_for_the_tui(self):
+        rows = [line.split("|") for line in
+                (SOURCE / "deployment/common-tools.tsv").read_text(encoding="utf-8").splitlines()
+                if line and not line.startswith("#")]
+        pnpm = [row for row in rows if row[0] == "pnpm"]
+        self.assertEqual(len(pnpm), 1)
+        self.assertEqual(pnpm[0][1], "pnpm==12.21.0")
+        self.assertEqual(pnpm[0][2], "pnpm=pnpm")
+        self.assertEqual(pnpm[0][3], "all")
+
     def test_atuin_device_adoption_requires_the_importer_schema_pin(self):
         pin, older, newer = self.atuin_group()
         for version in (older, newer, pin + "-custom", pin):

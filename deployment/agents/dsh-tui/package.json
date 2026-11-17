@@ -1,0 +1,8 @@
+{
+  "name": "dotfiles-managed-dsh-tui",
+  "private": true,
+  "dependencies": {
+    "@deepseek-harness-tui/dsh-tui": "0.20.1"
+  },
+  "trustedDependencies": []
+}
