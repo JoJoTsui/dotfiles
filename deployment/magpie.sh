@@ -18,7 +18,10 @@ MAGPIE_BACKUP_KEEP=10
 MAGPIE_GATEWAY_DEFAULT="http://127.0.0.1:3425"
 # The Magpie provider presets a catalog row may name. Magpie owns this list,
 # so a catalog may not invent a preset.
-MAGPIE_PROVIDER_PRESETS="codex opencode-go kimi-code-cn minimax-cn"
+MAGPIE_PROVIDER_PRESETS="codex opencode-go kimi-code-cn minimax-cn openai"
+# The reasoning efforts Magpie accepts after a model id. A group member may pin
+# one as "role:<effort>".
+MAGPIE_EFFORTS="none minimal low medium high xhigh max"
 # The device store that holds credentials the deployment may read.
 MAGPIE_ENV_FILE=".config/dotfiles/magpie.env"
 # The Homebrew cask the deployment adopts, and the lowest app version it
@@ -71,6 +74,40 @@ magpie_list_value() {
 magpie_name_ok() {
     case "$1" in
         ''|*[!A-Za-z0-9._-]*) return 1 ;;
+    esac
+    return 0
+}
+
+# A group member, split into its role and its optional reasoning effort. A
+# member is "role" or "role:<effort>"; the effort is one of Magpie's
+# reasoning levels and is appended to every model id the role resolves to. A
+# group reference keeps its own routing, so it carries no effort.
+magpie_member_split() {
+    local member=$1 role effort
+    MAGPIE_MEMBER_ROLE=''
+    MAGPIE_MEMBER_EFFORT=''
+    case "$member" in
+        group/*)
+            case "$member" in
+                *:*)
+                    magpie_fail "a group member cannot carry a reasoning effort: $member"
+                    return 1 ;;
+            esac
+            MAGPIE_MEMBER_ROLE=$member
+            return 0 ;;
+    esac
+    case "$member" in
+        *:*)
+            role=${member%%:*}
+            effort=${member#*:}
+            case " $MAGPIE_EFFORTS " in
+                *" $effort "*) ;;
+                *) magpie_fail "unknown reasoning effort in group member: $member"; return 1 ;;
+            esac
+            MAGPIE_MEMBER_ROLE=$role
+            MAGPIE_MEMBER_EFFORT=$effort
+            ;;
+        *) MAGPIE_MEMBER_ROLE=$member ;;
     esac
     return 0
 }
@@ -349,6 +386,26 @@ magpie_catalog_models() {
     return 0
 }
 
+# Whether a group reaches a model role, directly or through a nested group.
+# A group that only nests groups which nest nothing has no model role, and a
+# cycle of group references reaches none either.
+magpie_group_reaches_role() {
+    local id=$1 depth=$2 members member member_role
+    local -a member_list
+    [ "$depth" -le 8 ] || return 1
+    members=$(magpie_list_value "$MAGPIE_GROUP_MEMBERS" "$id") || return 1
+    IFS=, read -r -a member_list <<< "$members"
+    for member in "${member_list[@]}"; do
+        magpie_member_split "$member" || return 1
+        member_role=$MAGPIE_MEMBER_ROLE
+        case "$member_role" in
+            group/*) magpie_group_reaches_role "${member_role#group/}" $((depth + 1)) && return 0 ;;
+            *) return 0 ;;
+        esac
+    done
+    return 1
+}
+
 # The routing group catalog: id, members, routing, stays, listed, purpose.
 magpie_catalog_groups() {
     local file=$1 line id members routing stays listed purpose member
@@ -374,12 +431,8 @@ magpie_catalog_groups() {
         IFS=, read -r -a member_list <<< "$members"
         [ "${#member_list[@]}" -gt 0 ] || { magpie_fail "group has no member: $id"; return 1; }
         for member in "${member_list[@]}"; do
-            case "$member" in
-                group/*)
-                    magpie_name_ok "${member#group/}" || { magpie_fail "invalid group member: $member"; return 1; } ;;
-                *)
-                    magpie_name_ok "$member" || { magpie_fail "invalid group member: $member"; return 1; } ;;
-            esac
+            magpie_member_split "$member" || return 1
+            magpie_name_ok "${MAGPIE_MEMBER_ROLE#group/}" || { magpie_fail "invalid group member: $member"; return 1; }
         done
         case "$routing" in
             drain) ;;
@@ -444,7 +497,7 @@ magpie_catalog_validate() {
     local providers="$dir/providers.tsv" models="$dir/models.tsv"
     local groups="$dir/groups.tsv" wiring="$dir/wiring.tsv"
     local file line member role candidates candidate id provider agent
-    local member_list_text has_role
+    local member_list_text
     local -a candidate_list member_list
     for file in "$providers" "$models" "$groups" "$wiring"; do
         [ -f "$file" ] || { magpie_fail "catalog is missing: ${file##*/}"; return 1; }
@@ -487,34 +540,33 @@ magpie_catalog_validate() {
             esac
         done
     done < "$models"
-    # Every group member exists, and every group holds a model role.
+    # Every group member exists, and every group reaches a model role.
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}
         case "$line" in ''|\#*) continue ;; esac
         IFS='|' read -r -a MAGPIE_ROW_FIELDS <<< "$line"
         id=${MAGPIE_ROW_FIELDS[0]}; member_list_text=${MAGPIE_ROW_FIELDS[1]}
         IFS=, read -r -a member_list <<< "$member_list_text"
-        has_role=''
         for member in "${member_list[@]}"; do
-            case "$member" in
+            magpie_member_split "$member" || return 1
+            case "$MAGPIE_MEMBER_ROLE" in
                 group/*)
-                    if [ "${member#group/}" = "$id" ]; then
+                    if [ "${MAGPIE_MEMBER_ROLE#group/}" = "$id" ]; then
                         magpie_fail "group $id references itself"
                         return 1
                     fi
-                    if ! magpie_list_contains "$MAGPIE_GROUP_IDS" "${member#group/}"; then
-                        magpie_fail "group $id names an undeclared group: ${member#group/}"
+                    if ! magpie_list_contains "$MAGPIE_GROUP_IDS" "${MAGPIE_MEMBER_ROLE#group/}"; then
+                        magpie_fail "group $id names an undeclared group: ${MAGPIE_MEMBER_ROLE#group/}"
                         return 1
                     fi ;;
                 *)
-                    if ! magpie_list_contains "$MAGPIE_MODEL_ROLES" "$member"; then
-                        magpie_fail "group $id names an unknown model role: $member"
+                    if ! magpie_list_contains "$MAGPIE_MODEL_ROLES" "$MAGPIE_MEMBER_ROLE"; then
+                        magpie_fail "group $id names an unknown model role: $MAGPIE_MEMBER_ROLE"
                         return 1
-                    fi
-                    has_role=yes ;;
+                    fi ;;
             esac
         done
-        if [ -z "$has_role" ]; then
+        if ! magpie_group_reaches_role "$id" 0; then
             magpie_fail "group $id has no model role"
             return 1
         fi
@@ -762,27 +814,36 @@ magpie_role_models() {
     printf '%s' "${matched%,}"
 }
 
-# The models one group holds, in order. A member is a model role or another
-# group. A group with an unresolved member is incomplete.
+# The models one group holds, in order. A member is a model role, a model
+# role with a pinned reasoning effort, or another group. A group with an
+# unresolved member is incomplete.
 magpie_group_models_for() {
     local id=$1 depth=${2:-0} members member part models='' status
+    local member_role member_effort
     local -a member_list
     [ "$depth" -le 8 ] || return 1
     members=$(magpie_list_value "$MAGPIE_GROUP_MEMBERS" "$id") || return 1
     IFS=, read -r -a member_list <<< "$members"
     for member in "${member_list[@]}"; do
-        case "$member" in
+        magpie_member_split "$member" || return 1
+        member_role=$MAGPIE_MEMBER_ROLE
+        member_effort=$MAGPIE_MEMBER_EFFORT
+        case "$member_role" in
             group/*)
                 # Keep the reference: Magpie treats the group as one member
                 # with its own routing and listed setting. Resolve it first so
                 # a reference to a group whose members are unavailable fails.
-                magpie_group_models_for "${member#group/}" $((depth + 1)) >/dev/null || return 1
-                part=$member
+                magpie_group_models_for "${member_role#group/}" $((depth + 1)) >/dev/null || return 1
+                part=$member_role
                 ;;
             *)
-                status=$(magpie_list_value "$MAGPIE_ROLE_STATUS" "$member") || return 1
+                status=$(magpie_list_value "$MAGPIE_ROLE_STATUS" "$member_role") || return 1
                 [ "$status" = resolved ] || return 1
-                part=$(magpie_list_value "$MAGPIE_ROLE_MODELS" "$member") || return 1
+                part=$(magpie_list_value "$MAGPIE_ROLE_MODELS" "$member_role") || return 1
+                if [ -n "$member_effort" ]; then
+                    part=$(printf '%s' "$part" | tr ',' '\n' |
+                        sed "s/\$/:$member_effort/" | paste -sd, -)
+                fi
                 ;;
         esac
         [ -n "$part" ] || return 1
@@ -825,17 +886,20 @@ magpie_enabled_providers() {
 # The provider presets one group uses, including the groups it holds.
 magpie_group_providers() {
     local id=$1 depth=$2 members member role candidates provider used=''
+    local member_role
     local -a member_list MAGPIE_LOCAL_CANDIDATES
     [ "$depth" -le 8 ] || return ''
     members=$(magpie_list_value "$MAGPIE_GROUP_MEMBERS" "$id") || return ''
     IFS=, read -r -a member_list <<< "$members"
     for member in "${member_list[@]}"; do
-        case "$member" in
+        magpie_member_split "$member" || continue
+        member_role=$MAGPIE_MEMBER_ROLE
+        case "$member_role" in
             group/*)
-                used="$used$(magpie_group_providers "${member#group/}" $((depth + 1)))"
+                used="$used$(magpie_group_providers "${member_role#group/}" $((depth + 1)))"
                 ;;
             *)
-                role=$member
+                role=$member_role
                 candidates=$(magpie_list_value "$MAGPIE_MODEL_CANDIDATE_ROWS" "$role") || continue
                 IFS=, read -r -a MAGPIE_LOCAL_CANDIDATES <<< "$candidates"
                 for candidate in "${MAGPIE_LOCAL_CANDIDATES[@]}"; do

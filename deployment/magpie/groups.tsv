@@ -4,7 +4,11 @@
 #
 # id        the group name an agent selects as "group/<id>".
 # members   comma-separated model roles, or "group/<id>" for another group, in
-#           the order the gateway tries them.
+#           the order the gateway tries them. A model role may carry a fixed
+#           reasoning effort as "role:<effort>", where the effort is one of
+#           none, minimal, low, medium, high, xhigh, max; the effort is
+#           appended to every model id the role resolves to. A group reference
+#           carries no effort, because a group keeps its own routing.
 # routing   the routing mode. drain spends a member's accounts until they are
 #           used up, moves to the next member, and never returns to an earlier
 #           one. It is Magpie's "Until used up".
@@ -12,6 +16,7 @@
 # listed    yes when the group appears in an agent's picker, no when it stays
 #           reachable only as another group's member.
 # purpose   what the group is for.
-chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|standalone ChatGPT plan group
-conductor|conductor.kimi,conductor.deepseek,group/chatgpt|drain|auto|yes|Claude Code
+chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|weekly ChatGPT quota
+openai-stack|group/chatgpt,openai.sol,openai.terra,conductor.kimi:max|drain|auto|yes|weekly, then API, then Kimi max
+conductor|group/openai-stack|drain|auto|yes|Claude Code
 workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh

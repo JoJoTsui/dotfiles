@@ -78,8 +78,8 @@ else:
     print("ok")
 '''
 
-MODELS = ["codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "kimi-code-cn/k3.1-pro",
-          "opencode-go/deepseek-v4.1-flash", "minimax-cn/MiniMax-M3.1-Flash"]
+MODELS = ["codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "openai/gpt-6.1-sol", "openai/gpt-6.1-terra",
+          "kimi-code-cn/k3.1-pro", "opencode-go/deepseek-v4.1-flash", "minimax-cn/MiniMax-M3.1-Flash"]
 
 
 class MagpieCatalogTests(unittest.TestCase):
@@ -145,7 +145,7 @@ class MagpieCatalogTests(unittest.TestCase):
 
     def test_a_member_role_that_does_not_exist_is_rejected(self):
         self.catalog_copy()
-        text = self.read_catalog("groups.tsv").replace("conductor.kimi,", "conductor.kimi,conductor.absent,")
+        text = self.read_catalog("groups.tsv").replace("openai.terra,", "openai.terra,conductor.absent,")
         self.write_catalog("groups.tsv", text)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
@@ -159,14 +159,48 @@ class MagpieCatalogTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("names an undeclared group: absent", result.stderr)
 
-    def test_a_group_without_a_model_role_is_rejected(self):
+    def test_a_group_without_a_reachable_model_role_is_rejected(self):
         self.catalog_copy()
         text = self.read_catalog("groups.tsv").replace(
-            "chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|", "chatgpt|group/conductor|drain|auto|no|")
+            "chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|weekly ChatGPT quota",
+            "chatgpt|group/workhorse|drain|auto|no|nothing")
+        text = text.replace(
+            "workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh",
+            "workhorse|group/chatgpt|drain|auto|yes|nothing")
         self.write_catalog("groups.tsv", text)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("has no model role", result.stderr)
+
+    def test_the_openai_stack_and_the_pinned_effort_are_declared(self):
+        providers = (CATALOG / "providers.tsv").read_text(encoding="utf-8").splitlines()
+        self.assertIn("openai|openai|env:OPENAI_API_KEY|yes", providers)
+        models = (CATALOG / "models.tsv").read_text(encoding="utf-8").splitlines()
+        self.assertIn("openai.sol|openai/gpt-6.1-sol|yes", models)
+        self.assertIn("openai.terra|openai/gpt-6.1-terra|yes", models)
+        groups = [line for line in (CATALOG / "groups.tsv").read_text(encoding="utf-8").splitlines()
+                  if line and not line.startswith("#")]
+        self.assertEqual([line.split("|")[0] for line in groups],
+                         ["chatgpt", "openai-stack", "conductor", "workhorse"])
+        self.assertEqual(groups[1].split("|")[1],
+                         "group/chatgpt,openai.sol,openai.terra,conductor.kimi:max")
+        self.assertEqual(groups[2].split("|")[1], "group/openai-stack")
+
+    def test_an_unknown_reasoning_effort_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("groups.tsv").replace("conductor.kimi:max", "conductor.kimi:turbo")
+        self.write_catalog("groups.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown reasoning effort in group member: conductor.kimi:turbo", result.stderr)
+
+    def test_a_group_reference_cannot_carry_a_reasoning_effort(self):
+        self.catalog_copy()
+        text = self.read_catalog("groups.tsv").replace("group/chatgpt", "group/chatgpt:max")
+        self.write_catalog("groups.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("a group member cannot carry a reasoning effort: group/chatgpt:max", result.stderr)
 
     def test_a_value_that_looks_like_a_key_is_rejected(self):
         self.catalog_copy()
@@ -271,7 +305,8 @@ class MagpieApplyTests(unittest.TestCase):
             return
         store = self.home / ".config/dotfiles"
         store.mkdir(parents=True, exist_ok=True)
-        (store / "magpie.env").write_text("KIMI_CODE_CN_API_KEY=sk-fixture-kimi\n", encoding="utf-8")
+        (store / "magpie.env").write_text(
+            "KIMI_CODE_CN_API_KEY=sk-fixture-kimi\nOPENAI_API_KEY=sk-fixture-openai\n", encoding="utf-8")
         (store / "magpie.env").chmod(0o600)
         (self.home / ".local/share/opencode").mkdir(parents=True, exist_ok=True)
         (self.home / ".local/share/opencode/auth.json").write_text(
@@ -324,6 +359,7 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertIn("provider add kimi-code-cn sk-fixture-kimi", commands)
         self.assertIn("provider add opencode-go sk-fixture-opencode", commands)
         self.assertIn("provider add minimax-cn sk-fixture-minimax", commands)
+        self.assertIn("provider add openai sk-fixture-openai", commands)
         self.assertTrue(any(command.startswith("group add conductor models=") for command in commands))
         self.assertEqual([command for command in commands if command == "pi group/workhorse"],
                          ["pi group/workhorse"])
@@ -335,8 +371,8 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(self.apply().returncode, 0)
         commands = self.commands()
         order = ["settings set proxy", "provider add codex", "provider add opencode-go",
-                 "provider add kimi-code-cn", "provider add minimax-cn",
-                 "group add chatgpt", "group add conductor", "group add workhorse",
+                 "provider add kimi-code-cn", "provider add minimax-cn", "provider add openai",
+                 "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
                  "pi group/workhorse", "dsh group/workhorse"]
         positions = []
         for command in order:
@@ -344,6 +380,18 @@ class MagpieApplyTests(unittest.TestCase):
             self.assertEqual(len(matches), 1, command)
             positions.append(matches[0])
         self.assertEqual(positions, sorted(positions))
+
+    def test_the_openai_stack_drains_the_plan_then_the_api_then_kimi_max(self):
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = self.commands()
+        stack = [command for command in commands if command.startswith("group add openai-stack")]
+        self.assertEqual(stack, [
+            "group add openai-stack models=group/chatgpt,openai/gpt-6.1-sol,openai/gpt-6.1-terra,"
+            "kimi-code-cn/k3.1-pro:max routing=drain stays=auto listed=yes"], commands)
+        conductor = [command for command in commands if command.startswith("group add conductor")]
+        self.assertEqual(conductor, [
+            "group add conductor models=group/openai-stack routing=drain stays=auto listed=yes"])
 
     def write_catalog(self, name, text):
         (self.catalog / name).write_text(text, encoding="utf-8")
@@ -659,10 +707,11 @@ class MagpieCommandTests(MagpieApplyTests):
         """A gateway that answers with every provider and group in place."""
         self.state.mkdir(parents=True, exist_ok=True)
         (self.state / "providers.json").write_text(
-            json.dumps(["codex", "opencode-go", "kimi-code-cn", "minimax-cn"]), encoding="utf-8")
+            json.dumps(["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai"]), encoding="utf-8")
         (self.state / "groups.json").write_text(json.dumps({
             "chatgpt": "codex/gpt-6.1-sol,codex/gpt-6.1-terra",
-            "conductor": "kimi-code-cn/k3.1-pro,opencode-go/deepseek-v4.1-flash,codex/gpt-6.1-sol,codex/gpt-6.1-terra",
+            "openai-stack": "group/chatgpt,openai/gpt-6.1-sol,openai/gpt-6.1-terra,kimi-code-cn/k3.1-pro:max",
+            "conductor": "group/openai-stack",
             "workhorse": "minimax-cn/MiniMax-M3.1-Flash,opencode-go/deepseek-v4.1-flash",
         }), encoding="utf-8")
         (self.state / "proxy.txt").write_text(json.dumps("http://127.0.0.1:7897"), encoding="utf-8")
