@@ -14,7 +14,7 @@ usage() {
 }
 
 command=${1:-}
-[ "$#" -gt 0 ] && shift
+if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
     apply|status|providers) ;;
     -h|--help|help)
