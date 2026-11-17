@@ -15,7 +15,7 @@ neither side and is never written.
 
 | Owner | Owns | Never owns |
 | --- | --- | --- |
-| The repository | the five catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
+| The repository | the six catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
 | Magpie | provider keys and accounts, the usage store, Pi's `~/.pi/agent/models.json`, DSH's Magpie route | the intent: which models a group holds |
 | Neither | `~/.codex/config.toml` and `~/.codex/auth.json`, the official OpenCode, Kimi Code, and MiniMax Code configurations | — |
 

@@ -115,7 +115,7 @@ MODELS = ["codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "openai/gpt-6.1-sol", "ope
 
 
 class MagpieCatalogTests(unittest.TestCase):
-    """The four catalogs are the deployment's model intent."""
+    """The catalogs are the deployment's model intent."""
 
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-magpie-catalog-")

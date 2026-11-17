@@ -114,8 +114,8 @@ deployment/common-tools.tsv  # exact common requirements and command exposures
 deployment/installer-tools.tsv # installer-owned commands: Homebrew casks
 deployment/agents/           # provider catalog + Herdr kinds, per-client
                              # manifests + bun.lock, native release pins
-deployment/magpie/           # model provider, model, routing group, and
-                             # agent wiring catalogs for the model gateway
+deployment/magpie/           # provider, model, routing group, agent wiring,
+                             # visibility, and plugin catalogs for the gateway
 deployment/client-settings/  # default configs and preservation/CodeGraph catalog
 deployment/inventory/        # preserved optional/specialist inventory
 dot_config/
@@ -322,22 +322,27 @@ the name for Windows Terminal and deploys neither the command nor the plugins.
 
 Magpie is the model gateway this deployment runs on `127.0.0.1:3425`. The
 repository owns the intent in `deployment/magpie/`: the model providers, the
-model ids, the routing groups, and the agent wiring. Magpie owns the
-credentials, the accounts, the usage store, and the generated agent files.
+model ids, the routing groups, which agent sees which group, and the pinned
+plugins. Magpie owns the credentials, the accounts, the usage store, and the
+generated agent files.
 
 ```bash
 bash bootstrap.sh --plan | grep magpie    # what the run would do
-dotfiles-magpie status                    # gateway, providers, groups, wiring
+dotfiles-magpie status                    # gateway, plugins, providers, groups, visibility
 dotfiles-magpie providers                 # the catalog and its credential sources
+dotfiles-magpie test                      # one tiny completion per model role
 ```
 
 The step runs on macOS by default and is turned off with `--no-magpie` or
 `DOTFILES_MAGPIE=false`. The Homebrew cask owns the app; the deployment adopts
-it and never installs it. Claude Code runs on `group/conductor`, Pi and `dsh`
-on `group/workhorse`, and Codex stays on its own ChatGPT Pro configuration,
-which the deployment never writes. Provider credentials are read from the
-stores that already hold them; the Kimi Code China plan key lives in
-`~/.config/dotfiles/magpie.env` as `KIMI_CODE_CN_API_KEY` (mode 0600). See
+it and never installs it. Claude Code runs on `group/conductor`, which drains
+the ChatGPT weekly quota, then the paid OpenAI API key, then Kimi K3.1 Pro at
+max reasoning; Pi and `dsh` run on `group/workhorse`. Codex stays on its own
+ChatGPT Pro configuration, which the deployment never writes. Provider
+credentials are read from the stores that already hold them; the Kimi Code
+China plan key lives in `~/.config/dotfiles/magpie.env` as
+`KIMI_CODE_CN_API_KEY` (mode 0600). The Zed provider plugin is pinned and
+installed, and its browser sign-in stays the operator's step. See
 [Magpie](docs/MAGPIE.md) and
 [ADR 0014](docs/adr/0014-magpie-owns-the-model-gateway.md).
 

@@ -557,7 +557,7 @@ magpie_catalog_wiring() {
     return 0
 }
 
-# Validate the four catalogs against each other. A bad catalog is rejected by
+# Validate the catalogs against each other. A bad catalog is rejected by
 # name before the deployment writes a file.
 magpie_catalog_validate() {
     local dir=${1:-}

@@ -26,6 +26,24 @@ runs on `group/conductor`, Pi and `dsh` run on `group/workhorse`, and ChatGPT
 is a standalone group used only as the conductor's last resort. Codex stays on
 its own ChatGPT Pro configuration and is never written.
 
+> **Superseded in part by the router refresh**
+> (`.scratch/magpie-routers/spec.md`). The group catalog, the agent
+> visibility, the plugin pin, and the role test changed shape:
+>
+> - `groups.tsv` is `chatgpt`, `openai-stack`, `conductor`, `workhorse`.
+>   `conductor` holds `group/openai-stack`, which drains the ChatGPT weekly
+>   quota, then the paid OpenAI API key (`openai/gpt-6.1-sol`,
+>   `openai/gpt-6.1-terra`), then Kimi K3.1 Pro at max reasoning. A group
+>   member may pin an effort as `role:<effort>`.
+> - `visible.tsv` narrows each agent to its groups; `plugins.tsv` pins
+>   `@magpie-community/opencode-zed-auth@0.1.19`. The gateway now has six
+>   catalogs.
+> - `dotfiles-magpie test [role…]` probes each model role through
+>   `/v1/chat/completions`, replacing the provider-level probe for these
+>   acceptance checks.
+>
+> Everything else below still holds.
+
 `dsh` and `dsh-tui` become ordinary managed agents (frozen Bun projects, no
 Herdr integration kind), and `pnpm` becomes a pinned Pixi common tool.
 
@@ -262,7 +280,9 @@ through the device proxy`.
 ## Out of Scope
 
 - The community Zed provider plugin (`@magpie-community/opencode-zed-auth`).
-  Zed remains an agent that can consume Magpie, not a source.
+  Zed remains an agent that can consume Magpie, not a source. (The router
+  refresh now pins and installs this plugin in `deployment/magpie/plugins.tsv`;
+  the browser sign-in is still the operator's step.)
 - Wiring the official OpenCode, Kimi Code, MiniMax Code or Codex agents.
 - Magpie profiles, intent routing, privacy masking, gateway keys for other
   machines, Docker, and the Linux/Windows native release.
