@@ -18,10 +18,12 @@ endpoint instead of the DeepSeek model the routers actually use.
   `conductor` becomes the stack, so Claude Code drains the ChatGPT weekly
   window, then the OpenAI key, then Kimi at max reasoning. `workhorse` is
   unchanged (MiniMax → DeepSeek).
-- Add a fifth catalog, `visible.tsv`, that narrows each agent to the groups it
-  should see: `conductor,openai-stack` for Claude; `workhorse` for Pi and DSH.
-  Stars stay Magpie's `pickedModels` device state; adding a provider id to a
-  row exposes that provider's starred models.
+- Add `visible.tsv`, which gives all three agents the four routers and the
+  providers that serve the preferred models, and `picked.tsv`, which is the
+  exact per-agent list: the four groups plus the preferred provider-prefixed
+  models. The apply writes only the `pickedModels` key into Magpie's settings,
+  preserving everything else, so a route that misbehaves can be replaced by
+  the exact provider/model from the same picker.
 - Add a `plugins.tsv` that pins and installs
   `@magpie-community/opencode-zed-auth@0.1.19`. The sign-in remains a human
   step (`magpie plugin login zed` or the app's Plugins page).
@@ -58,12 +60,25 @@ conductor|group/openai-stack|drain|auto|yes|Claude Code
 workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh
 ```
 
-`visible.tsv` — `agent|names`, where a name is a group id or a provider id:
+`visible.tsv` — `agent|names`, where a name is a group id or a provider id.
+All three rows are the same:
 
 ```
-claude|conductor,openai-stack
-pi|workhorse
-dsh|workhorse
+claude|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
+pi|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
+dsh|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
+```
+
+`picked.tsv` — `agent|entries`, where an entry is `group/<id>` or
+`provider/model`. The shipped list, the same for all three agents:
+
+```
+group/chatgpt, group/openai-stack, group/conductor, group/workhorse,
+codex/gpt-6.1-sol, codex/gpt-6.1-terra, codex/gpt-6-luna,
+openai/gpt-6.1-sol, openai/gpt-6.1-terra, openai/gpt-6-luna,
+zed/gpt-6.1-sol, zed/gpt-6.1-terra, zed/gpt-6-luna,
+kimi-code-cn/k3.1-pro, opencode-go/deepseek-v4.1-flash,
+opencode-go/gpt-6-luna, minimax-cn/MiniMax-M3.1-Flash
 ```
 
 `plugins.tsv` — `name|source|version|enabled`:
@@ -74,8 +89,9 @@ zed|@magpie-community/opencode-zed-auth|0.1.19|yes
 
 ## Apply
 
-- Validate the two new catalogs: known agents, group ids or provider ids,
-  unique plugin names, a version, and no credential-looking value.
+- Validate the three new catalogs: known agents, group ids or provider ids,
+  a picked entry inside the agent's visible row, unique plugin names, a
+  version, and no credential-looking value.
 - Ensure the plugin before the providers: `magpie plugin list --json` and read
   `.loaded[].spec`; install with
   `magpie plugin add npm:@magpie-community/opencode-zed-auth@0.1.19` when the
@@ -84,21 +100,28 @@ zed|@magpie-community/opencode-zed-auth|0.1.19|yes
 - Resolve a group member by stripping an optional `:<effort>` before the role
   lookup, then appending it to the resolved model id. Validate the effort
   against Magpie's levels.
-- After the groups, write each agent's visibility:
-  `magpie visible <agent> <names>`. Do not enable `--only-picked`: it freezes
-  the current list and would hide a model starred later. A visibility failure
-  fails the apply.
+- After the groups, write the per-agent picked list into
+  `~/.config/magpie/settings.json` with the managed Python: only the
+  `pickedModels` key changes, other keys and other agents' picks survive, and
+  the file is replaced atomically at 0600.
+- Then run `magpie visible <agent> <names>` for every visibility change and
+  every picked change, so Magpie saves and serves the new list. Do not enable
+  `--only-picked`: it freezes the current list and would hide a model starred
+  later. A visibility failure fails the apply.
 - `dotfiles-magpie test` resolves each role's first live candidate from
   `/v1/models`, sends one `max_tokens: 16` completion, and prints
-  `role|model|ok|ms` or `role|model|error|message`. `jq` is already a common
-  tool.
-- `status` reports `visible|agent|names` and `plugin|name|loaded|missing`.
+  `role|model|ok|ms` or `role|model|error|message`, with the managed Python
+  for the clock.
+- `status` reports `visible|agent|names`, `picked|agent|<n> entries`, and
+  `plugin|name|loaded|missing`.
 
 ## Testing
 
 - Catalog validation for the new files and the `:effort` grammar.
 - The fake Magpie records `visible` and `plugin` commands; the apply order
-  asserts plugin → providers → groups → visible.
+  asserts plugin → providers → groups → picked write → visible. A picked write
+  preserves unrelated settings keys and another agent's picks, and is
+  idempotent.
 - The fake `/v1/models` serves the openai models; an `openai-stack` group
   resolves to `group/chatgpt, openai/gpt-6.1-sol, openai/gpt-6.1-terra,
   kimi-code-cn/k3.1-pro:max`.
@@ -110,15 +133,16 @@ zed|@magpie-community/opencode-zed-auth|0.1.19|yes
 
 - The Zed sign-in itself; the plugin is installed, the browser login is the
   operator's.
-- Magpie's `pickedModels` stars; the app owns them.
+- The app's own star UI; it writes the same `pickedModels` key, and the next
+  apply restores the catalog default.
 - OpenAI models beyond sol/terra; one `models.tsv` line adds another.
 - A group-wide `effort=auto` classifier; the catalogs use `effort=agent` and
   per-member overrides.
 
 ## Seams
 
-1. Catalog boundary: the four existing TSVs plus `visible.tsv` and
-   `plugins.tsv`, validated before any `magpie` call.
+1. Catalog boundary: the four existing TSVs plus `visible.tsv`, `picked.tsv`
+   and `plugins.tsv`, validated before any `magpie` call.
 2. Command boundary: `magpie_run` records every plugin/visible/group call for
    the fake.
 3. Gateway API: `/v1/models` and `/v1/chat/completions` are the only endpoints

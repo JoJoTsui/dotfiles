@@ -15,7 +15,7 @@ neither side and is never written.
 
 | Owner | Owns | Never owns |
 | --- | --- | --- |
-| The repository | the six catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
+| The repository | the seven catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
 | Magpie | provider keys and accounts, the usage store, Pi's `~/.pi/agent/models.json`, DSH's Magpie route | the intent: which models a group holds |
 | Neither | `~/.codex/config.toml` and `~/.codex/auth.json`, the official OpenCode, Kimi Code, and MiniMax Code configurations | — |
 
@@ -115,9 +115,26 @@ ids. The apply runs `magpie visible <agent> <names>` after the groups and
 before the agent wiring, and only when the narrowing differs from what
 `magpie visible <agent>` reports. It never passes `--only-picked`: that
 freezes the current list and would hide a model starred later. A provider id
-in a row exposes the models starred for that provider; Magpie's `pickedModels`
-stars stay the app's state. `status` prints the live narrowing as
-`visible|agent|names`.
+in a row lets that provider's picked models through; the exact set is
+`picked.tsv`. `status` prints the live narrowing as `visible|agent|names`.
+
+### `picked.tsv` — `agent|entries`
+
+`entries` is the per-agent "only models I pick" list: a group entry is
+`group/<id>` and a model entry is `provider/model`. Every entry must be inside
+the agent's `visible.tsv` row; the catalog validation rejects one that is not.
+The apply writes the list into Magpie's own settings
+(`~/.config/magpie/settings.json`, key `pickedModels`) with a Python merge
+that preserves every other key and every other agent's picks, at 0600, then
+runs `magpie visible` so Magpie saves and serves it. This is the one write the
+deployment makes into Magpie's store; the app's **Agents** page edits the same
+key when the operator ticks a model. `status` prints
+`picked|agent|<n> entries`.
+
+The shipped list gives all three agents the four routers and the preferred
+provider-prefixed models: the GPT 6.1 Sol, Terra and 6 Luna ids from Codex,
+the OpenAI API and Zed; Kimi K3.1 Pro; DeepSeek V4.1 Flash and GPT-6 Luna from
+OpenCode Go; and MiniMax M3.1 Flash.
 
 ### `plugins.tsv` — `name|source|version|enabled`
 
@@ -152,12 +169,16 @@ app, the agents, and the client settings exist before the gateway is wired.
 6. Resolve the model roles against `GET /v1/models`.
 7. Ensure the groups: `magpie group add`, or `magpie group set` when the
    member order differs.
-8. Narrow each agent: `magpie visible <agent> <names>`, only when it differs.
-9. Wire the Magpie-owned agents: `magpie pi group/workhorse` and
-   `magpie dsh group/workhorse`.
-10. Verify that DSH's official `llm-deepseek` row is unchanged and that the
+8. Write the per-agent picked list into Magpie's settings, only when it
+   differs.
+9. Narrow each agent: `magpie visible <agent> <names>`, only when it differs,
+   and again for every agent whose picked list changed so the gateway serves
+   the new list.
+10. Wire the Magpie-owned agents: `magpie pi group/workhorse` and
+    `magpie dsh group/workhorse`.
+11. Verify that DSH's official `llm-deepseek` row is unchanged and that the
     Codex configuration still hashes the same.
-11. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
+12. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
 
 A run with nothing to change writes no files and keeps every modification
 time.
@@ -173,6 +194,7 @@ never reaches a log, a report, or the repository.
 | `codex-account` | a ChatGPT account Magpie reads | `magpie accounts codex --json`; the apply never runs `accounts add` or `accounts import` |
 | `env:NAME` | `~/.config/dotfiles/magpie.env` | mode 0600, parsed and never sourced by a shell profile |
 | `json:PATH:KEY` | a JSON store on the device | read only, by a dotted key path |
+| `plugin-account` | a provider a pinned plugin serves | signed in with `magpie plugin login <provider>` or the app's Plugins page; optional, as `zed` is |
 
 ### The Kimi Code China key
 
@@ -221,6 +243,11 @@ Kimi K3.1 Pro at max reasoning. `group/workhorse` is the Pi and `dsh` group:
 MiniMax M3.1 Flash, then DeepSeek V4.1 Flash. `group/chatgpt` holds the
 ChatGPT plan models and is listed as its own group, so the Pro plan is spent
 only when the stack's own members have no quota left.
+
+The four managed groups are available to all three agents; only the default
+differs. The picked list puts the preferred provider-prefixed models beside
+the groups, so a failed route can be replaced by an exact provider/model on
+the spot.
 
 The template sets `model: opus` and points every tier and subagent model at
 `group/conductor`. Claude Code accepts the `opus` alias and resolves it

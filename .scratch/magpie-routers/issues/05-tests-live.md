@@ -228,3 +228,10 @@ One guard was added after the review: an unreadable plugin list is not an
 absent plugin, so the apply now fails by name instead of installing on a
 guess. `magpie plugin add` was never run on this device — the plugin was
 already loaded, and the deployment never signs in.
+
+Follow-up live evidence: `magpie models` for claude, pi and dsh now lists 17
+entries each — the four groups and the preferred models across Codex, OpenAI,
+Zed, Kimi Code, OpenCode Go and MiniMax. `dotfiles-magpie status` reports
+`picked|<agent>|17 entries`; the Zed plugin is signed in as JoJoTsui and
+exposes `zed/gpt-6.1-sol`, `zed/gpt-6.1-terra` and `zed/gpt-6-luna`. The
+OpenCode Go test still probes `opencode-go/deepseek-v4.1-flash`.

@@ -115,6 +115,7 @@ deployment/installer-tools.tsv # installer-owned commands: Homebrew casks
 deployment/agents/           # provider catalog + Herdr kinds, per-client
                              # manifests + bun.lock, native release pins
 deployment/magpie/           # provider, model, routing group, agent wiring,
+                             # visibility, picked models, plugin pins,
                              # visibility, and plugin catalogs for the gateway
 deployment/client-settings/  # default configs and preservation/CodeGraph catalog
 deployment/inventory/        # preserved optional/specialist inventory
@@ -322,13 +323,13 @@ the name for Windows Terminal and deploys neither the command nor the plugins.
 
 Magpie is the model gateway this deployment runs on `127.0.0.1:3425`. The
 repository owns the intent in `deployment/magpie/`: the model providers, the
-model ids, the routing groups, which agent sees which group, and the pinned
-plugins. Magpie owns the credentials, the accounts, the usage store, and the
-generated agent files.
+model ids, the routing groups, which agent sees which group, the per-agent
+picked models, and the pinned plugins. Magpie owns the credentials, the
+accounts, the usage store, and the generated agent files.
 
 ```bash
 bash bootstrap.sh --plan | grep magpie    # what the run would do
-dotfiles-magpie status                    # gateway, plugins, providers, groups, visibility
+dotfiles-magpie status                    # gateway, plugins, providers, groups, visibility, picks
 dotfiles-magpie providers                 # the catalog and its credential sources
 dotfiles-magpie test                      # one tiny completion per model role
 ```

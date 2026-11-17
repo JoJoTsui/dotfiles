@@ -1,0 +1,14 @@
+# Per-agent picked models. The entries are the only catalog entries the
+# agent's lists show after visible.tsv, as if "Only models I pick" were on.
+# A group entry is written group/<id>; a model entry is provider/model.
+#
+# agent|entries
+#
+# The deployment writes this list into Magpie's own settings
+# (~/.config/magpie/settings.json, key pickedModels). Magpie has no CLI for an
+# individual pick; the app's Agents page writes the same key when the operator
+# ticks a model. The list is intent, so the repository owns it; the settings
+# file itself stays device state and is never committed.
+claude|group/chatgpt,group/openai-stack,group/conductor,group/workhorse,codex/gpt-6.1-sol,codex/gpt-6.1-terra,codex/gpt-6-luna,openai/gpt-6.1-sol,openai/gpt-6.1-terra,openai/gpt-6-luna,zed/gpt-6.1-sol,zed/gpt-6.1-terra,zed/gpt-6-luna,kimi-code-cn/k3.1-pro,opencode-go/deepseek-v4.1-flash,opencode-go/gpt-6-luna,minimax-cn/MiniMax-M3.1-Flash
+pi|group/chatgpt,group/openai-stack,group/conductor,group/workhorse,codex/gpt-6.1-sol,codex/gpt-6.1-terra,codex/gpt-6-luna,openai/gpt-6.1-sol,openai/gpt-6.1-terra,openai/gpt-6-luna,zed/gpt-6.1-sol,zed/gpt-6.1-terra,zed/gpt-6-luna,kimi-code-cn/k3.1-pro,opencode-go/deepseek-v4.1-flash,opencode-go/gpt-6-luna,minimax-cn/MiniMax-M3.1-Flash
+dsh|group/chatgpt,group/openai-stack,group/conductor,group/workhorse,codex/gpt-6.1-sol,codex/gpt-6.1-terra,codex/gpt-6-luna,openai/gpt-6.1-sol,openai/gpt-6.1-terra,openai/gpt-6-luna,zed/gpt-6.1-sol,zed/gpt-6.1-terra,zed/gpt-6-luna,kimi-code-cn/k3.1-pro,opencode-go/deepseek-v4.1-flash,opencode-go/gpt-6-luna,minimax-cn/MiniMax-M3.1-Flash

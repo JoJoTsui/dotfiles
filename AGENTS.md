@@ -297,8 +297,8 @@ explains every changed pair.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,
   ownership, or preservation. Index creation stays an explicit project action.
 - **The Magpie model gateway owns the credentials and the generated agent
-  files**: the deployment owns the six catalogs under `deployment/magpie/`
-  (providers, models, groups, wiring, visible, plugins),
+  files**: the deployment owns the seven catalogs under `deployment/magpie/`
+  (providers, models, groups, wiring, visible, picked, plugins),
   Claude Code's hand-written settings, Pi's default provider and model, the
   bootstrap switch, and the Codex hash guard. Magpie owns the provider keys,
   the accounts, the usage store, Pi's generated `~/.pi/agent/models.json`, and
@@ -306,9 +306,11 @@ explains every changed pair.
   `~/.codex/config.toml` and `~/.codex/auth.json` belong to neither side: no
   code path calls `magpie codex`, and every apply hashes the Codex
   configuration before and after its changes. `magpie visible` narrows an
-  agent and never ticks a star, and no code path runs `--only-picked`. A
-  community plugin is pinned and installed, never signed in: the browser
-  sign-in is the operator's. Read `docs/MAGPIE.md` before changing the
+  agent and never ticks a star; `picked.tsv` is the star set, and the apply
+  writes only the `pickedModels` key into Magpie's settings while preserving
+  everything else. No code path runs `--only-picked`. A community plugin is
+  pinned and installed, never signed in: the browser sign-in is the
+  operator's. Read `docs/MAGPIE.md` before changing the
   catalogs, the switch, the apply, or the credential sources.
 - **Caveman uses standalone skills**: bootstrap leaves gateway configuration,
   runtime state, and old merge baselines device-owned. Existing integrations

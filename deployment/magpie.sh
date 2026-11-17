@@ -18,7 +18,7 @@ MAGPIE_BACKUP_KEEP=10
 MAGPIE_GATEWAY_DEFAULT="http://127.0.0.1:3425"
 # The Magpie provider presets a catalog row may name. Magpie owns this list,
 # so a catalog may not invent a preset.
-MAGPIE_PROVIDER_PRESETS="codex opencode-go kimi-code-cn minimax-cn openai"
+MAGPIE_PROVIDER_PRESETS="codex opencode-go kimi-code-cn minimax-cn openai zed"
 # The reasoning efforts Magpie accepts after a model id. A group member may pin
 # one as "role:<effort>".
 MAGPIE_EFFORTS="none minimal low medium high xhigh max"
@@ -56,6 +56,14 @@ magpie_catalog_dir() {
 magpie_list_contains() {
     case "$1" in
         *"|$2|"*) return 0 ;;
+    esac
+    return 1
+}
+
+# Whether a comma-separated list holds an item.
+magpie_csv_contains() {
+    case ",$1," in
+        *",$2,"*) return 0 ;;
     esac
     return 1
 }
@@ -219,6 +227,103 @@ sys.stdout.write(data)
 PYTHON
 }
 
+# Magpie's settings file. The app owns it; the deployment reads the picked
+# list and writes only the pickedModels block back.
+magpie_settings_file() {
+    printf '%s/magpie/settings.json' "${XDG_CONFIG_HOME:-$HOME/.config}"
+}
+
+# One agent's picked list, as a comma-separated string. Empty when unset.
+magpie_picked_current() {
+    local agent=$1 settings python
+    settings=$(magpie_settings_file)
+    [ -f "$settings" ] || { printf ''; return 0; }
+    python=$(magpie_python) || return 1
+    "$python" - "$settings" "$agent" <<'PYTHON'
+import json
+import sys
+
+path, agent = sys.argv[1], sys.argv[2]
+try:
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+except FileNotFoundError:
+    data = {}
+except Exception:
+    raise SystemExit(1)
+picked = data.get("pickedModels") if isinstance(data, dict) else None
+value = picked.get(agent) if isinstance(picked, dict) else None
+if not isinstance(value, list):
+    value = []
+sys.stdout.write(",".join(str(item) for item in value))
+PYTHON
+}
+
+# Write every catalog agent's picked list into Magpie's settings. Other keys
+# and other agents' picks are preserved; the file is replaced atomically at
+# 0600. Magpie has no CLI for an individual pick, so this is the one write the
+# deployment makes into Magpie's own store, and only for this key.
+magpie_picked_write() {
+    local settings python input index status
+    settings=$(magpie_settings_file)
+    python=$(magpie_python) || return 1
+    input=$(mktemp "${TMPDIR:-/tmp}/magpie-picked.XXXXXX") || return 1
+    {
+        for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
+            printf '%s|%s\n' "${MAGPIE_PICKED_AGENT[index]}" "${MAGPIE_PICKED_MODELS[index]}"
+        done
+    } > "$input" || { rm -f "$input"; return 1; }
+    "$python" - "$settings" "$input" <<'PYTHON'
+import json
+import os
+import sys
+import tempfile
+
+settings, incoming_path = sys.argv[1], sys.argv[2]
+incoming = {}
+with open(incoming_path, encoding="utf-8") as handle:
+    for line in handle:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        agent, models = line.split("|", 1)
+        incoming[agent] = [model for model in models.split(",") if model]
+data = {}
+try:
+    with open(settings, encoding="utf-8") as handle:
+        data = json.load(handle)
+except FileNotFoundError:
+    data = {}
+except Exception:
+    raise SystemExit(1)
+if not isinstance(data, dict):
+    raise SystemExit(1)
+picked = data.get("pickedModels")
+if not isinstance(picked, dict):
+    picked = {}
+picked.update(incoming)
+data["pickedModels"] = picked
+folder = os.path.dirname(settings)
+os.makedirs(folder, mode=0o700, exist_ok=True)
+descriptor, temporary = tempfile.mkstemp(prefix="settings.", suffix=".tmp", dir=folder)
+try:
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, separators=(",", ":"), ensure_ascii=False)
+        handle.write("\n")
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, settings)
+except BaseException:
+    try:
+        os.unlink(temporary)
+    except OSError:
+        pass
+    raise
+PYTHON
+    status=$?
+    rm -f "$input"
+    return "$status"
+}
+
 # One variable of the device credential store. The store is parsed, never
 # sourced, so a line in it cannot run a command.
 magpie_env_value() {
@@ -315,6 +420,7 @@ magpie_catalog_providers() {
         fi
         case "$source" in
             codex-account) ;;
+            plugin-account) ;;
             env:*)
                 variable=${source#env:}
                 case "$variable" in
@@ -505,6 +611,7 @@ magpie_catalog_visible() {
     local -a name_list
     MAGPIE_VISIBLE_AGENT=(); MAGPIE_VISIBLE_NAMES=()
     MAGPIE_VISIBLE_AGENTS=''
+    MAGPIE_VISIBLE_ROWS=''
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}
         case "$line" in ''|\#*) continue ;; esac
@@ -522,6 +629,49 @@ magpie_catalog_visible() {
         done
         MAGPIE_VISIBLE_AGENT+=("$agent"); MAGPIE_VISIBLE_NAMES+=("$names")
         MAGPIE_VISIBLE_AGENTS="$MAGPIE_VISIBLE_AGENTS|$agent|"
+        MAGPIE_VISIBLE_ROWS="$MAGPIE_VISIBLE_ROWS|$agent=$names|"
+    done < "$file"
+    return 0
+}
+
+# The per-agent picked model catalog: agent, entries. A group entry is
+# group/<id>; a model entry is provider/model.
+magpie_catalog_picked() {
+    local file=$1 line agent entries entry provider model
+    local -a entry_list
+    MAGPIE_PICKED_AGENT=(); MAGPIE_PICKED_MODELS=()
+    MAGPIE_PICKED_AGENTS=''
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in ''|\#*) continue ;; esac
+        magpie_row_fields "$line" 2 picked || return 1
+        agent=${MAGPIE_ROW_FIELDS[0]}; entries=${MAGPIE_ROW_FIELDS[1]}
+        magpie_name_ok "$agent" || { magpie_fail "invalid picked agent: $agent"; return 1; }
+        if magpie_list_contains "$MAGPIE_PICKED_AGENTS" "$agent"; then
+            magpie_fail "duplicate picked agent: $agent"
+            return 1
+        fi
+        IFS=, read -r -a entry_list <<< "$entries"
+        [ "${#entry_list[@]}" -gt 0 ] || { magpie_fail "picked agent has no entry: $agent"; return 1; }
+        for entry in "${entry_list[@]}"; do
+            case "$entry" in
+                group/*)
+                    magpie_name_ok "${entry#group/}" ||
+                        { magpie_fail "invalid picked group: $entry"; return 1; } ;;
+                */*)
+                    provider=${entry%%/*}; model=${entry#*/}
+                    magpie_name_ok "$provider" ||
+                        { magpie_fail "invalid picked provider: $entry"; return 1; }
+                    case "$model" in
+                        ''|*[!A-Za-z0-9._:/-]*) magpie_fail "invalid picked model: $entry"; return 1 ;;
+                    esac ;;
+                *)
+                    magpie_fail "picked entry is not group/<id> or provider/model: $entry"
+                    return 1 ;;
+            esac
+        done
+        MAGPIE_PICKED_AGENT+=("$agent"); MAGPIE_PICKED_MODELS+=("$entries")
+        MAGPIE_PICKED_AGENTS="$MAGPIE_PICKED_AGENTS|$agent|"
     done < "$file"
     return 0
 }
@@ -564,17 +714,17 @@ magpie_catalog_validate() {
     [ -n "$dir" ] || dir=$(magpie_catalog_dir)
     local providers="$dir/providers.tsv" models="$dir/models.tsv"
     local groups="$dir/groups.tsv" wiring="$dir/wiring.tsv" visible="$dir/visible.tsv"
-    local plugins="$dir/plugins.tsv"
+    local plugins="$dir/plugins.tsv" picked="$dir/picked.tsv"
     local file line member role candidates candidate id provider agent names name
-    local member_list_text
-    local -a candidate_list member_list name_list
-    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins"; do
+    local member_list_text entry
+    local -a candidate_list member_list name_list entry_list
+    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins" "$picked"; do
         [ -f "$file" ] || { magpie_fail "catalog is missing: ${file##*/}"; return 1; }
         [ ! -L "$file" ] || { magpie_fail "catalog is a symlink: ${file##*/}"; return 1; }
     done
     # No catalog value carries a credential. The scan runs before the shape
     # checks, so a pasted key is reported as a credential.
-    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins"; do
+    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins" "$picked"; do
         while IFS= read -r line || [ -n "$line" ]; do
             line=${line%$'\r'}
             case "$line" in ''|\#*) continue ;; esac
@@ -592,6 +742,7 @@ magpie_catalog_validate() {
     magpie_catalog_groups "$groups" || return 1
     magpie_catalog_wiring "$wiring" || return 1
     magpie_catalog_visible "$visible" || return 1
+    magpie_catalog_picked "$picked" || return 1
     magpie_catalog_plugins "$plugins" || return 1
     # Every model candidate names a declared Magpie provider.
     while IFS= read -r line || [ -n "$line" ]; do
@@ -679,6 +830,41 @@ magpie_catalog_validate() {
             return 1
         done
     done < "$visible"
+    # Every picked agent has a visible row, and every picked entry is a
+    # declared group or provider inside that row.
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in ''|\#*) continue ;; esac
+        IFS='|' read -r -a MAGPIE_ROW_FIELDS <<< "$line"
+        agent=${MAGPIE_ROW_FIELDS[0]}; entries=${MAGPIE_ROW_FIELDS[1]}
+        names=$(magpie_list_value "$MAGPIE_VISIBLE_ROWS" "$agent") ||
+            { magpie_fail "picked names an agent with no visible row: $agent"; return 1; }
+        IFS=, read -r -a entry_list <<< "$entries"
+        for entry in "${entry_list[@]}"; do
+            case "$entry" in
+                group/*)
+                    id=${entry#group/}
+                    if ! magpie_list_contains "$MAGPIE_GROUP_IDS" "$id"; then
+                        magpie_fail "picked group is not declared: $entry"
+                        return 1
+                    fi
+                    if ! magpie_csv_contains "$names" "$id"; then
+                        magpie_fail "picked group is not visible to $agent: $entry"
+                        return 1
+                    fi ;;
+                *)
+                    provider=${entry%%/*}
+                    if ! magpie_list_contains "$MAGPIE_PROVIDER_PRESET_IDS" "$provider"; then
+                        magpie_fail "picked model names an undeclared provider: $entry"
+                        return 1
+                    fi
+                    if ! magpie_csv_contains "$names" "$provider"; then
+                        magpie_fail "picked provider is not visible to $agent: $entry"
+                        return 1
+                    fi ;;
+            esac
+        done
+    done < "$picked"
     return 0
 }
 
@@ -916,6 +1102,11 @@ magpie_visible_names() {
         case "$line" in
             *" is shown "*)
                 names=${line#* is shown }
+                # The only-picked banner is not the visibility list; the
+                # names line follows it.
+                case "$names" in
+                    "only the models picked"*) continue ;;
+                esac
                 printf '%s' "${names// /}"
                 return 0 ;;
         esac
@@ -1251,7 +1442,7 @@ magpie_state_write() {
 magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local credential output live known current desired change='' entry used rest variable servable
-    local fatal='' missing='' guard='unchanged' backup='' codex_before codex_after
+    local fatal='' missing='' guard='unchanged' backup='' codex_before codex_after forced
     local id recorded names name version plugin_state state
     local -a candidate_list
     platform=$(magpie_platform)
@@ -1472,6 +1663,20 @@ visible:$agent"
         printf 'dotfiles: magpie: the agent %s will be shown %s\n' "$agent" "$desired"
     done
 
+    DEPLOY_STEP=magpie-apply.picked
+    for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
+        agent=${MAGPIE_PICKED_AGENT[index]}; desired=${MAGPIE_PICKED_MODELS[index]}
+        current=$(magpie_picked_current "$agent") ||
+            { magpie_fail "cannot read the picked models for $agent"; return 1; }
+        if [ "$(magpie_names_sorted "$current")" = "$(magpie_names_sorted "$desired")" ]; then
+            printf 'dotfiles: magpie: the agent %s picks %s\n' "$agent" "$desired"
+            continue
+        fi
+        change="$change
+picked:$agent"
+        printf 'dotfiles: magpie: the agent %s will pick %s\n' "$agent" "$desired"
+    done
+
     DEPLOY_STEP=magpie-apply.wiring
     for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
         agent=${MAGPIE_WIRING_AGENT[index]}; group=${MAGPIE_WIRING_GROUP[index]}
@@ -1487,20 +1692,31 @@ visible:$agent"
                 return 1 ;;
         esac
         recorded=$(magpie_recorded_wiring "$(magpie_state_dir)/state.tsv" "$agent" || true)
-        if [ "$recorded" = "$group" ]; then
+        # A visibility or picked change rewrites the agent's model list and
+        # can reset its default; wire it again after the visible step.
+        forced=no
+        if printf '%s\n' "$change" | grep -qx "visible:$agent" ||
+           printf '%s\n' "$change" | grep -qx "picked:$agent"; then
+            forced=yes
+        fi
+        if [ "$recorded" = "$group" ] && [ "$forced" = no ]; then
             printf 'dotfiles: magpie: the agent %s is already wired to %s\n' "$agent" "$group"
             continue
         fi
-        change="$change
+        if ! printf '%s\n' "$change" | grep -qx "wiring:$agent:$group"; then
+            change="$change
 wiring:$agent:$group"
+        fi
         printf 'dotfiles: magpie: the agent %s will be wired to %s\n' "$agent" "$group"
     done
 
     # The Codex configuration is never written by the deployment. Its digest is
     # taken before the changes and compared after them.
     codex_before=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
-    # A visibility-only run changes no client file, so it takes no backup.
-    client_change=$(printf '%s\n' "$change" | grep -v '^visible:' | grep -v '^$' || true)
+    # A visibility- or pick-only run changes no client file, so it takes no
+    # backup. The picked list is Magpie's own settings, rewritten atomically
+    # for the pickedModels key alone.
+    client_change=$(printf '%s\n' "$change" | grep -v '^visible:' | grep -v '^picked:' | grep -v '^$' || true)
     if [ -n "$change" ]; then
         if [ -n "$client_change" ]; then
             DEPLOY_STEP=magpie-apply.backup
@@ -1571,10 +1787,22 @@ wiring:$agent:$group"
             fi
         done
 
+        DEPLOY_STEP=magpie-apply.picked
+        if printf '%s\n' "$change" | grep -q '^picked:'; then
+            magpie_picked_write ||
+                { magpie_fail 'cannot write the picked models into Magpie settings'; return 1; }
+            printf 'dotfiles: magpie: the picked models were written\n'
+        fi
+
         DEPLOY_STEP=magpie-apply.visible
         for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
             agent=${MAGPIE_VISIBLE_AGENT[index]}
-            printf '%s\n' "$change" | grep -qx "visible:$agent" || continue
+            # A picked change also refreshes the agent's list, so a group or
+            # model ticked after the last apply reaches the gateway.
+            if ! printf '%s\n' "$change" | grep -qx "visible:$agent" &&
+               ! printf '%s\n' "$change" | grep -qx "picked:$agent"; then
+                continue
+            fi
             names=${MAGPIE_VISIBLE_NAMES[index]}
             magpie_run visible "$agent" "$names" >/dev/null ||
                 { magpie_fail "cannot narrow the agent $agent to $names"; return 1; }
@@ -1663,6 +1891,7 @@ magpie_credential_resolves() {
     local source=$1
     case "$source" in
         codex-account) magpie_account_present ;;
+        plugin-account) return 1 ;;
         *) magpie_provider_credential "$source" >/dev/null 2>&1 ;;
     esac
 }
@@ -1817,7 +2046,7 @@ magpie_test() {
 # status.
 magpie_status() {
     local index role preset source required group agent proxy output models
-    local known guard='' missing='' state credential version name plugin_state
+    local known guard='' missing='' state credential version name plugin_state current desired count
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
     if magpie_gateway_status; then
         printf 'gateway|%s|answers\n' "$MAGPIE_GATEWAY"
@@ -1892,6 +2121,23 @@ magpie_status() {
         else
             printf 'visible|%s|unknown\n' "$agent"
             missing="$missing visible $agent"
+        fi
+    done
+    for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
+        agent=${MAGPIE_PICKED_AGENT[index]}; desired=${MAGPIE_PICKED_MODELS[index]}
+        if current=$(magpie_picked_current "$agent"); then
+            if [ -z "$current" ]; then
+                count=0
+            else
+                count=$(printf '%s' "$current" | awk -F, '{print NF}')
+            fi
+            printf 'picked|%s|%s entries\n' "$agent" "$count"
+            if [ "$(magpie_names_sorted "$current")" != "$(magpie_names_sorted "$desired")" ]; then
+                missing="$missing picked $agent"
+            fi
+        else
+            printf 'picked|%s|unknown\n' "$agent"
+            missing="$missing picked $agent"
         fi
     done
     magpie_dsh_official_state

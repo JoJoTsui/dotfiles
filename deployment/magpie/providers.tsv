@@ -19,3 +19,4 @@ opencode-go|opencode-go|json:~/.local/share/opencode/auth.json:opencode-go.key|y
 kimi-code-cn|kimi-code-cn|env:KIMI_CODE_CN_API_KEY|yes
 minimax-cn|minimax-cn|json:~/.pi/agent/auth.json:minimax-cn.key|yes
 openai|openai|env:OPENAI_API_KEY|yes
+zed|zed|plugin-account|no

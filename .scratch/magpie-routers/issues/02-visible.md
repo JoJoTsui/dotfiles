@@ -48,3 +48,12 @@ DOTFILES_CHEZMOI_BIN=$(command -v chezmoi) bash bootstrap.sh --source "$PWD" \
 DOTFILES_CHEZMOI_BIN=$(command -v chezmoi) bash bootstrap.sh --source "$PWD" \
   --home "$sim" --class linux --apply-only # exit 0, no catalog in the home
 ```
+
+Follow-up from the live router refresh: all three agents now see all four
+managed groups and the providers that serve the preferred models, and
+`picked.tsv` is the exact per-agent star set. The apply writes only the
+`pickedModels` key into `~/.config/magpie/settings.json` (Python merge, 0600,
+other keys and agents preserved), then refreshes `magpie visible` so the
+gateway serves it. A visibility or picked change also forces the Magpie-owned
+wiring again, because `magpie visible` rewrites the agent model list and can
+reset Pi's default; the live Pi default is back on `group/workhorse`.

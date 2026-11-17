@@ -11,7 +11,7 @@ import unittest
 
 SOURCE = Path(__file__).resolve().parents[1]
 CATALOG = SOURCE / "deployment" / "magpie"
-CATALOGS = ("providers.tsv", "models.tsv", "groups.tsv", "wiring.tsv", "visible.tsv", "plugins.tsv")
+CATALOGS = ("providers.tsv", "models.tsv", "groups.tsv", "wiring.tsv", "visible.tsv", "plugins.tsv", "picked.tsv")
 ENGINE = SOURCE / "deployment" / "magpie.sh"
 
 FAKE_MAGPIE = '''#!/usr/bin/env python3
@@ -271,7 +271,7 @@ class MagpieCatalogTests(unittest.TestCase):
 
     def test_an_unknown_visible_agent_is_rejected(self):
         self.catalog_copy()
-        text = self.read_catalog("visible.tsv").replace("claude|conductor", "claudex|conductor")
+        text = self.read_catalog("visible.tsv").replace("claude|chatgpt", "claudex|chatgpt")
         self.write_catalog("visible.tsv", text)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
@@ -279,11 +279,38 @@ class MagpieCatalogTests(unittest.TestCase):
 
     def test_an_unknown_visible_group_or_provider_is_rejected(self):
         self.catalog_copy()
-        text = self.read_catalog("visible.tsv").replace("pi|workhorse", "pi|workhors")
+        text = self.read_catalog("visible.tsv").replace("pi|chatgpt,", "pi|workhors,")
         self.write_catalog("visible.tsv", text)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("visible agent pi names an unknown group or provider: workhors", result.stderr)
+
+    def test_a_picked_model_with_an_undeclared_provider_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("picked.tsv").replace(
+            "opencode-go/deepseek-v4.1-flash", "kimi-eu/deepseek-v4.1-flash")
+        self.write_catalog("picked.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("picked model names an undeclared provider: kimi-eu/deepseek-v4.1-flash", result.stderr)
+
+    def test_a_picked_group_that_is_not_declared_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("picked.tsv").replace("group/workhorse", "group/absent")
+        self.write_catalog("picked.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("picked group is not declared: group/absent", result.stderr)
+
+    def test_a_picked_provider_outside_the_visible_row_is_rejected(self):
+        self.catalog_copy()
+        visible = self.read_catalog("visible.tsv").replace(
+            "pi|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,",
+            "pi|chatgpt,openai-stack,conductor,workhorse,codex,openai,")
+        self.write_catalog("visible.tsv", visible)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("picked provider is not visible to pi: zed/gpt-6.1-sol", result.stderr)
 
     def test_a_plugin_source_that_looks_like_a_credential_is_rejected(self):
         self.catalog_copy()
@@ -464,7 +491,7 @@ class MagpieApplyTests(unittest.TestCase):
                  "provider add codex", "provider add opencode-go",
                  "provider add kimi-code-cn", "provider add minimax-cn", "provider add openai",
                  "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
-                 "visible claude conductor,openai-stack", "visible pi workhorse", "visible dsh workhorse",
+                 "visible claude chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible pi chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
                  "pi group/workhorse", "dsh group/workhorse"]
         positions = []
         for command in order:
@@ -478,15 +505,49 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         narrowing = [command for command in self.commands() if len(command.split()) == 3
                      and command.startswith("visible ")]
-        self.assertEqual(narrowing, ["visible claude conductor,openai-stack",
-                                     "visible pi workhorse", "visible dsh workhorse"])
+        self.assertEqual(narrowing, ["visible claude chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
+                                     "visible pi chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
+
+    def test_the_apply_writes_the_picked_models_and_is_idempotent(self):
+        self.assertEqual(self.apply().returncode, 0)
+        settings = self.home / ".config/magpie/settings.json"
+        expected = {}
+        for line in (CATALOG / "picked.tsv").read_text(encoding="utf-8").splitlines():
+            if not line or line.startswith("#"):
+                continue
+            agent, entries = line.split("|", 1)
+            expected[agent] = entries.split(",")
+        data = json.loads(settings.read_text(encoding="utf-8"))
+        self.assertEqual(data["pickedModels"], expected)
+        self.assertEqual(settings.stat().st_mode & 0o777, 0o600)
+        before = settings.read_text(encoding="utf-8")
+        self.assertEqual(self.apply().returncode, 0)
+        self.assertEqual(settings.read_text(encoding="utf-8"), before)
+
+    def test_the_picked_write_preserves_other_settings_and_picks(self):
+        def setup():
+            settings = self.home / ".config/magpie/settings.json"
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            settings.write_text(json.dumps({
+                "theme": "dark",
+                "proxy": "direct",
+                "pickedModels": {"other": ["other/model"]},
+            }), encoding="utf-8")
+
+        self.assertEqual(self.apply(setup=setup).returncode, 0)
+        data = json.loads((self.home / ".config/magpie/settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(data["theme"], "dark")
+        self.assertEqual(data["proxy"], "direct")
+        self.assertEqual(data["pickedModels"]["other"], ["other/model"])
+        self.assertIn("claude", data["pickedModels"])
+        self.assertIn("group/conductor", data["pickedModels"]["claude"])
 
     def test_a_failing_visible_aborts_the_apply(self):
         result = self.apply(environment={"FAKE_MAGPIE_FAIL_VISIBLE": "1"})
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("cannot narrow the agent claude to conductor,openai-stack", result.stderr)
+        self.assertIn("cannot narrow the agent claude to chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", result.stderr)
 
-    def test_a_visibility_only_run_takes_no_backup_and_writes_no_file(self):
+    def test_a_visibility_only_run_rewires_and_backs_up_the_client_lists(self):
         self.assertEqual(self.apply().returncode, 0)
         backups = self.home / ".local/state/dotfiles/magpie/backups"
         before = sorted(path.name for path in backups.iterdir())
@@ -496,12 +557,15 @@ class MagpieApplyTests(unittest.TestCase):
         (self.state / "visible.json").unlink()
         result = self.apply()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(sorted(path.name for path in backups.iterdir()), before)
+        after = sorted(path.name for path in backups.iterdir())
+        # The forced rewire rewrites Pi/DSH model lists, so it backs them up;
+        # the recorded provider/group/wiring state itself is unchanged.
+        self.assertEqual(len(after), len(before) + 1, after)
         self.assertEqual(state.stat().st_mtime_ns, state_mtime)
         self.assertEqual([command for command in self.commands() if len(command.split()) == 3
                           and command.startswith("visible ")][-3:],
-                         ["visible claude conductor,openai-stack",
-                          "visible pi workhorse", "visible dsh workhorse"])
+                         ["visible claude chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
+                          "visible pi chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
 
     def test_the_apply_installs_the_pinned_plugin_before_the_providers(self):
         result = self.apply()
@@ -890,21 +954,36 @@ class MagpieCommandTests(MagpieApplyTests):
         return subprocess.run([str(self.command), *arguments], env=environ,
                               capture_output=True, text=True, timeout=120)
 
+    def catalog_column(self, name, column):
+        values = {}
+        for line in (CATALOG / name).read_text(encoding="utf-8").splitlines():
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split("|")
+            values[fields[0]] = fields[column]
+        return values
+
     def healthy_gateway(self):
-        """A gateway that answers with every provider and group in place."""
+        """A gateway that answers with every provider, group, visibility and pick."""
         self.state.mkdir(parents=True, exist_ok=True)
         (self.state / "providers.json").write_text(
-            json.dumps(["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai"]), encoding="utf-8")
+            json.dumps(["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]),
+            encoding="utf-8")
         (self.state / "groups.json").write_text(json.dumps({
             "chatgpt": "codex/gpt-6.1-sol,codex/gpt-6.1-terra",
             "openai-stack": "group/chatgpt,openai/gpt-6.1-sol,openai/gpt-6.1-terra,kimi-code-cn/k3.1-pro:max",
             "conductor": "group/openai-stack",
             "workhorse": "minimax-cn/MiniMax-M3.1-Flash,opencode-go/deepseek-v4.1-flash",
         }), encoding="utf-8")
-        (self.state / "visible.json").write_text(json.dumps({
-            "claude": "conductor,openai-stack",
-            "pi": "workhorse",
-            "dsh": "workhorse",
+        (self.state / "visible.json").write_text(
+            json.dumps(self.catalog_column("visible.tsv", 1)), encoding="utf-8")
+        settings = self.home / ".config/magpie/settings.json"
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps({
+            "pickedModels": {
+                agent: picks.split(",")
+                for agent, picks in self.catalog_column("picked.tsv", 1).items()
+            },
         }), encoding="utf-8")
         spec = "@magpie-community/opencode-zed-auth@0.1.19"
         (self.state / "plugins.json").write_text(
@@ -949,9 +1028,9 @@ class MagpieCommandTests(MagpieApplyTests):
         self.healthy_gateway()
         result = self.run_command("status")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("visible|claude|conductor,openai-stack", result.stdout)
-        self.assertIn("visible|pi|workhorse", result.stdout)
-        self.assertIn("visible|dsh|workhorse", result.stdout)
+        self.assertIn("visible|claude|" + self.catalog_column("visible.tsv", 1)["claude"], result.stdout)
+        self.assertIn("visible|pi|" + self.catalog_column("visible.tsv", 1)["pi"], result.stdout)
+        self.assertIn("visible|dsh|" + self.catalog_column("visible.tsv", 1)["dsh"], result.stdout)
 
     def test_the_test_command_probes_a_role_through_its_first_live_candidate(self):
         self.seed_home()
