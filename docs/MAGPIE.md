@@ -87,7 +87,9 @@ model fails the apply with the model list the gateway serves.
 A member is a model role or `group/<id>` for another group. `drain` spends a
 member's accounts until they are used up, moves to the next member, and never
 returns to an earlier one. `listed=no` keeps a group out of the agent pickers
-while it stays reachable as another group's member.
+while it stays reachable as another group's member, but it also removes the
+models the group names from `/v1/models`; the deployment therefore keeps
+`group/chatgpt` listed so the next apply can still resolve its members.
 
 ### `wiring.tsv` — `agent|group|owner|enabled`
 
@@ -175,13 +177,14 @@ magpie settings set proxy http://127.0.0.1:7897
 `group/conductor` is the Claude Code group: Kimi K3.1 Pro, then DeepSeek V4.1
 Flash, then the ChatGPT group. `group/workhorse` is the Pi and `dsh` group:
 MiniMax M3.1 Flash, then DeepSeek V4.1 Flash. `group/chatgpt` holds the
-ChatGPT plan models and is not listed, so the Pro plan is spent only when
-Kimi and DeepSeek have no quota left.
+ChatGPT plan models and is listed as its own group, so the Pro plan is spent
+only when Kimi and DeepSeek have no quota left.
 
-The members of a group are expanded in order: a model role contributes the
-models its candidates resolve to, and `group/<id>` contributes the models of
-that group. A group with an unresolved member is left alone rather than
-created with a missing member.
+A model role contributes the models its candidates resolve to. `group/<id>`
+stays a reference: the apply validates the referenced group's members but
+passes `group/<id>` to Magpie, so that group keeps its own routing and listed
+setting. A group with an unresolved member is left alone rather than created
+with a missing member.
 
 ## Rollback
 

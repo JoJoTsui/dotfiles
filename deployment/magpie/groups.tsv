@@ -12,6 +12,6 @@
 # listed    yes when the group appears in an agent's picker, no when it stays
 #           reachable only as another group's member.
 # purpose   what the group is for.
-chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|no|standalone ChatGPT plan group
+chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|standalone ChatGPT plan group
 conductor|conductor.kimi,conductor.deepseek,group/chatgpt|drain|auto|yes|Claude Code
 workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh

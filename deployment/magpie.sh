@@ -711,13 +711,17 @@ magpie_group_present() {
 
 # The models a group holds, in the order the gateway reports them. The
 # catalog knows every model id, so the report is read by looking for them.
+# The member ids of a group as `magpie group <id>` lists them: the token after
+# the first bare number on each member line. Magpie puts the first member on
+# the `models` line and the rest on continuation lines. A nested group stays
+# group/<id>.
 magpie_group_models() {
-    local output=$1 known=$2 id position
-    for id in $known; do
-        position=$(printf '%s' "$output" | grep -bo -F -- "$id" 2>/dev/null | head -n1 | cut -d: -f1)
-        [ -n "$position" ] || continue
-        printf '%s\t%s\n' "$position" "$id"
-    done | sort -n | cut -f2 | tr '\n' ',' | sed 's/,$//'
+    printf '%s\n' "$1" | awk '
+        /^[[:space:]]*(models[[:space:]]+)?[0-9]+[[:space:]]/ {
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^[0-9]+$/) { print $(i + 1); break }
+            }
+        }' | paste -sd, -
 }
 
 # The candidates of one model role whose provider the gateway knows.
@@ -769,7 +773,11 @@ magpie_group_models_for() {
     for member in "${member_list[@]}"; do
         case "$member" in
             group/*)
-                part=$(magpie_group_models_for "${member#group/}" $((depth + 1))) || return 1
+                # Keep the reference: Magpie treats the group as one member
+                # with its own routing and listed setting. Resolve it first so
+                # a reference to a group whose members are unavailable fails.
+                magpie_group_models_for "${member#group/}" $((depth + 1)) >/dev/null || return 1
+                part=$member
                 ;;
             *)
                 status=$(magpie_list_value "$MAGPIE_ROLE_STATUS" "$member") || return 1
@@ -1376,8 +1384,9 @@ magpie_catalog_model_ids() {
     printf '%s' "$known"
 }
 
-# The model provider catalog with the state of every credential source. The
-# value of a credential is never printed.
+# The model provider catalog with the state of every credential source. A
+# provider already in Magpie owns its credential there; the source is only
+# needed to add it. The value of a credential is never printed.
 magpie_providers() {
     local index role preset source required state
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
@@ -1385,7 +1394,13 @@ magpie_providers() {
     for (( index=0; index<${#MAGPIE_PROVIDER_ROLE[@]}; index++ )); do
         role=${MAGPIE_PROVIDER_ROLE[index]}; preset=${MAGPIE_PROVIDER_PRESET[index]}
         source=${MAGPIE_PROVIDER_SOURCE[index]}; required=${MAGPIE_PROVIDER_REQUIRED[index]}
-        if magpie_credential_resolves "$source"; then state=resolves; else state=missing; fi
+        if magpie_provider_present "$preset"; then
+            state=present
+        elif magpie_credential_resolves "$source"; then
+            state=resolves
+        else
+            state=missing
+        fi
         printf '%s|%s|%s|%s|%s\n' "$role" "$preset" "$source" "$required" "$state"
     done
     return 0
@@ -1419,13 +1434,18 @@ magpie_status() {
     for (( index=0; index<${#MAGPIE_PROVIDER_ROLE[@]}; index++ )); do
         role=${MAGPIE_PROVIDER_ROLE[index]}; preset=${MAGPIE_PROVIDER_PRESET[index]}
         source=${MAGPIE_PROVIDER_SOURCE[index]}; required=${MAGPIE_PROVIDER_REQUIRED[index]}
-        if magpie_provider_present "$preset"; then state=present; else state=missing; fi
-        if magpie_credential_resolves "$source"; then credential=resolves; else credential=missing; fi
+        if magpie_provider_present "$preset"; then
+            state=present
+            credential=owned
+        else
+            state=missing
+            if magpie_credential_resolves "$source"; then credential=resolves; else credential=missing; fi
+        fi
         printf 'provider|%s|%s|credential %s\n' "$role" "$state" "$credential"
         if [ "$state" = missing ] && [ "$required" = yes ]; then
             missing="$missing provider $role"
         fi
-        if [ "$credential" = missing ] && [ "$required" = yes ]; then
+        if [ "$state" = missing ] && [ "$credential" = missing ] && [ "$required" = yes ]; then
             missing="$missing credential $role"
         fi
     done

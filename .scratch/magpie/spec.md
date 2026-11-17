@@ -100,15 +100,16 @@ workhorse.minimax|minimax-cn/MiniMax-M3.1-Flash|yes
 members are role names or `group/<id>`:
 
 ```
-chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|no|standalone ChatGPT plan group
+chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|standalone ChatGPT plan group
 conductor|conductor.kimi,conductor.deepseek,group/chatgpt|drain|auto|yes|Claude Code
 workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh
 ```
 
 `drain` is Magpie's "Until used up": a member's accounts are spent in order and
-an earlier member is never revisited after it rests. `listed=no` keeps the
-ChatGPT group out of agent pickers while still allowing `group/chatgpt` as a
-member.
+an earlier member is never revisited after it rests. A `group/<id>` member
+stays a reference, so the nested group keeps its own routing. `listed=no`
+would remove the group's models from `/v1/models` and break the next apply's
+resolution, so `group/chatgpt` is listed.
 
 `deployment/magpie/wiring.tsv` — `agent|group|owner|enabled`:
 

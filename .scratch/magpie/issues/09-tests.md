@@ -82,3 +82,9 @@ added; the two remaining `test_deployment` failures (privileged options on a
 simulated home and a native Windows plan) reproduce identically on `main` in a
 detached worktree on this macOS host, so they are host scope, not a
 regression.
+
+Follow-up after the live run: 72 `test_magpie` tests pass. The nested
+`group/chatgpt` reference, the numbered live-group parser, `chatgpt
+listed=yes`, the provider status for an already-present provider, the
+platform-conditional policy loop, and the path-preserving backup were all
+covered. The t9k final simulated apply renders no gateway values and exits 0.

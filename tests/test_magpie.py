@@ -69,8 +69,11 @@ elif argv[:1] == ["group"]:
     groups = load("groups.json", {})
     if argv[1] not in groups:
         sys.exit(1)
-    print("group " + argv[1])
-    print("models: " + groups[argv[1]])
+    print("  " + argv[1] + "  group/" + argv[1])
+    print("  routing   drain")
+    print("  models")
+    for index, model in enumerate(groups[argv[1]].split(","), 1):
+        print("            " + str(index) + " " + model + "  name")
 else:
     print("ok")
 '''
@@ -159,7 +162,7 @@ class MagpieCatalogTests(unittest.TestCase):
     def test_a_group_without_a_model_role_is_rejected(self):
         self.catalog_copy()
         text = self.read_catalog("groups.tsv").replace(
-            "chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|no|", "chatgpt|group/conductor|drain|auto|no|")
+            "chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|", "chatgpt|group/conductor|drain|auto|no|")
         self.write_catalog("groups.tsv", text)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
@@ -168,7 +171,7 @@ class MagpieCatalogTests(unittest.TestCase):
     def test_a_value_that_looks_like_a_key_is_rejected(self):
         self.catalog_copy()
         text = self.read_catalog("providers.tsv").replace(
-            "env:KIMI_CODE_CN_API_KEY", "env:sk-0123456789abcdef0123456789abcdef")
+            "env:KIMI_CODE_CN_API_KEY", "env:sk-fixture-catalog-key")
         self.write_catalog("providers.tsv", text)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
@@ -522,7 +525,7 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertIn("the Codex configuration changed during the apply", result.stderr)
         backups = list((self.home / ".local/state/dotfiles/magpie/backups").iterdir())
         self.assertTrue(backups)
-        self.assertTrue((backups[0] / "config.toml").is_file())
+        self.assertTrue((backups[0] / ".codex/config.toml").is_file())
 
     def test_the_apply_leaves_the_dsh_profile_alone(self):
         self.seed_home()
