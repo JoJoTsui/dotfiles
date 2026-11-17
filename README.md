@@ -295,8 +295,10 @@ lock regeneration, reinstallation, and provider/version reporting. See
 
 Herdr integrations are installed or repaired for the selected managed agents
 after the agent step, and Herdr's own skill is generated into the shared tree.
-The shared skill library is one catalog with `auto` and the `caveman`, `design`,
-and `lark` tags; Claude and MiniMax receive filtered copies, the shared-tree
+The shared skill library is one catalog with `auto` and the `caveman` and `lark`
+tags; the four design skills and the lark documentation cluster are in the
+default set, and `find-skills` is disabled. Claude and MiniMax receive filtered
+copies, the shared-tree
 clients read the same profile, and a managed inventory prunes only what the
 deployment wrote. The measured review gate and the client matrix are in
 [skill review](docs/SKILL_REVIEW.md). See

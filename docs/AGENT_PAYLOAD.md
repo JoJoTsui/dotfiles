@@ -112,9 +112,10 @@ general entries. The caveman mode and its compress skill stay in that core,
 and so do the six generic engineering skills of the caveman repository
 (`investigate-first`, `lean-build`, `migration`, `safe-refactor`,
 `surgical-patch`, `verify-and-stop`); they are general workflows, not caveman
-voice. The other fourteen caveman-branded skills carry the `caveman` tag, the
-four diagram, slide-deck, PPT, and front-end design skills carry `design`, and
-the Feishu skills carry `lark`. A host asks for a group with
+voice. The other fourteen caveman-branded skills carry the `caveman` tag. The
+four diagram, slide-deck, PPT, and front-end design skills and the lark
+documentation cluster are in the default set; the remaining Feishu skills carry
+`lark`, and `find-skills` is disabled. A host asks for a group with
 `DOTFILES_SKILLS=<tag>`, or for one skill with `DOTFILES_SKILLS=<name>`. Their
 pins stay reviewed, so asking for them deploys the bytes that were pinned.
 The selection applies both to the fetch and to the copy into a managed root,
@@ -163,7 +164,7 @@ device entry never loses to the deployment:
 An entry the deployment does not own is never recorded, so it stays device
 content. The stale copy a device carried before the inventory existed is
 reported rather than deleted. To migrate one deliberately, run the deployment
-once with the tags the device should keep (`DOTFILES_SKILLS=design,caveman,lark`
+once with the tags the device should keep (`DOTFILES_SKILLS=caveman,lark`
 for all three groups); a directory that already holds the selected bytes is
 adopted and recorded, and a later apply without the tag prunes it. A catalog
 directory whose bytes differ from the pinned copy is preserved and reported until
@@ -206,9 +207,10 @@ cannot be read is reported as not measured. The per-client matrix is
 [skill review](SKILL_REVIEW.md).
 
 The six skills the CLI knew and the catalog did not are catalogued rows now.
-`baoyu-diagram`, `baoyu-slide-deck`, `guizang-ppt-skill`, and `impeccable`
-carry the `design` tag; `find-skills` and `resolving-merge-conflicts` stay
-`auto`. Their rows are seeded from the CLI's recorded source and path, and the
+The four design skills (`baoyu-diagram`, `baoyu-slide-deck`,
+`guizang-ppt-skill`, and `impeccable`) and the lark documentation cluster are
+`auto`; `find-skills` is disabled and not in the catalog, and
+`resolving-merge-conflicts` stays `auto`. Their rows are seeded from the CLI's recorded source and path, and the
 lock pins an upstream commit that ships the declared path. `impeccable` was in
 neither record, so its upstream path is the one its repository publishes.
 

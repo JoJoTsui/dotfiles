@@ -23,6 +23,8 @@ GENERIC_ENGINEERING = (
     "surgical-patch", "verify-and-stop",
 )
 DESIGN_GROUP = ("baoyu-diagram", "baoyu-slide-deck", "guizang-ppt-skill", "impeccable")
+LARK_DOCS = ("lark-base", "lark-doc", "lark-drive", "lark-markdown", "lark-openapi-explorer",
+             "lark-shared", "lark-sheets", "lark-whiteboard", "lark-wiki")
 MANAGED_ROOTS = (".agents/skills", ".claude/skills", ".minimax/skills")
 
 
@@ -65,15 +67,28 @@ class CatalogTaggingTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertEqual(selections[name], "auto")
 
-    def test_the_design_and_lark_groups_keep_their_tags(self):
+    def test_the_design_skills_and_lark_doc_cluster_are_automatic(self):
         selections = catalog_selections()
         for name in DESIGN_GROUP:
             with self.subTest(name=name):
-                self.assertEqual(selections[name], "design")
+                self.assertEqual(selections[name], "auto")
+        for name in LARK_DOCS:
+            with self.subTest(name=name):
+                self.assertEqual(selections[name], "auto")
         lark = [name for name, selection in selections.items() if selection == "lark"]
         self.assertTrue(lark)
         for name in lark:
             self.assertTrue(name.startswith("lark-"), name)
+            self.assertNotIn(name, LARK_DOCS)
+
+    def test_find_skills_is_disabled_and_not_in_the_catalog(self):
+        self.assertNotIn("find-skills", catalog_selections())
+        disabled = {
+            line.split("|")[0]
+            for line in (SOURCE / "deployment/disabled-skills.tsv").read_text().splitlines()
+            if line and not line.startswith("#")
+        }
+        self.assertIn("find-skills", disabled)
 
     def test_the_lock_records_the_same_selection_as_the_catalog(self):
         self.assertEqual(lock_selections(), catalog_selections())
@@ -143,22 +158,23 @@ class SkillSelectionTests(unittest.TestCase):
     def test_the_default_set_excludes_every_tagged_group(self):
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stderr)
-        for name in ("caveman-review", "impeccable"):
-            self.assertNotIn(name, self.managed_names())
-        for name in ("tdd", "show-me", "humanizer", "humanizer-zh", "implement-spec"):
+        self.assertNotIn("caveman-review", self.managed_names())
+        for name in ("tdd", "show-me", "humanizer", "humanizer-zh", "implement-spec",
+                     "impeccable"):
             self.assertIn(name, self.managed_names())
 
     def test_a_tag_deploys_only_its_own_group(self):
         result = self.deploy(skills="caveman")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("caveman-review", self.managed_names())
-        self.assertNotIn("impeccable", self.managed_names())
-
-    def test_a_skill_name_deploys_only_that_skill(self):
-        result = self.deploy(skills="impeccable")
-        self.assertEqual(result.returncode, 0, result.stderr)
+        # The design skills are automatic, so the tag does not gate them.
         self.assertIn("impeccable", self.managed_names())
-        self.assertNotIn("caveman-review", self.managed_names())
+
+    def test_a_skill_name_deploys_a_tagged_skill(self):
+        result = self.deploy(skills="caveman-review")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("caveman-review", self.managed_names())
+        self.assertIn("impeccable", self.managed_names())
 
     def test_a_skill_the_catalog_does_not_own_never_enters_a_managed_root(self):
         result = self.deploy()

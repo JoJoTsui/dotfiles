@@ -15,14 +15,13 @@ DISABLED = SOURCE / "deployment/disabled-skills.tsv"
 DRIFT = SOURCE / "deployment/skill_drift.py"
 UPDATE = SOURCE / "deployment/update_skills.py"
 
-# The six skills the CLI lockfile knew and the catalog did not. Each row is
+# The five skills the CLI lockfile knew and the catalog did not. Each row is
 # the upstream source, the skill path inside it, and the selection.
 ADOPTED = {
-    "baoyu-diagram": ("https://github.com/jimliu/baoyu-skills", "skills/baoyu-diagram", "design"),
-    "baoyu-slide-deck": ("https://github.com/jimliu/baoyu-skills", "skills/baoyu-slide-deck", "design"),
-    "guizang-ppt-skill": ("https://github.com/op7418/guizang-ppt-skill", ".", "design"),
-    "impeccable": ("https://github.com/pbakaus/impeccable", ".agents/skills/impeccable", "design"),
-    "find-skills": ("https://github.com/vercel-labs/skills", "skills/find-skills", "auto"),
+    "baoyu-diagram": ("https://github.com/jimliu/baoyu-skills", "skills/baoyu-diagram", "auto"),
+    "baoyu-slide-deck": ("https://github.com/jimliu/baoyu-skills", "skills/baoyu-slide-deck", "auto"),
+    "guizang-ppt-skill": ("https://github.com/op7418/guizang-ppt-skill", ".", "auto"),
+    "impeccable": ("https://github.com/pbakaus/impeccable", ".agents/skills/impeccable", "auto"),
     "resolving-merge-conflicts": ("https://github.com/mattpocock/skills",
                                   "skills/engineering/resolving-merge-conflicts", "auto"),
 }
@@ -41,7 +40,7 @@ def rows(path, width):
 
 
 class AdoptedCatalogTests(unittest.TestCase):
-    """The six skills the CLI knew are catalogued rows with pinned bytes."""
+    """The five skills the CLI knew are catalogued rows with pinned bytes."""
 
     def test_each_adopted_skill_is_a_catalogued_row_with_its_selection(self):
         catalog = rows(CATALOG, 6)
@@ -94,9 +93,8 @@ class AdoptedCatalogTests(unittest.TestCase):
             "# name|kind|source|resolved|selection\n" + "\n".join(pin_rows) + "\n")
         home = root / "device"
         home.mkdir()
-        # The design group is opt-in, so the host asks for it by tag.
-        result = self.run_script(source, home, 'prepare_skill_library\nprintf "%s" "$PAYLOAD_SKILLS_DIR"',
-                                 env={"DOTFILES_SKILLS": "design"})
+        # The adopted design skills are in the default set.
+        result = self.run_script(source, home, 'prepare_skill_library\nprintf "%s" "$PAYLOAD_SKILLS_DIR"')
         self.assertEqual(result.returncode, 0, result.stderr)
         library = Path(result.stdout.strip().splitlines()[-1])
         for name in ADOPTED:
@@ -115,7 +113,6 @@ class AdoptedCatalogTests(unittest.TestCase):
         layout = {
             "baoyu-diagram": {"skills/baoyu-diagram": "baoyu-diagram"},
             "baoyu-slide-deck": {"skills/baoyu-slide-deck": "baoyu-slide-deck"},
-            "find-skills": {"skills/find-skills": "find-skills"},
             "resolving-merge-conflicts": {"skills/engineering/resolving-merge-conflicts":
                                           "resolving-merge-conflicts"},
             "impeccable": {".agents/skills/impeccable": "impeccable"},

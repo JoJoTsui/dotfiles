@@ -1,4 +1,4 @@
-# Disabled by upstream origin; resources are retained outside discovery for rollback.
+# Disabled by policy or upstream origin; resources are retained outside discovery for rollback.
 # name|source
 alphafold-database-fetch-and-analyze|https://github.com/google-deepmind/science-skills
 alphagenome-single-variant-analysis|https://github.com/google-deepmind/science-skills
@@ -9,6 +9,7 @@ dbsnp-database|https://github.com/google-deepmind/science-skills
 embl-ebi-ols|https://github.com/google-deepmind/science-skills
 encode-ccres-database|https://github.com/google-deepmind/science-skills
 ensembl-database|https://github.com/google-deepmind/science-skills
+find-skills|https://github.com/vercel-labs/skills
 foldseek-structural-search|https://github.com/google-deepmind/science-skills
 gnomad-database|https://github.com/google-deepmind/science-skills
 gtex-database|https://github.com/google-deepmind/science-skills

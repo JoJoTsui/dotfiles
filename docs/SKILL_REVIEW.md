@@ -64,7 +64,7 @@ The catalog's last column decides what a host receives.
 | Selection | Meaning |
 | --- | --- |
 | `auto` | the reviewed core; every host receives it |
-| a tag | a group the host asks for: `lark`, `design`, `caveman` |
+| a tag | a group the host asks for: `lark`, `caveman` |
 
 A host opts in with `DOTFILES_SKILLS=<tag>` or `DOTFILES_SKILLS=<name>`. The
 selection applies to the fetch and to the copy into a managed root, so a
@@ -74,9 +74,12 @@ enters a managed root, and it is never pruned.
 
 `auto` is the reviewed core: the mattpocock engineering and productivity
 skills, graphify, worktrunk, the humanizers, `show-me`, `pr` and `research`,
-the caveman mode with its compress skill, and the six generic engineering
-skills of the caveman repository. The other caveman-branded skills, the
-diagram and slide-deck skills, and the Feishu skills stay behind their tags.
+the caveman mode with its compress skill, the six generic engineering skills of
+the caveman repository, the four design skills, and the lark documentation
+cluster (`lark-doc`, `lark-sheets`, `lark-shared`, `lark-drive`,
+`lark-whiteboard`, `lark-base`, `lark-wiki`, `lark-markdown`,
+`lark-openapi-explorer`). The other caveman-branded skills and the remaining
+Feishu skills stay behind their tags. `find-skills` is disabled.
 
 ## The ownership rules
 
@@ -163,7 +166,7 @@ directories the deployment never recorded. It reports each one rather than
 deleting it. To migrate deliberately:
 
 1. Run the deployment once with the tags the device should keep, for example
-   `DOTFILES_SKILLS=design,caveman,lark`. A directory that already holds the
+   `DOTFILES_SKILLS=caveman,lark`. A directory that already holds the
    selected bytes is adopted and recorded without a rewrite.
 2. Run it again with the desired selection. A recorded directory that leaves
    the selection is pruned from each managed root.
