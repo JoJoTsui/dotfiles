@@ -15,6 +15,27 @@ Standalone voice skills (`caveman`, `ultracave`, `megacave`) need no CLI,
 gateway, hooks, or MCP server. Gateway-backed evidence and optimization skills
 still need their own runtime; keeping a skill installed does not activate it.
 
+## Default availability and voice activation
+
+The catalog selects `caveman` automatically on every platform and role. All
+seven managed agents receive it: Codex, Kimi Code, Pi, OpenCode, and Qoder read
+the shared tree; Claude Code and MiniMax Code receive regular-file copies.
+Installation makes the skill available; it does not activate the voice.
+
+The pinned skill starts on `/caveman` or a matching request and persists for
+that session until `stop caveman` or `normal mode`. No gateway, CLI, hook, or
+MCP server is needed. Its compression rules apply to chat; persisted code,
+comments, commits, docs, and tickets retain normal prose.
+
+A repository-wide default voice is possible through the shared instruction
+block in `deployment/agent-payload/AGENTS.md`, which reaches all seven agents.
+That would be a model-followed instruction to load and follow the installed
+skill at session start, with explicit user requests and `normal mode` taking
+precedence. It would not be a native persistent mode switch or proof that
+every client invoked the skill. MiniMax's native skill discovery is still
+unverified. The repository currently keeps voice activation opt-in; no default
+activation instruction or runtime integration is installed.
+
 ## Skills-only operation
 
 Use the native CLI's `caveman disable --all` to restore journaled provider
