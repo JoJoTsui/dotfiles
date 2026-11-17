@@ -105,8 +105,9 @@ app, the agents, and the client settings exist before the gateway is wired.
 
 1. Validate the four catalogs.
 2. Ensure the gateway answers: `magpie status --json`. On the real account
-   home the app is opened and waited for; elsewhere the run reports the
-   command and continues with a named warning.
+   home the app is opened and waited for. A gateway that still does not answer
+   fails the step with the install/open command; a non-macOS host is skipped
+   before this point.
 3. Resolve the proxy and write it with `magpie settings set proxy` only when
    it differs.
 4. Ensure the providers in catalog order.
@@ -179,6 +180,13 @@ Flash, then the ChatGPT group. `group/workhorse` is the Pi and `dsh` group:
 MiniMax M3.1 Flash, then DeepSeek V4.1 Flash. `group/chatgpt` holds the
 ChatGPT plan models and is listed as its own group, so the Pro plan is spent
 only when Kimi and DeepSeek have no quota left.
+
+Claude Code's `model` field stays client-owned: `/model` writes it. Pick a
+`group/<id>` or `provider/model` reference there. A bare `sonnet` or `opus`
+alias names an Anthropic model, and the gateway has no Anthropic provider
+unless one was added; such a choice reaches the gateway as an unknown model.
+Claude Code may append its `[1m]` marker to a group name and print a local
+`unrecognized_model` notice; Magpie strips the marker and answers.
 
 A model role contributes the models its candidates resolve to. `group/<id>`
 stays a reference: the apply validates the referenced group's members but
