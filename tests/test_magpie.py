@@ -454,6 +454,11 @@ class MagpieApplyTests(unittest.TestCase):
         kept = sorted(path.name for path in backups.iterdir())
         self.assertEqual(len(kept), 10)
         self.assertNotIn("20200101T000000Z", kept)
+        latest = backups / kept[-1]
+        # Claude's and Pi's settings.json share a basename; both survive.
+        self.assertTrue((latest / ".claude/settings.json").is_file())
+        self.assertTrue((latest / ".pi/agent/settings.json").is_file())
+        self.assertTrue((latest / "dsh-default/cordis.patch.yml").is_file())
         for path in backups.rglob("*"):
             if path.is_file():
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600, path)
@@ -765,17 +770,28 @@ class MagpieClientSettingsTests(unittest.TestCase):
         self.assertIn('"ANTHROPIC_BASE_URL": "http://127.0.0.1:3425"', template)
         self.assertIn('"ANTHROPIC_AUTH_TOKEN": "magpie"', template)
         self.assertIn('"model": "group/conductor"', template)
-        for absent in ('"ANTHROPIC_MODEL"', '"ANTHROPIC_DEFAULT_OPUS_MODEL"', '"ANTHROPIC_DEFAULT_SONNET_MODEL"',
-                       '"ANTHROPIC_DEFAULT_HAIKU_MODEL"', '"ANTHROPIC_DEFAULT_FABLE_MODEL"',
-                       '"ANTHROPIC_SMALL_FAST_MODEL"', '"CLAUDE_CODE_SUBAGENT_MODEL"'):
-            self.assertNotIn(absent, template)
+        self.assertNotIn('"ANTHROPIC_MODEL"', template)
+        for tier in ("ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+                     "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
+                     "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"):
+            self.assertIn(f'"{tier}": "group/conductor"', template)
         self.assertNotIn("glm", template)
         self.assertIn("{{- if eq .platform \"macos\" }}", template)
 
-    def test_the_client_settings_policy_keeps_its_two_paths(self):
+    def test_the_client_settings_policy_enforces_the_magpie_wiring(self):
         policies = json.loads((SOURCE / "deployment/client-settings/policies.json").read_text())
-        self.assertEqual(policies["claude-settings"],
-                         [["env", "DISABLE_AUTOUPDATER"], ["enabledPlugins", "serena@claude-plugins-official"]])
+        self.assertEqual(policies["claude-settings"], [
+            ["env", "ANTHROPIC_AUTH_TOKEN"],
+            ["env", "ANTHROPIC_BASE_URL"],
+            ["env", "ANTHROPIC_DEFAULT_FABLE_MODEL"],
+            ["env", "ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+            ["env", "ANTHROPIC_DEFAULT_OPUS_MODEL"],
+            ["env", "ANTHROPIC_DEFAULT_SONNET_MODEL"],
+            ["env", "ANTHROPIC_SMALL_FAST_MODEL"],
+            ["env", "CLAUDE_CODE_SUBAGENT_MODEL"],
+            ["env", "DISABLE_AUTOUPDATER"],
+            ["enabledPlugins", "serena@claude-plugins-official"],
+        ])
 
     def test_no_template_carries_the_glm_data_anymore(self):
         config = (SOURCE / ".chezmoi.toml.tmpl").read_text()
@@ -798,7 +814,30 @@ class MagpieClientSettingsTests(unittest.TestCase):
         self.assertEqual(settings["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
         self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
         self.assertEqual(settings["model"], "group/conductor")
+        self.assertEqual(settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "group/conductor")
+        self.assertEqual(settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "group/conductor")
+        self.assertEqual(settings["env"]["ANTHROPIC_SMALL_FAST_MODEL"], "group/conductor")
+        self.assertEqual(settings["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "group/conductor")
         self.assertNotIn("glm", json.dumps(settings))
+
+    def test_an_enforced_path_missing_from_the_template_leaves_the_device_value(self):
+        if not self.chezmoi:
+            self.skipTest("actual source application requires chezmoi")
+        settings_path = self.home / ".claude/settings.json"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(json.dumps({
+            "model": "device-model",
+            "env": {"ANTHROPIC_BASE_URL": "https://device.example", "ANTHROPIC_AUTH_TOKEN": "device-token"},
+        }), encoding="utf-8")
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi)
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
+                                 "--home", str(self.home), "--platform", "linux", "--apply-only"],
+                                cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        settings = json.loads(settings_path.read_text())
+        self.assertEqual(settings["env"]["ANTHROPIC_BASE_URL"], "https://device.example")
+        self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "device-token")
+        self.assertEqual(settings["model"], "device-model")
 
     def test_a_linux_apply_keeps_both_clients_off_the_gateway(self):
         if not self.chezmoi:

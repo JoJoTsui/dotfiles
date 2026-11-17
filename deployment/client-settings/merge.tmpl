@@ -134,8 +134,19 @@
 {{- if not (hasKey $policies $policy) -}}{{- fail (printf "unknown client settings policy %q" $policy) -}}{{- end -}}
 {{- range $path := get $policies $policy -}}
 {{- $value := $desired -}}
-{{- range $part := $path -}}{{- $value = get $value $part -}}{{- end -}}
+{{- $found := true -}}
+{{- range $part := $path -}}
+{{- if $found -}}
+{{- if and (kindIs "map" $value) (hasKey $value $part) -}}
+{{- $value = get $value $part -}}
+{{- else -}}
+{{- $found = false -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if $found -}}
 {{- $_ := setValueAtPath $path $value $host -}}
+{{- end -}}
 {{- end -}}
 {{- template "disabled-agent-integrations" $host -}}
 {{- if eq $format "toml" -}}

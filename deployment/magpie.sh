@@ -858,16 +858,20 @@ magpie_backup_stamp() {
 }
 
 # Copy the client files Magpie may touch into a timestamped backup.
-magpie_backup_create() {
-    local stamp=$1 root file profile count=0 name
+magpie_backup_create() (
+    local stamp=$1 root file rel profile count=0 name
     root="$(magpie_state_dir)/backups/$stamp"
     [ ! -L "$root" ] || { magpie_fail "the Magpie backup directory is a symlink: $root"; return 1; }
     mkdir -p "$root" || { magpie_fail "cannot create the Magpie backup directory: $root"; return 1; }
     chmod 700 "$root"
+    # Keep each file's path below the home: Claude's and Pi's settings.json
+    # share a basename, and one must never overwrite the other.
     for file in "$HOME/.claude/settings.json" "$HOME/.pi/agent/settings.json" \
         "$HOME/.pi/agent/models.json" "$HOME/.codex/config.toml"; do
         [ -f "$file" ] || continue
-        cp -p "$file" "$root/$(basename "$file")" || { magpie_fail "cannot back up $file"; return 1; }
+        rel=${file#"$HOME/"}
+        mkdir -p "$root/$(dirname "$rel")"
+        cp -p "$file" "$root/$rel" || { magpie_fail "cannot back up $file"; return 1; }
     done
     for file in "$HOME"/.dsh/profiles/*/cordis.patch.yml; do
         [ -f "$file" ] || continue
@@ -888,7 +892,7 @@ magpie_backup_create() {
         fi
     done
     printf '%s' "$root"
-}
+)
 
 # The official DeepSeek row of one DSH profile patch. The patch is a YAML
 # list of entries; the row is the entry whose id is llm-deepseek. The

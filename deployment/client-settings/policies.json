@@ -1,14 +1,96 @@
 {
   "agent-integrations-only": [],
-  "codex-update-only": [["check_for_update_on_startup"]],
-  "legacy-vscode": [["python.condaPath"], ["python.venvPath"], ["http.proxy"]],
-  "codegraph-mcp": [["mcpServers", "codegraph"]],
-  "claude-settings": [["env", "DISABLE_AUTOUPDATER"], ["enabledPlugins", "serena@claude-plugins-official"]],
-  "codex": [["mcp_servers", "codegraph"], ["check_for_update_on_startup"]],
+  "codex-update-only": [
+    [
+      "check_for_update_on_startup"
+    ]
+  ],
+  "legacy-vscode": [
+    [
+      "python.condaPath"
+    ],
+    [
+      "python.venvPath"
+    ],
+    [
+      "http.proxy"
+    ]
+  ],
+  "codegraph-mcp": [
+    [
+      "mcpServers",
+      "codegraph"
+    ]
+  ],
+  "claude-settings": [
+    [
+      "env",
+      "ANTHROPIC_AUTH_TOKEN"
+    ],
+    [
+      "env",
+      "ANTHROPIC_BASE_URL"
+    ],
+    [
+      "env",
+      "ANTHROPIC_DEFAULT_FABLE_MODEL"
+    ],
+    [
+      "env",
+      "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+    ],
+    [
+      "env",
+      "ANTHROPIC_DEFAULT_OPUS_MODEL"
+    ],
+    [
+      "env",
+      "ANTHROPIC_DEFAULT_SONNET_MODEL"
+    ],
+    [
+      "env",
+      "ANTHROPIC_SMALL_FAST_MODEL"
+    ],
+    [
+      "env",
+      "CLAUDE_CODE_SUBAGENT_MODEL"
+    ],
+    [
+      "env",
+      "DISABLE_AUTOUPDATER"
+    ],
+    [
+      "enabledPlugins",
+      "serena@claude-plugins-official"
+    ]
+  ],
+  "codex": [
+    [
+      "mcp_servers",
+      "codegraph"
+    ],
+    [
+      "check_for_update_on_startup"
+    ]
+  ],
   "codex-hooks": [],
   "kimi": [],
-  "kimi-tui": [["upgrade", "auto_install"]],
-  "opencode": [["mcp", "servers", "codegraph"], ["update"]],
+  "kimi-tui": [
+    [
+      "upgrade",
+      "auto_install"
+    ]
+  ],
+  "opencode": [
+    [
+      "mcp",
+      "servers",
+      "codegraph"
+    ],
+    [
+      "update"
+    ]
+  ],
   "pi-settings": [],
   "pi-models-store": []
 }

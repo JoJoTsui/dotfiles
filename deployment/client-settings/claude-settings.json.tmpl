@@ -4,6 +4,12 @@
 {{- if eq .platform "macos" }}
     "ANTHROPIC_AUTH_TOKEN": "magpie",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:3425",
+    "ANTHROPIC_DEFAULT_FABLE_MODEL": "group/conductor",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "group/conductor",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "group/conductor",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "group/conductor",
+    "ANTHROPIC_SMALL_FAST_MODEL": "group/conductor",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "group/conductor",
 {{- end }}
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
