@@ -50,6 +50,8 @@ elif argv[:2] == ["provider", "add"]:
         providers.append(argv[2])
     save("providers.json", providers)
 elif argv[:2] == ["plugin", "list"]:
+    if os.environ.get("FAKE_MAGPIE_FAIL_PLUGIN_LIST") == "1":
+        sys.exit(1)
     print(json.dumps(load("plugins.json", {"loaded": [], "plugins": []})))
 elif argv[:2] == ["plugin", "add"]:
     plugins = load("plugins.json", {"loaded": [], "plugins": []})
@@ -538,6 +540,33 @@ class MagpieApplyTests(unittest.TestCase):
         commands = self.commands()
         self.assertEqual([command for command in commands if command == "plugin on zed"], ["plugin on zed"])
         self.assertEqual([command for command in commands if command.startswith("plugin add")], [])
+
+    def test_an_unreadable_plugin_list_never_installs_on_a_guess(self):
+        script = self.root / "apply.sh"
+        self.seed_home()
+        script.write_text(
+            "export HOME=" + repr(str(self.home)) + "\n"
+            "source " + repr(str(ENGINE)) + "\n"
+            "magpie_apply\n",
+            encoding="utf-8")
+        environment = {
+            "HOME": str(self.home),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "MAGPIE_BIN": str(self.fake),
+            "MAGPIE_CATALOG_DIR": str(self.catalog),
+            "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
+            "FAKE_MAGPIE_STATE": str(self.state),
+            "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
+            "FAKE_MAGPIE_FAIL_PLUGIN_LIST": "1",
+            "DEPLOY_PLATFORM": "macos",
+            "XDG_STATE_HOME": str(self.home / ".local/state"),
+            "XDG_CONFIG_HOME": str(self.home / ".config"),
+        }
+        result = subprocess.run(["/bin/bash", str(script)], env=environment,
+                                capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot read the Magpie plugin list", result.stderr)
+        self.assertEqual([command for command in self.commands() if command.startswith("plugin add")], [])
 
     def test_the_openai_stack_drains_the_plan_then_the_api_then_kimi_max(self):
         result = self.apply()

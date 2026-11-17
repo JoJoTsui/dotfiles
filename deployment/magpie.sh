@@ -1290,7 +1290,12 @@ proxy"
     printf 'dotfiles: magpie: the providers use the proxy %s\n' "$MAGPIE_PROXY"
 
     DEPLOY_STEP=magpie-apply.plugins
-    plugin_state=$(magpie_plugin_state || true)
+    # An unreadable plugin list is not an absent plugin: the deployment never
+    # installs on a guess.
+    if ! plugin_state=$(magpie_plugin_state); then
+        magpie_fail 'cannot read the Magpie plugin list'
+        return 1
+    fi
     for (( index=0; index<${#MAGPIE_PLUGIN_NAME[@]}; index++ )); do
         name=${MAGPIE_PLUGIN_NAME[index]}; source=${MAGPIE_PLUGIN_SOURCE[index]}
         version=${MAGPIE_PLUGIN_VERSION[index]}; enabled=${MAGPIE_PLUGIN_ENABLED[index]}

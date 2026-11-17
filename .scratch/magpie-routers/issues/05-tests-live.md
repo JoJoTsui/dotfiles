@@ -38,7 +38,7 @@
 
 ```
 DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest tests.test_magpie
-Ran 102 tests ... OK
+Ran 104 tests ... OK
 
 # the simulated applies, hermetic skill library (see the network note below)
 DOTFILES_SKILLS_DIR=$PWD/tests/fixtures/skill-library DOTFILES_CHEZMOI_BIN=$(command -v chezmoi) \
@@ -219,3 +219,12 @@ $ shasum -a 256 ~/.codex/config.toml
 No official agent configuration carries a Magpie reference, and the DSH
 profiles' official DeepSeek row is unchanged (`dsh-official-row|*|absent`,
 absent before the apply as well).
+
+A second `dotfiles-magpie apply` is a no-op: the plugin is loaded, the groups
+hold, the agents are shown, and the recorded state is current — nothing was
+written.
+
+One guard was added after the review: an unreadable plugin list is not an
+absent plugin, so the apply now fails by name instead of installing on a
+guess. `magpie plugin add` was never run on this device — the plugin was
+already loaded, and the deployment never signs in.
