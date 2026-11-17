@@ -1,0 +1,16 @@
+# Agent visibility catalog. One row per agent the deployment narrows.
+#
+# agent|names
+#
+# agent  the agent's short name, as the agent provider catalog and wiring.tsv
+#        name it. An agent without a row is shown every model.
+# names  comma-separated names the agent is shown: a declared group id or a
+#        declared Magpie provider id. A provider id exposes the models starred
+#        for that provider; Magpie's pickedModels stars stay the app's state.
+#
+# The deployment narrows an agent and never ticks a star. It passes no
+# --only-picked, because that freezes the current list and would hide a model
+# starred later.
+claude|conductor,openai-stack
+pi|workhorse
+dsh|workhorse

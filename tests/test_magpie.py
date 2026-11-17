@@ -11,7 +11,7 @@ import unittest
 
 SOURCE = Path(__file__).resolve().parents[1]
 CATALOG = SOURCE / "deployment" / "magpie"
-CATALOGS = ("providers.tsv", "models.tsv", "groups.tsv", "wiring.tsv")
+CATALOGS = ("providers.tsv", "models.tsv", "groups.tsv", "wiring.tsv", "visible.tsv")
 ENGINE = SOURCE / "deployment" / "magpie.sh"
 
 FAKE_MAGPIE = '''#!/usr/bin/env python3
@@ -60,6 +60,21 @@ elif argv[:2] == ["group", "add"] or argv[:2] == ["group", "set"]:
     fields = dict(item.split("=", 1) for item in argv[3:])
     groups[argv[2]] = fields.get("models", "")
     save("groups.json", groups)
+elif argv[:1] == ["visible"]:
+    visible = load("visible.json", {})
+    if len(argv) == 1:
+        for agent in sorted(visible):
+            print("  " + agent + "  " + visible[agent].replace(",", ", ") + "  1 shown, 2 not")
+    elif len(argv) == 2:
+        print("  Routing groups")
+        if argv[1] in visible:
+            print("  " + argv[1] + " is shown " + visible[argv[1]].replace(",", ", "))
+    else:
+        if os.environ.get("FAKE_MAGPIE_FAIL_VISIBLE") == "1":
+            sys.exit(1)
+        visible[argv[1]] = argv[2]
+        save("visible.json", visible)
+        print("saved")
 elif argv[:1] == ["dsh"]:
     if os.environ.get("FAKE_MAGPIE_TOUCH_DSH") == "1":
         patch = pathlib.Path(os.environ["HOME"]) / ".dsh/profiles/default/cordis.patch.yml"
@@ -235,6 +250,22 @@ class MagpieCatalogTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("names an undeclared provider: kimi-eu", result.stderr)
 
+    def test_an_unknown_visible_agent_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("visible.tsv").replace("claude|conductor", "claudex|conductor")
+        self.write_catalog("visible.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("visible names an unknown agent: claudex", result.stderr)
+
+    def test_an_unknown_visible_group_or_provider_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("visible.tsv").replace("pi|workhorse", "pi|workhors")
+        self.write_catalog("visible.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("visible agent pi names an unknown group or provider: workhors", result.stderr)
+
     def test_a_missing_catalog_is_rejected(self):
         self.catalog_copy()
         (self.catalog / "wiring.tsv").unlink()
@@ -373,6 +404,7 @@ class MagpieApplyTests(unittest.TestCase):
         order = ["settings set proxy", "provider add codex", "provider add opencode-go",
                  "provider add kimi-code-cn", "provider add minimax-cn", "provider add openai",
                  "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
+                 "visible claude conductor,openai-stack", "visible pi workhorse", "visible dsh workhorse",
                  "pi group/workhorse", "dsh group/workhorse"]
         positions = []
         for command in order:
@@ -380,6 +412,36 @@ class MagpieApplyTests(unittest.TestCase):
             self.assertEqual(len(matches), 1, command)
             positions.append(matches[0])
         self.assertEqual(positions, sorted(positions))
+
+    def test_the_visible_catalog_narrows_each_agent_after_the_groups(self):
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        narrowing = [command for command in self.commands() if len(command.split()) == 3
+                     and command.startswith("visible ")]
+        self.assertEqual(narrowing, ["visible claude conductor,openai-stack",
+                                     "visible pi workhorse", "visible dsh workhorse"])
+
+    def test_a_failing_visible_aborts_the_apply(self):
+        result = self.apply(environment={"FAKE_MAGPIE_FAIL_VISIBLE": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot narrow the agent claude to conductor,openai-stack", result.stderr)
+
+    def test_a_visibility_only_run_takes_no_backup_and_writes_no_file(self):
+        self.assertEqual(self.apply().returncode, 0)
+        backups = self.home / ".local/state/dotfiles/magpie/backups"
+        before = sorted(path.name for path in backups.iterdir())
+        state = self.state_file()
+        state_mtime = state.stat().st_mtime_ns
+        # The gateway forgets the narrowing; every other piece still matches.
+        (self.state / "visible.json").unlink()
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(sorted(path.name for path in backups.iterdir()), before)
+        self.assertEqual(state.stat().st_mtime_ns, state_mtime)
+        self.assertEqual([command for command in self.commands() if len(command.split()) == 3
+                          and command.startswith("visible ")][-3:],
+                         ["visible claude conductor,openai-stack",
+                          "visible pi workhorse", "visible dsh workhorse"])
 
     def test_the_openai_stack_drains_the_plan_then_the_api_then_kimi_max(self):
         result = self.apply()
@@ -714,7 +776,21 @@ class MagpieCommandTests(MagpieApplyTests):
             "conductor": "group/openai-stack",
             "workhorse": "minimax-cn/MiniMax-M3.1-Flash,opencode-go/deepseek-v4.1-flash",
         }), encoding="utf-8")
+        (self.state / "visible.json").write_text(json.dumps({
+            "claude": "conductor,openai-stack",
+            "pi": "workhorse",
+            "dsh": "workhorse",
+        }), encoding="utf-8")
         (self.state / "proxy.txt").write_text(json.dumps("http://127.0.0.1:7897"), encoding="utf-8")
+
+    def test_every_catalog_reaches_the_managed_home(self):
+        managed = SOURCE / "dot_config/dotfiles/magpie"
+        for name in CATALOGS:
+            with self.subTest(catalog=name):
+                wrapper = managed / f"{name}.tmpl"
+                self.assertTrue(wrapper.is_file(), wrapper)
+                self.assertEqual(wrapper.read_text(encoding="utf-8").strip(),
+                                 '{{ include "deployment/magpie/%s" }}' % name)
 
     def test_the_command_applies_the_same_engine(self):
         self.seed_home()
@@ -739,6 +815,15 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("wiring|dsh|group/workhorse", result.stdout)
         self.assertIn("dsh-official-row|default|present", result.stdout)
+
+    def test_the_status_reports_the_three_visibility_rows(self):
+        self.seed_home()
+        self.healthy_gateway()
+        result = self.run_command("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("visible|claude|conductor,openai-stack", result.stdout)
+        self.assertIn("visible|pi|workhorse", result.stdout)
+        self.assertIn("visible|dsh|workhorse", result.stdout)
 
     def test_the_status_names_a_missing_piece_and_fails(self):
         self.seed_home()

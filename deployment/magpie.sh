@@ -293,6 +293,7 @@ magpie_catalog_providers() {
     MAGPIE_PROVIDER_ROLE=(); MAGPIE_PROVIDER_PRESET=(); MAGPIE_PROVIDER_SOURCE=(); MAGPIE_PROVIDER_REQUIRED=()
     MAGPIE_PROVIDER_ROLES=''
     MAGPIE_PROVIDER_PRESET_ROWS=''
+    MAGPIE_PROVIDER_PRESET_IDS=''
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}
         case "$line" in ''|\#*) continue ;; esac
@@ -340,6 +341,7 @@ magpie_catalog_providers() {
         MAGPIE_PROVIDER_SOURCE+=("$source"); MAGPIE_PROVIDER_REQUIRED+=("$required")
         MAGPIE_PROVIDER_ROLES="$MAGPIE_PROVIDER_ROLES|$role|"
         MAGPIE_PROVIDER_PRESET_ROWS="$MAGPIE_PROVIDER_PRESET_ROWS|$role=$preset|"
+        MAGPIE_PROVIDER_PRESET_IDS="$MAGPIE_PROVIDER_PRESET_IDS|$preset|"
     done < "$file"
     return 0
 }
@@ -458,6 +460,33 @@ magpie_catalog_groups() {
     return 0
 }
 
+# The agent visibility catalog: agent, names the agent is shown.
+magpie_catalog_visible() {
+    local file=$1 line agent names name
+    local -a name_list
+    MAGPIE_VISIBLE_AGENT=(); MAGPIE_VISIBLE_NAMES=()
+    MAGPIE_VISIBLE_AGENTS=''
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in ''|\#*) continue ;; esac
+        magpie_row_fields "$line" 2 visible || return 1
+        agent=${MAGPIE_ROW_FIELDS[0]}; names=${MAGPIE_ROW_FIELDS[1]}
+        magpie_name_ok "$agent" || { magpie_fail "invalid visible agent: $agent"; return 1; }
+        if magpie_list_contains "$MAGPIE_VISIBLE_AGENTS" "$agent"; then
+            magpie_fail "duplicate visible agent: $agent"
+            return 1
+        fi
+        IFS=, read -r -a name_list <<< "$names"
+        [ "${#name_list[@]}" -gt 0 ] || { magpie_fail "visible agent has no name: $agent"; return 1; }
+        for name in "${name_list[@]}"; do
+            magpie_name_ok "$name" || { magpie_fail "invalid visible name: $name"; return 1; }
+        done
+        MAGPIE_VISIBLE_AGENT+=("$agent"); MAGPIE_VISIBLE_NAMES+=("$names")
+        MAGPIE_VISIBLE_AGENTS="$MAGPIE_VISIBLE_AGENTS|$agent|"
+    done < "$file"
+    return 0
+}
+
 # The agent wiring catalog: agent, group, owner, enabled.
 magpie_catalog_wiring() {
     local file=$1 line agent group owner enabled
@@ -495,17 +524,17 @@ magpie_catalog_validate() {
     local dir=${1:-}
     [ -n "$dir" ] || dir=$(magpie_catalog_dir)
     local providers="$dir/providers.tsv" models="$dir/models.tsv"
-    local groups="$dir/groups.tsv" wiring="$dir/wiring.tsv"
-    local file line member role candidates candidate id provider agent
+    local groups="$dir/groups.tsv" wiring="$dir/wiring.tsv" visible="$dir/visible.tsv"
+    local file line member role candidates candidate id provider agent names name
     local member_list_text
-    local -a candidate_list member_list
-    for file in "$providers" "$models" "$groups" "$wiring"; do
+    local -a candidate_list member_list name_list
+    for file in "$providers" "$models" "$groups" "$wiring" "$visible"; do
         [ -f "$file" ] || { magpie_fail "catalog is missing: ${file##*/}"; return 1; }
         [ ! -L "$file" ] || { magpie_fail "catalog is a symlink: ${file##*/}"; return 1; }
     done
     # No catalog value carries a credential. The scan runs before the shape
     # checks, so a pasted key is reported as a credential.
-    for file in "$providers" "$models" "$groups" "$wiring"; do
+    for file in "$providers" "$models" "$groups" "$wiring" "$visible"; do
         while IFS= read -r line || [ -n "$line" ]; do
             line=${line%$'\r'}
             case "$line" in ''|\#*) continue ;; esac
@@ -522,6 +551,7 @@ magpie_catalog_validate() {
     magpie_catalog_models "$models" || return 1
     magpie_catalog_groups "$groups" || return 1
     magpie_catalog_wiring "$wiring" || return 1
+    magpie_catalog_visible "$visible" || return 1
     # Every model candidate names a declared Magpie provider.
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}
@@ -589,6 +619,25 @@ magpie_catalog_validate() {
             return 1
         fi
     done < "$wiring"
+    # Every narrowed agent is a declared agent, and every name it is shown is a
+    # declared group or Magpie provider.
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in ''|\#*) continue ;; esac
+        IFS='|' read -r -a MAGPIE_ROW_FIELDS <<< "$line"
+        agent=${MAGPIE_ROW_FIELDS[0]}; names=${MAGPIE_ROW_FIELDS[1]}
+        if ! magpie_list_value "$MAGPIE_WIRING_ROWS" "$agent" >/dev/null; then
+            magpie_fail "visible names an unknown agent: $agent"
+            return 1
+        fi
+        IFS=, read -r -a name_list <<< "$names"
+        for name in "${name_list[@]}"; do
+            if magpie_list_contains "$MAGPIE_GROUP_IDS" "$name"; then continue; fi
+            if magpie_list_contains "$MAGPIE_PROVIDER_PRESET_IDS" "$name"; then continue; fi
+            magpie_fail "visible agent $agent names an unknown group or provider: $name"
+            return 1
+        done
+    done < "$visible"
     return 0
 }
 
@@ -759,6 +808,28 @@ magpie_model_ids() {
 # Whether Magpie knows one group.
 magpie_group_present() {
     magpie_run group "$1" >/dev/null 2>&1
+}
+
+# A comma list normalized for comparison: no spaces, sorted.
+magpie_names_sorted() {
+    printf '%s' "$1" | tr ',' '\n' | sed '/^$/d' | sort | paste -sd, -
+}
+
+# The names one agent is narrowed to, as `magpie visible <agent>` reports
+# them, comma-joined and space-free. An agent shown every model prints
+# nothing.
+magpie_visible_names() {
+    local agent=$1 output line names
+    output=$(magpie_run visible "$agent" 2>/dev/null) || return 1
+    while IFS= read -r line; do
+        case "$line" in
+            *" is shown "*)
+                names=${line#* is shown }
+                printf '%s' "${names// /}"
+                return 0 ;;
+        esac
+    done <<< "$output"
+    return 0
 }
 
 # The models a group holds, in the order the gateway reports them. The
@@ -1090,7 +1161,7 @@ magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local credential output live known current desired change='' entry used rest variable servable
     local fatal='' missing='' guard='unchanged' backup='' codex_before codex_after
-    local id recorded
+    local id recorded names
     local -a candidate_list
     platform=$(magpie_platform)
     if [ "$platform" != macos ]; then
@@ -1267,6 +1338,19 @@ group-add:$group"
         fi
     done
 
+    DEPLOY_STEP=magpie-apply.visible
+    for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
+        agent=${MAGPIE_VISIBLE_AGENT[index]}; desired=${MAGPIE_VISIBLE_NAMES[index]}
+        current=$(magpie_visible_names "$agent" || true)
+        if [ "$(magpie_names_sorted "$current")" = "$(magpie_names_sorted "$desired")" ]; then
+            printf 'dotfiles: magpie: the agent %s is shown %s\n' "$agent" "$desired"
+            continue
+        fi
+        change="$change
+visible:$agent"
+        printf 'dotfiles: magpie: the agent %s will be shown %s\n' "$agent" "$desired"
+    done
+
     DEPLOY_STEP=magpie-apply.wiring
     for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
         agent=${MAGPIE_WIRING_AGENT[index]}; group=${MAGPIE_WIRING_GROUP[index]}
@@ -1294,10 +1378,14 @@ wiring:$agent:$group"
     # The Codex configuration is never written by the deployment. Its digest is
     # taken before the changes and compared after them.
     codex_before=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+    # A visibility-only run changes no client file, so it takes no backup.
+    client_change=$(printf '%s\n' "$change" | grep -v '^visible:' | grep -v '^$' || true)
     if [ -n "$change" ]; then
-        DEPLOY_STEP=magpie-apply.backup
-        backup=$(magpie_backup_create "$(magpie_backup_stamp)") || return 1
-        printf 'dotfiles: magpie: the client files are backed up in %s\n' "$backup"
+        if [ -n "$client_change" ]; then
+            DEPLOY_STEP=magpie-apply.backup
+            backup=$(magpie_backup_create "$(magpie_backup_stamp)") || return 1
+            printf 'dotfiles: magpie: the client files are backed up in %s\n' "$backup"
+        fi
 
         DEPLOY_STEP=magpie-apply.proxy
         if printf '%s\n' "$change" | grep -qx 'proxy'; then
@@ -1346,6 +1434,16 @@ wiring:$agent:$group"
                     { magpie_fail "cannot update the Magpie group $group"; return 1; }
                 printf 'dotfiles: magpie: the group %s was updated\n' "$group"
             fi
+        done
+
+        DEPLOY_STEP=magpie-apply.visible
+        for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
+            agent=${MAGPIE_VISIBLE_AGENT[index]}
+            printf '%s\n' "$change" | grep -qx "visible:$agent" || continue
+            names=${MAGPIE_VISIBLE_NAMES[index]}
+            magpie_run visible "$agent" "$names" >/dev/null ||
+                { magpie_fail "cannot narrow the agent $agent to $names"; return 1; }
+            printf 'dotfiles: magpie: the agent %s is shown %s\n' "$agent" "$names"
         done
 
         DEPLOY_STEP=magpie-apply.wiring
@@ -1418,6 +1516,10 @@ magpie_apply_summary() {
     for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
         agent=${MAGPIE_WIRING_AGENT[index]}
         printf 'dotfiles: magpie: the agent %s uses %s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
+    done
+    for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
+        printf 'dotfiles: magpie: the agent %s is shown %s\n' \
+            "${MAGPIE_VISIBLE_AGENT[index]}" "${MAGPIE_VISIBLE_NAMES[index]}"
     done
 }
 
@@ -1527,6 +1629,16 @@ magpie_status() {
     for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
         agent=${MAGPIE_WIRING_AGENT[index]}
         printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
+    done
+    for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
+        agent=${MAGPIE_VISIBLE_AGENT[index]}
+        if names=$(magpie_visible_names "$agent"); then
+            [ -n "$names" ] || names='every model'
+            printf 'visible|%s|%s\n' "$agent" "$names"
+        else
+            printf 'visible|%s|unknown\n' "$agent"
+            missing="$missing visible $agent"
+        fi
     done
     magpie_dsh_official_state
     if [ -f "$(magpie_state_dir)/state.tsv" ]; then

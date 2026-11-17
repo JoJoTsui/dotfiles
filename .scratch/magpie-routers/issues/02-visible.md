@@ -13,13 +13,38 @@ app owns the stars.
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The catalog validates unknown agents and unknown group/provider names.
-- [ ] The fake Magpie records `visible claude conductor,openai-stack`,
+- [x] The catalog validates unknown agents and unknown group/provider names.
+- [x] The fake Magpie records `visible claude conductor,openai-stack`,
       `visible pi workhorse`, `visible dsh workhorse` in that order.
-- [ ] A failing `magpie visible` aborts the apply.
-- [ ] `dotfiles-magpie status` reports the three visibility rows.
-- [ ] Re-running is idempotent; no client file is backed up for a visibility-only run.
+- [x] A failing `magpie visible` aborts the apply.
+- [x] `dotfiles-magpie status` reports the three visibility rows.
+- [x] Re-running is idempotent; no client file is backed up for a visibility-only run.
 
 ## Comments
+
+- `deployment/magpie/visible.tsv` ships `claude|conductor,openai-stack`,
+  `pi|workhorse`, `dsh|workhorse`, and `dotfiles/share` gets the matching
+  `{{ include }}` wrapper so the managed command reads the same catalog.
+- The apply reads the narrowing back with `magpie visible <agent>` (the
+  `X is shown …` line), normalizes both lists, and adds a `visible:<agent>`
+  change only when they differ. Execution runs after the groups and before
+  the agent wiring, so `magpie pi`/`magpie dsh` regenerate the agent files
+  from the narrowed list. No `--only-picked` is passed.
+- A visibility-only run takes no backup: the backup step is skipped when
+  every pending change is a `visible:` entry.
+- `status` prints `visible|agent|names` from the live read-back, and
+  `every model` for an agent that is not narrowed.
+
+Checks:
+
+```
+DOTFILES_TEST_CHEZMOI=$(command -v chezmoi) python3 -m unittest tests.test_magpie
+Ran 87 tests ... OK
+
+DOTFILES_CHEZMOI_BIN=$(command -v chezmoi) bash bootstrap.sh --source "$PWD" \
+  --home "$sim" --class t9k --apply-only   # exit 0, no catalog in the home
+DOTFILES_CHEZMOI_BIN=$(command -v chezmoi) bash bootstrap.sh --source "$PWD" \
+  --home "$sim" --class linux --apply-only # exit 0, no catalog in the home
+```
