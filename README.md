@@ -15,7 +15,6 @@ container's live tree predates chezmoi and is never `chezmoi apply`-ed — see
 
 ```bash
 git clone https://github.com/JoJoTsui/dotfiles.git ~/dotfiles && cd ~/dotfiles
-export GLM_API_TOKEN=...   # optional: Claude Code GLM token (default REPLACE_ME)
 export KIMI_API_KEY=...    # optional: kimi-code key  (default REPLACE_ME)
 bash bootstrap.sh
 ```
@@ -82,8 +81,6 @@ never enter git):
 | `class` | `DOTFILES_CLASS` (legacy input) | compatibility metadata |
 | `proxyUrl` | `HTTP_PROXY_URL` | `http://127.0.0.1:7890`; static value for the vscode-server setting — the shell helpers probe the port instead |
 | `mirror` | `DOTFILES_MIRROR` | `tuna`; select `upstream` outside the regional mirror setup |
-| `glmBaseUrl` | `GLM_BASE_URL` | `https://open.bigmodel.cn/api/anthropic` |
-| `glmToken` | `GLM_API_TOKEN` | `REPLACE_ME` |
 | `kimiApiKey` | `KIMI_API_KEY` | `REPLACE_ME` |
 | `mihomoSubscriptionUrl` | `MIHOMO_SUBSCRIPTION_URL` | `REPLACE_ME` |
 

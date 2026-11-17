@@ -557,3 +557,62 @@ class MagpieCommandTests(MagpieApplyTests):
                                 capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("magpie 0.1.0", result.stdout)
+
+
+class MagpieClientSettingsTests(unittest.TestCase):
+    """The client settings point at the Magpie gateway."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-magpie-settings-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "device"
+        self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(("DOTFILES_", "XDG_", "PIXI_", "BUN_", "CARGO_", "RUSTUP_", "UV_",
+                                           "NPM_", "ATUIN_", "KIMI_", "PI_", "OPENCODE_", "CODEX_", "CLAUDE_"))
+                    and key not in ("GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL",
+                                    "NODE_OPTIONS", "ENV", "BASH_ENV", "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN")}
+        self.env.update(HOME=str(self.root / "original"), PATH="/usr/bin:/bin",
+                        DOTFILES_SKILLS_DIR=str(SOURCE / "tests/fixtures/skill-library"))
+
+    def test_the_claude_template_carries_the_magpie_wiring(self):
+        template = json.loads((SOURCE / "deployment/client-settings/claude-settings.json.tmpl").read_text())
+        self.assertEqual(template["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
+        self.assertEqual(template["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
+        self.assertEqual(template["model"], "group/conductor")
+        for absent in ("ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
+                       "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"):
+            self.assertNotIn(absent, template["env"])
+        self.assertNotIn("glm", json.dumps(template))
+        self.assertTrue(template["alwaysThinkingEnabled"])
+        self.assertTrue(template["ignorePatterns"])
+        self.assertFalse(template["enabledPlugins"]["serena@claude-plugins-official"])
+
+    def test_the_client_settings_policy_keeps_its_two_paths(self):
+        policies = json.loads((SOURCE / "deployment/client-settings/policies.json").read_text())
+        self.assertEqual(policies["claude-settings"],
+                         [["env", "DISABLE_AUTOUPDATER"], ["enabledPlugins", "serena@claude-plugins-official"]])
+
+    def test_no_template_carries_the_glm_data_anymore(self):
+        config = (SOURCE / ".chezmoi.toml.tmpl").read_text()
+        self.assertNotIn("glmBaseUrl", config)
+        self.assertNotIn("glmToken", config)
+        for path in (SOURCE / "deployment/client-settings").iterdir():
+            if path.is_file():
+                self.assertNotIn("glmBaseUrl", path.read_text(), path.name)
+                self.assertNotIn("glmToken", path.read_text(), path.name)
+
+    def test_the_rendered_settings_use_the_gateway(self):
+        if not self.chezmoi:
+            self.skipTest("actual source application requires chezmoi")
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi)
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
+                                 "--home", str(self.home), "--platform", "macos", "--apply-only"],
+                                cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        settings = json.loads((self.home / ".claude/settings.json").read_text())
+        self.assertEqual(settings["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
+        self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
+        self.assertEqual(settings["model"], "group/conductor")
+        self.assertNotIn("glm", json.dumps(settings))

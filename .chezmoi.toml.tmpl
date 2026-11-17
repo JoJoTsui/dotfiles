@@ -32,8 +32,6 @@
 {{- $proxy := env "HTTP_PROXY_URL" | default "http://127.0.0.1:7890" -}}
 {{- $mirror := env "DOTFILES_MIRROR" | default "tuna" -}}
 {{- if not (has $mirror (list "tuna" "upstream")) -}}{{- fail "invalid DOTFILES_MIRROR; use tuna or upstream" -}}{{- end -}}
-{{- $glmBase := env "GLM_BASE_URL" | default "https://open.bigmodel.cn/api/anthropic" -}}
-{{- $glmToken := env "GLM_API_TOKEN" | default "REPLACE_ME" -}}
 {{- $kimiKey := env "KIMI_API_KEY" | default "REPLACE_ME" -}}
 {{- $bundles := env "DOTFILES_BUNDLES" | default "none" -}}
 {{- $mihomoSubscription := env "MIHOMO_SUBSCRIPTION_URL" | default "REPLACE_ME" -}}
@@ -65,8 +63,6 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     class = {{ $class | quote }}
     proxyUrl = {{ $proxy | quote }}
     mirror = {{ $mirror | quote }}
-    glmBaseUrl = {{ $glmBase | quote }}
-    glmToken = {{ $glmToken | quote }}
     kimiApiKey = {{ $kimiKey | quote }}
     bundles = {{ $selectedBundles | toJson }}
     mihomoSubscriptionUrl = {{ $mihomoSubscription | quote }}

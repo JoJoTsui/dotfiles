@@ -50,8 +50,7 @@ Single-context: root `GLOSSARY.md` plus `docs/adr/`. See
 Defined in `.chezmoi.toml.tmpl`, sourced from environment variables at init:
 `platform` (`DOTFILES_PLATFORM`), `role` (`DOTFILES_ROLE`, default workstation),
 `arch` (`DOTFILES_ARCH`), legacy `class` metadata, `proxyUrl`
-(`HTTP_PROXY_URL`), `glmBaseUrl` (`GLM_BASE_URL`), `glmToken`
-(`GLM_API_TOKEN`), `kimiApiKey` (`KIMI_API_KEY`). Defaults keep unattended
+(`HTTP_PROXY_URL`), `kimiApiKey` (`KIMI_API_KEY`). Defaults keep unattended
 init non-interactive. `bootstrap.sh` resolves profile presets and legacy aliases
 then exports canonical selectors. Read `docs/DEPLOYMENT_BOUNDARY.md` when
 changing selection, planning, state isolation, or installer adapters.
