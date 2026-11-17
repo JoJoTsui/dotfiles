@@ -48,6 +48,10 @@ Nu resolves startup directories before reading `env.nu`. Native copies let a
 direct `nu` launch initialize managed values without inherited XDG or legacy
 variables. A Nu launched from a managed shell inherits canonical XDG roots and
 reads the same values. Nonempty device environment overrides retain precedence.
+Shell and history preparation mirror the artifacts they generated into an
+existing native autoload directory, so a preparation run outside a deployment
+cannot leave that launch reading an older startup; the catalog copy above
+remains the deployment's own write.
 See [Nu startup paths](https://www.nushell.sh/book/configuration.html),
 [uv storage](https://docs.astral.sh/uv/reference/storage/), and
 [pip configuration](https://pip.pypa.io/en/stable/topics/configuration/).

@@ -140,6 +140,39 @@ class NuCompletionTests(unittest.TestCase):
         self.assertNotIn("old managed", self.loader.read_text())
         self.assertFalse((self.home / ".cache").exists())
 
+    def test_superseded_module_directories_are_pruned_and_foreign_entries_preserved(self):
+        self.install("git")
+        self.assertEqual(self.prepare(), 1)
+        modules = self.home / ".local/share/nushell/completions/nu-scripts"
+        published = [path for path in modules.iterdir() if path.name.startswith(self.revision)]
+        self.assertEqual(len(published), 1)
+        superseded = modules / ("b" * 40 + "-" + "c" * 16)
+        (superseded / "custom-completions/git").mkdir(parents=True)
+        (superseded / "custom-completions/git/git-completions.nu").write_text("# earlier bytes\n")
+        device = modules / "device-created"
+        device.mkdir()
+        (device / "keep.nu").write_text("# device skill\n")
+        linked = modules / ("d" * 40 + "-" + "e" * 16)
+        linked.symlink_to(device, target_is_directory=True)
+        self.assertEqual(self.prepare(), 1)
+        self.assertFalse(superseded.exists())
+        self.assertEqual((device / "keep.nu").read_text(), "# device skill\n")
+        self.assertTrue(linked.is_symlink())
+        self.assertTrue(published[0].is_dir())
+        self.assertIn(published[0].name, self.loader.read_text())
+
+    def test_an_empty_selection_prunes_every_published_directory(self):
+        modules = self.home / ".local/share/nushell/completions/nu-scripts"
+        published = modules / (self.revision + "-" + "c" * 16)
+        published.mkdir(parents=True)
+        device = modules / "device-created"
+        device.mkdir()
+        with mock.patch.object(self.module.urllib.request, "urlopen", side_effect=AssertionError("network forbidden")):
+            self.assertEqual(self.prepare(), 0)
+        self.assertFalse(published.exists())
+        self.assertTrue(device.is_dir())
+        self.assertEqual(self.loader.read_text().count("use "), 0)
+
     def test_verified_cache_reapplication_is_offline_and_deterministic(self):
         self.install("git")
         self.install("just")

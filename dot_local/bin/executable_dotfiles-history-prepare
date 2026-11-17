@@ -20,4 +20,21 @@ trap 'rm -f "$temporary"' EXIT HUP INT TERM
 chmod 600 "$temporary"
 "$DOTFILES_COMMON_BIN/nu" --config "$temporary" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
 mv -f "$temporary" "$autoload/atuin.nu"
+# macOS resolves Nu's own data directory under Library/Application Support, so a
+# launch without an XDG override reads that autoload directory instead of the
+# one prepared here. The deployment mirrors it during
+# apply-source.macos-discovery; a standalone preparation must leave the same
+# bytes, or such a launch keeps the previous startup. Other platforms keep the
+# deployment's discovery adapter as the only writer of native copies.
+native_data=
+if [ "${DOTFILES_PLATFORM:-}" = macos ]; then
+    native_data=$(env -u XDG_DATA_HOME "$DOTFILES_COMMON_BIN/nu" -c 'print $nu.data-dir' 2>/dev/null) || native_data=
+fi
+if [ -n "$native_data" ] && [ -d "$native_data/vendor/autoload" ] && [ "$native_data/vendor/autoload" != "$autoload" ]; then
+    native="$native_data/vendor/autoload"
+    [ ! -L "$native/atuin.nu" ] || fail "native history artifact is a symlink: $native/atuin.nu"
+    if ! cmp -s "$autoload/atuin.nu" "$native/atuin.nu"; then
+        cp -p "$autoload/atuin.nu" "$native/atuin.nu"
+    fi
+fi
 printf 'dotfiles-history-prepare: prepared Nushell history\n'

@@ -1,18 +1,18 @@
 {
   "version": 1,
-  "revision": "02cb1a2bfb8f7b6977af6914dbe44f450d6f9df2",
-  "url": "https://codeload.github.com/nushell/nu_scripts/tar.gz/02cb1a2bfb8f7b6977af6914dbe44f450d6f9df2",
-  "sha256": "2ec67f021dd948c1f3f5afb2331cb1447bb40d6a740d29243012d53cfd595fcb",
+  "revision": "f9fb123aa541250e5bbfa85ed055293b39751195",
+  "url": "https://codeload.github.com/nushell/nu_scripts/tar.gz/f9fb123aa541250e5bbfa85ed055293b39751195",
+  "sha256": "4babc17b520e807dd7ab366ea01a7da35c0e30d2319c7ee71d932acd83db0b5f",
   "modules": [
     {
       "command": "git",
       "path": "custom-completions/git/git-completions.nu",
-      "sha256": "8495c84c6afe70d2efdbec42c7527607047c1208ec287a151ece2100f74eebb7"
+      "sha256": "348cc6e84e484ebc6e0b506302e35eb4cd4dab3981801fe47e707cba462dd68b"
     },
     {
       "command": "gh",
       "path": "custom-completions/gh/gh-completions.nu",
-      "sha256": "943a584fbfcd0c199a1425246128e33f4b099c96eb330c9238f3122efd13387c"
+      "sha256": "e2c094cffeb2f60fd52f4568c1fefe22789013e6ee01110b3ed847f49fbb9604"
     },
     {
       "command": "rg",
