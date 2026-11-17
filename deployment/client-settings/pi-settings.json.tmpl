@@ -1,8 +1,8 @@
 {
   "lastChangelogVersion": "0.85.1",
   "theme": "dark",
-  "defaultProvider": "minimax-cn",
-  "defaultModel": "MiniMax-M3",
+  "defaultProvider": "magpie",
+  "defaultModel": "group/workhorse",
   "skills": {{ list (joinPath .chezmoi.homeDir ".agents" "skills") | toPrettyJson }},
   "enableInstallTelemetry": false,
   "tuiMode": "fullscreen",
@@ -10,8 +10,6 @@
     "showTerminalProgress": true
   },
   "modelThinkingLevels": {
-    "minimax-cn/MiniMax-M3": "high",
-    "minimax-cn/MiniMax-M2.7-highspeed": "high",
-    "minimax-cn/MiniMax-M2.7": "high"
+    "magpie/group/workhorse": "high"
   }
 }

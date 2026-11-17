@@ -24,6 +24,9 @@ clash
 .config/opencode/opencode.jsonc
 .pi/agent/settings.json
 .pi/agent/models-store.json
+# Magpie owns Pi's model catalog: it generates the provider block and the
+# group model entry from the routing group the deployment selects.
+.pi/agent/models.json
 # The Ghostty configuration follows the platform where the deployment manages
 # the terminal; the XDG path is the one Ghostty reads.
 {{- if ne .platform "macos" }}

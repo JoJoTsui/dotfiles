@@ -315,8 +315,10 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertIn("provider add opencode-go sk-fixture-opencode", commands)
         self.assertIn("provider add minimax-cn sk-fixture-minimax", commands)
         self.assertTrue(any(command.startswith("group add conductor models=") for command in commands))
-        self.assertIn("pi group/workhorse", commands)
-        self.assertIn("dsh group/workhorse", commands)
+        self.assertEqual([command for command in commands if command == "pi group/workhorse"],
+                         ["pi group/workhorse"])
+        self.assertEqual([command for command in commands if command == "dsh group/workhorse"],
+                         ["dsh group/workhorse"])
         self.assertTrue(self.state_file().is_file())
 
     def test_the_apply_never_writes_codex_claude_or_accounts(self):
@@ -616,3 +618,48 @@ class MagpieClientSettingsTests(unittest.TestCase):
         self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
         self.assertEqual(settings["model"], "group/conductor")
         self.assertNotIn("glm", json.dumps(settings))
+
+
+class MagpiePiSettingsTests(unittest.TestCase):
+    """Pi selects the Magpie provider and the workhorse group."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-magpie-pi-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "device"
+        self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(("DOTFILES_", "XDG_", "PIXI_", "BUN_", "CARGO_", "RUSTUP_", "UV_",
+                                           "NPM_", "ATUIN_", "KIMI_", "PI_", "OPENCODE_", "CODEX_", "CLAUDE_"))
+                    and key not in ("GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL",
+                                    "NODE_OPTIONS", "ENV", "BASH_ENV", "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN")}
+        self.env.update(HOME=str(self.root / "original"), PATH="/usr/bin:/bin",
+                        DOTFILES_SKILLS_DIR=str(SOURCE / "tests/fixtures/skill-library"))
+
+    def test_the_pi_template_selects_the_magpie_provider(self):
+        template = (SOURCE / "deployment/client-settings/pi-settings.json.tmpl").read_text()
+        self.assertIn('"defaultProvider": "magpie"', template)
+        self.assertIn('"defaultModel": "group/workhorse"', template)
+        self.assertIn("modelThinkingLevels", template)
+        self.assertNotIn("enabledModels", template)
+        self.assertNotIn("minimax-cn", template)
+
+    def test_the_models_file_is_left_to_magpie(self):
+        ignore = (SOURCE / ".chezmoiignore").read_text()
+        self.assertIn(".pi/agent/models.json", ignore)
+        self.assertFalse((SOURCE / "dot_pi").exists())
+
+    def test_the_rendered_settings_select_the_group(self):
+        if not self.chezmoi:
+            self.skipTest("actual source application requires chezmoi")
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi)
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
+                                 "--home", str(self.home), "--platform", "macos", "--apply-only"],
+                                cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        settings = json.loads((self.home / ".pi/agent/settings.json").read_text())
+        self.assertEqual(settings["defaultProvider"], "magpie")
+        self.assertEqual(settings["defaultModel"], "group/workhorse")
+        self.assertNotIn("enabledModels", settings)
+        self.assertFalse((self.home / ".pi/agent/models.json").exists())
