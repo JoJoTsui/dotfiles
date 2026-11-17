@@ -4,11 +4,9 @@
 #
 # id        the group name an agent selects as "group/<id>".
 # members   comma-separated model roles, or "group/<id>" for another group, in
-#           the order the gateway tries them. A model role may carry a fixed
-#           reasoning effort as "role:<effort>", where the effort is one of
-#           none, minimal, low, medium, high, xhigh, max; the effort is
-#           appended to every model id the role resolves to. A group reference
-#           carries no effort, because a group keeps its own routing.
+#           the order the gateway tries them. A role may end in :<effort>
+#           (none|minimal|low|medium|high|xhigh|max) to fix that member's
+#           reasoning; without one the group's default effort=agent applies.
 # routing   the routing mode. drain spends a member's accounts until they are
 #           used up, moves to the next member, and never returns to an earlier
 #           one. It is Magpie's "Until used up".
@@ -16,7 +14,11 @@
 # listed    yes when the group appears in an agent's picker, no when it stays
 #           reachable only as another group's member.
 # purpose   what the group is for.
-chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|weekly ChatGPT quota
-openai-stack|group/chatgpt,openai.sol,openai.terra,conductor.kimi:max|drain|auto|yes|weekly, then API, then Kimi max
-conductor|group/openai-stack|drain|auto|yes|Claude Code
-workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh
+chatgpt|chatgpt.sol:medium,chatgpt.terra:high|drain|auto|yes|weekly ChatGPT quota
+openai-stack|group/chatgpt,openai.sol:medium,openai.terra:high,conductor.kimi:max|drain|auto|yes|manual OpenAI stack with Terra
+conductor|chatgpt.sol:medium,openai.sol:medium,conductor.kimi:max|drain|auto|yes|Claude Code, Sol only
+workhorse|workhorse.minimax:max,conductor.deepseek:max|drain|auto|yes|Pi and dsh, both at max
+auto-gpt-6-1-sol|chatgpt.sol:medium,openai.sol:medium,zed.sol:medium|drain|auto|yes|GPT-6.1 Sol: codex, openai, zed
+auto-gpt-6-1-terra|chatgpt.terra:high,openai.terra:high|drain|auto|yes|GPT-6.1 Terra: codex, openai
+auto-gpt-6-luna|chatgpt.luna,openai.luna,zed.luna,opencode.luna|drain|auto|yes|GPT-6 Luna: codex, openai, zed, opencode go
+auto-gpt-6-astra|chatgpt.astra,openai.astra|drain|auto|yes|GPT-6 Astra: codex, openai

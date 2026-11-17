@@ -132,8 +132,8 @@ key when the operator ticks a model. `status` prints
 `picked|agent|<n> entries`.
 
 The shipped list gives all three agents the four routers and the preferred
-provider-prefixed models: the GPT 6.1 Sol, Terra and 6 Luna ids from Codex,
-the OpenAI API and Zed; Kimi K3.1 Pro; DeepSeek V4.1 Flash and GPT-6 Luna from
+provider-prefixed models: the GPT 6.1 Sol, Terra and 6 Luna ids from Codex and
+the OpenAI API, and Sol/Luna from Zed; Kimi K3.1 Pro; DeepSeek V4.1 Flash and GPT-6 Luna from
 OpenCode Go; and MiniMax M3.1 Flash.
 
 ### `plugins.tsv` — `name|source|version|enabled`
@@ -240,18 +240,28 @@ magpie settings set proxy http://127.0.0.1:7897
 
 ## Group semantics
 
-`group/conductor` is the Claude Code group, and it holds one member:
-`group/openai-stack`. The stack drains the ChatGPT weekly quota, then the
-paid OpenAI API key with `openai/gpt-6.1-sol` and `openai/gpt-6.1-terra`, then
-Kimi K3.1 Pro at max reasoning. `group/workhorse` is the Pi and `dsh` group:
-MiniMax M3.1 Flash, then DeepSeek V4.1 Flash. `group/chatgpt` holds the
-ChatGPT plan models and is listed as its own group, so the Pro plan is spent
-only when the stack's own members have no quota left.
+`group/conductor` is the Claude Code group: `codex/gpt-6.1-sol` at medium,
+then `openai/gpt-6.1-sol` at medium, then `kimi-code-cn/k3.1-pro` at max. It
+does not contain GPT-6.1 Terra.
 
-The four managed groups are available to all three agents; only the default
+`group/openai-stack` is the manual OpenAI stack that keeps Terra:
+`group/chatgpt` (Codex Sol medium, Terra high), `openai/gpt-6.1-sol` medium,
+`openai/gpt-6.1-terra` high, then Kimi max. `group/workhorse` is the Pi and
+`dsh` group: MiniMax M3.1 Flash at max, then DeepSeek V4.1 Flash at max.
+`group/chatgpt` holds the ChatGPT plan models at Sol medium and Terra high.
+
+The four GPT auto groups route one model across providers, Codex first:
+
+- `auto/gpt-6.1-sol`: codex → openai → zed, all medium
+- `auto/gpt-6.1-terra`: codex → openai, both high (the Zed Student plan refuses Terra)
+- `auto/gpt-6-luna`: codex → openai → zed → opencode go, agent effort
+- `auto/gpt-6-astra`: codex → openai, agent effort
+
+All eight groups are available to all three agents; only the default
 differs. The picked list puts the preferred provider-prefixed models beside
 the groups, so a failed route can be replaced by an exact provider/model on
-the spot.
+the spot. A group member's `:effort` fixes the reasoning for that route; a
+directly picked model uses the agent's own thinking level.
 
 The template sets `model: opus` and points every tier and subagent model at
 `group/conductor`. Claude Code accepts the `opus` alias and resolves it

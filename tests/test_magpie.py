@@ -113,8 +113,11 @@ else:
     print("ok")
 '''
 
-MODELS = ["codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "openai/gpt-6.1-sol", "openai/gpt-6.1-terra",
-          "kimi-code-cn/k3.1-pro", "opencode-go/deepseek-v4.1-flash", "minimax-cn/MiniMax-M3.1-Flash"]
+MODELS = ["codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "codex/gpt-6-luna", "codex/gpt-6-astra",
+          "openai/gpt-6.1-sol", "openai/gpt-6.1-terra", "openai/gpt-6-luna", "openai/gpt-6-astra",
+          "zed/gpt-6.1-sol", "zed/gpt-6-luna",
+          "kimi-code-cn/k3.1-pro", "opencode-go/deepseek-v4.1-flash", "opencode-go/gpt-6-luna",
+          "minimax-cn/MiniMax-M3.1-Flash"]
 
 
 class MagpieCatalogTests(unittest.TestCase):
@@ -180,7 +183,7 @@ class MagpieCatalogTests(unittest.TestCase):
 
     def test_a_member_role_that_does_not_exist_is_rejected(self):
         self.catalog_copy()
-        text = self.read_catalog("groups.tsv").replace("openai.terra,", "openai.terra,conductor.absent,")
+        text = self.read_catalog("groups.tsv").replace("openai.terra:high,", "openai.terra:high,conductor.absent,")
         self.write_catalog("groups.tsv", text)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
@@ -197,10 +200,10 @@ class MagpieCatalogTests(unittest.TestCase):
     def test_a_group_without_a_reachable_model_role_is_rejected(self):
         self.catalog_copy()
         text = self.read_catalog("groups.tsv").replace(
-            "chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|weekly ChatGPT quota",
+            "chatgpt|chatgpt.sol:medium,chatgpt.terra:high|drain|auto|yes|weekly ChatGPT quota",
             "chatgpt|group/workhorse|drain|auto|no|nothing")
         text = text.replace(
-            "workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh",
+            "workhorse|workhorse.minimax:max,conductor.deepseek:max|drain|auto|yes|Pi and dsh, both at max",
             "workhorse|group/chatgpt|drain|auto|yes|nothing")
         self.write_catalog("groups.tsv", text)
         result = self.validate()
@@ -216,10 +219,14 @@ class MagpieCatalogTests(unittest.TestCase):
         groups = [line for line in (CATALOG / "groups.tsv").read_text(encoding="utf-8").splitlines()
                   if line and not line.startswith("#")]
         self.assertEqual([line.split("|")[0] for line in groups],
-                         ["chatgpt", "openai-stack", "conductor", "workhorse"])
+                         ["chatgpt", "openai-stack", "conductor", "workhorse",
+                          "auto-gpt-6-1-sol", "auto-gpt-6-1-terra", "auto-gpt-6-luna", "auto-gpt-6-astra"])
         self.assertEqual(groups[1].split("|")[1],
-                         "group/chatgpt,openai.sol,openai.terra,conductor.kimi:max")
-        self.assertEqual(groups[2].split("|")[1], "group/openai-stack")
+                         "group/chatgpt,openai.sol:medium,openai.terra:high,conductor.kimi:max")
+        self.assertEqual(groups[2].split("|")[1],
+                         "chatgpt.sol:medium,openai.sol:medium,conductor.kimi:max")
+        self.assertEqual(groups[3].split("|")[1],
+                         "workhorse.minimax:max,conductor.deepseek:max")
 
     def test_an_unknown_reasoning_effort_is_rejected(self):
         self.catalog_copy()
@@ -306,8 +313,8 @@ class MagpieCatalogTests(unittest.TestCase):
     def test_a_picked_provider_outside_the_visible_row_is_rejected(self):
         self.catalog_copy()
         visible = self.read_catalog("visible.tsv").replace(
-            "pi|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,",
-            "pi|chatgpt,openai-stack,conductor,workhorse,codex,openai,")
+            "pi|chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,",
+            "pi|chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,")
         self.write_catalog("visible.tsv", visible)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
@@ -410,6 +417,12 @@ class MagpieApplyTests(unittest.TestCase):
 
     def seed_home(self, credentials=True):
         """A device with the client files Magpie may touch."""
+        # The plugin-owned provider is present on the device but not added by
+        # the provider catalog (it has no key source).
+        self.state.mkdir(parents=True, exist_ok=True)
+        providers = self.state / "providers.json"
+        if not providers.exists():
+            providers.write_text(json.dumps(["zed"]), encoding="utf-8")
         (self.home / ".codex").mkdir(parents=True, exist_ok=True)
         (self.home / ".codex/config.toml").write_text('model = "gpt-6-luna"\n', encoding="utf-8")
         (self.home / ".claude").mkdir(parents=True, exist_ok=True)
@@ -492,7 +505,7 @@ class MagpieApplyTests(unittest.TestCase):
                  "provider add codex", "provider add opencode-go",
                  "provider add kimi-code-cn", "provider add minimax-cn", "provider add openai",
                  "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
-                 "visible claude chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible pi chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
+                 "visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
                  "pi group/workhorse", "dsh group/workhorse"]
         positions = []
         for command in order:
@@ -506,8 +519,8 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         narrowing = [command for command in self.commands() if len(command.split()) == 3
                      and command.startswith("visible ")]
-        self.assertEqual(narrowing, ["visible claude chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
-                                     "visible pi chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
+        self.assertEqual(narrowing, ["visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
+                                     "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
 
     def test_the_apply_writes_the_picked_models_and_is_idempotent(self):
         self.assertEqual(self.apply().returncode, 0)
@@ -546,7 +559,7 @@ class MagpieApplyTests(unittest.TestCase):
     def test_a_failing_visible_aborts_the_apply(self):
         result = self.apply(environment={"FAKE_MAGPIE_FAIL_VISIBLE": "1"})
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("cannot narrow the agent claude to chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", result.stderr)
+        self.assertIn("cannot narrow the agent claude to chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", result.stderr)
 
     def test_a_visibility_only_run_rewires_and_backs_up_the_client_lists(self):
         self.assertEqual(self.apply().returncode, 0)
@@ -565,8 +578,8 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(state.stat().st_mtime_ns, state_mtime)
         self.assertEqual([command for command in self.commands() if len(command.split()) == 3
                           and command.startswith("visible ")][-3:],
-                         ["visible claude chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
-                          "visible pi chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
+                         ["visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
+                          "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
 
     def test_the_apply_installs_the_pinned_plugin_before_the_providers(self):
         result = self.apply()
@@ -648,11 +661,13 @@ class MagpieApplyTests(unittest.TestCase):
         commands = self.commands()
         stack = [command for command in commands if command.startswith("group add openai-stack")]
         self.assertEqual(stack, [
-            "group add openai-stack models=group/chatgpt,openai/gpt-6.1-sol,openai/gpt-6.1-terra,"
+            "group add openai-stack models=group/chatgpt,openai/gpt-6.1-sol:medium,openai/gpt-6.1-terra:high,"
             "kimi-code-cn/k3.1-pro:max routing=drain stays=auto listed=yes"], commands)
         conductor = [command for command in commands if command.startswith("group add conductor")]
         self.assertEqual(conductor, [
-            "group add conductor models=group/openai-stack routing=drain stays=auto listed=yes"])
+            "group add conductor models=codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,"
+            "kimi-code-cn/k3.1-pro:max routing=drain stays=auto listed=yes"], commands)
+        self.assertNotIn("gpt-6.1-terra", conductor[0])
 
     def write_catalog(self, name, text):
         (self.catalog / name).write_text(text, encoding="utf-8")
@@ -980,10 +995,14 @@ class MagpieCommandTests(MagpieApplyTests):
             json.dumps(["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]),
             encoding="utf-8")
         (self.state / "groups.json").write_text(json.dumps({
-            "chatgpt": "codex/gpt-6.1-sol,codex/gpt-6.1-terra",
-            "openai-stack": "group/chatgpt,openai/gpt-6.1-sol,openai/gpt-6.1-terra,kimi-code-cn/k3.1-pro:max",
-            "conductor": "group/openai-stack",
-            "workhorse": "minimax-cn/MiniMax-M3.1-Flash,opencode-go/deepseek-v4.1-flash",
+            "chatgpt": "codex/gpt-6.1-sol:medium,codex/gpt-6.1-terra:high",
+            "openai-stack": "group/chatgpt,openai/gpt-6.1-sol:medium,openai/gpt-6.1-terra:high,kimi-code-cn/k3.1-pro:max",
+            "conductor": "codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,kimi-code-cn/k3.1-pro:max",
+            "workhorse": "minimax-cn/MiniMax-M3.1-Flash:max,opencode-go/deepseek-v4.1-flash:max",
+            "auto-gpt-6-1-sol": "codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,zed/gpt-6.1-sol:medium",
+            "auto-gpt-6-1-terra": "codex/gpt-6.1-terra:high,openai/gpt-6.1-terra:high",
+            "auto-gpt-6-luna": "codex/gpt-6-luna,openai/gpt-6-luna,zed/gpt-6-luna,opencode-go/gpt-6-luna",
+            "auto-gpt-6-astra": "codex/gpt-6-astra,openai/gpt-6-astra",
         }), encoding="utf-8")
         (self.state / "visible.json").write_text(
             json.dumps(self.catalog_column("visible.tsv", 1)), encoding="utf-8")

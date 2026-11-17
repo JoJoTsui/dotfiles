@@ -1976,7 +1976,7 @@ magpie_test_role() {
     start=$(magpie_now_ms || true)
     response=$(curl --noproxy '*' --silent --show-error --connect-timeout 5 --max-time 120 \
         -H 'Authorization: Bearer magpie' -H 'Content-Type: application/json' \
-        -d "{\"model\":\"$id\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":16}" \
+        -d "{\"model\":\"$id\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":128}" \
         -w '\n%{http_code}' "$gateway/v1/chat/completions" 2>&1 || true)
     end=$(magpie_now_ms || true)
     code=${response##*$'\n'}

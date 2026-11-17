@@ -54,19 +54,23 @@ openai.terra|openai/gpt-6.1-terra|yes
 `groups.tsv` becomes:
 
 ```
-chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|yes|weekly ChatGPT quota
-openai-stack|group/chatgpt,openai.sol,openai.terra,conductor.kimi:max|drain|auto|yes|weekly, then API, then Kimi max
-conductor|group/openai-stack|drain|auto|yes|Claude Code
-workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh
+chatgpt|chatgpt.sol:medium,chatgpt.terra:high|drain|auto|yes|weekly ChatGPT quota
+openai-stack|group/chatgpt,openai.sol:medium,openai.terra:high,conductor.kimi:max|drain|auto|yes|manual OpenAI stack with Terra
+conductor|chatgpt.sol:medium,openai.sol:medium,conductor.kimi:max|drain|auto|yes|Claude Code, Sol only
+workhorse|workhorse.minimax:max,conductor.deepseek:max|drain|auto|yes|Pi and dsh, both at max
+auto-gpt-6-1-sol|chatgpt.sol:medium,openai.sol:medium,zed.sol:medium|drain|auto|yes|GPT-6.1 Sol: codex, openai, zed
+auto-gpt-6-1-terra|chatgpt.terra:high,openai.terra:high|drain|auto|yes|GPT-6.1 Terra: codex, openai
+auto-gpt-6-luna|chatgpt.luna,openai.luna,zed.luna,opencode.luna|drain|auto|yes|GPT-6 Luna: codex, openai, zed, opencode go
+auto-gpt-6-astra|chatgpt.astra,openai.astra|drain|auto|yes|GPT-6 Astra: codex, openai
 ```
 
 `visible.tsv` — `agent|names`, where a name is a group id or a provider id.
 All three rows are the same:
 
 ```
-claude|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
-pi|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
-dsh|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
+claude|chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
+pi|chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
+dsh|chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn
 ```
 
 `picked.tsv` — `agent|entries`, where an entry is `group/<id>` or
@@ -74,9 +78,11 @@ dsh|chatgpt,openai-stack,conductor,workhorse,codex,openai,zed,kimi-code-cn,openc
 
 ```
 group/chatgpt, group/openai-stack, group/conductor, group/workhorse,
+group/auto-gpt-6-1-sol, group/auto-gpt-6-1-terra,
+group/auto-gpt-6-luna, group/auto-gpt-6-astra,
 codex/gpt-6.1-sol, codex/gpt-6.1-terra, codex/gpt-6-luna,
 openai/gpt-6.1-sol, openai/gpt-6.1-terra, openai/gpt-6-luna,
-zed/gpt-6.1-sol, zed/gpt-6.1-terra, zed/gpt-6-luna,
+zed/gpt-6.1-sol, zed/gpt-6-luna,
 kimi-code-cn/k3.1-pro, opencode-go/deepseek-v4.1-flash,
 opencode-go/gpt-6-luna, minimax-cn/MiniMax-M3.1-Flash
 ```
@@ -111,7 +117,8 @@ zed|@magpie-community/opencode-zed-auth|0.1.19|yes
 - `dotfiles-magpie test` resolves each role's first live candidate from
   `/v1/models`, sends one `max_tokens: 16` completion, and prints
   `role|model|ok|ms` or `role|model|error|message`, with the managed Python
-  for the clock.
+  for the clock. The request allows 128 tokens; 16 is too small for a
+  reasoning model such as `openai/gpt-6-luna`.
 - `status` reports `visible|agent|names`, `picked|agent|<n> entries`, and
   `plugin|name|loaded|missing`.
 
@@ -132,10 +139,11 @@ zed|@magpie-community/opencode-zed-auth|0.1.19|yes
 ## Out of Scope
 
 - The Zed sign-in itself; the plugin is installed, the browser login is the
-  operator's.
+  operator's. The Zed Student plan refuses GPT-6.1 Terra, so Zed offers Sol
+  and Luna only.
 - The app's own star UI; it writes the same `pickedModels` key, and the next
   apply restores the catalog default.
-- OpenAI models beyond sol/terra; one `models.tsv` line adds another.
+- Adding more OpenAI models; one `models.tsv` line adds another.
 - A group-wide `effort=auto` classifier; the catalogs use `effort=agent` and
   per-member overrides.
 

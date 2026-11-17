@@ -235,3 +235,13 @@ Zed, Kimi Code, OpenCode Go and MiniMax. `dotfiles-magpie status` reports
 `picked|<agent>|17 entries`; the Zed plugin is signed in as JoJoTsui and
 exposes `zed/gpt-6.1-sol`, `zed/gpt-6.1-terra` and `zed/gpt-6-luna`. The
 OpenCode Go test still probes `opencode-go/deepseek-v4.1-flash`.
+
+Final router adjustment: conductor is now Sol only (Codex Sol medium → OpenAI
+Sol medium → Kimi max); `group/openai-stack` keeps Terra for manual use
+(Codex Sol medium/Terra high → OpenAI Sol medium/Terra high → Kimi max);
+workhorse is MiniMax max → DeepSeek max; the four GPT auto groups drain Codex
+first, then OpenAI, then Zed, then OpenCode Go where the model exists. Terra
+and Sol auto groups pin medium/high; Luna and Astra stay agent-controlled.
+The role probe now allows 128 tokens (16 was too small for
+`openai/gpt-6-luna`) and Zed Terra was removed from the catalogs because the
+Zed Student plan refuses that model; Zed still offers Sol and Luna.
