@@ -287,7 +287,7 @@ class MagpieApplyTests(unittest.TestCase):
             "source " + repr(str(ENGINE)) + "\n"
             "magpie_apply\n",
             encoding="utf-8")
-        environment = {
+        environ = {
             "HOME": str(self.home),
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "MAGPIE_BIN": str(self.fake),
@@ -299,8 +299,8 @@ class MagpieApplyTests(unittest.TestCase):
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
         }
-        environment.update(environment or {})
-        return subprocess.run(["/bin/bash", str(script)], env=environment,
+        environ.update(environment or {})
+        return subprocess.run(["/bin/bash", str(script)], env=environ,
                               capture_output=True, text=True, timeout=120)
 
     def commands(self):
@@ -347,6 +347,34 @@ class MagpieApplyTests(unittest.TestCase):
 
     def read_catalog(self, name):
         return (self.catalog / name).read_text(encoding="utf-8")
+
+    def test_a_local_proxy_is_resolved_at_call_time(self):
+        self.seed_home()
+        config = self.home / ".config/chezmoi/chezmoi.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[data]\n    proxyUrl = "http://127.0.0.1:7890"\n', encoding="utf-8")
+        helper = self.tools / "with-proxy"
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_text('#!/bin/sh\n[ "$1" = --print-url ] && echo http://127.0.0.1:7897\n', encoding="utf-8")
+        helper.chmod(0o755)
+        environment = {"MAGPIE_PROXY_URL": "", "PATH": f"{self.tools}:/usr/bin:/bin"}
+        result = self.apply(environment=environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("settings set proxy http://127.0.0.1:7897", self.commands())
+
+    def test_a_remote_proxy_from_the_template_is_used_as_it_is(self):
+        self.seed_home()
+        config = self.home / ".config/chezmoi/chezmoi.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[data]\n    proxyUrl = "http://proxy.example.invalid:8080"\n', encoding="utf-8")
+        result = self.apply(environment={"MAGPIE_PROXY_URL": ""})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("settings set proxy http://proxy.example.invalid:8080", self.commands())
+
+    def test_the_missing_cask_is_reported_with_the_install_command(self):
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("brew install --cask magpie", result.stderr)
 
     def test_a_missing_optional_provider_warns_and_the_apply_continues(self):
         text = self.read_catalog("providers.tsv").replace(

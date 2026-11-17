@@ -51,3 +51,10 @@ Tests run:
 - A simulated macOS apply (`--platform macos --apply-only`) places the engine,
   the catalogs, and both launchers with the right modes; a simulated Linux
   apply leaves the engine and the catalogs out and still places the commands.
+
+The Homebrew cask is adopted, never installed, and its floor is recorded with
+the engine (`0.1.4325`). Every apply reports the app it found, and a missing
+or old app is a warning rather than a failure. The floor lives with the
+Magpie engine rather than in `deployment/installer-tools.tsv`, because that
+catalog installs what it lists and Magpie must never be installed by the
+deployment.

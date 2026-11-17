@@ -28,6 +28,11 @@ the cask and never installs it:
 brew install --cask magpie   # the operator's step; the deployment never installs it
 ```
 
+The deployment adopts the cask and records the floor it accepts
+(`0.1.4325`); it never installs the cask and never upgrades it. Every apply
+reports the app it found, and a missing or old app is a warning rather than a
+failure: the gateway may still answer from an earlier install.
+
 The repository owns two managed commands:
 
 - `~/.local/bin/magpie` runs the binary the app ships, so the CLI and the GUI
@@ -146,10 +151,15 @@ enters a ticket comment.
 ## Proxy behaviour
 
 The gateway's own traffic to the providers leaves through the device proxy;
-the loopback traffic to the gateway stays direct. The proxy endpoint is the
-template's `proxyUrl`, and `with-proxy --print-url` is the fallback that
-resolves the port the running proxy client owns. The value is written with
-`magpie settings set proxy` only when it differs from the current one.
+the loopback traffic to the gateway stays direct.
+
+The endpoint comes from the template's `proxyUrl`. A remote endpoint is used
+as it is, because only the device knows it. A loopback endpoint is resolved
+at call time through `with-proxy --print-url`, because a local port belongs to
+whichever proxy client the device runs — Clash Verge on 7897, the deployment
+proxy on 7890 — and not to the operating system. `with-proxy --print-url` is
+also the fallback when the template names no endpoint. The value is written
+with `magpie settings set proxy` only when it differs from the current one.
 
 On a device whose proxy client runs on another port than the template names,
 set `HTTP_PROXY_URL` before the deployment, or set the proxy once by hand:

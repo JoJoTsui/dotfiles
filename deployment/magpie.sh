@@ -21,6 +21,11 @@ MAGPIE_GATEWAY_DEFAULT="http://127.0.0.1:3425"
 MAGPIE_PROVIDER_PRESETS="codex opencode-go kimi-code-cn minimax-cn"
 # The device store that holds credentials the deployment may read.
 MAGPIE_ENV_FILE=".config/dotfiles/magpie.env"
+# The Homebrew cask the deployment adopts, and the lowest app version it
+# accepts. The deployment never installs the cask and never upgrades it: the
+# operator owns the app, the gateway process, and its login item.
+MAGPIE_CASK_NAME="magpie"
+MAGPIE_CASK_FLOOR="0.1.4325"
 
 magpie_fail() {
     # The deployment owns the failure vocabulary; a standalone run reports the
@@ -591,18 +596,77 @@ magpie_with_proxy_url() {
     printf '%s' "$url"
 }
 
-# The proxy the deployment gives the gateway. The template names the device's
-# endpoint; the fallback resolves the port the running proxy client owns.
+# The proxy the deployment gives the gateway. The template's proxyUrl names
+# the device's endpoint, but a local port belongs to whichever proxy client
+# the device runs, so a loopback endpoint is resolved at call time through
+# with-proxy, the way the shell helpers resolve it.
 magpie_proxy_resolve() {
-    local url=''
+    local url='' template=''
     if [ -n "${MAGPIE_PROXY_URL:-}" ]; then
-        url=$MAGPIE_PROXY_URL
-    else
-        url=$(magpie_template_proxy || true)
-        [ -n "$url" ] || url=$(magpie_with_proxy_url || true)
+        printf '%s' "$MAGPIE_PROXY_URL"
+        return 0
     fi
+    template=$(magpie_template_proxy || true)
+    case "$template" in
+        http://127.0.0.1:*|http://localhost:*|https://127.0.0.1:*|https://localhost:*)
+            url=$(magpie_with_proxy_url || true)
+            [ -n "$url" ] || url=$template
+            ;;
+        *) url=$template ;;
+    esac
+    [ -n "$url" ] || url=$(magpie_with_proxy_url || true)
     [ -n "$url" ] || return 1
     printf '%s' "$url"
+}
+
+# Whether a version is at least a floor.
+magpie_version_at_least() {
+    local have=$1 want=$2
+    [ -n "$have" ] || return 1
+    awk -v have="$have" -v want="$want" 'BEGIN {
+        sub(/_[0-9]+$/, "", have)
+        sub(/_[0-9]+$/, "", want)
+        if (have !~ /^[0-9]+(\.[0-9]+)*$/ || want !~ /^[0-9]+(\.[0-9]+)*$/) exit 1
+        split(have, h, "."); split(want, w, ".")
+        for (i = 1; i <= 3; i++) {
+            if (h[i] + 0 > w[i] + 0) exit 0
+            if (h[i] + 0 < w[i] + 0) exit 1
+        }
+        exit 0
+    }'
+}
+
+# The version of the adopted cask, or nothing when the app is not installed.
+magpie_cask_version() {
+    local version=''
+    if command -v brew >/dev/null 2>&1; then
+        version=$(brew list --cask --versions "$MAGPIE_CASK_NAME" 2>/dev/null | awk '{print $2}')
+        version=${version%%_*}
+    fi
+    if [ -z "$version" ] && [ -d "/Applications/${MAGPIE_CASK_NAME}.app" ]; then
+        version=$(defaults read "/Applications/${MAGPIE_CASK_NAME}.app/Contents/Info.plist" \
+            CFBundleShortVersionString 2>/dev/null || true)
+    fi
+    [ -n "$version" ] || return 1
+    printf '%s' "$version"
+}
+
+# Report the adopted cask. A missing or old app is a warning: the gateway
+# may still answer from an earlier install.
+magpie_cask_report() {
+    local version
+    if ! version=$(magpie_cask_version); then
+        printf 'dotfiles: magpie: the %s app is not installed; install it with: brew install --cask %s\n' \
+            "$MAGPIE_CASK_NAME" "$MAGPIE_CASK_NAME" >&2
+        return 1
+    fi
+    if ! magpie_version_at_least "$version" "$MAGPIE_CASK_FLOOR"; then
+        printf 'dotfiles: magpie: the %s app is %s, below the floor %s\n' \
+            "$MAGPIE_CASK_NAME" "$version" "$MAGPIE_CASK_FLOOR" >&2
+        return 1
+    fi
+    printf 'dotfiles: magpie: the %s app %s is adopted\n' "$MAGPIE_CASK_NAME" "$version"
+    return 0
 }
 
 # The proxy the gateway currently uses.
@@ -964,6 +1028,9 @@ magpie_apply() {
         "${#MAGPIE_PROVIDER_ROLE[@]}" "${#MAGPIE_MODEL_ROLE[@]}" \
         "${#MAGPIE_GROUP_ID[@]}" "${#MAGPIE_WIRING_AGENT[@]}"
 
+    DEPLOY_STEP=magpie-apply.cask
+    magpie_cask_report || true
+
     DEPLOY_STEP=magpie-apply.gateway
     magpie_gateway_ensure
 
@@ -1318,7 +1385,7 @@ magpie_providers() {
 # status.
 magpie_status() {
     local index role preset source required group agent proxy output models
-    local known guard='' missing='' state credential
+    local known guard='' missing='' state credential version
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
     if magpie_gateway_status; then
         printf 'gateway|%s|answers\n' "$MAGPIE_GATEWAY"
@@ -1332,6 +1399,11 @@ magpie_status() {
     else
         printf 'proxy|none\n'
         missing="$missing proxy"
+    fi
+    if version=$(magpie_cask_version); then
+        printf 'cask|%s|%s\n' "$MAGPIE_CASK_NAME" "$version"
+    else
+        printf 'cask|%s|not installed\n' "$MAGPIE_CASK_NAME"
     fi
     for (( index=0; index<${#MAGPIE_PROVIDER_ROLE[@]}; index++ )); do
         role=${MAGPIE_PROVIDER_ROLE[index]}; preset=${MAGPIE_PROVIDER_PRESET[index]}

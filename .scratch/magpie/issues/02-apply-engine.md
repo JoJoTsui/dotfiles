@@ -82,3 +82,12 @@ Tests run:
   configuration is byte-identical afterwards.
 - `shellcheck deployment/magpie.sh` — not run: shellcheck is not installed on
   this device (it belongs to the optional developer bundle).
+
+Correction after the review: the proxy endpoint keeps the template's
+`proxyUrl` for a remote address, and a loopback endpoint is resolved at call
+time through `with-proxy --print-url`, because a local port belongs to
+whichever proxy client the device runs (Clash Verge on 7897, the deployment
+proxy on 7890) and not to the operating system. `with-proxy --print-url`
+remains the fallback when the template names no endpoint. The rule keeps the
+repo's own proxy invariant and makes the gateway use the proxy that is
+actually running.
