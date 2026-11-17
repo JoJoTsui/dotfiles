@@ -52,7 +52,8 @@ elif argv[:2] == ["provider", "add"]:
 elif argv[:2] == ["plugin", "list"]:
     if os.environ.get("FAKE_MAGPIE_FAIL_PLUGIN_LIST") == "1":
         sys.exit(1)
-    print(json.dumps(load("plugins.json", {"loaded": [], "plugins": []})))
+    default = [] if os.environ.get("FAKE_MAGPIE_EMPTY_PLUGIN_LIST") == "1" else {"loaded": [], "plugins": []}
+    print(json.dumps(load("plugins.json", default)))
 elif argv[:2] == ["plugin", "add"]:
     plugins = load("plugins.json", {"loaded": [], "plugins": []})
     spec = argv[2][len("npm:"):] if argv[2].startswith("npm:") else argv[2]
@@ -576,6 +577,15 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(len(installs), 1, commands)
         self.assertLess(commands.index(installs[0]), commands.index("provider add codex"))
         self.assertNotIn("plugin on zed", commands)
+
+    def test_a_fresh_homes_empty_plugin_array_installs_the_pin_once(self):
+        environment = {"FAKE_MAGPIE_EMPTY_PLUGIN_LIST": "1"}
+        first = self.apply(environment=environment)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        second = self.apply(environment=environment)
+        self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+        self.assertEqual([command for command in self.commands() if command.startswith("plugin add")],
+                         ["plugin add npm:@magpie-community/opencode-zed-auth@0.1.19"])
 
     def test_a_present_plugin_is_not_installed_or_turned_on_again(self):
         spec = "@magpie-community/opencode-zed-auth@0.1.19"

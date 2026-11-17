@@ -144,6 +144,10 @@ the deployment ensures it. The deployment installs an absent package with
 `magpie plugin add npm:<source>@<version>`, turns an installed-but-off plugin
 on with `magpie plugin on <name>`, and never updates or removes a present one.
 The plugin is community-owned: the repository only pins and installs it.
+Magpie 0.1.4351 reports an empty fresh-home list as `[]`; after installation,
+it reports an object with `loaded` and `plugins`. Both empty-list and object
+responses are accepted. An unreadable response still stops the apply before
+any plugin install.
 
 A plugin that signs in to a provider needs a human sign-in after it is
 installed. For the Zed plugin that is `magpie plugin login zed`, or the

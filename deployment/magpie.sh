@@ -1048,6 +1048,11 @@ try:
     data = json.load(sys.stdin)
 except Exception:
     raise SystemExit(1)
+# Magpie 0.1.4351 returns [] before a fresh home has any plugins.
+if data == []:
+    raise SystemExit(0)
+if not isinstance(data, dict):
+    raise SystemExit(1)
 for key in ("loaded", "plugins"):
     for entry in data.get(key) or []:
         spec = entry.get("spec") if isinstance(entry, dict) else None
