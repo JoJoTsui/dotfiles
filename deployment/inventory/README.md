@@ -27,8 +27,8 @@ from the device and never installed here; see the
 | `bio` | 14 former Bioconda tool environments, curl, and `fetchChromSizes` | Linux/WSL x86-64 and ARM64 |
 | `gpu` | NVTOP | Linux/WSL x86-64 and ARM64 |
 | `desktop` | Zed and Firefox | Linux/WSL x86-64, macOS Intel/Apple silicon, native Windows x86-64 |
-| `developer-portable` | sd, just, hyperfine, lazygit, yq, and xh | Linux/WSL x86-64 and ARM64, macOS Intel/Apple silicon, native Windows x86-64 |
-| `developer` | Remaining 53 developer environments, including fnm, Zellij, Herdr, Graphify, ShellCheck, and shfmt | Linux/WSL x86-64 |
+| `developer-portable` | sd, just, hyperfine, lazygit, yq, xh, and graphify | Linux/WSL x86-64 and ARM64, macOS Intel/Apple silicon, native Windows x86-64 |
+| `developer` | Remaining 52 developer environments, including fnm, Zellij, Herdr, ShellCheck, and shfmt | Linux/WSL x86-64 |
 
 The Linux-specific developer inventory has a narrower target intersection.
 Select `--bundles developer,developer-portable` for the maintained Linux

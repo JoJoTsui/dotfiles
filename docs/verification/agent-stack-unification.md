@@ -111,9 +111,10 @@ Re-enabling a group is the documented opt-in: `DOTFILES_SKILLS=design`,
   pre-existing set above, not a regression.
 - The native Windows installer and the pinned Nu renderer are native-runner
   gates; the Windows boundary logic ran under PowerShell 7.6.9.
-- `dotfiles-agent-health --clients` reports one failure: `graphify not found on
-  PATH (install the developer bundle)`. The developer bundle is Linux-only and is
-  not installed on this Mac; this is a pre-existing optional-tool check, not a
-  provider or integration failure.
+- `dotfiles-agent-health --clients` passes. Graphify is provisioned through the
+  `developer-portable` bundle (`graphifyy` 0.9.103) and the same bundle supplies
+  sd, just, hyperfine, lazygit, yq, and xh. The graphify row moved from the
+  Linux-only `developer` bundle because the package is a portable noarch Python
+  CLI.
 - The branch has not been pushed. The live backup is retained under
   `~/.local/state/dotfiles/backups/`.

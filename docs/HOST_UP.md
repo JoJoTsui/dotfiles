@@ -65,8 +65,8 @@ DeepMind skill group. Its pinned resources must be fetched once before reboot;
 see [the legacy integration adapter](LEGACY_APPLY.md#global-agent-integrations).
 An already-running service is reused. MCP servers are launched by their agent
 clients on demand; no project is indexed during preparation. Graphify is the
-`graphifyy` package in the developer Pixi bundle; its exact pin has one owner in
-`deployment/bundle-tools.tsv`.
+`graphifyy` package in the developer-portable Pixi bundle; its exact pin has
+one owner in `deployment/bundle-tools.tsv`.
 
 Herdr is **not started** by this local command. Only after it reports success,
 run this on the laptop:

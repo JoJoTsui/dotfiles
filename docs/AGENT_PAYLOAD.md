@@ -284,12 +284,13 @@ and the cache-discipline rules recorded in
 [caching and context budget](AGENT_CACHING.md).
 
 CodeGraph is the primary code-query path: its MCP entry is registered for every
-client. Graphify is optional and per repository. Provision it with
-`uv tool install "graphifyy[mcp]"`, install its skill with
-`graphify install --platform agents` (it writes `~/.agents/skills/graphify`),
-and register `graphify-mcp <absolute graph path>` per project when its MCP tools
-are wanted. Do not run both indexes for the same question. Their client capability
-reference is `~/.agents/CLIENTS.md`. Account integrations and scientific
+client. Graphify is optional and per repository. The `graphify` command is the
+`graphifyy` package in the developer-portable Pixi bundle
+(`--bundles developer-portable`), and its skill is already in the default
+library, so the separate `graphify install --platform agents` step is not used.
+Register `graphify-mcp <absolute graph path>` per project when the installed
+package exposes the MCP server. Do not run both indexes for the same question.
+Their client capability reference is `~/.agents/CLIENTS.md`. Account integrations and scientific
 dependencies use the skill's own setup instructions on first use.
 
 | Client | Global instructions | Portable skills | Offline discovery check |
