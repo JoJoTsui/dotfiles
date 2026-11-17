@@ -131,8 +131,9 @@ settings exist), before `prepare-shell`, only on macOS by default.
    `~/.dsh/profiles/*/cordis.patch.yml` and the Codex config into
    `~/.local/state/dotfiles/magpie/backups/<UTC>/` at 0600 (keep the last 10).
 3. Ensure the gateway answers: `magpie status --json`. If not, and this is the
-   real account home, `open -a magpie`, wait up to 30 s. Otherwise report the
-   command to run and continue with a named warning.
+   real account home, `open -a magpie`, wait up to 30 s. A gateway that still
+   does not answer fails the step with the command that fixes it; a
+   non-macOS host is skipped by the platform guard before this point.
 4. Resolve the proxy: template `proxyUrl`, else `with-proxy --print-url`, else
    fail. Apply only when different: `magpie settings set proxy <url>`.
 5. Ensure providers, in catalog order. A missing required credential names the
@@ -162,22 +163,25 @@ A run with nothing to change writes no files and keeps every modification time.
 ### Claude Code
 
 `deployment/client-settings/claude-settings.json.tmpl` becomes the Magpie
-wiring: `env.ANTHROPIC_BASE_URL=http://127.0.0.1:3425`,
+wiring on macOS: `env.ANTHROPIC_BASE_URL=http://127.0.0.1:3425`,
 `env.ANTHROPIC_AUTH_TOKEN=magpie`, `model=group/conductor`, no
 `ANTHROPIC_MODEL`, no `ANTHROPIC_DEFAULT_*_MODEL`, no `ANTHROPIC_SMALL_FAST_MODEL`,
 no `CLAUDE_CODE_SUBAGENT_MODEL`. The exact remaining shape is transcribed from
 what `magpie claude group/conductor` writes into a sandbox `CLAUDE_CONFIG_DIR`,
-so the template and Magpie agree field for field. The GLM template data
-(`glmBaseUrl`, `glmToken`) is removed from the template and from
-`.chezmoi.toml.tmpl`; the legacy T9K adapters are outside this change.
+so the template and Magpie agree field for field. The template branches on
+`.platform`: every other platform keeps the device's existing endpoint and
+model, because Magpie cannot run there. The GLM template data (`glmBaseUrl`,
+`glmToken`) is removed from the template and from `.chezmoi.toml.tmpl`; the
+legacy T9K adapters are outside this change.
 
 ### Pi
 
 `deployment/client-settings/pi-settings.json.tmpl` sets
-`defaultProvider=magpie` and `defaultModel=group/workhorse`, keeps the device's
-`modelThinkingLevels`, and does not create `enabledModels`. Magpie generates
-`~/.pi/agent/models.json`; the repo never templates it. `.pi/agent/models.json`
-is added to `.chezmoiignore` as Magpie-owned.
+`defaultProvider=magpie` and `defaultModel=group/workhorse` on macOS, keeps
+the device's `modelThinkingLevels`, and does not create `enabledModels`. Every
+other platform keeps its device-owned defaults, for the same reason as Claude
+Code. Magpie generates `~/.pi/agent/models.json`; the repo never templates it.
+`.pi/agent/models.json` is added to `.chezmoiignore` as Magpie-owned.
 
 ### DSH and dsh-tui
 

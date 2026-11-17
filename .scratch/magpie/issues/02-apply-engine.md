@@ -91,3 +91,10 @@ proxy on 7890) and not to the operating system. `with-proxy --print-url`
 remains the fallback when the template names no endpoint. The rule keeps the
 repo's own proxy invariant and makes the gateway use the proxy that is
 actually running.
+
+Review correction: `magpie_gateway_ensure` failing on macOS now fails the step
+instead of completing. A deployment must not leave the client templates
+pointing at a gateway that is not there; the message names `brew install
+--cask magpie` or `open -a magpie`. Non-macOS hosts are still skipped by the
+platform guard before the gateway check. The test that expected a successful
+skip now expects the named failure.

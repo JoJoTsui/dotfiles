@@ -58,3 +58,12 @@ Tests run:
 - `python3 -m unittest test_agent_payload test_claude_model_preservation test_codegraph` —
   31 tests, 6 skipped (the skips need PowerShell or a runtime this host does
   not have), all pass.
+
+Review correction: the template now branches on `.platform`. The Magpie
+wiring is macOS-only; Linux, WSL, and native Windows keep their device-owned
+endpoint and model, because the deployment skips the gateway there and the
+engine and catalogs are ignored. A t9k simulated apply now renders no
+`ANTHROPIC_BASE_URL`, no token, and no `model`; the macOS render keeps all
+three. `tests/test_magpie.py` covers both, and the Linux assertions in
+`tests/test_deployment.py`, `tests/test_agent_payload.py`, and
+`tests/test_windows_deployment.py` were corrected to the device-owned shape.

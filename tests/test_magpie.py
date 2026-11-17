@@ -372,7 +372,7 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertIn("settings set proxy http://proxy.example.invalid:8080", self.commands())
 
     def test_the_missing_cask_is_reported_with_the_install_command(self):
-        result = self.apply()
+        result = self.apply(environment={"MAGPIE_APP_ROOT": str(self.root / "no-apps")})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("brew install --cask magpie", result.stderr)
 
@@ -409,15 +409,16 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("the optional model kimi-code-cn/k3.9-absent is not served; skipped", result.stdout)
 
-    def test_an_apply_without_a_gateway_reports_the_skip(self):
+    def test_an_apply_without_a_gateway_fails_with_the_open_command(self):
         self.seed_home()
         silent = self.tools / "silent-magpie"
         silent.parent.mkdir(parents=True, exist_ok=True)
         silent.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
         silent.chmod(0o755)
         result = self.apply(environment={"MAGPIE_BIN": str(silent)})
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotEqual(result.returncode, 0)
         self.assertIn("the gateway does not answer", result.stderr)
+        self.assertIn("open the Magpie app", result.stderr)
         self.assertFalse(self.state_file().exists())
 
     def test_an_apply_on_another_platform_reports_the_skip(self):
@@ -719,7 +720,9 @@ class MagpieCommandTests(MagpieApplyTests):
         launcher.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / "dot_local/bin/executable_magpie", launcher)
         launcher.chmod(0o755)
-        result = subprocess.run([str(launcher), "--version"], env={"HOME": str(self.home), "PATH": "/usr/bin:/bin"},
+        result = subprocess.run([str(launcher), "--version"],
+                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin",
+                                     "MAGPIE_APP": str(self.root / "no-apps/magpie.app/Contents/MacOS/magpie")},
                                 capture_output=True, text=True, timeout=60)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("brew install --cask magpie", result.stderr)
@@ -758,17 +761,16 @@ class MagpieClientSettingsTests(unittest.TestCase):
                         DOTFILES_SKILLS_DIR=str(SOURCE / "tests/fixtures/skill-library"))
 
     def test_the_claude_template_carries_the_magpie_wiring(self):
-        template = json.loads((SOURCE / "deployment/client-settings/claude-settings.json.tmpl").read_text())
-        self.assertEqual(template["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
-        self.assertEqual(template["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
-        self.assertEqual(template["model"], "group/conductor")
-        for absent in ("ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
-                       "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"):
-            self.assertNotIn(absent, template["env"])
-        self.assertNotIn("glm", json.dumps(template))
-        self.assertTrue(template["alwaysThinkingEnabled"])
-        self.assertTrue(template["ignorePatterns"])
-        self.assertFalse(template["enabledPlugins"]["serena@claude-plugins-official"])
+        template = (SOURCE / "deployment/client-settings/claude-settings.json.tmpl").read_text()
+        self.assertIn('"ANTHROPIC_BASE_URL": "http://127.0.0.1:3425"', template)
+        self.assertIn('"ANTHROPIC_AUTH_TOKEN": "magpie"', template)
+        self.assertIn('"model": "group/conductor"', template)
+        for absent in ('"ANTHROPIC_MODEL"', '"ANTHROPIC_DEFAULT_OPUS_MODEL"', '"ANTHROPIC_DEFAULT_SONNET_MODEL"',
+                       '"ANTHROPIC_DEFAULT_HAIKU_MODEL"', '"ANTHROPIC_DEFAULT_FABLE_MODEL"',
+                       '"ANTHROPIC_SMALL_FAST_MODEL"', '"CLAUDE_CODE_SUBAGENT_MODEL"'):
+            self.assertNotIn(absent, template)
+        self.assertNotIn("glm", template)
+        self.assertIn("{{- if eq .platform \"macos\" }}", template)
 
     def test_the_client_settings_policy_keeps_its_two_paths(self):
         policies = json.loads((SOURCE / "deployment/client-settings/policies.json").read_text())
@@ -797,6 +799,22 @@ class MagpieClientSettingsTests(unittest.TestCase):
         self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
         self.assertEqual(settings["model"], "group/conductor")
         self.assertNotIn("glm", json.dumps(settings))
+
+    def test_a_linux_apply_keeps_both_clients_off_the_gateway(self):
+        if not self.chezmoi:
+            self.skipTest("actual source application requires chezmoi")
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi)
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
+                                 "--home", str(self.home), "--platform", "linux", "--apply-only"],
+                                cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        claude = json.loads((self.home / ".claude/settings.json").read_text())
+        self.assertNotIn("ANTHROPIC_BASE_URL", claude["env"])
+        self.assertNotIn("ANTHROPIC_AUTH_TOKEN", claude["env"])
+        self.assertNotIn("model", claude)
+        pi = json.loads((self.home / ".pi/agent/settings.json").read_text())
+        self.assertNotIn("defaultProvider", pi)
+        self.assertNotIn("defaultModel", pi)
 
 
 class MagpiePiSettingsTests(unittest.TestCase):

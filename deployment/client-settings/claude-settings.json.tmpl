@@ -1,13 +1,17 @@
 {
   "enabledPlugins": {"serena@claude-plugins-official": false},
   "env": {
+{{- if eq .platform "macos" }}
     "ANTHROPIC_AUTH_TOKEN": "magpie",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:3425",
+{{- end }}
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "DISABLE_AUTOUPDATER": "1"
   },
+{{- if eq .platform "macos" }}
   "model": "group/conductor",
+{{- end }}
   "alwaysThinkingEnabled": true,
   "ignorePatterns": [
     "node_modules/**",

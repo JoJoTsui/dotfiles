@@ -638,13 +638,13 @@ magpie_version_at_least() {
 
 # The version of the adopted cask, or nothing when the app is not installed.
 magpie_cask_version() {
-    local version=''
+    local version='' root=${MAGPIE_APP_ROOT:-/Applications}
     if command -v brew >/dev/null 2>&1; then
         version=$(brew list --cask --versions "$MAGPIE_CASK_NAME" 2>/dev/null | awk '{print $2}')
         version=${version%%_*}
     fi
-    if [ -z "$version" ] && [ -d "/Applications/${MAGPIE_CASK_NAME}.app" ]; then
-        version=$(defaults read "/Applications/${MAGPIE_CASK_NAME}.app/Contents/Info.plist" \
+    if [ -z "$version" ] && [ -d "$root/${MAGPIE_CASK_NAME}.app" ]; then
+        version=$(defaults read "$root/${MAGPIE_CASK_NAME}.app/Contents/Info.plist" \
             CFBundleShortVersionString 2>/dev/null || true)
     fi
     [ -n "$version" ] || return 1
@@ -1032,11 +1032,13 @@ magpie_apply() {
     magpie_cask_report || true
 
     DEPLOY_STEP=magpie-apply.gateway
-    # A host that cannot run the gateway says so and completes: the model
-    # gateway stays unwired until the app answers.
+    # The gateway is the step's subject. A host that cannot run Magpie is
+    # skipped by the platform guard above; a Mac that is missing the app, or
+    # has not opened it once, fails here with the command that fixes it, so a
+    # deployment can never leave agents wired to a gateway that is not there.
     if ! magpie_gateway_ensure; then
-        printf 'dotfiles: magpie: skipped; the gateway does not answer\n' >&2
-        return 0
+        magpie_fail 'the Magpie gateway does not answer; install or open the app and apply again'
+        return 1
     fi
 
     DEPLOY_STEP=magpie-apply.proxy

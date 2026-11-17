@@ -74,3 +74,11 @@ The full suite on this macOS host:
   `--class linux --apply-only`) succeed and print the skip reason; a
   simulated macOS apply places the engine, the catalogs, and the two
   commands under the simulated home only.
+
+Final state: `python3 -m unittest tests.test_magpie -v` ran 71 tests, all
+passing. The macOS-only assertions in `test_deployment`, `test_agent_payload`,
+and `test_windows_deployment` were corrected after the platform branch was
+added; the two remaining `test_deployment` failures (privileged options on a
+simulated home and a native Windows plan) reproduce identically on `main` in a
+detached worktree on this macOS host, so they are host scope, not a
+regression.

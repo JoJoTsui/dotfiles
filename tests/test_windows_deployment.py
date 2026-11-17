@@ -883,7 +883,7 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn('uncommitted-windows-source', (self.home / '.env_core').read_text())
             self.assertTrue(json.loads(settings.read_text())['deviceOnly'])
-            self.assertEqual(json.loads(settings.read_text())['env']['ANTHROPIC_AUTH_TOKEN'], 'magpie')
+            self.assertNotIn('ANTHROPIC_AUTH_TOKEN', json.loads(settings.read_text())['env'])
             self.assertIn('device instructions stay', instructions.read_text())
             self.assertIn('## Native Windows specifics', instructions.read_text())
             self.assertEqual(retired.read_text(), 'device kimi instructions\n')

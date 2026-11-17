@@ -42,7 +42,9 @@ The repository owns two managed commands:
 
 The app owns the gateway and its login item. The deployment never installs
 `magpie daemon`; it verifies `magpie status --json` and, on the real account
-home, opens the app once when nothing answers.
+home, opens the app once when nothing answers. On macOS a gateway that still
+does not answer fails the step, with the command that fixes it: a deployment
+never leaves Claude Code or Pi wired to a gateway that is not there.
 
 ## The switch
 
@@ -205,8 +207,10 @@ the Codex guard verdict.
 Magpie is a macOS application today. On Linux, WSL, and native Windows the
 step reports `Magpie is not available on this platform` and completes, the
 engine and the catalogs stay out of the home, and `dotfiles-magpie` refuses
-in one line. The catalogs are shaped so a later pinned native release can be
-added without changing the intent.
+in one line. Claude Code and Pi keep their device-owned endpoint and model
+there: the client-settings templates branch on `.platform`, so no host is
+pointed at a gateway it cannot run. The catalogs are shaped so a later pinned
+native release can be added without changing the intent.
 
 ## The command
 

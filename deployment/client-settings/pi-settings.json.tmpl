@@ -1,15 +1,19 @@
 {
   "lastChangelogVersion": "0.85.1",
   "theme": "dark",
+{{- if eq .platform "macos" }}
   "defaultProvider": "magpie",
   "defaultModel": "group/workhorse",
+{{- end }}
   "skills": {{ list (joinPath .chezmoi.homeDir ".agents" "skills") | toPrettyJson }},
   "enableInstallTelemetry": false,
   "tuiMode": "fullscreen",
-  "terminal": {
-    "showTerminalProgress": true
-  },
+{{- if eq .platform "macos" }}
   "modelThinkingLevels": {
     "magpie/group/workhorse": "high"
+  },
+{{- end }}
+  "terminal": {
+    "showTerminalProgress": true
   }
 }

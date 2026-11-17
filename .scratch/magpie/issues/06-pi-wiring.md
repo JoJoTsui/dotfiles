@@ -38,3 +38,8 @@ Tests run:
   `minimax-cn`, the models file is ignored and has no source, a simulated
   macOS apply renders the group defaults and writes no `models.json`, and the
   apply calls `magpie pi group/workhorse` exactly once.
+
+Review correction: `defaultProvider`, `defaultModel`, and the Magpie
+`modelThinkingLevels` entry are inside the same macOS branch. Other platforms
+keep their device-owned defaults. The macOS simulated apply renders
+`magpie` / `group/workhorse`; the t9k apply renders neither key.
