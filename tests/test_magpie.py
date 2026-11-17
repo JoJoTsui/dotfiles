@@ -409,6 +409,17 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("the optional model kimi-code-cn/k3.9-absent is not served; skipped", result.stdout)
 
+    def test_an_apply_without_a_gateway_reports_the_skip(self):
+        self.seed_home()
+        silent = self.tools / "silent-magpie"
+        silent.parent.mkdir(parents=True, exist_ok=True)
+        silent.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        silent.chmod(0o755)
+        result = self.apply(environment={"MAGPIE_BIN": str(silent)})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the gateway does not answer", result.stderr)
+        self.assertFalse(self.state_file().exists())
+
     def test_an_apply_on_another_platform_reports_the_skip(self):
         self.seed_home()
         script = self.root / "apply.sh"

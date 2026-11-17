@@ -573,10 +573,10 @@ magpie_gateway_ensure() {
             fi
         done
         printf 'dotfiles: magpie: the gateway still does not answer; open the Magpie app and apply again\n' >&2
-        return 0
+        return 1
     fi
     printf 'dotfiles: magpie: the gateway does not answer; open the Magpie app with: open -a magpie\n' >&2
-    return 0
+    return 1
 }
 
 # The proxy endpoint the template names for this device.
@@ -1032,7 +1032,12 @@ magpie_apply() {
     magpie_cask_report || true
 
     DEPLOY_STEP=magpie-apply.gateway
-    magpie_gateway_ensure
+    # A host that cannot run the gateway says so and completes: the model
+    # gateway stays unwired until the app answers.
+    if ! magpie_gateway_ensure; then
+        printf 'dotfiles: magpie: skipped; the gateway does not answer\n' >&2
+        return 0
+    fi
 
     DEPLOY_STEP=magpie-apply.proxy
     MAGPIE_PROXY=$(magpie_proxy_resolve || true)
