@@ -1,0 +1,18 @@
+# Agent wiring catalog. One row per agent the deployment points at a group.
+#
+# agent|group|owner|enabled
+#
+# agent    the agent's short name, as the agent provider catalog names it.
+# group    the routing group the agent selects, or - when the agent follows
+#          another agent's wiring.
+# owner    repo when the deployment writes the agent's configuration by hand,
+#          magpie when Magpie generates it, inherited when the agent follows
+#          another agent.
+# enabled  yes when the wiring applies, no when it is parked.
+#
+# The deployment never wires Codex, and it never lets Magpie write Claude
+# Code's settings.
+claude|group/conductor|repo|yes
+pi|group/workhorse|magpie|yes
+dsh|group/workhorse|magpie|yes
+dsh-tui|-|inherited|yes

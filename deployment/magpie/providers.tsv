@@ -1,0 +1,20 @@
+# Model provider catalog. One row per provider the deployment ensures.
+#
+# role|magpie provider|key source|required
+#
+# role             the repository name of one model provider. A group member
+#                  and a model candidate's provider prefix refer to it.
+# magpie provider  the Magpie preset that owns the provider's accounts. The
+#                  preset is Magpie's own name for one account type.
+# key source       where the credential comes from: codex-account (a ChatGPT
+#                  account Magpie reads), env:NAME (a variable in
+#                  ~/.config/dotfiles/magpie.env), or json:PATH:KEY (a key in
+#                  a JSON store on the device). A json: source is read only.
+# required         yes when the provider must exist for the apply to pass, no
+#                  when its absence is reported and the apply continues.
+#
+# No row carries a credential. A key source names a variable or a path only.
+chatgpt|codex|codex-account|yes
+opencode-go|opencode-go|json:~/.local/share/opencode/auth.json:opencode-go.key|yes
+kimi-code-cn|kimi-code-cn|env:KIMI_CODE_CN_API_KEY|yes
+minimax-cn|minimax-cn|json:~/.pi/agent/auth.json:minimax-cn.key|yes

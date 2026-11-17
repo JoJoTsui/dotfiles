@@ -1,0 +1,20 @@
+# Model catalog. One row per model role. The candidates are the model ids the
+# gateway may serve for that role, in preference order.
+#
+# role|candidate ids|required
+#
+# role          the repository name of one model role. A group member refers
+#               to it.
+# candidate ids comma-separated model ids in preference order. A trailing "?"
+#               marks a candidate optional: it is reported and skipped when the
+#               gateway does not serve it.
+# required      yes when at least one candidate must match a live model, no
+#               when every candidate may be skipped.
+#
+# A model id is "provider/model", where the provider is a Magpie provider
+# preset declared in providers.tsv.
+chatgpt.sol|codex/gpt-6.1-sol|yes
+chatgpt.terra|codex/gpt-6.1-terra|yes
+conductor.kimi|kimi-code-cn/k3.1-pro|yes
+conductor.deepseek|opencode-go/deepseek-v4.1-flash|yes
+workhorse.minimax|minimax-cn/MiniMax-M3.1-Flash|yes

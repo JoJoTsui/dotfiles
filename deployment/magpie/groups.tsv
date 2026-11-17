@@ -1,0 +1,17 @@
+# Routing group catalog. One row per group the deployment ensures.
+#
+# id|members|routing|stays|listed|purpose
+#
+# id        the group name an agent selects as "group/<id>".
+# members   comma-separated model roles, or "group/<id>" for another group, in
+#           the order the gateway tries them.
+# routing   the routing mode. drain spends a member's accounts until they are
+#           used up, moves to the next member, and never returns to an earlier
+#           one. It is Magpie's "Until used up".
+# stays     the stay mode. auto lets the gateway decide.
+# listed    yes when the group appears in an agent's picker, no when it stays
+#           reachable only as another group's member.
+# purpose   what the group is for.
+chatgpt|chatgpt.sol,chatgpt.terra|drain|auto|no|standalone ChatGPT plan group
+conductor|conductor.kimi,conductor.deepseek,group/chatgpt|drain|auto|yes|Claude Code
+workhorse|workhorse.minimax,conductor.deepseek|drain|auto|yes|Pi and dsh
