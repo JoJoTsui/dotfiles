@@ -225,6 +225,7 @@ class MagpieApplyTests(unittest.TestCase):
             shutil.copy2(CATALOG / name, self.catalog / name)
         self.state = self.home / ".fake-magpie"
         self.server = self.gateway()
+        self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
 
     def gateway(self):
@@ -383,3 +384,57 @@ class MagpieApplyTests(unittest.TestCase):
         codex = self.home / ".codex/config.toml"
         self.apply()
         self.assertEqual(codex.read_text(encoding="utf-8"), 'model = "gpt-6-luna"\n')
+
+
+class MagpieSwitchTests(unittest.TestCase):
+    """The bootstrap switch decides whether the gateway is wired."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-magpie-switch-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "device"
+        self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(("DOTFILES_", "XDG_", "PIXI_", "BUN_", "CARGO_", "RUSTUP_", "UV_",
+                                           "NPM_", "ATUIN_", "KIMI_", "PI_", "OPENCODE_", "CODEX_", "CLAUDE_"))
+                    and key not in ("GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL",
+                                    "NODE_OPTIONS", "ENV", "BASH_ENV", "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN")}
+        self.env.update(HOME=str(self.root / "original"), PATH="/usr/bin:/bin",
+                        DOTFILES_SKILLS_DIR=str(SOURCE / "tests/fixtures/skill-library"))
+
+    def plan(self, *arguments, environment=None):
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(self.home),
+                                 "--plan", *arguments], cwd=SOURCE, env=environment or self.env,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return json.loads(result.stdout)
+
+    def test_the_macos_plan_wires_the_gateway(self):
+        plan = self.plan("--platform", "macos")
+        self.assertTrue(plan["magpie"])
+        self.assertIn("magpie-apply", plan["actions"])
+        self.assertLess(plan["actions"].index("magpie-apply"), plan["actions"].index("prepare-shell"))
+
+    def test_the_switch_removes_the_step_and_says_why(self):
+        for arguments, environment in ((["--no-magpie"], None), ([], dict(DOTFILES_MAGPIE="false"))):
+            with self.subTest(arguments=arguments):
+                plan = self.plan("--platform", "macos", *arguments,
+                                 environment=dict(self.env, **(environment or {})))
+                self.assertFalse(plan["magpie"])
+                self.assertNotIn("magpie-apply", plan["actions"])
+
+    def test_the_linux_plan_reports_no_gateway_and_fails_nothing(self):
+        plan = self.plan("--platform", "linux")
+        self.assertFalse(plan["magpie"])
+        self.assertNotIn("magpie-apply", plan["actions"])
+
+    def test_a_restricted_apply_says_why_the_gateway_is_skipped(self):
+        if not self.chezmoi:
+            self.skipTest("actual apply requires chezmoi")
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi)
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
+                                 "--home", str(self.home), "--platform", "linux", "--apply-only"],
+                                cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=300)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("dotfiles: magpie: skipped;", result.stdout)

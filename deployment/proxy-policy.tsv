@@ -10,6 +10,7 @@
 install-managers|yes|manager releases are fetched from GitHub
 apply-source.skills|yes|skill clones and archive downloads
 install-agents|yes|agent packages are fetched from the npm registry
+magpie-apply|yes|provider requests leave through the device proxy
 install-proxy|yes|the proxy release itself is fetched from GitHub
 apply-source|no|the source application only reads and writes local files
 apply-source.agent-payload|no|the payload copy is local

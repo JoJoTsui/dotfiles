@@ -10,9 +10,11 @@ DEPLOY_AGENTS_ONLY=false
 DEPLOY_SYSTEM_CONFIG=false
 DEPLOY_LOGIN_SHELL=false
 DEPLOY_PROXY=false
+DEPLOY_MAGPIE=false
 CLI_PLATFORM='' CLI_ROLE='' CLI_PROFILE='' CLI_CLASS='' CLI_ARCH=''
 CLI_BUNDLES='' CLI_BUNDLES_SET=false
 CLI_AGENTS='' CLI_AGENTS_SET=false
+CLI_NO_MAGPIE=false
 
 fail() {
     printf 'dotfiles: %s\n' "$*" >&2
@@ -87,15 +89,18 @@ Usage: bash bootstrap.sh [options]
   --apply-only              Apply files with chezmoi; skip tool/agent installers
   --agents-only             Apply files and install agents with an existing toolchain
   --proxy                   Install Mihomo from the pinned release and refresh the profile
+  --no-magpie               Do not wire the Magpie model gateway
 
 Environment selectors: DOTFILES_PLATFORM, DOTFILES_ROLE, DOTFILES_PROFILE,
 DOTFILES_CLASS, DOTFILES_ARCH, DOTFILES_AGENTS, DOTFILES_BUNDLES, DOTFILES_PROXY,
-DOTFILES_MIRROR (tuna or upstream).
+DOTFILES_MAGPIE, DOTFILES_MIRROR (tuna or upstream).
 Explicit flags override environment selectors.
 Conflicting explicit preset/component flags are errors.
 Every state root is scoped to the target home. System Bash configuration and
 the account login shell change only with their explicit options; auth, history
 imports, and project indexes remain separate actions.
+The Magpie model gateway is wired on macOS unless --no-magpie or
+DOTFILES_MAGPIE=false turns the step off.
 HELP
             exit 0 ;;
         --plan) DEPLOY_PLAN=true; shift ;;
@@ -104,6 +109,7 @@ HELP
         --system-config) DEPLOY_SYSTEM_CONFIG=true; shift ;;
         --proxy) DEPLOY_PROXY=true; shift ;;
         --login-shell) DEPLOY_LOGIN_SHELL=true; shift ;;
+        --no-magpie) CLI_NO_MAGPIE=true; shift ;;
         --home|--platform|--role|--profile|--class|--arch|--source|--agents|--bundles)
             [ "$#" -ge 2 ] || fail "$1 requires a value"
             case "$1" in
@@ -149,6 +155,35 @@ if "$DEPLOY_APPLY_ONLY"; then
 elif "$DEPLOY_AGENTS_ONLY"; then
     DEPLOY_ACTIONS=(install-managers apply-source install-agents)
 fi
+# The Magpie step is on by default on macOS and off everywhere else. It runs
+# after the agents are installed and before the shell is prepared, so the
+# gateway, the agents, and the client settings exist before it wires them.
+DEPLOY_MAGPIE_REASON='Magpie is not available on this platform'
+if [ "$DEPLOY_PLATFORM" = macos ]; then
+    DEPLOY_MAGPIE=true
+    DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
+fi
+if [ "${DOTFILES_MAGPIE:-true}" = false ]; then
+    DEPLOY_MAGPIE=false
+    DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
+fi
+if "$CLI_NO_MAGPIE"; then
+    DEPLOY_MAGPIE=false
+    DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
+fi
+if "$DEPLOY_APPLY_ONLY"; then
+    DEPLOY_MAGPIE_REASON='--apply-only applies files without the gateway'
+elif "$DEPLOY_AGENTS_ONLY"; then
+    DEPLOY_MAGPIE_REASON='--agents-only installs agents without the gateway'
+fi
+if "$DEPLOY_MAGPIE" && ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
+    actions=()
+    for action in "${DEPLOY_ACTIONS[@]}"; do
+        actions+=("$action")
+        if [ "$action" = install-agents ]; then actions+=(magpie-apply); fi
+    done
+    DEPLOY_ACTIONS=(${actions[@]+"${actions[@]}"})
+fi
 if "$DEPLOY_PROXY"; then DEPLOY_ACTIONS+=(install-proxy); fi
 if "$DEPLOY_SYSTEM_CONFIG"; then DEPLOY_ACTIONS+=(configure-system); fi
 if "$DEPLOY_LOGIN_SHELL"; then DEPLOY_ACTIONS+=(set-login-shell); fi
@@ -176,6 +211,7 @@ printf ',"installerTools":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else pr
     printf ',"chezmoi":'; json_string "$CHEZMOI_VERSION"
     printf ',"rustup":'; json_string "$RUSTUP_VERSION"; printf '}'
     printf ',"proxy":'; if "$DEPLOY_PROXY"; then printf 'true'; else printf 'false'; fi
+    printf ',"magpie":'; if "$DEPLOY_MAGPIE"; then printf 'true'; else printf 'false'; fi
     printf ',"actions":'; json_array "${DEPLOY_ACTIONS[@]}"
     printf ',"roots":{"config":'; json_string "$DEPLOY_HOME/.config"
     printf ',"data":'; json_string "$DEPLOY_HOME/.local/share"
@@ -275,12 +311,20 @@ run_step apply-source.client-settings deploy_client_settings
 run_step apply-source.macos-discovery deploy_macos_config
 if "$DEPLOY_AGENTS_ONLY"; then
     run_step install-agents install_agents
+    printf 'dotfiles: magpie: skipped; %s\n' "$DEPLOY_MAGPIE_REASON"
 elif ! "$DEPLOY_APPLY_ONLY"; then
     run_step install-installer-tools install_installer_tools
     run_step install-common install_common
     run_step install-agents install_agents
     if "$DEPLOY_PROXY"; then run_step install-proxy install_proxy; fi
+    if "$DEPLOY_MAGPIE"; then
+        run_step magpie-apply magpie_apply
+    else
+        printf 'dotfiles: magpie: skipped; %s\n' "$DEPLOY_MAGPIE_REASON"
+    fi
     run_step prepare-shell prepare_shell
+else
+    printf 'dotfiles: magpie: skipped; %s\n' "$DEPLOY_MAGPIE_REASON"
 fi
 if "$DEPLOY_SYSTEM_CONFIG"; then run_step configure-system configure_system; fi
 if "$DEPLOY_LOGIN_SHELL"; then run_step set-login-shell set_login_shell; fi
