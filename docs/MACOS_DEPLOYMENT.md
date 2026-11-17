@@ -153,12 +153,17 @@ python3 tests/native_macos.py --arch aarch64 --role workstation \
 ```
 
 The gate requires Darwin, the requested architecture, and the OS baseline. It
-installs and reapplies all defaults in a temporary home containing spaces;
-checks commands, pins, ordinary Nu/pip/uv discovery, idempotence, and device-state
+installs and reapplies the default tools, agents, files, and skills in a temporary
+home containing spaces; checks commands, pins, ordinary Nu/pip/uv discovery,
+idempotence, and device-state
 preservation; then runs existing shell, skill, CodeGraph/MCP, and encrypted-history
 suites. Diagnostics load rendered shared shell settings and explicit installed
 tool paths. They use synthetic accounts/history and make no model request;
 CodeGraph indexing is confined to its explicit temporary test fixture.
+The verifier passes `--no-magpie` and records the account gateway exclusion:
+synthetic homes carry no operator provider accounts and must not borrow a live
+gateway. Magpie account wiring needs a separate authorized device check; this
+gate makes no claim about its readiness.
 
 `--install-timeout` sets a positive bounded timeout for each full bootstrap
 invocation; its default remains 2400 seconds for CI. `--keep-failed-home`

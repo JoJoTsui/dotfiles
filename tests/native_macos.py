@@ -505,6 +505,7 @@ def main():
               "commit": os.environ.get("GITHUB_SHA", "local"), "checks": [],
               "installation_timeout_seconds": args.install_timeout,
               "installation_cache": "cache-assisted" if args.package_cache else "empty",
+              "account_gateway": "excluded: synthetic homes have no operator accounts",
               "bundles": [name for name in args.bundles.split(",") if name]}
     if os.environ.get("GITHUB_RUN_ID"):
         report["run_url"] = f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
@@ -539,7 +540,10 @@ def main():
                 report["checks"].append(phase)
             originals = seed_device(home)
             env = minimal_environment(home)
-            command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--role", args.role]
+            # Account gateway wiring belongs to the operator's device. Synthetic
+            # installs must not borrow its gateway or need its provider accounts.
+            command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home),
+                       "--role", args.role, "--no-magpie"]
             if args.bundles:
                 command += ["--bundles", args.bundles]
             phase = "profile detection"
@@ -547,6 +551,7 @@ def main():
             plan = json.loads(run([*command, "--plan"], env=env, cwd=SOURCE).stdout)
             require(plan["platform"] == "macos" and plan["arch"] == args.arch and plan["role"] == args.role,
                     "detected macOS deployment profile")
+            require(plan.get("magpie") is False, "synthetic installation excludes account gateway wiring")
             if args.bundles:
                 require(plan.get("bundles") == sorted(name for name in args.bundles.split(",") if name),
                         "requested bundle selection reached the native plan")

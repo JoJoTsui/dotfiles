@@ -1,4 +1,7 @@
 """Native-verifier safety checks without installation or live device state."""
+import contextlib
+import io
+import json
 import os
 from pathlib import Path
 import shutil
@@ -180,6 +183,40 @@ class NativeVerifierSourceIdentityTests(unittest.TestCase):
         self.assertTrue(retargeted["working_tree_dirty"])
         self.assertEqual(retargeted["commit"], original["commit"])
         self.assertNotEqual(retargeted["source_sha256"], original["source_sha256"])
+
+
+class NativeVerifierAccountIsolationTests(unittest.TestCase):
+    def test_synthetic_installs_exclude_the_account_gateway_and_reject_an_enabled_plan(self):
+        for gateway in (False, True):
+            with self.subTest(gateway=gateway), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                report = root / "report.json"
+                commands = []
+
+                def run(arguments, **kwargs):
+                    commands.append(arguments)
+                    if "--plan" in arguments:
+                        return subprocess.CompletedProcess(arguments, 0, json.dumps({
+                            "platform": "macos", "arch": "aarch64", "role": "workstation",
+                            "magpie": gateway}))
+                    raise RuntimeError("fixture stops before installation")
+
+                with patch.object(sys, "argv", ["native_macos.py", "--arch", "aarch64",
+                                                "--role", "workstation", "--report", str(report)]), \
+                     patch.object(sys, "platform", "darwin"), \
+                     patch.object(native_macos.platform, "machine", return_value="arm64"), \
+                     patch.object(native_macos.platform, "platform", return_value="synthetic macOS"), \
+                     patch.object(native_macos, "source_state", return_value={}), \
+                     patch.object(native_macos.subprocess, "check_output", return_value="15.8.1"), \
+                     patch.object(native_macos, "run", side_effect=run), \
+                     contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    self.assertEqual(native_macos.main(), 1)
+                self.assertTrue(all("--no-magpie" in command for command in commands))
+                data = json.loads(report.read_text())
+                self.assertEqual(data["account_gateway"],
+                                 "excluded: synthetic homes have no operator accounts")
+                self.assertEqual(data["failed_check"], "profile detection" if gateway else "default installation 1")
+                self.assertEqual(len(commands), 1 if gateway else 2)
 
 
 if __name__ == "__main__":
