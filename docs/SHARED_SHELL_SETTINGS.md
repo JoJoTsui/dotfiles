@@ -117,7 +117,11 @@ owned loader. Native output and community imports share the same validation
 and publication boundary. Validation fails on a parse error but only reports a
 deprecation warning: a device may run a Nu newer than the pinned revision, and
 that warning belongs in the preparation output rather than in every
-interactive startup.
+interactive startup. Each published content directory carries the revision and
+a digest of its bytes, so a selection or catalog change publishes a new one;
+the preparation removes the directories it published earlier once the loader
+names the new one. A device-created entry and a symlink never match the
+published name and are left alone.
 
 For an air-gapped preparation, supply `DOTFILES_NU_SCRIPTS_ARCHIVE` with a local
 copy of the pinned archive; checksum verification still applies. Updating the
@@ -134,7 +138,13 @@ existing device installations.
 
 Nu vendor autoload is interactive: ordinary `-c` execution omits it. macOS and
 native Windows receive regular discovery copies of the same prepared loaders.
-Generated resources and device state are not imported into git. See
+The discovery adapter remains the deployment's only catalog writer. A
+preparation run outside a deployment additionally mirrors the artifacts it
+generated into the directory Nu resolves without an XDG override, which on
+macOS is `~/Library/Application Support/nushell/vendor/autoload`, so a launch
+from outside the managed environment never reads an older startup. That mirror
+writes only existing entries, keeps a device file, and refuses a symlinked
+target. Generated resources and device state are not imported into git. See
 [Nu configuration](https://www.nushell.sh/book/configuration.html).
 
 History preparation follows shell preparation. `dotfiles-history-prepare`

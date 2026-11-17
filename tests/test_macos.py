@@ -183,10 +183,22 @@ class MacOSProfileTests(unittest.TestCase):
         pixi.write_text('#!/bin/sh\nexec ' + shlex.quote(str(prefix / ".pixi/bin/pixi")) + ' "$@"\n')
         pixi.chmod(0o755)
         env = dict(self.env, HOME=str(self.home), TERM="xterm-256color")
+        # A launch outside the managed environment resolves Nu's data directory
+        # from the operating system, which reads this copy instead of the one
+        # the preparation writes.
+        native_autoload = self.home / "Library/Application Support/nushell/vendor/autoload"
+        native_autoload.mkdir(parents=True, exist_ok=True)
+        (native_autoload / "nu-scripts.nu").write_text("# earlier startup\n")
+        (native_autoload / "device.nu").write_text("# device startup\n")
         for command in ("dotfiles-shell-prepare", "dotfiles-history-prepare"):
             prepared = subprocess.run([str(self.home / ".local/bin" / command)], env=env, cwd=self.home,
                                       capture_output=True, text=True, timeout=30)
             self.assertEqual(prepared.returncode, 0, prepared.stderr)
+        prepared_root = self.home / ".local/share/nushell/vendor/autoload"
+        for name in ("starship.nu", "pixi-completions.nu", "fzf.nu", "nu-scripts.nu", "wt.nu", "atuin.nu"):
+            self.assertEqual((native_autoload / name).read_bytes(), (prepared_root / name).read_bytes(), name)
+            self.assertEqual((native_autoload / name).stat().st_mode & 0o777, 0o600, name)
+        self.assertEqual((native_autoload / "device.nu").read_text(), "# device startup\n")
         self.assertEqual(self.deploy("--apply-only", "--role", "remote-compute").returncode, 0)
         native = self.home / "Library/Application Support/nushell"
         # On Linux this verifies copied syntax at an explicit config directory.

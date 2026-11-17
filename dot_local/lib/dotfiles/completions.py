@@ -22,6 +22,8 @@ import urllib.request
 from pathlib import Path, PurePosixPath
 
 WINDOWS = os.name == "nt"
+# A published module directory: the pinned revision and a digest of its bytes.
+PUBLISHED_DIRECTORY = re.compile(r"[0-9a-f]{40}-[0-9a-f]{16}")
 NATIVE_GENERATORS = {
     "uv": ("generate-shell-completion", "nushell"),
     "just": ("--completions", "nushell"),
@@ -220,6 +222,23 @@ def validate(nu: Path, loader: Path) -> None:
               "deprecated; review the pinned nu_scripts revision", file=sys.stderr)
 
 
+def prune_published(root: Path, keep: Path | None) -> None:
+    """Remove the module directories this tool published before now.
+
+    Only a regular directory carrying the published name is removed, and only
+    after the new loader replaced the old one. A device-created entry or a
+    symlink never matches, so neither is ever touched.
+    """
+    if not root.is_dir() or root.is_symlink():
+        return
+    for entry in root.iterdir():
+        if entry == keep or not PUBLISHED_DIRECTORY.fullmatch(entry.name):
+            continue
+        if entry.is_symlink() or not entry.is_dir():
+            continue
+        shutil.rmtree(entry)
+
+
 def prepare(config: Path, nu: Path, autoload: Path | None = None) -> int:
     home = Path(os.environ["HOME"]).absolute()
     config_root = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
@@ -272,6 +291,10 @@ def prepare(config: Path, nu: Path, autoload: Path | None = None) -> int:
             staged_loader.write_text(loader_text(final_directory, []), encoding="utf-8")
         validate(nu, staged_loader)
         os.replace(staged_loader, target)
+        # The published directories carry a content digest, so a selection or
+        # catalog change leaves the previous bytes behind. The loader is the
+        # only reference, and it now names the new directory.
+        prune_published(modules_root, final_directory if selected else None)
     finally:
         staged_loader.unlink(missing_ok=True)
     return len(selected)
