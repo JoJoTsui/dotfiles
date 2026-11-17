@@ -106,18 +106,22 @@ hermetic bypass.
 
 The catalog's last column is the selection: `auto` skills are deployed by
 every host, and a tagged skill is not deployed automatically. `auto` is the
-reviewed core: the mattpocock engineering and productivity skills, graphify,
+reviewed core: the daily engineering and productivity workflows, graphify,
 worktrunk, the humanizers, `show-me`, `pr` and `research`, and the other
 general entries. The caveman mode and its compress skill stay in that core,
-and so do the six generic engineering skills of the caveman repository
-(`investigate-first`, `lean-build`, `migration`, `safe-refactor`,
-`surgical-patch`, `verify-and-stop`); they are general workflows, not caveman
-voice. The other fourteen caveman-branded skills carry the `caveman` tag. The
-four diagram, slide-deck, PPT, and front-end design skills and the lark
-documentation cluster are in the default set; the remaining Feishu skills carry
-`lark`, and `find-skills` is disabled. A host asks for a group with
-`DOTFILES_SKILLS=<tag>`, or for one skill with `DOTFILES_SKILLS=<name>`. Their
-pins stay reviewed, so asking for them deploys the bytes that were pinned.
+as do `investigate-first`, `migration`, and `safe-refactor`. The fifteen
+specialist or overlapping workflows reviewed in [skill review](SKILL_REVIEW.md)
+carry `optional`; select one by name or the whole group with
+`DOTFILES_SKILLS=optional`. The other fourteen caveman-branded skills carry
+the `caveman` tag. The four diagram, slide-deck, PPT, and front-end design
+skills and the lark
+documentation cluster are in the default set; the remaining Feishu skills,
+including `lark-openapi-explorer`, carry `lark`, and `find-skills` is disabled.
+Raw OpenAPI exploration is excluded from the default library; select it alone
+with `DOTFILES_SKILLS=lark-openapi-explorer` or with the full `lark` group.
+A host asks for a group with `DOTFILES_SKILLS=<tag>`, or for one skill with
+`DOTFILES_SKILLS=<name>`. Their pins stay reviewed, so asking for them deploys
+the bytes that were pinned.
 The selection applies both to the fetch and to the copy into a managed root,
 so a library supplied through `DOTFILES_SKILLS_DIR` deploys the selected
 skills and nothing else. A name the catalog does not declare is device
@@ -164,8 +168,8 @@ device entry never loses to the deployment:
 An entry the deployment does not own is never recorded, so it stays device
 content. The stale copy a device carried before the inventory existed is
 reported rather than deleted. To migrate one deliberately, run the deployment
-once with the tags the device should keep (`DOTFILES_SKILLS=caveman,lark`
-for all three groups); a directory that already holds the selected bytes is
+once with the tags the device should keep
+(`DOTFILES_SKILLS=caveman,lark,optional` for all tagged groups); a directory that already holds the selected bytes is
 adopted and recorded, and a later apply without the tag prunes it. A catalog
 directory whose bytes differ from the pinned copy is preserved and reported until
 the operator removes that directory; a device-created skill is never removed.

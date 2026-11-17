@@ -244,9 +244,11 @@ explains every changed pair.
   `auto` is the reviewed core; a tagged skill is not deployed automatically, and
   a host asks for it with `DOTFILES_SKILLS=<tag>` or by skill name. The tags are
   `caveman` for the caveman-branded skills other than the mode and its compress
-  skill, and `lark` for the Feishu skills other than the documentation cluster.
-  The four design skills and the lark documentation cluster are in the `auto`
-  core, and `find-skills` is disabled in `deployment/disabled-skills.tsv`.
+  skill, `lark` for the Feishu skills outside the documentation cluster (including
+  `lark-openapi-explorer`), and `optional` for the reviewed specialist workflows
+  listed in `docs/SKILL_REVIEW.md`. The four design skills and the lark
+  documentation cluster stay in the `auto` core; `find-skills` is disabled in
+  `deployment/disabled-skills.tsv`.
 - **Managed skills are recorded and pruned**: the deployment records the skill
   directories it wrote into each managed root in
   `~/.local/state/dotfiles/managed-skills.tsv`, and the prune step removes a

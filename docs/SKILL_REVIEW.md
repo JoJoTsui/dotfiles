@@ -64,7 +64,7 @@ The catalog's last column decides what a host receives.
 | Selection | Meaning |
 | --- | --- |
 | `auto` | the reviewed core; every host receives it |
-| a tag | a group the host asks for: `lark`, `caveman` |
+| a tag | a group the host asks for: `lark`, `caveman`, `optional` |
 
 A host opts in with `DOTFILES_SKILLS=<tag>` or `DOTFILES_SKILLS=<name>`. The
 selection applies to the fetch and to the copy into a managed root, so a
@@ -72,20 +72,49 @@ library supplied through `DOTFILES_SKILLS_DIR` deploys the selected skills and
 nothing else. A name the catalog does not declare is device content: it never
 enters a managed root, and it is never pruned.
 
-`auto` is the reviewed core: the mattpocock engineering and productivity
-skills, graphify, worktrunk, the humanizers, `show-me`, `pr` and `research`,
-the caveman mode with its compress skill, the six generic engineering skills of
-the caveman repository, the four design skills, and the lark documentation
+`auto` is the reviewed core: the daily engineering and productivity workflows,
+graphify, worktrunk, the humanizers, `show-me`, `pr` and `research`, the caveman
+mode with its compress skill, `investigate-first`, `migration`, `safe-refactor`,
+the four design skills, and the lark documentation
 cluster (`lark-doc`, `lark-sheets`, `lark-shared`, `lark-drive`,
-`lark-whiteboard`, `lark-base`, `lark-wiki`, `lark-markdown`,
-`lark-openapi-explorer`). The five `Imbad0202/academic-research-skills` suite
-skills (`academic-paper`, `academic-paper-reviewer`, `academic-pipeline`,
+`lark-whiteboard`, `lark-base`, `lark-wiki`, `lark-markdown`).
+`lark-openapi-explorer` is optional under the `lark` tag: ordinary document
+work uses the documentation cluster; raw OpenAPI exploration is selected
+explicitly with `DOTFILES_SKILLS=lark-openapi-explorer` (or the full `lark` tag).
+The five `Imbad0202/academic-research-skills` suite skills (`academic-paper`,
+`academic-paper-reviewer`, `academic-pipeline`,
 `deep-research`, `sr-screener`) are also automatic. They are copied as the
 upstream's standalone skill folders, which carry their own agents, references,
 examples, and templates, but not the repository-level `shared/` protocols or
 the plugin commands and hooks; the full plugin orchestration is a separate
 upstream install route. The other caveman-branded skills and the remaining
 Feishu skills stay behind their tags. `find-skills` is disabled.
+
+### Optional workflows
+
+The 2026-11-17 review keeps the daily workflows and their supporting skills
+in the default set. These fifteen candidates carry the `optional` tag:
+
+| Skills | Reason for opt-in |
+| --- | --- |
+| `grill-me` | Wrapper for `grilling`, also used by `grill-with-docs` |
+| `migrate-to-shoehorn`, `scaffold-exercises`, `setup-pre-commit`, `setup-ts-deep-modules`, `git-guardrails-claude-code` | Specialist TypeScript, course, or setup tasks |
+| `chief-of-staff`, `claude-handoff`, `loop-me` | In-progress orchestration outside the daily workflow |
+| `writing-fragments`, `writing-shape`, `writing-beats` | Separate writing workshop stages |
+| `lean-build`, `surgical-patch`, `verify-and-stop` | Overlap with the shared completion and scope rules |
+
+Use `DOTFILES_SKILLS=<name>` for one skill, comma-separated names for a subset,
+or `DOTFILES_SKILLS=optional` for all fifteen. The catalog still pins their
+upstream bytes. Reapplying without an opt-in prunes recorded managed copies;
+device-owned and generated entries retain the existing preservation rules.
+
+The daily workflow uses the upstream names `to-tickets` and
+`improve-codebase-architecture`. Keep `grilling`, `domain-modeling`,
+`codebase-design`, and `tdd` as their supporting defaults. Keep the five
+academic suite skills together, and retain `lark-shared` and `lark-drive`
+alongside `lark-doc`. Default installation is separate from activation: the
+manual-only workflows still require explicit invocation in clients honoring
+their frontmatter.
 
 ## The ownership rules
 

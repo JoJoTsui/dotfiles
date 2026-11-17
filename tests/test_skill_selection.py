@@ -16,14 +16,16 @@ CAVEMAN_GROUP = (
     "caveman-optimize", "caveman-review", "caveman-setup", "caveman-stats",
     "megacave", "ultracave",
 )
-# The generic engineering skills of the same upstream are general workflows,
-# not caveman voice, so they stay in the reviewed default set.
-GENERIC_ENGINEERING = (
-    "investigate-first", "lean-build", "migration", "safe-refactor",
-    "surgical-patch", "verify-and-stop",
+# Keep the distinct diagnosis, migration, and behavior-preservation workflows.
+GENERIC_ENGINEERING = ("investigate-first", "migration", "safe-refactor")
+OPTIONAL_WORKFLOWS = (
+    "grill-me", "migrate-to-shoehorn", "scaffold-exercises", "setup-pre-commit",
+    "setup-ts-deep-modules", "git-guardrails-claude-code", "chief-of-staff",
+    "claude-handoff", "loop-me", "writing-fragments", "writing-shape",
+    "writing-beats", "lean-build", "surgical-patch", "verify-and-stop",
 )
 DESIGN_GROUP = ("baoyu-diagram", "baoyu-slide-deck", "guizang-ppt-skill", "impeccable")
-LARK_DOCS = ("lark-base", "lark-doc", "lark-drive", "lark-markdown", "lark-openapi-explorer",
+LARK_DOCS = ("lark-base", "lark-doc", "lark-drive", "lark-markdown",
              "lark-shared", "lark-sheets", "lark-whiteboard", "lark-wiki")
 MANAGED_ROOTS = (".agents/skills", ".claude/skills", ".minimax/skills")
 
@@ -61,6 +63,11 @@ class CatalogTaggingTests(unittest.TestCase):
         self.assertEqual(selections["caveman"], "auto")
         self.assertEqual(selections["caveman-compress"], "auto")
 
+    def test_specialist_and_overlapping_workflows_are_optional(self):
+        selections = catalog_selections()
+        self.assertEqual({name for name, tag in selections.items() if tag == "optional"},
+                         set(OPTIONAL_WORKFLOWS))
+
     def test_the_generic_engineering_skills_stay_automatic(self):
         selections = catalog_selections()
         for name in GENERIC_ENGINEERING:
@@ -80,6 +87,16 @@ class CatalogTaggingTests(unittest.TestCase):
         for name in lark:
             self.assertTrue(name.startswith("lark-"), name)
             self.assertNotIn(name, LARK_DOCS)
+
+    def test_openapi_explorer_is_optional_and_daily_skills_stay_automatic(self):
+        selections = catalog_selections()
+        self.assertEqual(selections["lark-openapi-explorer"], "lark")
+        for name in ("grill-with-docs", "to-spec", "to-tickets", "implement-spec",
+                     "improve-codebase-architecture", "humanizer", "humanizer-zh",
+                     "academic-paper", "academic-paper-reviewer", "academic-pipeline",
+                     "deep-research", "sr-screener", "lark-doc", "caveman", "code-review"):
+            with self.subTest(name=name):
+                self.assertEqual(selections[name], "auto")
 
     def test_find_skills_is_disabled_and_not_in_the_catalog(self):
         self.assertNotIn("find-skills", catalog_selections())
@@ -111,9 +128,9 @@ class SkillSelectionTests(unittest.TestCase):
             self.skipTest("actual payload apply requires chezmoi")
         self.library = self.root / "skill-library"
         shutil.copytree(STATIC_LIBRARY, self.library)
-        # A tagged skill of each group, so the selection is observable without
-        # fetching anything.
-        for name in ("caveman-review", "impeccable"):
+        # Tagged representatives plus every optional workflow make selection
+        # and pruning observable without fetching upstream resources.
+        for name in ("caveman-review", "impeccable", "lark-openapi-explorer", *OPTIONAL_WORKFLOWS):
             skill = self.library / name
             skill.mkdir()
             (skill / "SKILL.md").write_text(
@@ -162,6 +179,40 @@ class SkillSelectionTests(unittest.TestCase):
         for name in ("tdd", "show-me", "humanizer", "humanizer-zh", "implement-spec",
                      "impeccable"):
             self.assertIn(name, self.managed_names())
+
+    def test_openapi_explorer_is_opt_in_and_pruned_after_deselection(self):
+        default = self.deploy()
+        self.assertEqual(default.returncode, 0, default.stderr)
+        for root in MANAGED_ROOTS:
+            self.assertNotIn("lark-openapi-explorer", self.managed_names(root))
+        selected = self.deploy(skills="lark-openapi-explorer")
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        for root in MANAGED_ROOTS:
+            self.assertIn("lark-openapi-explorer", self.managed_names(root))
+        deselected = self.deploy()
+        self.assertEqual(deselected.returncode, 0, deselected.stderr)
+        for root in MANAGED_ROOTS:
+            self.assertNotIn("lark-openapi-explorer", self.managed_names(root))
+            self.assertNotIn(("lark-openapi-explorer", root), self.inventory())
+        self.assertIn("pruned managed skill lark-openapi-explorer", deselected.stderr)
+
+    def test_optional_workflows_install_together_and_prune_from_every_root(self):
+        default = self.deploy()
+        self.assertEqual(default.returncode, 0, default.stderr)
+        for root in MANAGED_ROOTS:
+            self.assertTrue(set(OPTIONAL_WORKFLOWS).isdisjoint(self.managed_names(root)))
+        selected = self.deploy(skills="optional")
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        for root in MANAGED_ROOTS:
+            self.assertTrue(set(OPTIONAL_WORKFLOWS) <= self.managed_names(root))
+        deselected = self.deploy()
+        self.assertEqual(deselected.returncode, 0, deselected.stderr)
+        for root in MANAGED_ROOTS:
+            self.assertTrue(set(OPTIONAL_WORKFLOWS).isdisjoint(self.managed_names(root)))
+            for name in OPTIONAL_WORKFLOWS:
+                self.assertNotIn((name, root), self.inventory())
+        self.assertIn("tdd", self.managed_names())
+        self.assertIn("implement-spec", self.managed_names())
 
     def test_a_tag_deploys_only_its_own_group(self):
         result = self.deploy(skills="caveman")
