@@ -318,6 +318,9 @@ def ratchet_failures(measurements: dict[str, Measurement],
             failures.append(
                 f"{name}: the reviewed exception names a row the catalog does not own")
     for name in sorted(measurements):
+        if name not in catalog_names:
+            # A generated or device skill is outside the catalog budget.
+            continue
         measurement = measurements[name]
         exception = exceptions.get(name)
         if measurement.over_budget and exception is None:
@@ -383,19 +386,32 @@ def review(library: Path | None, selections: dict[str, str],
     automatic = sum(1 for name in result.profile if selections[name] == "auto")
     result.lines.extend(inventory_lines(result.profile, result.tree, result.generated,
                                         result.device, clients, device_roots, automatic))
-    over = [measurements[name] for name in sorted(measurements) if measurements[name].over_budget]
+    catalog = set(selections)
+    over = [measurements[name] for name in sorted(measurements)
+            if name in catalog and measurements[name].over_budget]
+    generated_over = [measurements[name] for name in sorted(result.generated)
+                      if measurements[name].over_budget]
     result.lines.append(
         f"skill budget: a description of at most {DESCRIPTION_LIMIT} characters and a root "
         f"document of at most {ROOT_LINE_LIMIT} lines without a reference file")
     result.lines.append(
         f"skill budget: {len(over)} rows over the budget, {len(exceptions)} reviewed exceptions, "
-        f"{len(measurements) - len(over)} rows within the budget")
+        f"{len(catalog & set(measurements)) - len(over)} rows within the budget")
+    for measurement in generated_over:
+        result.lines.append(
+            f"skill budget: {measurement.name}: generated skill, outside the catalog budget "
+            f"({measurement.summary()})")
+    outside = sum(1 for name in exceptions if name not in measurements)
+    if outside:
+        result.lines.append(
+            f"skill budget: {outside} reviewed exceptions name rows outside this library "
+            "(tagged or not deployed)")
     for measurement in over:
         exception = exceptions.get(measurement.name)
         state = "reviewed exception" if exception else "not reviewed"
         result.lines.append(
             f"skill budget: {measurement.name}: {measurement.summary()} ({state})")
-    result.failures = ratchet_failures(measurements, exceptions, set(selections))
+    result.failures = ratchet_failures(measurements, exceptions, catalog)
     if result.failures:
         result.lines.append(f"skill ratchet: {len(result.failures)} failures")
         for failure in result.failures:

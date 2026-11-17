@@ -23,7 +23,7 @@ caveman-learn|293|176|yes|the upstream description names every trigger and the p
 caveman-setup|170|222|no|the root document carries the upstream gateway guide and the skill ships no reference file; the bytes are upstream's and are not rewritten
 code-review|419|89|no|the upstream description names both review axes and the parallel reviews; the bytes are upstream's and are not rewritten
 codebase-design|265|114|yes|the upstream description lists the design questions the vocabulary answers; the bytes are upstream's and are not rewritten
-find-skills|249|141|no|the upstream description separates finding a skill from performing the task; the bytes are upstream's and are not rewritten
+find-skills|303|141|no|the pinned upstream HEAD adopted in ticket 05 names the discovery workflow in its description; the bytes are upstream's and are not rewritten
 git-guardrails-claude-code|243|95|no|the upstream description names the commands the hooks block; the bytes are upstream's and are not rewritten
 graphify|353|795|yes|the upstream description names the query path and the graph tools; the root document is long and the skill ships eight reference files
 humanizer|341|397|no|the upstream description lists the writing tells the skill removes and the root document carries the full guide without a reference file

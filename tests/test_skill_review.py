@@ -168,6 +168,18 @@ class BudgetTests(ReviewFixture):
         self.assertIn("the reviewed exception names a row the catalog does not own", result.stdout)
 
 
+    def test_a_generated_skill_is_outside_the_catalog_budget(self):
+        self.write_skill("demo")
+        self.write_catalog("demo")
+        self.write_skill("herdr", description=LONG_DESCRIPTION, root_lines=220)
+        generated = self.root / "generated-skills.tsv"
+        generated.write_text("# name|root|generator\nherdr|.agents/skills|herdr --skill\n",
+                             encoding="utf-8")
+        result = self.check("--library", str(self.library), "--generated-skills", str(generated))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("generated skill, outside the catalog budget", result.stdout)
+
+
 class DescriptionParsingTests(ReviewFixture):
     """A block description is read as its joined prose."""
 
