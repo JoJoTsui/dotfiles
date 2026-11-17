@@ -148,7 +148,13 @@ class DeploymentTests(unittest.TestCase):
                 self.assertFalse((self.home / ".local/lib/dotfiles/__pycache__").exists())
                 self.assertTrue((self.home / ".local/bin/nu-login").stat().st_mode & 0o100)
                 self.assertEqual((self.home / ".vscode-server/data/Machine/settings.json").exists(), role == "remote-compute")
-                self.assertIn("REPLACE_ME", (self.home / ".claude/settings.json").read_text())
+                # Claude Code points at the local gateway, and no template
+                # value carries a real credential into the home.
+                claude = json.loads((self.home / ".claude/settings.json").read_text())
+                self.assertEqual(claude["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
+                self.assertEqual(claude["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
+                self.assertEqual(claude["model"], "group/conductor")
+                self.assertIn("REPLACE_ME", (self.home / ".kimi-code/config.toml").read_text())
                 profile = json.loads((self.home / ".config/dotfiles/profile.json").read_text())
                 self.assertEqual(profile["role"], role)
                 for name in ("docs", "README.md", "AGENTS.md", "GLOSSARY.md", "deployment", "tests", "bootstrap.sh"):

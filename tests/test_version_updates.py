@@ -40,7 +40,7 @@ class VersionUpdateTests(unittest.TestCase):
 
     def test_current_version_sources_are_consistent(self):
         counts = check(SOURCE)
-        self.assertEqual(counts["agents"], 7)
+        self.assertEqual(counts["agents"], 9)
         self.assertEqual(counts["nativeAgents"], 1)
         self.assertGreater(counts["commonPins"], 20)
         self.assertGreater(counts["bundlePins"], 50)
@@ -140,7 +140,7 @@ class VersionUpdateTests(unittest.TestCase):
         self.assertIn(Path(f"deployment/agents/{name}/package.json"), changed)
         self.assertIn(Path(f"deployment/agents/{name}/bun.lock"), changed)
         self.assertEqual(agent_rows(self.root)[name]["version"], "99.1.0")
-        self.assertEqual(check(self.root)["agents"], 7)
+        self.assertEqual(check(self.root)["agents"], 9)
 
     def test_an_agent_pin_moves_the_deployment_owned_record_and_keeps_the_floor(self):
         # The frozen Bun project carries the agent's pin and moves with it.
@@ -177,7 +177,7 @@ class VersionUpdateTests(unittest.TestCase):
         self.assertEqual([record[4] for record in owned], ["99.1.0"])
         self.assertEqual([record[4] for record in floor], ["0.166.0"])
         self.assertEqual(len([record for record in records if record[0] == name]), 2)
-        self.assertEqual(check(self.root)["agents"], 7)
+        self.assertEqual(check(self.root)["agents"], 9)
 
     def test_native_agent_refresh_rewrites_only_the_pin_and_validates_the_release(self):
         name = "qoder"
