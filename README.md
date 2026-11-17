@@ -16,6 +16,8 @@ container's live tree predates chezmoi and is never `chezmoi apply`-ed — see
 ```bash
 git clone https://github.com/JoJoTsui/dotfiles.git ~/dotfiles && cd ~/dotfiles
 export KIMI_API_KEY=...    # optional: kimi-code key  (default REPLACE_ME)
+# The Magpie Kimi Code China plan key stays in a device file, never in git:
+#   printf 'KIMI_CODE_CN_API_KEY=...' > ~/.config/dotfiles/magpie.env && chmod 600 ~/.config/dotfiles/magpie.env
 bash bootstrap.sh
 ```
 
@@ -112,6 +114,8 @@ deployment/common-tools.tsv  # exact common requirements and command exposures
 deployment/installer-tools.tsv # installer-owned commands: Homebrew casks
 deployment/agents/           # provider catalog + Herdr kinds, per-client
                              # manifests + bun.lock, native release pins
+deployment/magpie/           # model provider, model, routing group, and
+                             # agent wiring catalogs for the model gateway
 deployment/client-settings/  # default configs and preservation/CodeGraph catalog
 deployment/inventory/        # preserved optional/specialist inventory
 dot_config/
@@ -264,13 +268,15 @@ can be retained safely during migration. See the
 
 | Agent | Managed file(s) | Local-only / secrets | Notes |
 | --- | --- | --- | --- |
-| **Claude Code** | merged `~/.claude/settings.json`, owned MCP in `~/.claude.json` | OAuth fields, plugins, hooks, statusline, `settings.local.json` | token/base URL defaults from env; CodeGraph stdio enabled; T9K workarounds → `docs/CLAUDE_SETUP_T9K.md` |
+| **Claude Code** | merged `~/.claude/settings.json`, owned MCP in `~/.claude.json` | OAuth fields, plugins, hooks, statusline, `settings.local.json` | Magpie gateway at `127.0.0.1:3425`, model `group/conductor`; CodeGraph stdio enabled; T9K workarounds → `docs/CLAUDE_SETUP_T9K.md` |
 | **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
 | **kimi-code** | merged `~/.kimi-code/config.toml`, `tui.toml`, owned `mcp.json` entry | `credentials/`, `oauth/`, sessions | key default from `KIMI_API_KEY`; `kimi login` per host; CodeGraph stdio enabled |
-| **pi** | `~/.pi/agent/settings.json`, `models-store.json` (MiniMax M2.7/M3 catalog) | `auth.json` (MiniMax key), `sessions/`, `trust.json` | minimal terminal harness; `pi auth login` per host |
+| **pi** | `~/.pi/agent/settings.json`; `models.json` is Magpie-owned | `auth.json` (MiniMax key), `sessions/`, `trust.json` | Magpie provider, model `group/workhorse`; Magpie generates `models.json`; `pi auth login` per host |
 | **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; CodeGraph MCP, no dotfiles-managed proxy providers; remote profile ignores update events |
 | **MiniMax Code** | merged `~/.minimax/AGENTS.md` | runtime state under `~/.minimax`; vendor installer releases under `~/.minimax-code` and install logs | frozen Bun project exposing `mcode`; instructions deployed, skill discovery not declared |
 | **Qoder** | merged `~/.qoder/AGENTS.md` | login/session under `~/.qoder` | native release pin with manifest SHA-256 verification; `qoder` and `qodercli` launchers |
+| **dsh** | frozen Bun project; DSH profile under `~/.dsh` | profile state, credentials, sessions | `@deepseek-ai/dsh` 0.2.2-rc.1; Magpie route in `group/workhorse`; the official `llm-deepseek` row stays intact |
+| **dsh-tui** | frozen Bun project; `dsh-tui` and `dst` launchers | `~/.dsh-tui/settings.json` stays device-owned | `@deepseek-harness-tui/dsh-tui` 0.20.1; reads the DSH profile; `pnpm` is a managed common tool |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu-login"`, `shell_mode = "non_login"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
 All seven clients install by default through a per-agent provider chain. macOS
@@ -311,6 +317,29 @@ CodeGraph discovery, and the checks for indexed and unindexed projects.
 client through the shared skill library, and the Claude Code, Codex, opencode
 and pi plugins report which worktree an agent is using. Native Windows keeps
 the name for Windows Terminal and deploys neither the command nor the plugins.
+
+### Model gateway
+
+Magpie is the model gateway this deployment runs on `127.0.0.1:3425`. The
+repository owns the intent in `deployment/magpie/`: the model providers, the
+model ids, the routing groups, and the agent wiring. Magpie owns the
+credentials, the accounts, the usage store, and the generated agent files.
+
+```bash
+bash bootstrap.sh --plan | grep magpie    # what the run would do
+dotfiles-magpie status                    # gateway, providers, groups, wiring
+dotfiles-magpie providers                 # the catalog and its credential sources
+```
+
+The step runs on macOS by default and is turned off with `--no-magpie` or
+`DOTFILES_MAGPIE=false`. The Homebrew cask owns the app; the deployment adopts
+it and never installs it. Claude Code runs on `group/conductor`, Pi and `dsh`
+on `group/workhorse`, and Codex stays on its own ChatGPT Pro configuration,
+which the deployment never writes. Provider credentials are read from the
+stores that already hold them; the Kimi Code China plan key lives in
+`~/.config/dotfiles/magpie.env` as `KIMI_CODE_CN_API_KEY` (mode 0600). See
+[Magpie](docs/MAGPIE.md) and
+[ADR 0014](docs/adr/0014-magpie-owns-the-model-gateway.md).
 
 ### Caveman skills
 

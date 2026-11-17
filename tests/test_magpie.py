@@ -276,9 +276,11 @@ class MagpieApplyTests(unittest.TestCase):
         (self.home / ".pi/agent/auth.json").write_text(
             json.dumps({"minimax-cn": {"key": "sk-fixture-minimax"}}), encoding="utf-8")
 
-    def apply(self, *, credentials=True, environment=None):
+    def apply(self, *, credentials=True, environment=None, setup=None):
         """Run the apply engine against the fake gateway."""
         self.seed_home(credentials)
+        if setup:
+            setup()
         script = self.root / "apply.sh"
         script.write_text(
             "export HOME=" + repr(str(self.home)) + "\n"
@@ -325,6 +327,96 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual([command for command in commands if command == "dsh group/workhorse"],
                          ["dsh group/workhorse"])
         self.assertTrue(self.state_file().is_file())
+
+    def test_the_apply_runs_its_commands_in_the_declared_order(self):
+        self.assertEqual(self.apply().returncode, 0)
+        commands = self.commands()
+        order = ["settings set proxy", "provider add codex", "provider add opencode-go",
+                 "provider add kimi-code-cn", "provider add minimax-cn",
+                 "group add chatgpt", "group add conductor", "group add workhorse",
+                 "pi group/workhorse", "dsh group/workhorse"]
+        positions = []
+        for command in order:
+            matches = [index for index, recorded in enumerate(commands) if recorded.startswith(command)]
+            self.assertEqual(len(matches), 1, command)
+            positions.append(matches[0])
+        self.assertEqual(positions, sorted(positions))
+
+    def write_catalog(self, name, text):
+        (self.catalog / name).write_text(text, encoding="utf-8")
+
+    def read_catalog(self, name):
+        return (self.catalog / name).read_text(encoding="utf-8")
+
+    def test_a_missing_optional_provider_warns_and_the_apply_continues(self):
+        text = self.read_catalog("providers.tsv").replace(
+            "minimax-cn|minimax-cn|json:~/.pi/agent/auth.json:minimax-cn.key|yes",
+            "minimax-cn|minimax-cn|json:~/.pi/agent/auth.json:minimax-cn.key|no")
+        self.write_catalog("providers.tsv", text)
+
+        def drop_minimax():
+            # Only the optional provider loses its credential.
+            (self.home / ".pi/agent/auth.json").unlink()
+
+        result = self.apply(setup=drop_minimax)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the provider minimax-cn has no credential", result.stdout)
+
+    def test_a_required_model_without_a_live_match_fails_with_the_model_list(self):
+        self.seed_home()
+        text = self.read_catalog("models.tsv").replace(
+            "conductor.kimi|kimi-code-cn/k3.1-pro|yes", "conductor.kimi|kimi-code-cn/k3.9-absent|yes")
+        self.write_catalog("models.tsv", text)
+        result = self.apply()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the model role conductor.kimi has no model the gateway serves", result.stderr)
+        self.assertIn("kimi-code-cn/k3.1-pro", result.stderr)
+
+    def test_an_optional_candidate_is_reported_and_skipped(self):
+        self.seed_home()
+        text = self.read_catalog("models.tsv").replace(
+            "conductor.kimi|kimi-code-cn/k3.1-pro|yes", "conductor.kimi|kimi-code-cn/k3.1-pro,kimi-code-cn/k3.9-absent?|yes")
+        self.write_catalog("models.tsv", text)
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the optional model kimi-code-cn/k3.9-absent is not served; skipped", result.stdout)
+
+    def test_an_apply_on_another_platform_reports_the_skip(self):
+        self.seed_home()
+        script = self.root / "apply.sh"
+        script.write_text(
+            "export HOME=" + repr(str(self.home)) + "\n"
+            "source " + repr(str(ENGINE)) + "\n"
+            "magpie_apply\n",
+            encoding="utf-8")
+        environment = {
+            "HOME": str(self.home),
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "MAGPIE_BIN": str(self.fake),
+            "MAGPIE_CATALOG_DIR": str(self.catalog),
+            "DEPLOY_PLATFORM": "linux",
+        }
+        result = subprocess.run(["/bin/bash", str(script)], env=environment,
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Magpie is not available on this platform; skipped", result.stdout)
+        self.assertEqual(self.commands(), [])
+
+    def test_the_backups_are_private_and_only_ten_are_kept(self):
+        self.seed_home()
+        backups = self.home / ".local/state/dotfiles/magpie/backups"
+        for index in range(10):
+            stale = backups / ("20200101T0000%02dZ" % index)
+            stale.mkdir(parents=True)
+            (stale / "settings.json").write_text("{}", encoding="utf-8")
+            (stale / "settings.json").chmod(0o600)
+        self.assertEqual(self.apply().returncode, 0)
+        kept = sorted(path.name for path in backups.iterdir())
+        self.assertEqual(len(kept), 10)
+        self.assertNotIn("20200101T000000Z", kept)
+        for path in backups.rglob("*"):
+            if path.is_file():
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600, path)
 
     def test_the_apply_never_writes_codex_claude_or_accounts(self):
         self.apply()

@@ -45,11 +45,23 @@ Separate credential, trust, session, plugin, and cache files stay client-owned.
 A target whose merged content is unchanged keeps its file and its modification
 time, so services that read those files are not restarted for nothing.
 
-Claude keeps the declared `opus` default through client installation. The pinned
-client can change plain `opus` to `opus[1m]` while initializing plugins; the final
-merge restores plain `opus` only when it was selected immediately before that
-installation. Explicit `opus[1m]` and custom models survive. Claude's own runtime
-metadata migrations remain client-owned.
+Claude Code and pi point at the Magpie model gateway. The merged Claude
+settings carry `ANTHROPIC_BASE_URL` `http://127.0.0.1:3425`, the token
+`magpie`, and the model `group/conductor`; no model-selecting variable is
+declared, because the gateway picks the model from the group. The merged pi
+settings select the provider `magpie` and the model `group/workhorse`. Pi's
+`~/.pi/agent/models.json` is Magpie-owned: the repository never templates it,
+and the gateway generates the provider block and the group model entry. The
+official OpenCode, Kimi Code, MiniMax Code, and Codex configurations are left
+byte for byte alone. See [Magpie](MAGPIE.md) for the ownership split and
+[ADR 0014](adr/0014-magpie-owns-the-model-gateway.md).
+
+Claude keeps a declared plain `opus` default through client installation. The
+pinned client can change plain `opus` to `opus[1m]` while initializing plugins;
+the final merge restores plain `opus` only when it was selected immediately
+before that installation. Explicit `opus[1m]` and custom models survive. The
+Magpie wiring declares `group/conductor` instead, so that restoration does not
+apply to it. Claude's own runtime metadata migrations remain client-owned.
 
 Caveman gateway configuration and lifecycle are device-owned. Bootstrap leaves
 existing configuration, run state, and old merge baselines untouched and creates

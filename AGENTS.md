@@ -67,6 +67,10 @@ incident (rotate it; history rewrite is not a substitute).
   placeholders first (`ANTHROPIC_AUTH_TOKEN`, `CONTEXT7_TOKEN`, `sk-…`,
   `glmfix_…`, oauth `key =` fields).
 - Codex providers take `env_key` names, not values — keep it that way.
+- The Magpie credential store `~/.config/dotfiles/magpie.env` is device-owned,
+  mode 0600, and never committed. The deployment parses it; no shell profile
+  sources it, and a credential never enters a log, a report, or a ticket
+  comment.
 
 ## Validating a change (simulated host)
 
@@ -292,6 +296,16 @@ explains every changed pair.
   bytes through `deployment/skill-layouts.tsv`; initialization remains explicit.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,
   ownership, or preservation. Index creation stays an explicit project action.
+- **The Magpie model gateway owns the credentials and the generated agent
+  files**: the deployment owns the four catalogs under `deployment/magpie/`,
+  Claude Code's hand-written settings, Pi's default provider and model, the
+  bootstrap switch, and the Codex hash guard. Magpie owns the provider keys,
+  the accounts, the usage store, Pi's generated `~/.pi/agent/models.json`, and
+  DSH's Magpie route; none of them is ever committed. Codex's
+  `~/.codex/config.toml` and `~/.codex/auth.json` belong to neither side: no
+  code path calls `magpie codex`, and every apply hashes the Codex
+  configuration before and after its changes. Read `docs/MAGPIE.md` before
+  changing the catalogs, the switch, the apply, or the credential sources.
 - **Caveman uses standalone skills**: bootstrap leaves gateway configuration,
   runtime state, and old merge baselines device-owned. Existing integrations
   retire through the focused migration in `docs/CAVEMAN.md`; read it before

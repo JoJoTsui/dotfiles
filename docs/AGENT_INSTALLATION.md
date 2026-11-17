@@ -1,13 +1,23 @@
 # Coding agent installation
 
-Ordinary bootstrap installs Kimi Code, pi, OpenCode, Claude Code, Codex, and
-MiniMax Code through frozen Bun projects, plus Qoder from a pinned native
-release manifest. `--agents all`, `--agents none`, or a comma-separated list
-selects which client executables to install. Names are `kimi`, `pi`,
-`opencode`, `claude`, `codex`, `minimax`, and `qoder`; `kimi-code`,
-`claude-code`, and `minimax-code` are accepted aliases. Repeated names are
+Ordinary bootstrap installs Kimi Code, pi, OpenCode, Claude Code, Codex,
+MiniMax Code, dsh, and dsh-tui through frozen Bun projects, plus Qoder from a
+pinned native release manifest. `--agents all`, `--agents none`, or a
+comma-separated list selects which client executables to install. Names are
+`kimi`, `pi`, `opencode`, `claude`, `codex`, `minimax`, `dsh`, `dsh-tui`, and
+`qoder`; `kimi-code`, `claude-code`, and `minimax-code` are accepted aliases. Repeated names are
 deduplicated in catalog order. Flags override `DOTFILES_AGENTS`.
 Unknown/empty/mixed all-or-none selections fail before writing files.
+
+The two DeepSeek Harness agents are ordinary managed agents. `dsh` is the
+frozen Bun project `@deepseek-ai/dsh` pinned at 0.2.2-rc.1, which needs Node
+24.9.0 or newer and exposes the `dsh` command. `dsh-tui` is the frozen Bun
+project `@deepseek-harness-tui/dsh-tui` pinned at 0.20.1, which needs Node
+22.19 or newer and exposes `dsh-tui` and `dst`. Neither has a Herdr
+integration kind, because Herdr 0.9.5 has no dsh integration, and neither
+trusts a lifecycle script. The TUI bootstraps its own profile on the first
+run, so `pnpm` is a pinned common tool (`pnpm==12.21.0`) and the launcher
+finds it without a Homebrew dependency.
 
 CodeGraph is always selected, including with `--agents none`. Installation
 never indexes a repository. Selection does not gate configuration, shared

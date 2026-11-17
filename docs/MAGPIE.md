@@ -1,0 +1,211 @@
+# Magpie model gateway
+
+Magpie is the model gateway this deployment runs. It listens on
+`127.0.0.1:3425`, serves the OpenAI, Anthropic, and Gemini compatible APIs,
+and routes every request to a **model provider**: a vendor account or API key
+whose models the gateway serves under `provider/model`.
+
+The repository owns the *intent*: which providers exist, which models each
+routing group holds, and which agent uses which group. Magpie owns the
+*credentials and the generated state*: the provider keys, the accounts, the
+usage store, Pi's `models.json`, and DSH's Magpie route. Codex belongs to
+neither side and is never written.
+
+## Ownership
+
+| Owner | Owns | Never owns |
+| --- | --- | --- |
+| The repository | the four catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
+| Magpie | provider keys and accounts, the usage store, Pi's `~/.pi/agent/models.json`, DSH's Magpie route | the intent: which models a group holds |
+| Neither | `~/.codex/config.toml` and `~/.codex/auth.json`, the official OpenCode, Kimi Code, and MiniMax Code configurations | — |
+
+## Install and adopt
+
+The Homebrew cask owns the app and the gateway process. The deployment adopts
+the cask and never installs it:
+
+```bash
+brew install --cask magpie   # the operator's step; the deployment never installs it
+```
+
+The repository owns two managed commands:
+
+- `~/.local/bin/magpie` runs the binary the app ships, so the CLI and the GUI
+  are one install. It prints the cask command when the app is missing.
+- `~/.local/bin/dotfiles-magpie` is the deployment's half of the gateway:
+  `apply`, `status`, and `providers`.
+
+The app owns the gateway and its login item. The deployment never installs
+`magpie daemon`; it verifies `magpie status --json` and, on the real account
+home, opens the app once when nothing answers.
+
+## The switch
+
+The step is on by default on macOS and off on every other platform.
+
+```bash
+bash bootstrap.sh --no-magpie          # turn the step off for one run
+DOTFILES_MAGPIE=false bash bootstrap.sh   # turn the step off for one run
+bash bootstrap.sh --plan | grep magpie    # what the run would do
+```
+
+`--plan` reports `"magpie": true|false` and lists the `magpie-apply` action.
+Every run prints why the step was skipped: the platform has no Magpie, the
+step is disabled, or the mode applies files and installs agents without the
+gateway (`--apply-only`, `--agents-only`).
+
+## The four catalogs
+
+The catalogs live in `deployment/magpie/` and are the only place the model
+intent is written. A vendor rename is a config edit, not a code change.
+
+### `providers.tsv` — `role|magpie provider|key source|required`
+
+| Field | Meaning |
+| --- | --- |
+| role | the repository name of one model provider; a group member and a model candidate's provider prefix refer to it |
+| magpie provider | the Magpie preset that owns the provider's accounts |
+| key source | `codex-account`, `env:NAME`, or `json:PATH:KEY` |
+| required | `yes` when the provider must exist, `no` when its absence is only reported |
+
+### `models.tsv` — `role|candidate ids|required`
+
+The candidates are the model ids the gateway may serve for that role, in
+preference order. A trailing `?` marks a candidate optional: it is reported
+and skipped when the gateway does not serve it. A required role with no live
+model fails the apply with the model list the gateway serves.
+
+### `groups.tsv` — `id|members|routing|stays|listed|purpose`
+
+A member is a model role or `group/<id>` for another group. `drain` spends a
+member's accounts until they are used up, moves to the next member, and never
+returns to an earlier one. `listed=no` keeps a group out of the agent pickers
+while it stays reachable as another group's member.
+
+### `wiring.tsv` — `agent|group|owner|enabled`
+
+`owner` is `repo` when the deployment writes the agent's configuration by
+hand, `magpie` when Magpie generates it, and `inherited` when the agent
+follows another agent. The deployment never wires Codex, and it never lets
+Magpie write Claude Code's settings.
+
+## The apply order
+
+`magpie-apply` runs after `install-agents` and before `prepare-shell`, so the
+app, the agents, and the client settings exist before the gateway is wired.
+
+1. Validate the four catalogs.
+2. Ensure the gateway answers: `magpie status --json`. On the real account
+   home the app is opened and waited for; elsewhere the run reports the
+   command and continues with a named warning.
+3. Resolve the proxy and write it with `magpie settings set proxy` only when
+   it differs.
+4. Ensure the providers in catalog order.
+5. Resolve the model roles against `GET /v1/models`.
+6. Ensure the groups: `magpie group add`, or `magpie group set` when the
+   member order differs.
+7. Wire the Magpie-owned agents: `magpie pi group/workhorse` and
+   `magpie dsh group/workhorse`.
+8. Verify that DSH's official `llm-deepseek` row is unchanged and that the
+   Codex configuration still hashes the same.
+9. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
+
+A run with nothing to change writes no files and keeps every modification
+time.
+
+## Provider credentials
+
+The deployment reads the stores that already hold the credentials, so the same
+key is never pasted twice. The value is used once, to add the provider, and
+never reaches a log, a report, or the repository.
+
+| Source | Store | Notes |
+| --- | --- | --- |
+| `codex-account` | a ChatGPT account Magpie reads | `magpie accounts codex --json`; the apply never runs `accounts add` or `accounts import` |
+| `env:NAME` | `~/.config/dotfiles/magpie.env` | mode 0600, parsed and never sourced by a shell profile |
+| `json:PATH:KEY` | a JSON store on the device | read only, by a dotted key path |
+
+### The Kimi Code China key
+
+The Kimi Code China plan key is created at
+<https://www.kimi.com/code/console> and stored as `KIMI_CODE_CN_API_KEY` in
+`~/.config/dotfiles/magpie.env`:
+
+```bash
+mkdir -p ~/.config/dotfiles
+printf 'KIMI_CODE_CN_API_KEY=<the key>\n' > ~/.config/dotfiles/magpie.env
+chmod 600 ~/.config/dotfiles/magpie.env
+```
+
+Until the key exists, the conductor group is incomplete: the apply still
+builds the `chatgpt` and `workhorse` groups, reports the missing member by
+name, and fails the run because a required credential is missing.
+`dotfiles-magpie status` says so too. The key never enters git and never
+enters a ticket comment.
+
+## Proxy behaviour
+
+The gateway's own traffic to the providers leaves through the device proxy;
+the loopback traffic to the gateway stays direct. The proxy endpoint is the
+template's `proxyUrl`, and `with-proxy --print-url` is the fallback that
+resolves the port the running proxy client owns. The value is written with
+`magpie settings set proxy` only when it differs from the current one.
+
+On a device whose proxy client runs on another port than the template names,
+set `HTTP_PROXY_URL` before the deployment, or set the proxy once by hand:
+
+```bash
+magpie settings set proxy http://127.0.0.1:7897
+```
+
+## Group semantics
+
+`group/conductor` is the Claude Code group: Kimi K3.1 Pro, then DeepSeek V4.1
+Flash, then the ChatGPT group. `group/workhorse` is the Pi and `dsh` group:
+MiniMax M3.1 Flash, then DeepSeek V4.1 Flash. `group/chatgpt` holds the
+ChatGPT plan models and is not listed, so the Pro plan is spent only when
+Kimi and DeepSeek have no quota left.
+
+The members of a group are expanded in order: a model role contributes the
+models its candidates resolve to, and `group/<id>` contributes the models of
+that group. A group with an unresolved member is left alone rather than
+created with a missing member.
+
+## Rollback
+
+Before it changes anything, the apply copies the client files Magpie may
+touch into `~/.local/state/dotfiles/magpie/backups/<UTC>/` at 0600 and keeps
+the newest ten:
+
+- `~/.claude/settings.json`
+- `~/.pi/agent/settings.json`
+- `~/.pi/agent/models.json`
+- `~/.codex/config.toml`
+- every `~/.dsh/profiles/*/cordis.patch.yml`
+
+To roll back, copy a file from a backup over the live one. The Codex
+configuration is never written by the deployment, and every apply hashes it
+before and after the changes; a change aborts the run and keeps the backup.
+`~/.local/state/dotfiles/magpie/state.tsv` records what the last apply did:
+the providers, the groups with their model order, the wiring, the proxy, and
+the Codex guard verdict.
+
+## Other platforms
+
+Magpie is a macOS application today. On Linux, WSL, and native Windows the
+step reports `Magpie is not available on this platform` and completes, the
+engine and the catalogs stay out of the home, and `dotfiles-magpie` refuses
+in one line. The catalogs are shaped so a later pinned native release can be
+added without changing the intent.
+
+## The command
+
+```bash
+dotfiles-magpie apply       # apply the catalogs to the local gateway
+dotfiles-magpie status      # gateway, proxy, providers, groups, wiring, guard
+dotfiles-magpie providers   # the provider catalog and its credential sources
+```
+
+`status` is read-only and exits non-zero when a required piece is missing.
+`providers` prints the catalog with the state of each credential source and
+never a value.
