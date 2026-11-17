@@ -78,9 +78,10 @@ installer still owns the installed version, and the observed version is
 recorded separately.
 _Avoid_: Minimum pin, exact pin
 
-**Agent provider**:
-An installer that supplies one coding agent's command on a platform.
-_Avoid_: Agent manager, package
+**Installation provider**:
+An installer that supplies one coding agent's command on a platform. Older
+text calls it an agent provider; the two mean the same thing.
+_Avoid_: Provider, model provider, agent manager, package
 
 **Agent provider chain**:
 The ordered agent providers a platform tries for one agent, such as Homebrew
@@ -228,3 +229,35 @@ _Avoid_: Pane shell, login shell
 The managed shell a launcher keeps for script arguments and agent entry points:
 Bash on Linux and WSL, Zsh on macOS.
 _Avoid_: Agent tool shell, Pane shell, Login shell
+
+**Model provider**:
+A vendor account or API key whose models the model gateway serves under
+`provider/model`. A subscription read from an agent's own sign-in is one.
+_Avoid_: Provider, agent provider, installation provider
+
+**Model gateway**:
+The local process that serves OpenAI, Anthropic and Gemini compatible requests
+on `127.0.0.1:3425` and routes each one to a model provider. Magpie is the
+gateway on this deployment.
+_Avoid_: Proxy, relay, router
+
+**Routing group**:
+Several models an agent picks as one under `group/<id>`, with an ordered
+membership and one routing mode.
+_Avoid_: Model pool, fallback list
+
+**Drain**:
+The routing mode that spends one member's accounts or keys until they are used
+up, moves to the next member, and never returns to an earlier one in that
+period. It is Magpie's "Until used up".
+_Avoid_: Failover, order
+
+**Agent wiring**:
+Pointing a coding agent's configuration at the model gateway and one routing
+group. It is distinct from installing the agent.
+_Avoid_: Agent setup, agent install
+
+**Model catalog**:
+The repository-owned list of model providers, model ids and routing groups the
+deployment applies to the gateway. It never carries a credential.
+_Avoid_: Provider catalog, agent catalog
