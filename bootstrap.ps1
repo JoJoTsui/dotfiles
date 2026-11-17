@@ -220,10 +220,8 @@ function Get-Selection {
 function Get-Agents {
     $selection = Get-Input 'DOTFILES_AGENTS' 'all'
     if ($script:EntryParameters.ContainsKey('Agents')) { $selection = $Agents }
-    $catalog = @()
-    foreach ($row in (Get-AgentCatalog)) {
-        if ($row.selection -eq 'selectable') { $catalog += [string]$row.agent }
-    }
+    $catalog = @(Get-AgentCatalog | Where-Object { $_.selection -eq 'selectable' } |
+        ForEach-Object { [string]$_.agent } | Select-Object -Unique)
     if ($selection -eq 'all') { return $catalog }
     if ($selection -eq 'none') { return @() }
     if (-not $selection -or $selection -match '(^,|,$|,,)') { Stop-Deployment 'invalid agent selection' }

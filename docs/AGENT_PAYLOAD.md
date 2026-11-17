@@ -24,8 +24,9 @@ block; the core stays portable.
 Bootstrap validates source and destination paths, including nested symlinks,
 before writing. Raw payloads live under ignored `deployment/`, so a helper named
 `run_*` or a resource ending `.tmpl` retains its name and contents. Copying does
-not execute helpers. The native Windows boundary must consume the same catalog;
-its implementation and native checks are tracked separately.
+not execute helpers. The native Windows boundary consumes the same catalog,
+selection, managed inventory, and agent state;
+its native checks run on the Windows runner.
 
 Skill bytes are not vendored. `deployment/skills.tsv` is the owned catalog and
 names each upstream source, its kind, and its path:

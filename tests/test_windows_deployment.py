@@ -506,6 +506,71 @@ Install-Qoder $env:DOTFILES_TEST_QODER_VERSION 'https://example.invalid'
         self.assertFalse(Path(environment['DOTFILES_TEST_QODER_LOG']).exists())
         self.assertEqual(list(Path(environment['TEMP']).iterdir()), [])
 
+    def test_skill_selection_inventory_and_prune_match_the_unix_boundary(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual source apply needs Chezmoi')
+        library = self.root / 'selected library'
+        shutil.copytree(SOURCE / 'tests/fixtures/skill-library', library)
+        design = library / 'baoyu-diagram'
+        design.mkdir()
+        (design / 'SKILL.md').write_text('---\nname: baoyu-diagram\ndescription: mock design skill\n---\n')
+        for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
+            device = self.home / root / 'device-only'
+            device.mkdir(parents=True)
+            (device / 'SKILL.md').write_text('---\nname: device-only\ndescription: device skill\n---\n')
+        collision = self.home / '.claude/skills/humanizer'
+        collision.mkdir(parents=True)
+        (collision / 'SKILL.md').write_text('device humanizer stays\n')
+        selected = self.deploy('-ApplyOnly', env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_SKILLS_DIR=str(library), DOTFILES_SKILLS='design'))
+        self.assertEqual(selected.returncode, 0, selected.stderr)
+        for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
+            self.assertTrue((self.home / root / 'baoyu-diagram/SKILL.md').is_file(), root)
+            self.assertTrue((self.home / root / 'device-only/SKILL.md').is_file(), root)
+        inventory = (self.home / '.local/state/dotfiles/managed-skills.tsv').read_text()
+        self.assertIn('baoyu-diagram|.agents/skills', inventory)
+        self.assertIn('baoyu-diagram|.claude/skills', inventory)
+        self.assertIn('baoyu-diagram|.minimax/skills', inventory)
+        self.assertEqual((self.home / '.claude/skills/humanizer/SKILL.md').read_text(),
+                         'device humanizer stays\n')
+        self.assertNotIn('humanizer|.claude/skills', inventory)
+        deselected = self.deploy('-ApplyOnly', env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_SKILLS_DIR=str(library)))
+        self.assertEqual(deselected.returncode, 0, deselected.stderr)
+        for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
+            self.assertFalse((self.home / root / 'baoyu-diagram').exists(), root)
+            self.assertTrue((self.home / root / 'device-only/SKILL.md').is_file(), root)
+        self.assertNotIn('baoyu-diagram|.claude/skills',
+                         (self.home / '.local/state/dotfiles/managed-skills.tsv').read_text())
+        self.assertEqual((self.home / '.claude/skills/humanizer/SKILL.md').read_text(),
+                         'device humanizer stays\n')
+
+    def test_generated_skill_is_copied_to_every_managed_root(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual source apply needs Chezmoi')
+        generated = self.home / '.agents/skills/herdr'
+        generated.mkdir(parents=True)
+        (generated / 'SKILL.md').write_text('---\nname: herdr\ndescription: generated skill\n---\n')
+        state = self.home / '.local/state/dotfiles/generated-skills.tsv'
+        state.parent.mkdir(parents=True)
+        state.write_text('# name|root|generator\nherdr|.agents/skills|herdr --skill\n')
+        result = self.deploy('-ApplyOnly', env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_SKILLS_DIR=str(SOURCE / 'tests/fixtures/skill-library')))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for root in ('.claude/skills', '.minimax/skills'):
+            self.assertEqual((self.home / root / 'herdr/SKILL.md').read_bytes(),
+                             (generated / 'SKILL.md').read_bytes(), root)
+        rows = state.read_text()
+        self.assertIn('herdr|.claude/skills|herdr --skill', rows)
+        self.assertIn('herdr|.minimax/skills|herdr --skill', rows)
+        repeated = self.deploy('-ApplyOnly', env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_SKILLS_DIR=str(SOURCE / 'tests/fixtures/skill-library')))
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        self.assertEqual((self.home / '.claude/skills/herdr/SKILL.md').read_bytes(),
+                         (generated / 'SKILL.md').read_bytes())
+
     def test_agent_launchers_use_validated_external_node_and_preserve_native_entries(self):
         node = os.environ.get('DOTFILES_TEST_NODE') or shutil.which('node')
         if not node:
@@ -632,6 +697,9 @@ Install-Agents
                 self.assertEqual(json.loads(probe.stdout), arguments)
             self.assertEqual(log.read_bytes(), before_native)
         self.assertEqual(len(log.read_text().splitlines()), 4)
+        state = (self.home / '.local/state/dotfiles/agents.lock.tsv').read_text()
+        self.assertIn('codex|bun|4.5.6|4.5.6', state)
+        self.assertIn('codegraph|bun|1.2.3|1.2.3', state)
 
     def test_retirement_preserves_device_content_and_rejects_malformed_markers(self):
         script = self.root / 'retire.ps1'

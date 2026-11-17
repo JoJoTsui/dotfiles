@@ -152,6 +152,197 @@ function Copy-RegularTree([string]$From, [string]$To) {
         [IO.File]::Copy($From, $To, $true)
     }
 }
+function Test-SkillLink([string]$Path) {
+    if (-not [IO.File]::Exists($Path) -and -not [IO.Directory]::Exists($Path)) { return $false }
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) { return $false }
+    if ($item.LinkType) { return $true }
+    return (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
+}
+function Test-SkillPath([string]$Path) {
+    return ([IO.File]::Exists($Path) -or [IO.Directory]::Exists($Path) -or (Test-SkillLink $Path))
+}
+function Get-DotfilesStateRoot {
+    $stateRoot = $null
+    if ($roots -is [hashtable]) { if ($roots.ContainsKey('state')) { $stateRoot = $roots['state'] } }
+    elseif ($roots.PSObject.Properties.Name -contains 'state') { $stateRoot = $roots.state }
+    if (-not $stateRoot) { $stateRoot = $env:XDG_STATE_HOME }
+    if (-not $stateRoot) { $stateRoot = Join-Path $TargetHome '.local/state' }
+    return $stateRoot
+}
+function Get-SkillSelections {
+    $map = @{}
+    foreach ($row in (Read-Catalog 'deployment/skills.tsv')) {
+        $name = [string]$row.columns[0]
+        if (-not $name -or $name.StartsWith('#')) { continue }
+        $selection = [string]$row.columns[5]; if (-not $selection) { $selection = 'auto' }
+        $map[$name] = $selection
+    }
+    return $map
+}
+function Test-SkillSelected([string]$Name, $Selections) {
+    if (-not $Selections.ContainsKey($Name)) { return $false }
+    if ($Selections[$Name] -eq 'auto') { return $true }
+    $requested = ",$env:DOTFILES_SKILLS,"
+    return ($requested -like "*,$($Selections[$Name]),*" -or $requested -like "*,$Name,*")
+}
+function Get-SkillRoots {
+    $owned = @()
+    foreach ($row in (Read-Catalog 'deployment/agent-payload/targets.tsv')) {
+        if ($row.columns[0] -eq 'tree' -and $row.columns[1] -eq 'skills') { $owned += [string]$row.columns[2] }
+    }
+    return $owned
+}
+function Get-ManagedSkillRows {
+    $state = Join-Path (Get-DotfilesStateRoot) 'dotfiles/managed-skills.tsv'
+    $rows = @()
+    if (-not [IO.File]::Exists($state)) { return $rows }
+    foreach ($line in [IO.File]::ReadAllLines($state)) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $fields = $line.Split('|')
+        if ($fields.Count -ge 2) { $rows += ($fields[0] + '|' + $fields[1]) }
+    }
+    return $rows
+}
+function Get-GeneratedSkillRows {
+    $state = Join-Path (Get-DotfilesStateRoot) 'dotfiles/generated-skills.tsv'
+    $rows = @()
+    if (-not [IO.File]::Exists($state)) { return $rows }
+    foreach ($line in [IO.File]::ReadAllLines($state)) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $rows += $line
+    }
+    return $rows
+}
+function Test-GeneratedSkill([string]$Name, [string]$Root) {
+    foreach ($line in (Get-GeneratedSkillRows)) {
+        $fields = $line.Split('|')
+        if ($fields.Count -ge 2 -and $fields[0] -eq $Name -and $fields[1] -eq $Root) { return $true }
+    }
+    return $false
+}
+function Test-SkillTreeIdentical([string]$From, [string]$To) {
+    if (-not [IO.Directory]::Exists($To)) { return $false }
+    $fromFiles = @(Get-ChildItem -LiteralPath $From -Recurse -File -Force |
+        ForEach-Object { $_.FullName.Substring($From.Length).TrimStart([char[]]@('\', '/')) } | Sort-Object)
+    $toFiles = @(Get-ChildItem -LiteralPath $To -Recurse -File -Force |
+        ForEach-Object { $_.FullName.Substring($To.Length).TrimStart([char[]]@('\', '/')) } | Sort-Object)
+    if (Compare-Object $fromFiles $toFiles) { return $false }
+    foreach ($relative in $fromFiles) {
+        $left = Join-Path $From $relative; $right = Join-Path $To $relative
+        if ((Get-FileHash -LiteralPath $left -Algorithm SHA256).Hash -ne (Get-FileHash -LiteralPath $right -Algorithm SHA256).Hash) { return $false }
+    }
+    return $true
+}
+function Copy-ManagedSkill([string]$From, [string]$To, [string]$Name, [string]$Root) {
+    if (Test-SkillLink $To) {
+        [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device symlink has that name")
+        return
+    }
+    if (Test-SkillPath $To) {
+        if (-not [IO.Directory]::Exists($To)) {
+            [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device file has that name")
+            return
+        }
+        if ($script:PreviousManaged -contains ($Name + '|' + $Root)) {
+            Remove-Item -LiteralPath $To -Recurse -Force
+        } elseif (Test-SkillTreeIdentical $From $To) {
+            $script:SkillWritten += ($Name + '|' + $Root)
+            return
+        } else {
+            [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device directory has that name and its bytes differ")
+            return
+        }
+    }
+    Copy-RegularTree $From $To
+    $script:SkillWritten += ($Name + '|' + $Root)
+}
+function Copy-GeneratedSkill([string]$From, [string]$To, [string]$Name, [string]$Root) {
+    if (Test-SkillLink $To) {
+        [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device symlink has that name")
+        return
+    }
+    if (Test-SkillPath $To) {
+        if (-not [IO.Directory]::Exists($To)) {
+            [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device file has that name")
+            return
+        }
+        if (Test-SkillTreeIdentical $From $To) { return }
+        if (-not (Test-GeneratedSkill $Name $Root)) {
+            [Console]::Error.WriteLine("dotfiles: preserved skill $Name in $Root; a device directory has that name")
+            return
+        }
+        Remove-Item -LiteralPath $To -Recurse -Force
+    }
+    Copy-RegularTree $From $To
+}
+function Copy-GeneratedSkills {
+    $rows = @(Get-GeneratedSkillRows)
+    $wanted = @()
+    foreach ($line in $rows) {
+        $fields = $line.Split('|'); if ($fields.Count -lt 2) { continue }
+        $name = $fields[0]; $root = $fields[1]
+        $generatedSource = Join-Path $TargetHome ".agents/skills/$name"
+        if (-not [IO.Directory]::Exists($generatedSource)) { continue }
+        foreach ($targetRoot in (Get-SkillRoots)) {
+            if ($targetRoot -eq $root) { continue }
+            Copy-GeneratedSkill $generatedSource (Join-Path $TargetHome "$targetRoot/$name") $name $targetRoot
+            $generator = if ($fields.Count -ge 3) { $fields[2] } else { 'generated' }
+            $wanted += ($name + '|' + $targetRoot + '|' + $generator)
+        }
+    }
+    if ($wanted.Count) {
+        $all = @($rows + $wanted | Sort-Object -Unique)
+        Write-Utf8 (Join-Path (Get-DotfilesStateRoot) 'dotfiles/generated-skills.tsv') ("# name|root|generator`n" + ($all -join "`n") + "`n")
+    }
+}
+function Complete-SkillInventory {
+    $owned = @(Get-SkillRoots)
+    $selections = Get-SkillSelections
+    $kept = @()
+    foreach ($row in $script:PreviousManaged) {
+        $fields = $row.Split('|'); if ($fields.Count -lt 2) { continue }
+        $name = $fields[0]; $root = $fields[1]
+        if ($owned -notcontains $root) {
+            [Console]::Error.WriteLine("dotfiles: preserved skill $name in $root; the deployment does not own that root")
+            $kept += $row; continue
+        }
+        if ($selections.ContainsKey($name) -and (Test-SkillSelected $name $selections)) { $kept += $row; continue }
+        $path = Join-Path $TargetHome "$root/$name"
+        if (-not (Test-SkillPath $path)) { continue }
+        if (Test-GeneratedSkill $name $root) {
+            [Console]::Error.WriteLine("dotfiles: preserved generated skill $name in $root")
+            $kept += $row; continue
+        }
+        if (Test-SkillLink $path) {
+            [Console]::Error.WriteLine("dotfiles: preserved managed skill $name in $root; refused to follow a symlink")
+            $kept += $row; continue
+        }
+        if (-not [IO.Directory]::Exists($path)) {
+            [Console]::Error.WriteLine("dotfiles: preserved managed skill $name in $root; it is not a managed directory")
+            $kept += $row; continue
+        }
+        Remove-Item -LiteralPath $path -Recurse -Force
+        [Console]::Error.WriteLine("dotfiles: pruned managed skill $name from $root")
+    }
+    $all = @($script:SkillWritten + $kept | Sort-Object -Unique)
+    Write-Utf8 (Join-Path (Get-DotfilesStateRoot) 'dotfiles/managed-skills.tsv') ("# name|root`n" + ($all -join "`n") + "`n")
+    foreach ($root in $owned) {
+        $directory = Join-Path $TargetHome $root
+        if (-not [IO.Directory]::Exists($directory)) { continue }
+        foreach ($entry in (Get-ChildItem -LiteralPath $directory -Force)) {
+            $name = $entry.Name
+            if ($all -contains ($name + '|' + $root)) { continue }
+            if (Test-GeneratedSkill $name $root) { continue }
+            if ($selections.ContainsKey($name) -and (Test-SkillSelected $name $selections)) { continue }
+            if ($selections.ContainsKey($name)) {
+                [Console]::Error.WriteLine("dotfiles: preserved skill $name in $root; the selection does not include it")
+            } else {
+                [Console]::Error.WriteLine("dotfiles: preserved device skill $name in $root")
+            }
+        }
+    }
+}
 function Copy-InstructionBlock([string]$From, [string]$To) {
     $existing = ''; if ([IO.File]::Exists($To)) { $existing = [IO.File]::ReadAllText($To) }
     $start = '<!-- DOTFILES_AGENT_START -->'; $end = '<!-- DOTFILES_AGENT_END -->'
@@ -353,6 +544,9 @@ function Copy-AgentPayload {
         $disabled = @(Read-Catalog 'deployment/disabled-skills.tsv' | ForEach-Object { $_.columns[0] })
     }
     $backup = $null
+    $selections = Get-SkillSelections
+    $script:SkillWritten = @()
+    $script:PreviousManaged = @(Get-ManagedSkillRows)
     foreach ($row in (Read-Catalog 'deployment/agent-payload/discovery-roots.tsv')) {
         $root = [string]$row.columns[0]; Assert-Relative $root
         foreach ($name in $disabled) {
@@ -377,12 +571,15 @@ function Copy-AgentPayload {
             [IO.Directory]::CreateDirectory($to) | Out-Null
             foreach ($entry in (Get-ChildItem -LiteralPath $from -Force)) {
                 if ($disabled -contains $entry.Name) { continue }
-                Copy-RegularTree $entry.FullName (Join-Path $to $entry.Name)
+                if (-not (Test-SkillSelected $entry.Name $selections)) { continue }
+                Copy-ManagedSkill $entry.FullName (Join-Path $to $entry.Name) $entry.Name $row.columns[2]
             }
         }
         elseif ($row.columns[0] -in @('file', 'tree')) { Copy-RegularTree $from $to }
         else { Stop-Deployment 'unknown agent payload kind' }
     }
+    Copy-GeneratedSkills
+    Complete-SkillInventory
 }
 function Merge-ClientSettings {
     $script:Step = 'apply-source.client-settings'
@@ -719,6 +916,7 @@ function Install-Agents {
     if ((Invoke-Tool $bun @('--version') -Quiet).Trim() -ne (Get-Pin 'bun')) { Stop-Deployment 'Bun must match the common runtime pin' }
     if ((Invoke-Tool $node @('--version') -Quiet).Trim() -ne ('v' + (Get-Pin 'nodejs'))) { Stop-Deployment 'Node must match the common runtime pin' }
     $env:PATH = [IO.Path]::GetDirectoryName($node) + ';' + [IO.Path]::GetDirectoryName($bun) + ';' + $env:PATH
+    $stateRows = @()
     foreach ($row in (Get-AgentCatalog)) {
         if (-not (Test-AgentPlatform $row.platforms)) { continue }
         $name = $row.agent
@@ -783,7 +981,14 @@ function Install-Agents {
         } else {
             Stop-Deployment "unsupported agent provider '$($row.provider)' for $name"
         }
+        $stateRows += ($name + '|' + $row.provider + '|' + $row.version + '|' + $row.version)
     }
+    $statePath = Join-Path (Get-DotfilesStateRoot) 'dotfiles/agents.lock.tsv'
+    $stateText = (($stateRows | Sort-Object -Unique) -join "`n")
+    if ($stateText) { $stateText += "`n" }
+    $temporary = $statePath + '.tmp-' + [Guid]::NewGuid().ToString('N')
+    Write-Utf8 $temporary $stateText
+    Move-Item -LiteralPath $temporary -Destination $statePath -Force
 }
 function Prepare-Shell {
     $script:Step = 'prepare-shell'
