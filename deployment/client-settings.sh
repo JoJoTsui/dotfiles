@@ -1,5 +1,23 @@
 # Merge client defaults after source application. No agent/runtime dependency:
 # the already-required Chezmoi performs format-aware parsing and serialization.
+
+# The client settings policies the gateway migration owns: Claude Code's
+# settings and Pi's settings. The Magpie step merges these two files alone,
+# so the gateway step never rewrites another client's configuration.
+CLIENT_SETTINGS_MAGPIE_POLICIES='claude-settings pi-settings'
+
+# Whether a policy is part of a merge. An empty list selects every policy in
+# the catalog; a named list selects only those, so a step can merge the files
+# it owns.
+client_settings_policy_selected() {
+    local policy=$1 policies=$2
+    [ -n "$policies" ] || return 0
+    case " $policies " in
+        *" $policy "*) return 0 ;;
+    esac
+    return 1
+}
+
 client_claude_uses_plain_opus() {
     local result
     # Source application already validated and normalized this target. Read it
@@ -28,17 +46,25 @@ validate_client_settings() {
 }
 
 deploy_client_settings() {
-    local format source target policy stage key trace_policy keep_plain_opus=${1:-0}
+    local format source target policy stage key trace_policy keep_plain_opus=${1:-0} magpie_wiring=${2:-0} policies=${3:-}
     case "$keep_plain_opus" in 0|1) ;; *) fail 'invalid internal Claude model preservation request' ;; esac
-    # Only the selected client installer can request this. Ordinary merges do
-    # not inherit a restoration request from the caller's environment.
+    case "$magpie_wiring" in 0|1) ;; *) fail 'invalid internal Magpie client wiring request' ;; esac
+    # Only the selected client installer can request the model restoration,
+    # and only the magpie step can request the gateway wiring. Ordinary merges
+    # do not inherit either request from the caller's environment.
     export DOTFILES_SETTINGS_KEEP_PLAIN_OPUS="$keep_plain_opus"
+    if [ "$magpie_wiring" = 1 ]; then
+        export DOTFILES_SETTINGS_MAGPIE=true
+    else
+        export DOTFILES_SETTINGS_MAGPIE=false
+    fi
     validate_client_settings
     stage=$(mktemp -d "$TMPDIR/client-settings.XXXXXX")
     # Render the entire batch before changing a client's files. Invalid existing
     # JSONC/TOML propagates a named failure while all client settings stay intact.
     while IFS=$'|\r' read -r format source target policy; do
         case "$format" in ''|\#*) continue ;; esac
+        client_settings_policy_selected "$policy" "$policies" || continue
         # One policy may own several targets; the staged file key follows the
         # target so a shared policy cannot overwrite an earlier render.
         key=$(printf '%s' "$target" | tr '/.' '__')
@@ -69,6 +95,7 @@ deploy_client_settings() {
     done < "$DEPLOY_SOURCE/deployment/client-settings/targets.tsv"
     while IFS=$'|\r' read -r format source target policy; do
         case "$format" in ''|\#*) continue ;; esac
+        client_settings_policy_selected "$policy" "$policies" || continue
         key=$(printf '%s' "$target" | tr '/.' '__')
         mkdir -p "$(dirname "$HOME/$target")" "$XDG_STATE_HOME/dotfiles/client-settings"
         chmod 600 "$stage/$key.config" "$stage/$key.baseline"
@@ -80,5 +107,52 @@ deploy_client_settings() {
         mv "$stage/$key.baseline" "$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
     done < "$DEPLOY_SOURCE/deployment/client-settings/targets.tsv"
     rm -rf "$stage"
-    unset DOTFILES_SETTINGS_FORMAT DOTFILES_SETTINGS_POLICY DOTFILES_SETTINGS_SOURCE DOTFILES_SETTINGS_TARGET DOTFILES_SETTINGS_BASELINE DOTFILES_SETTINGS_KEEP_PLAIN_OPUS
+    unset DOTFILES_SETTINGS_FORMAT DOTFILES_SETTINGS_POLICY DOTFILES_SETTINGS_SOURCE DOTFILES_SETTINGS_TARGET DOTFILES_SETTINGS_BASELINE DOTFILES_SETTINGS_KEEP_PLAIN_OPUS DOTFILES_SETTINGS_MAGPIE
+}
+
+# Whether the gateway migration would change a repo-owned client file. The
+# magpie step asks after the gateway answers and before it backs up or changes
+# anything, so a current device keeps its files and their modification times.
+# The render uses the same merger and the same wiring request as the migration
+# itself; it writes no target and no baseline. The comparison is by content:
+# a client that rewrote its own file in another format is not a change.
+# Returns success when a migration is pending.
+client_settings_magpie_pending() {
+    local format source target policy stage key pending=1
+    stage=$(mktemp -d "$TMPDIR/client-settings-pending.XXXXXX")
+    export DOTFILES_SETTINGS_MAGPIE=true DOTFILES_SETTINGS_KEEP_PLAIN_OPUS=0
+    cat > "$stage/normalize.tmpl" <<'TEMPLATE'
+{{- (include (env "DOTFILES_SETTINGS_TARGET") | fromJsonc) | toPrettyJson -}}
+TEMPLATE
+    while IFS=$'|\r' read -r format source target policy; do
+        case "$format" in ''|\#*) continue ;; esac
+        case " $CLIENT_SETTINGS_MAGPIE_POLICIES " in *" $policy "*) ;; *) continue ;; esac
+        key=$(printf '%s' "$target" | tr '/.' '__')
+        export DOTFILES_SETTINGS_FORMAT="$format" DOTFILES_SETTINGS_POLICY="$policy"
+        export DOTFILES_SETTINGS_SOURCE="$DEPLOY_SOURCE/deployment/client-settings/$source"
+        export DOTFILES_SETTINGS_TARGET="$HOME/$target"
+        export DOTFILES_SETTINGS_BASELINE="$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
+        if ! DOTFILES_SETTINGS_OUTPUT=config "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$key.config" 2> "$stage/parser.log"; then
+            rm -rf "$stage"
+            fail "cannot inspect the Magpie client migration ($format): $target; check its syntax"
+        fi
+        [ -f "$HOME/$target" ] || { pending=0; continue; }
+        case "$format" in
+            json|jsonc)
+                # The live file is read with the same parser the merge uses,
+                # so only a content change counts as a pending migration.
+                if ! DOTFILES_SETTINGS_OUTPUT=normalized "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$stage/normalize.tmpl" > "$stage/$key.live" 2> "$stage/parser.log"; then
+                    rm -rf "$stage"
+                    fail "cannot read the current client settings ($format): $target"
+                fi
+                cmp -s "$stage/$key.config" "$stage/$key.live" || pending=0
+                ;;
+            *)
+                cmp -s "$stage/$key.config" "$HOME/$target" || pending=0
+                ;;
+        esac
+    done < "$DEPLOY_SOURCE/deployment/client-settings/targets.tsv"
+    rm -rf "$stage"
+    unset DOTFILES_SETTINGS_FORMAT DOTFILES_SETTINGS_POLICY DOTFILES_SETTINGS_SOURCE DOTFILES_SETTINGS_TARGET DOTFILES_SETTINGS_BASELINE DOTFILES_SETTINGS_KEEP_PLAIN_OPUS DOTFILES_SETTINGS_MAGPIE
+    return "$pending"
 }

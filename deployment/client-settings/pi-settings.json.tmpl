@@ -1,14 +1,14 @@
 {
   "lastChangelogVersion": "0.85.1",
   "theme": "dark",
-{{- if eq .platform "macos" }}
+{{- if and (eq .platform "macos") (eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}
   "defaultProvider": "magpie",
   "defaultModel": "group/workhorse",
 {{- end }}
   "skills": {{ list (joinPath .chezmoi.homeDir ".agents" "skills") | toPrettyJson }},
   "enableInstallTelemetry": false,
   "tuiMode": "fullscreen",
-{{- if eq .platform "macos" }}
+{{- if and (eq .platform "macos") (eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}
   "modelThinkingLevels": {
     "magpie/group/workhorse": "high"
   },

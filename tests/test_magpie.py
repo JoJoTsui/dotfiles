@@ -38,6 +38,8 @@ def save(name, value):
 
 argv = sys.argv[1:]
 if argv[:1] == ["status"]:
+    if os.environ.get("FAKE_MAGPIE_FAIL_STATUS") == "1":
+        sys.exit(1)
     print(json.dumps({"running": True, "gateway": os.environ["FAKE_MAGPIE_GATEWAY"]}))
 elif argv[:2] == ["accounts", "codex"]:
     print(json.dumps([{"id": "chatgpt-account"}]))
@@ -99,6 +101,12 @@ elif argv[:1] == ["dsh"]:
     if os.environ.get("FAKE_MAGPIE_TOUCH_DSH") == "1":
         patch = pathlib.Path(os.environ["HOME"]) / ".dsh/profiles/default/cordis.patch.yml"
         patch.write_text(patch.read_text().replace('name: "official"', 'name: "changed"'))
+    print("ok")
+elif argv[:1] == ["pi"] and len(argv) == 2:
+    # Magpie generates the Pi model file when it wires the agent.
+    models = pathlib.Path(os.environ["HOME"]) / ".pi/agent/models.json"
+    models.parent.mkdir(parents=True, exist_ok=True)
+    models.write_text(json.dumps({"providers": [{"id": "magpie", "name": "Magpie"}]}))
     print("ok")
 elif argv[:1] == ["group"]:
     groups = load("groups.json", {})
@@ -376,6 +384,7 @@ class MagpieApplyTests(unittest.TestCase):
         for name in CATALOGS:
             shutil.copy2(CATALOG / name, self.catalog / name)
         self.state = self.home / ".fake-magpie"
+        self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         self.server = self.gateway()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
@@ -445,17 +454,51 @@ class MagpieApplyTests(unittest.TestCase):
         (self.home / ".pi/agent/auth.json").write_text(
             json.dumps({"minimax-cn": {"key": "sk-fixture-minimax"}}), encoding="utf-8")
 
-    def apply(self, *, credentials=True, environment=None, setup=None):
-        """Run the apply engine against the fake gateway."""
+    def healthy_client_wiring(self):
+        """The client files a device carries once the gateway wired them.
+
+        The status reads the live files, so a healthy fixture has to hold the
+        real wiring: Claude's gateway endpoint and tier aliases, Pi's default
+        provider, model and thinking level, and the model file Magpie
+        generates for Pi.
+        """
+        claude = self.home / ".claude/settings.json"
+        claude.parent.mkdir(parents=True, exist_ok=True)
+        claude.write_text(json.dumps({
+            "env": {
+                "ANTHROPIC_AUTH_TOKEN": "magpie",
+                "ANTHROPIC_BASE_URL": "http://127.0.0.1:3425",
+                "ANTHROPIC_DEFAULT_FABLE_MODEL": "group/conductor",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "group/conductor",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL": "group/conductor",
+                "ANTHROPIC_DEFAULT_SONNET_MODEL": "group/conductor",
+                "ANTHROPIC_SMALL_FAST_MODEL": "group/conductor",
+                "CLAUDE_CODE_SUBAGENT_MODEL": "group/conductor",
+            },
+            "model": "opus",
+        }, indent=2) + "\n", encoding="utf-8")
+        pi = self.home / ".pi/agent/settings.json"
+        pi.parent.mkdir(parents=True, exist_ok=True)
+        pi.write_text(json.dumps({
+            "defaultProvider": "magpie",
+            "defaultModel": "group/workhorse",
+            "modelThinkingLevels": {"magpie/group/workhorse": "high"},
+        }, indent=2) + "\n", encoding="utf-8")
+        models = self.home / ".pi/agent/models.json"
+        models.write_text(json.dumps({"providers": [{"id": "magpie", "name": "Magpie"}]}),
+                          encoding="utf-8")
+
+    def apply(self, *, credentials=True, environment=None, setup=None, merger=False, premerge=False):
+        """Run the apply engine against the fake gateway.
+
+        The merger flag adds the deployment's client-settings merger, so the
+        engine migrates the repo-owned client files the way the deployment
+        step does.
+        """
         self.seed_home(credentials)
         if setup:
             setup()
-        script = self.root / "apply.sh"
-        script.write_text(
-            "export HOME=" + repr(str(self.home)) + "\n"
-            "source " + repr(str(ENGINE)) + "\n"
-            "magpie_apply\n",
-            encoding="utf-8")
+        lines = ["export HOME=" + repr(str(self.home))]
         environ = {
             "HOME": str(self.home),
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
@@ -468,9 +511,38 @@ class MagpieApplyTests(unittest.TestCase):
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
         }
+        if merger:
+            self.write_chezmoi_config()
+            lines += [
+                "export DEPLOY_SOURCE=" + repr(str(SOURCE)),
+                "export DEPLOY_HOME=$HOME",
+                "export DEPLOY_CHEZMOI=" + repr(str(self.chezmoi)),
+                "export TMPDIR=" + repr(str(self.home / ".cache/tmp")),
+                'fail() { printf \'dotfiles: %s\\n\' "$*" >&2; exit 1; }',
+                'source "$DEPLOY_SOURCE/deployment/payload.sh"',
+                'source "$DEPLOY_SOURCE/deployment/client-settings.sh"',
+            ]
+        lines.append("source " + repr(str(ENGINE)))
+        if premerge:
+            lines += [
+                'DEPLOY_MAGPIE_BACKUP_SOURCE=$(magpie_snapshot_clients)',
+                'deploy_client_settings',
+            ]
+        lines.append("magpie_apply")
+        script = self.root / "apply.sh"
+        script.write_text("\n".join(lines) + "\n", encoding="utf-8")
         environ.update(environment or {})
         return subprocess.run(["/bin/bash", str(script)], env=environ,
                               capture_output=True, text=True, timeout=120)
+
+    def write_chezmoi_config(self):
+        """The device's chezmoi config, with the platform the merge reads."""
+        config = self.home / ".config/chezmoi/chezmoi.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[data]\n    platform = "macos"\n    role = "workstation"\n'
+                          '    arch = "aarch64"\n    kimiApiKey = "REPLACE_ME"\n', encoding="utf-8")
+        cache = self.home / ".cache/tmp"
+        cache.mkdir(parents=True, exist_ok=True)
 
     def commands(self):
         """Every command the fake Magpie recorded."""
@@ -811,6 +883,18 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertIn("KIMI_CODE_CN_API_KEY", result.stderr)
         self.assertIn("opencode-go.key", result.stderr)
 
+    def test_gateway_backup_preserves_settings_before_the_initial_merge(self):
+        if not self.chezmoi:
+            self.skipTest("client settings merge requires chezmoi")
+        result = self.apply(merger=True, premerge=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        backups = list((self.home / ".local/state/dotfiles/magpie/backups").iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / ".claude/settings.json").read_text(), '{"model":"opus"}\n')
+        self.assertEqual((backups[0] / ".pi/agent/settings.json").read_text(), '{"defaultProvider":"x"}\n')
+        claude = json.loads((self.home / ".claude/settings.json").read_text())
+        self.assertEqual(claude["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
+
     def test_a_second_apply_writes_nothing(self):
         self.assertEqual(self.apply().returncode, 0)
         state = self.state_file()
@@ -934,6 +1018,20 @@ class MagpieSwitchTests(unittest.TestCase):
         plan = self.plan("--platform", "linux")
         self.assertFalse(plan["magpie"])
         self.assertNotIn("magpie-apply", plan["actions"])
+
+    def test_failed_full_bootstrap_removes_the_client_snapshot(self):
+        settings = self.home / ".claude/settings.json"
+        settings.parent.mkdir(parents=True)
+        settings.write_text('{"model":"opus"}\n', encoding="utf-8")
+        environment = dict(self.env, DOTFILES_PIXI_BIN="/usr/bin/false")
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
+                                 "--home", str(self.home), "--platform", "macos"],
+                                cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("install-managers.pixi", result.stderr)
+        self.assertEqual(settings.read_text(encoding="utf-8"), '{"model":"opus"}\n')
+        self.assertEqual(list((self.home / ".cache/tmp").glob("magpie-clients.*")), [])
+        self.assertFalse((self.home / ".local/state/dotfiles/magpie/backups").exists())
 
     def test_a_restricted_apply_says_why_the_gateway_is_skipped(self):
         if not self.chezmoi:
@@ -1202,7 +1300,10 @@ class MagpieClientSettingsTests(unittest.TestCase):
                      "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"):
             self.assertIn(f'"{tier}": "group/conductor"', template)
         self.assertNotIn("glm", template)
-        self.assertIn("{{- if eq .platform \"macos\" }}", template)
+        # The wiring renders only for the magpie step's migration merge; an
+        # ordinary client-settings merge never carries it.
+        self.assertIn("{{- if and (eq .platform \"macos\") (eq (env \"DOTFILES_SETTINGS_MAGPIE\") \"true\") }}", template)
+        self.assertNotIn("{{- if eq .platform \"macos\" }}", template)
 
     def test_the_client_settings_policy_enforces_the_magpie_wiring(self):
         policies = json.loads((SOURCE / "deployment/client-settings/policies.json").read_text())
@@ -1228,7 +1329,7 @@ class MagpieClientSettingsTests(unittest.TestCase):
                 self.assertNotIn("glmBaseUrl", path.read_text(), path.name)
                 self.assertNotIn("glmToken", path.read_text(), path.name)
 
-    def test_the_rendered_settings_use_the_gateway(self):
+    def test_an_apply_only_macos_apply_does_not_wire_the_clients(self):
         if not self.chezmoi:
             self.skipTest("actual source application requires chezmoi")
         environment = dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi)
@@ -1236,14 +1337,13 @@ class MagpieClientSettingsTests(unittest.TestCase):
                                  "--home", str(self.home), "--platform", "macos", "--apply-only"],
                                 cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=300)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("dotfiles: magpie: skipped; --apply-only applies files without the gateway", result.stdout)
         settings = json.loads((self.home / ".claude/settings.json").read_text())
-        self.assertEqual(settings["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
-        self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
-        self.assertEqual(settings["model"], "opus")
-        self.assertEqual(settings["env"]["ANTHROPIC_DEFAULT_SONNET_MODEL"], "group/conductor")
-        self.assertEqual(settings["env"]["ANTHROPIC_DEFAULT_HAIKU_MODEL"], "group/conductor")
-        self.assertEqual(settings["env"]["ANTHROPIC_SMALL_FAST_MODEL"], "group/conductor")
-        self.assertEqual(settings["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "group/conductor")
+        # The gateway migration belongs to the magpie step, which this mode
+        # skips; the partial apply must not point Claude at a gateway.
+        self.assertNotIn("ANTHROPIC_BASE_URL", settings["env"])
+        self.assertNotIn("ANTHROPIC_AUTH_TOKEN", settings["env"])
+        self.assertNotIn("model", settings)
         self.assertNotIn("glm", json.dumps(settings))
 
     def test_an_enforced_path_missing_from_the_template_leaves_the_device_value(self):
@@ -1312,7 +1412,7 @@ class MagpiePiSettingsTests(unittest.TestCase):
         self.assertIn(".pi/agent/models.json", ignore)
         self.assertFalse((SOURCE / "dot_pi").exists())
 
-    def test_the_rendered_settings_select_the_group(self):
+    def test_an_apply_only_macos_apply_leaves_pi_off_the_gateway(self):
         if not self.chezmoi:
             self.skipTest("actual source application requires chezmoi")
         environment = dict(self.env, DOTFILES_CHEZMOI_BIN=self.chezmoi)
@@ -1321,7 +1421,13 @@ class MagpiePiSettingsTests(unittest.TestCase):
                                 cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=300)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         settings = json.loads((self.home / ".pi/agent/settings.json").read_text())
-        self.assertEqual(settings["defaultProvider"], "magpie")
-        self.assertEqual(settings["defaultModel"], "group/workhorse")
+        self.assertNotIn("defaultProvider", settings)
+        self.assertNotIn("defaultModel", settings)
+        self.assertNotIn("modelThinkingLevels", settings)
         self.assertNotIn("enabledModels", settings)
         self.assertFalse((self.home / ".pi/agent/models.json").exists())
+
+    def test_the_pi_template_gates_the_wiring_on_the_migration_flag(self):
+        template = (SOURCE / "deployment/client-settings/pi-settings.json.tmpl").read_text()
+        self.assertIn("{{- if and (eq .platform \"macos\") (eq (env \"DOTFILES_SETTINGS_MAGPIE\") \"true\") }}", template)
+        self.assertNotIn("{{- if eq .platform \"macos\" }}", template)

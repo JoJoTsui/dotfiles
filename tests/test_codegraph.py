@@ -194,13 +194,9 @@ class CodeGraphTests(unittest.TestCase):
         self.assertEqual(claude["oauthAccount"]["emailAddress"], "synthetic@example.invalid")
         self.assertEqual(claude["mcpServers"]["device"]["command"], "device-mcp")
         settings = json.loads((self.home / ".claude/settings.json").read_text())
-        if os.environ.get("DOTFILES_TEST_PLATFORM", "linux") == "macos":
-            # The macOS policy owns the gateway route; account/auth files and
-            # unrelated device environment settings remain device-owned.
-            self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "magpie")
-            self.assertEqual(settings["env"]["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
-        else:
-            self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "synthetic-device-token")
+        # The gateway migration runs only inside the magpie step, which this
+        # partial apply skips; the device endpoint survives on every platform.
+        self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "synthetic-device-token")
         self.assertEqual(settings["env"]["DEVICE_ENV"], "keep")
         self.assertEqual(settings["model"], "device-model")
         self.assertFalse(settings["alwaysThinkingEnabled"])

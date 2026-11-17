@@ -296,7 +296,12 @@ trap report_failure ERR
 set -E
 mkdir -p "$HOME/.local/bin" "$XDG_CONFIG_HOME/chezmoi" "$TMPDIR" "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
-trap 'cleanup_skill_library; stop_deployment_proxy' EXIT
+DEPLOY_MAGPIE_BACKUP_SOURCE=''
+trap 'cleanup_skill_library; stop_deployment_proxy; if [ -n "$DEPLOY_MAGPIE_BACKUP_SOURCE" ]; then rm -rf "$DEPLOY_MAGPIE_BACKUP_SOURCE"; fi' EXIT
+if "$DEPLOY_MAGPIE" && ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
+    DEPLOY_STEP=magpie-snapshot
+    DEPLOY_MAGPIE_BACKUP_SOURCE=$(magpie_snapshot_clients) || fail 'cannot snapshot the client settings before deployment'
+fi
 run_step install-managers install_managers
 DEPLOY_STEP=apply-source
 "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false

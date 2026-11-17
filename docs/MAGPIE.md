@@ -61,6 +61,13 @@ Every run prints why the step was skipped: the platform has no Magpie, the
 step is disabled, or the mode applies files and installs agents without the
 gateway (`--apply-only`, `--agents-only`).
 
+A disabled or skipped step never wires the clients. The Claude Code and Pi
+templates carry the gateway settings only for the migration merge inside
+`magpie-apply`, after the gateway answers and the originals are backed up;
+every ordinary client-settings merge renders without them. A device that was
+wired by an earlier deployment keeps its working settings when a later run
+disables or skips the step.
+
 ## The catalogs
 
 The catalogs live in `deployment/magpie/` and are the only place the model
@@ -180,9 +187,15 @@ app, the agents, and the client settings exist before the gateway is wired.
    the new list.
 10. Wire the Magpie-owned agents: `magpie pi group/workhorse` and
     `magpie dsh group/workhorse`.
-11. Verify that DSH's official `llm-deepseek` row is unchanged and that the
+11. Migrate the repo-owned client settings through the client-settings
+    merger: Claude Code's gateway environment and `opus` alias, Pi's default
+    provider and model. The step asks the merger whether the wiring would
+    change a file before it backs up anything, so the backup holds the
+    originals and a current device keeps its files and their modification
+    times. The merge runs only after the gateway changes succeed.
+12. Verify that DSH's official `llm-deepseek` row is unchanged and that the
     Codex configuration still hashes the same.
-12. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
+13. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
 
 A run with nothing to change writes no files and keeps every modification
 time.
@@ -280,9 +293,11 @@ with a missing member.
 
 ## Rollback
 
-Before it changes anything, the apply copies the client files Magpie may
-touch into `~/.local/state/dotfiles/magpie/backups/<UTC>/` at 0600 and keeps
-the newest ten:
+When gateway migration needs a backup, a full bootstrap saves the client files
+as they were before deployment changed them. The temporary snapshot is removed
+when bootstrap exits. The backup is stored at
+`~/.local/state/dotfiles/magpie/backups/<UTC>/` at 0600; the newest ten are
+retained:
 
 - `~/.claude/settings.json`
 - `~/.pi/agent/settings.json`
@@ -303,9 +318,10 @@ Magpie is a macOS application today. On Linux, WSL, and native Windows the
 step reports `Magpie is not available on this platform` and completes, the
 engine and the catalogs stay out of the home, and `dotfiles-magpie` refuses
 in one line. Claude Code and Pi keep their device-owned endpoint and model
-there: the client-settings templates branch on `.platform`, so no host is
-pointed at a gateway it cannot run. The catalogs are shaped so a later pinned
-native release can be added without changing the intent.
+there: the client-settings templates carry the gateway wiring only for the
+macOS migration merge, so no host is pointed at a gateway it cannot run. The
+catalogs are shaped so a later pinned native release can be added without
+changing the intent.
 
 ## The command
 

@@ -91,6 +91,17 @@
       "update"
     ]
   ],
-  "pi-settings": [],
+  "pi-settings": [
+    [
+      "defaultProvider"
+    ],
+    [
+      "defaultModel"
+    ],
+    [
+      "modelThinkingLevels",
+      "magpie/group/workhorse"
+    ]
+  ],
   "pi-models-store": []
 }

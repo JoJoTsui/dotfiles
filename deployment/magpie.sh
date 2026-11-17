@@ -1287,23 +1287,42 @@ magpie_backup_stamp() {
     date -u +%Y%m%dT%H%M%SZ
 }
 
+# Save the pre-deployment client files in the isolated temporary directory.
+# The gateway step uses these bytes only if it actually needs a backup.
+magpie_snapshot_clients() (
+    local snapshot file rel
+    snapshot=$(mktemp -d "${TMPDIR:?}/magpie-clients.XXXXXX") || return 1
+    for file in "$HOME/.claude/settings.json" "$HOME/.pi/agent/settings.json" \
+        "$HOME/.pi/agent/models.json" "$HOME/.codex/config.toml" \
+        "$HOME"/.dsh/profiles/*/cordis.patch.yml; do
+        [ -f "$file" ] || continue
+        rel=${file#"$HOME/"}
+        if ! mkdir -p "$snapshot/$(dirname "$rel")" || ! cp -p "$file" "$snapshot/$rel"; then
+            rm -rf "$snapshot"
+            return 1
+        fi
+        chmod 600 "$snapshot/$rel" || { rm -rf "$snapshot"; return 1; }
+    done
+    printf '%s' "$snapshot"
+)
+
 # Copy the client files Magpie may touch into a timestamped backup.
 magpie_backup_create() (
-    local stamp=$1 root file rel profile count=0 name
+    local stamp=$1 source_home=${2:-$HOME} root file rel profile count=0 name
     root="$(magpie_state_dir)/backups/$stamp"
     [ ! -L "$root" ] || { magpie_fail "the Magpie backup directory is a symlink: $root"; return 1; }
     mkdir -p "$root" || { magpie_fail "cannot create the Magpie backup directory: $root"; return 1; }
     chmod 700 "$root"
     # Keep each file's path below the home: Claude's and Pi's settings.json
     # share a basename, and one must never overwrite the other.
-    for file in "$HOME/.claude/settings.json" "$HOME/.pi/agent/settings.json" \
-        "$HOME/.pi/agent/models.json" "$HOME/.codex/config.toml"; do
+    for file in "$source_home/.claude/settings.json" "$source_home/.pi/agent/settings.json" \
+        "$source_home/.pi/agent/models.json" "$source_home/.codex/config.toml"; do
         [ -f "$file" ] || continue
-        rel=${file#"$HOME/"}
+        rel=${file#"$source_home/"}
         mkdir -p "$root/$(dirname "$rel")"
         cp -p "$file" "$root/$rel" || { magpie_fail "cannot back up $file"; return 1; }
     done
-    for file in "$HOME"/.dsh/profiles/*/cordis.patch.yml; do
+    for file in "$source_home"/.dsh/profiles/*/cordis.patch.yml; do
         [ -f "$file" ] || continue
         profile=$(basename "$(dirname "$file")")
         mkdir -p "$root/dsh-$profile"
@@ -1448,7 +1467,7 @@ magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local credential output live known current desired change='' entry used rest variable servable
     local fatal='' missing='' guard='unchanged' backup='' codex_before codex_after forced
-    local id recorded names name version plugin_state state
+    local id recorded names name version plugin_state state client_migration=no policies=''
     local -a candidate_list
     platform=$(magpie_platform)
     if [ "$platform" != macos ]; then
@@ -1715,6 +1734,30 @@ wiring:$agent:$group"
         printf 'dotfiles: magpie: the agent %s will be wired to %s\n' "$agent" "$group"
     done
 
+    DEPLOY_STEP=magpie-apply.client-settings
+    # The repo-owned Claude Code and Pi settings migrate only here: after the
+    # gateway answers, and behind the same backup as the gateway's other client
+    # changes. A pending migration joins the change list so the backup holds
+    # the originals. The deployment boundary owns the merger; a standalone
+    # engine leaves these files to the deployment's magpie step.
+    if command -v client_settings_magpie_pending >/dev/null 2>&1; then
+        policies=${CLIENT_SETTINGS_MAGPIE_POLICIES:-}
+        if [ -z "$policies" ]; then
+            magpie_fail 'the client settings merger names no Magpie policy'
+            return 1
+        fi
+        if client_settings_magpie_pending; then
+            client_migration=yes
+            change="$change
+client-settings"
+            printf 'dotfiles: magpie: the client settings will be wired to the gateway\n'
+        else
+            printf 'dotfiles: magpie: the client settings need no migration\n'
+        fi
+    else
+        printf 'dotfiles: magpie: the repo-owned client settings are left to the deployment merge\n'
+    fi
+
     # The Codex configuration is never written by the deployment. Its digest is
     # taken before the changes and compared after them.
     codex_before=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
@@ -1725,7 +1768,7 @@ wiring:$agent:$group"
     if [ -n "$change" ]; then
         if [ -n "$client_change" ]; then
             DEPLOY_STEP=magpie-apply.backup
-            backup=$(magpie_backup_create "$(magpie_backup_stamp)") || return 1
+            backup=$(magpie_backup_create "$(magpie_backup_stamp)" "${DEPLOY_MAGPIE_BACKUP_SOURCE:-$HOME}") || return 1
             printf 'dotfiles: magpie: the client files are backed up in %s\n' "$backup"
         fi
 
@@ -1825,6 +1868,13 @@ wiring:$agent:$group"
                 { magpie_fail "cannot wire the agent $agent to $group"; return 1; }
             printf 'dotfiles: magpie: the agent %s is wired to %s\n' "$agent" "$group"
         done <<< "$change"
+
+        DEPLOY_STEP=magpie-apply.client-settings
+        if [ "$client_migration" = yes ]; then
+            deploy_client_settings 0 1 "$policies" ||
+                { magpie_fail 'cannot wire the client settings to the gateway'; return 1; }
+            printf 'dotfiles: magpie: the client settings are wired to the gateway\n'
+        fi
     fi
 
     DEPLOY_STEP=magpie-apply.dsh

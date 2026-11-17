@@ -701,8 +701,10 @@ function Copy-AgentPayload {
 }
 function Merge-ClientSettings {
     $script:Step = 'apply-source.client-settings'
-    # The Unix installer alone requests the narrowly scoped model restoration.
+    # The Unix installer alone requests the narrowly scoped model restoration,
+    # and only the Unix magpie step requests the gateway wiring.
     $env:DOTFILES_SETTINGS_KEEP_PLAIN_OPUS = '0'
+    $env:DOTFILES_SETTINGS_MAGPIE = 'false'
     $stage = Join-Path $env:TEMP ('client-settings-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($stage) | Out-Null
     try {
@@ -741,7 +743,7 @@ function Merge-ClientSettings {
         }
     } finally {
         Remove-Item -LiteralPath $stage -Recurse -Force
-        foreach ($name in @('FORMAT', 'POLICY', 'SOURCE', 'TARGET', 'BASELINE', 'OUTPUT', 'KEEP_PLAIN_OPUS')) { [Environment]::SetEnvironmentVariable("DOTFILES_SETTINGS_$name", $null, 'Process') }
+        foreach ($name in @('FORMAT', 'POLICY', 'SOURCE', 'TARGET', 'BASELINE', 'OUTPUT', 'KEEP_PLAIN_OPUS', 'MAGPIE')) { [Environment]::SetEnvironmentVariable("DOTFILES_SETTINGS_$name", $null, 'Process') }
     }
 }
 function Copy-NativeConfiguration {
