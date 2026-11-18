@@ -177,6 +177,16 @@ dirty state, selected timeout, current phase, and completed checks. A source
 change during the gate fails verification. Timeouts terminate the bootstrap's
 process group, including download/lifecycle children.
 
+The gate bounds Pixi's concurrent solves and downloads through
+`DOTFILES_PIXI_CONCURRENCY`, a single positive integer set only in the synthetic
+bootstrap environment. It is `max(1, usable CPUs - 1)` from the macOS CPU count,
+starting at one when the count is unavailable, so one CPU stays free for the
+bootstrap. The deployment validates the value before either Pixi operation and
+passes it as `--concurrent-solves` and `--concurrent-downloads` to both
+`pixi exec` and `pixi global sync`; a malformed value fails the step before
+either operation runs. An unset value leaves normal deployments on Pixi's
+defaults, and the effective bound is recorded in the report.
+
 `--package-cache /canonical/private/cache` seeds a fresh home only with public
 Pixi, Bun, skill, and completion caches. It excludes installed environments,
 launchers, and authentication, gives the fixture independent cache writes, and

@@ -6,10 +6,11 @@ isolated home for later diagnostics; it must be under /tmp.
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
-from pins import common_pin
+from pins import common_pin, manager_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
 
@@ -37,7 +38,10 @@ class CommonInstallTests(unittest.TestCase):
         if not registry.exists():
             registry.parent.mkdir(parents=True)
             registry.write_text('version = 1\n[envs.device-extra]\nchannels = ["conda-forge"]\ndependencies = { zoxide = "==0.10.0" }\nexposed = { device-zoxide = "zoxide" }\n')
-        command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--platform", "linux"]
+        # The gateway slice has its own tests; this one measures the common
+        # tool installation, so the gateway step stays out of the run.
+        command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--platform", "linux",
+                   "--no-magpie"]
         for attempt in (1, 2):
             result = subprocess.run(command, cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=1800)
             (home / f"install-{attempt}.log").write_text(result.stdout + result.stderr)
@@ -74,6 +78,106 @@ class CommonInstallTests(unittest.TestCase):
             self.assertEqual(registered["envs"]["device-extra"]["exposed"], {"device-zoxide": "zoxide"})
             for specialist in ("samtools", "nvtop", "zed", "firefox"):
                 self.assertNotIn(specialist, registered["envs"])
+
+
+class PixiConcurrencyTests(unittest.TestCase):
+    """Focused checks at the public-bootstrap/fake-Pixi seam.
+
+    The native macOS gate supplies DOTFILES_PIXI_CONCURRENCY to bound Pixi's
+    concurrent solves and downloads. These checks verify the value
+    reaches both Pixi operations, that malformed values fail before either
+    operation, and that an unset value leaves Pixi's flags untouched.
+    """
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-pixi-concurrency-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "device"
+        original = self.root / "original"
+        original.mkdir()
+        self.guards = self.root / "guards"
+        self.guards.mkdir()
+        for name in ("curl", "sudo", "chsh"):
+            command = self.guards / name
+            command.write_text('#!/bin/sh\nprintf "forbidden external command: %s\\n" "$0" >&2\nexit 91\n')
+            command.chmod(0o755)
+        self.env = {
+            "HOME": str(original),
+            "PATH": f"{self.guards}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "DOTFILES_SKILLS_DIR": str(SOURCE / "tests/fixtures/skill-library"),
+            "PIXI_LOG": str(self.root / "pixi.log"),
+        }
+        self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+
+    def fake_pixi(self):
+        pixi = self.guards / "pixi"
+        pixi.write_text(
+            '#!/bin/sh\n'
+            'case "$1 $2" in\n'
+            '  "exec "*|"global sync"*) printf "%s\\n" "$*" >> "$PIXI_LOG" ;;\n'
+            'esac\n'
+            'case "$1 $2" in\n'
+            '  "--version ") echo "pixi ' + manager_pin("PIXI_VERSION") + '" ;;\n'
+            '  "exec "*) exit 0 ;;\n'
+            '  "global sync") exit 37 ;;\n'
+            '  *) exit 95 ;;\n'
+            'esac\n')
+        pixi.chmod(0o755)
+        return pixi
+
+    def deploy(self, **environment):
+        environment.update(DOTFILES_PIXI_BIN=str(self.fake_pixi()),
+                           DOTFILES_CHEZMOI_BIN=self.chezmoi)
+        return subprocess.run(
+            ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(self.home),
+             "--platform", "linux", "--no-magpie"],
+            env=dict(self.env, **environment), cwd=SOURCE, capture_output=True,
+            text=True, timeout=60)
+
+    def pixi_calls(self):
+        log = self.root / "pixi.log"
+        return log.read_text().splitlines() if log.exists() else []
+
+    def require_chezmoi(self):
+        if not self.chezmoi:
+            self.skipTest("actual apply requires chezmoi")
+
+    def test_bound_reaches_both_pixi_operations(self):
+        self.require_chezmoi()
+        result = self.deploy(DOTFILES_PIXI_CONCURRENCY="3")
+        self.assertEqual(result.returncode, 37, result.stderr)
+        calls = self.pixi_calls()
+        self.assertEqual(len(calls), 2, calls)
+        self.assertTrue(calls[0].startswith("exec "), calls)
+        self.assertTrue(calls[1].startswith("global sync"), calls)
+        for call in calls:
+            self.assertIn("--concurrent-solves 3", call)
+            self.assertIn("--concurrent-downloads 3", call)
+
+    def test_unset_bound_keeps_pixi_defaults(self):
+        self.require_chezmoi()
+        result = self.deploy()
+        self.assertEqual(result.returncode, 37, result.stderr)
+        calls = self.pixi_calls()
+        self.assertEqual(len(calls), 2, calls)
+        for call in calls:
+            self.assertNotIn("--concurrent-solves", call)
+            self.assertNotIn("--concurrent-downloads", call)
+
+    def test_malformed_bound_fails_before_either_pixi_operation(self):
+        self.require_chezmoi()
+        log = self.root / "pixi.log"
+        for value in ("0", "-1", "2.5", "many"):
+            with self.subTest(value=value):
+                if log.exists():
+                    log.unlink()
+                result = self.deploy(DOTFILES_PIXI_CONCURRENCY=value)
+                self.assertNotEqual(result.returncode, 37, result.stderr)
+                self.assertIn("DOTFILES_PIXI_CONCURRENCY", result.stderr)
+                calls = self.pixi_calls()
+                self.assertFalse(any(call.startswith("exec ") or call.startswith("global sync")
+                                     for call in calls), calls)
 
 
 if __name__ == "__main__":

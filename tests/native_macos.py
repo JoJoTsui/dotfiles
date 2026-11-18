@@ -202,6 +202,17 @@ def minimal_environment(home):
             "TERM": "xterm-256color", "LANG": "en_US.UTF-8"}
 
 
+def pixi_concurrency_bound():
+    """Positive Pixi concurrency bound derived from the host CPU count.
+
+    Bound Pixi's downloads and solves for the synthetic gate. Leave one CPU
+    for the bootstrap itself; an unknown or
+    single-CPU count starts at one.
+    """
+    cpus = os.cpu_count()
+    return max(1, cpus - 1) if cpus else 1
+
+
 def managed_environment(home):
     environment = minimal_environment(home)
     environment.update(PATH=f"{home}/.bun/bin:{home}/.local/bin:{home}/.pixi/bin:{home}/.cargo/bin:{environment['PATH']}",
@@ -540,6 +551,12 @@ def main():
                 report["checks"].append(phase)
             originals = seed_device(home)
             env = minimal_environment(home)
+            # Bound Pixi's concurrent solves and downloads in the synthetic
+            # bootstrap only; ordinary deployments leave the value unset. The
+            # bound leaves one CPU for the bootstrap and starts at one when the
+            # host CPU count is unavailable.
+            env["DOTFILES_PIXI_CONCURRENCY"] = str(pixi_concurrency_bound())
+            report["pixi_concurrency_bound"] = env["DOTFILES_PIXI_CONCURRENCY"]
             # Account gateway wiring belongs to the operator's device. Synthetic
             # installs must not borrow its gateway or need its provider accounts.
             command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home),
