@@ -514,9 +514,17 @@ manifest_string() {
         sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n1
 }
 
+agent_validate_launcher() {
+    local launcher=$1
+    [ ! -L "$launcher" ] || fail "agent launcher is a symlink: $launcher"
+    if [ -e "$launcher" ] && { [ ! -f "$launcher" ] ||
+        ! LC_ALL=C head -c 160 "$launcher" 2>/dev/null | LC_ALL=C grep -Fq '# Managed by dotfiles;'; }; then
+        fail "agent launcher would replace a device file: $launcher"
+    fi
+}
+
 agent_launcher() {
     local launcher=$1 target=$2
-    [ ! -L "$launcher" ] || rm "$launcher"
     {
         printf '#!/bin/sh\n# Managed by dotfiles; the native client owns its state root.\n'
         printf 'exec '; agent_shell_quote "$target"; printf ' "$@"\n'
@@ -532,6 +540,10 @@ install_native_release() {
     local exposed_commands=()
     root="$HOME/.$name"
     cli="$root/bin/$binary/$binary-$version"
+    IFS=, read -r -a exposed_commands <<< "$commands"
+    for command in "${exposed_commands[@]}"; do
+        agent_validate_launcher "$HOME/.local/bin/$command"
+    done
     if [ ! -x "$cli" ] || ! diagnostic=$("$cli" --version 2>/dev/null) ||
         ! agent_diagnostic_matches "$version" "$diagnostic" "$template"; then
         set -- $(native_release_platform_key)
@@ -582,7 +594,6 @@ install_native_release() {
     mkdir -p "$HOME/.local/bin"
     # A vendor dispatcher may select another installed release. Both managed
     # commands use the verified pin while the device-owned dispatcher survives.
-    IFS=, read -r -a exposed_commands <<< "$commands"
     for command in "${exposed_commands[@]}"; do
         agent_launcher "$HOME/.local/bin/$command" "$cli"
     done
@@ -999,10 +1010,14 @@ agent_install_launchers() {
     local name=$1 version=$2 commands=$3 entrypoint_dir=$4 entrypoint_file=$5
     local comment=$6 node=$7 bun=$8 template=$9 policy=${10:-exact} prepend_path=${11:-}
     local command launcher diagnostic entrypoint path_prefix exposed_commands=()
+    IFS=, read -r -a exposed_commands <<< "$commands"
+    for command in "${exposed_commands[@]}"; do
+        agent_validate_launcher "$BUN_INSTALL/bin/$command"
+        agent_validate_launcher "$HOME/.local/bin/$command"
+    done
     mkdir -p "$BUN_INSTALL/bin" "$HOME/.local/bin"
     path_prefix="$(dirname "$node"):$(dirname "$bun")"
     [ -z "$prepend_path" ] || path_prefix="$prepend_path:$path_prefix"
-    IFS=, read -r -a exposed_commands <<< "$commands"
     for command in "${exposed_commands[@]}"; do
         launcher="$BUN_INSTALL/bin/$command"
         if [ -n "$entrypoint_file" ]; then
@@ -1011,7 +1026,6 @@ agent_install_launchers() {
             entrypoint="$entrypoint_dir/$command"
         fi
         [ -x "$entrypoint" ] || fail "$name did not expose $command"
-        [ ! -L "$launcher" ] || rm "$launcher"
         {
             printf '#!/bin/sh\n# Managed by dotfiles; %s.\n' "$comment"
             printf 'PATH='; agent_shell_quote "$path_prefix"; printf ':"$PATH"\nexport PATH\n'
@@ -1019,7 +1033,6 @@ agent_install_launchers() {
         } > "$launcher"
         chmod 755 "$launcher"
         # Omitted agents never reach this loop and retain their launchers.
-        [ ! -L "$HOME/.local/bin/$command" ] || rm "$HOME/.local/bin/$command"
         cp "$launcher" "$HOME/.local/bin/$command"
         chmod 755 "$HOME/.local/bin/$command"
         DEPLOY_STEP="install-agents.$name.diagnostic"

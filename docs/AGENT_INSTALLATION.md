@@ -77,6 +77,9 @@ truth, so the refreshed manifests and locks can be reviewed and committed.
 ## Updating a client CLI
 
 The managed launchers own `~/.bun/bin/<command>` and `~/.local/bin/<command>`.
+Before writing a selected agent's launchers, the installer checks every target:
+it refuses symlinks and regular files without its managed marker, preserving
+the device entry. Resolve a collision with a protected backup before retrying.
 Bun's global installer links into the same directory and refuses to replace an
 existing file, so `bun add -g @anthropic-ai/claude-code` fails with `EEXIST`.
 The package still lands in `~/.bun/install/global/node_modules`, where it can

@@ -144,7 +144,7 @@ class MacosBrewFirstTests(unittest.TestCase):
 
     def install(self, *, selection="kimi", platform="macos", native_platform="macos",
                 arch="aarch64", native_arch="arm64", override=None, homebrew=True, source=SOURCE,
-                extra_path=()):
+                extra_path=(), expect_success=True):
         if override:
             versions = self.home / ".config/dotfiles"
             versions.mkdir(parents=True, exist_ok=True)
@@ -179,7 +179,8 @@ class MacosBrewFirstTests(unittest.TestCase):
         ))
         result = subprocess.run(["/bin/bash", "-c", script], env=environment, cwd=SOURCE,
                                 capture_output=True, text=True, timeout=120)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        if expect_success:
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         return result
 
     def state(self):
@@ -223,6 +224,39 @@ class MacosBrewFirstTests(unittest.TestCase):
             return []
         return [json.loads(line)[1] for line in self.log.read_text().splitlines()
                 if json.loads(line)[0] == "bun"]
+
+    def test_bun_install_preserves_device_launcher(self):
+        launcher = self.home / ".bun/bin/kimi"
+        original = "#!/bin/sh\necho device-launcher\n"
+        self.write_tool(launcher, original)
+
+        result = self.install(homebrew=False, expect_success=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("agent launcher would replace a device file", result.stderr)
+        self.assertEqual(launcher.read_text(), original)
+        self.assertFalse((self.home / ".local/bin/kimi").exists())
+
+    def test_adopted_agent_preserves_local_launcher_symlink(self):
+        record = homebrew_record("kimi")
+        self.write_package(record, record["floor"])
+        self.write_command("kimi", record["floor"])
+        managed = self.home / ".bun/bin/kimi"
+        previous = "#!/bin/sh\n# Managed by dotfiles; earlier launcher.\n"
+        self.write_tool(managed, previous)
+        target = self.root / "device-launcher"
+        original = "#!/bin/sh\necho device-launcher\n"
+        self.write_tool(target, original)
+        launcher = self.home / ".local/bin/kimi"
+        launcher.symlink_to(target)
+
+        result = self.install(expect_success=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("agent launcher is a symlink", result.stderr)
+        self.assertTrue(launcher.is_symlink())
+        self.assertEqual(target.read_text(), original)
+        self.assertEqual(managed.read_text(), previous)
 
     def test_a_package_at_the_floor_is_adopted_without_a_bun_project(self):
         record = homebrew_record("kimi")

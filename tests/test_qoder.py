@@ -138,6 +138,36 @@ install_native_release qoder "$2" 'qoder,qodercli' 'qodercli' 'https://qoder.inv
             self.assertEqual({path: path.read_bytes() for path in before}, before)
         self.assertFalse(self.network_calls.exists())
 
+    def test_existing_device_launcher_is_not_overwritten(self):
+        self.write_executable(self.cli, self.cli_bytes(self.version))
+        launcher = self.home / ".local/bin/qoder"
+        original = b"#!/bin/sh\necho device-launcher\n"
+        self.write_executable(launcher, original)
+
+        result = self.install()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("agent launcher would replace a device file", result.stderr)
+        self.assertEqual(launcher.read_bytes(), original)
+        self.assertFalse((self.home / ".local/bin/qodercli").exists())
+
+    def test_later_launcher_symlink_does_not_change_first_launcher(self):
+        self.write_executable(self.cli, self.cli_bytes(self.version))
+        target = self.root / "device-executable"
+        original = b"#!/bin/sh\necho device-executable\n"
+        self.write_executable(target, original)
+        launcher = self.home / ".local/bin/qodercli"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.symlink_to(target)
+
+        result = self.install()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("agent launcher is a symlink", result.stderr)
+        self.assertTrue(launcher.is_symlink())
+        self.assertEqual(target.read_bytes(), original)
+        self.assertFalse((self.home / ".local/bin/qoder").exists())
+
     def test_downloaded_pinned_cli_owns_both_launchers_and_preserves_device_state(self):
         before = self.seed_device_state()
         content = self.write_release(self.version)
