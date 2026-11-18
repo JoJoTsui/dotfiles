@@ -31,7 +31,7 @@ REQUIRED_SUITES = (
     "test_shell_behavior.py", "test_agent_payload.py", "test_codegraph.py",
     "test_history_behavior.py", "test_local_history_behavior.py", "test_portable_history_import.py",
 )
-DEFAULT_AGENTS = {"kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder"}
+DEFAULT_AGENTS = {"kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder", "dsh", "dsh-tui"}
 LOG_LIMIT = 2 * 1024 * 1024
 TASK_CPUS = 4
 TASK_MEMORY_BYTES = 8 * 1024 ** 3
@@ -40,6 +40,13 @@ TASK_MEMORY_BYTES = 8 * 1024 ** 3
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def require_default_agents(plan):
+    """The public all-agent selection, with CodeGraph as the independent default."""
+    require(set(plan["agents"]) == DEFAULT_AGENTS and len(plan["agents"]) == len(DEFAULT_AGENTS)
+            and {item["name"] for item in plan["agentPackages"]} == DEFAULT_AGENTS | {"codegraph"},
+            f"plan does not include all {len(DEFAULT_AGENTS)} default agents and CodeGraph")
 
 
 def write_json(path, value):
@@ -504,9 +511,7 @@ def main():
             require(not args.home.exists(), "planning created the validation home")
             require(plan["platform"] == "linux" and plan["arch"] == "x86_64" and plan["role"] == "remote-compute",
                     "plan does not target Linux x86_64 remote compute")
-            require(set(plan["agents"]) == DEFAULT_AGENTS and len(plan["agents"]) == len(DEFAULT_AGENTS)
-                    and {item["name"] for item in plan["agentPackages"]} == DEFAULT_AGENTS | {"codegraph"},
-                    "plan does not include all seven default agents and CodeGraph")
+            require_default_agents(plan)
             require(not plan["bundles"] and not plan["settings"]["systemChanges"]
                     and not plan["settings"]["loginShellChanges"] and plan["settings"]["mode"] == "copy",
                     "plan expands beyond default copy-mode user deployment")

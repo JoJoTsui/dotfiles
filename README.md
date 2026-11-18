@@ -43,7 +43,7 @@ Bash; WSL supplies the full trio. See [Windows deployment](docs/WINDOWS_DEPLOYME
 for native paths, pinned exceptions and pending runner evidence.
 
 Common tools, shared Nushell-first shell behavior, encrypted history setup, all
-seven supported agents (six Bun-managed plus native Qoder), portable
+nine supported agents (eight Bun-managed plus native Qoder), portable
 instructions/skills, and selectable specialist bundles are implemented. Use `--apply-only` for configuration validation, or
 `--agents-only` when a host already has the pinned Bun/Node toolchain. Follow
 the [new-host setup guide](docs/NEW_HOST_SETUP.md) for selection, activation,
@@ -280,7 +280,7 @@ can be retained safely during migration. See the
 | **dsh-tui** | frozen Bun project; `dsh-tui` and `dst` launchers | `~/.dsh-tui/settings.json` stays device-owned | `@deepseek-harness-tui/dsh-tui` 0.20.1; reads the DSH profile; `pnpm` is a managed common tool |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu-login"`, `shell_mode = "non_login"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
-All seven clients install by default through a per-agent provider chain. macOS
+All nine clients install by default through a per-agent provider chain. macOS
 tries Homebrew first and adopts a formula or cask at or above the catalog floor;
 a missing or below-floor package falls back to the frozen Bun project. Linux,
 WSL, and native Windows use Bun, and Qoder keeps its pinned native release

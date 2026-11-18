@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -12,6 +13,41 @@ import unittest
 from unittest import mock
 
 import native_linux
+
+
+@unittest.skipUnless(os.name == "posix", "Unix plans; the native Windows boundary has its own suite")
+class LinuxDefaultAgentSelectionTests(unittest.TestCase):
+    """The native verifier checks the public all-agent selection, DSH agents included."""
+
+    def public_plan(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-linux-plan-") as temporary:
+            home = Path(temporary) / "not-created"
+            result = subprocess.run([
+                "/bin/bash", str(native_linux.SOURCE / "bootstrap.sh"), "--home", str(home),
+                "--plan", "--platform", "linux", "--arch", "x86_64",
+            ], check=False, env={"HOME": temporary, "PATH": "/usr/bin:/bin"},
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(home.exists())
+            return json.loads(result.stdout)
+
+    def test_the_native_verifier_expects_every_public_default_agent(self):
+        plan = self.public_plan()
+        self.assertIn("dsh", plan["agents"])
+        self.assertIn("dsh-tui", plan["agents"])
+        self.assertEqual(set(plan["agents"]), native_linux.DEFAULT_AGENTS)
+        self.assertEqual(len(plan["agents"]), len(native_linux.DEFAULT_AGENTS))
+        self.assertEqual({package["name"] for package in plan["agentPackages"]},
+                         native_linux.DEFAULT_AGENTS | {"codegraph"})
+
+    def test_a_plan_without_a_dsh_agent_is_rejected(self):
+        plan = self.public_plan()
+        native_linux.require_default_agents(plan)
+        for missing in ("dsh", "dsh-tui"):
+            with self.subTest(missing=missing):
+                narrowed = {**plan, "agents": [name for name in plan["agents"] if name != missing]}
+                with self.assertRaisesRegex(RuntimeError, "default agents and CodeGraph"):
+                    native_linux.require_default_agents(narrowed)
 
 
 class LinuxSuiteAuditTests(unittest.TestCase):

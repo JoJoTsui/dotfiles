@@ -53,7 +53,7 @@ role they intend to use.
 
 ## Choose optional tools and agents
 
-All seven supported coding agents (six Bun-managed plus native Qoder),
+All nine supported coding agents (eight Bun-managed plus native Qoder),
 CodeGraph, and the common toolchain install by default. A selection controls
 new installation and does not uninstall an agent that is already present:
 
@@ -144,7 +144,7 @@ python3 tests/verify_portable.py
 ```
 
 To additionally install the pinned Linux common tools, install and diagnose all
-seven agents (including native Qoder), run shell/history checks, and resolve
+nine agents (including native Qoder), run shell/history checks, and resolve
 every common and declared bundle target with Pixi, opt in to the network layer:
 
 ```sh
