@@ -327,12 +327,15 @@ explains every changed pair.
   every apply guards both hashes. When Codex is selected, the deployment may
   select `magpie codex scope profile` and wire only its separate
   `~/.codex/magpie.config.toml` and `magpie-models.json`. The credential-bearing
-  profile stays 0600; unrecorded files and symlink targets are preserved, not
+  profile is private before it is written and stays 0600; unrecorded files and
+  symlink targets are preserved, not
   adopted. Plain `codex` retains its subscription configuration; `codex -p
   magpie` starts Magpie sessions. The managed `dotfiles-codex-resume` command
   is the way to resume a thread: it adds provider definitions only and keeps
   each thread's saved provider, model, and reasoning effort, and it needs
-  Codex 0.169.0 or newer. Resume must
+  Codex 0.169.0 or newer and a `python3` with the standard library's
+  `tomllib`, because it refuses to read a provider definition it cannot
+  parse. Resume must
   preserve a thread's saved provider, not retag sessions; read
   `docs/MAGPIE.md` for the verification boundary and
   `docs/adr/0015-neutral-codex-resume-layer.md` for the design.
