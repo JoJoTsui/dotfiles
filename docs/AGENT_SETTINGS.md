@@ -98,7 +98,7 @@ catalog. See [Caveman retirement](CAVEMAN.md#skills-only-operation).
 | Client | Managed CodeGraph location | Integration |
 | --- | --- | --- |
 | Claude 2.1.325 | `~/.claude.json`, `mcpServers.codegraph` | stdio, `alwaysLoad: true` |
-| Codex 0.166.0 | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
+| Codex 0.169.0 | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
 | Kimi 2.4.1 | `~/.kimi-code/mcp.json`, `mcpServers.codegraph` | inferred stdio |
 | OpenCode 2.2.5 | `~/.config/opencode/opencode.jsonc`, `mcp.servers.codegraph` | local, enabled, `codemode: false` |
 | Pi 1.5.2 | `~/.pi/agent/mcp.json`, `mcpServers.codegraph` | stdio, user scope |

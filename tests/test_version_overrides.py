@@ -61,7 +61,7 @@ class OverridePlanTests(unittest.TestCase):
         ])
         agents = {item["name"]: item for item in plan["agentPackages"]}
         self.assertEqual(agents["pi"]["version"], "1.5.3")
-        self.assertEqual(agents["codex"]["version"], "0.166.0")
+        self.assertEqual(agents["codex"]["version"], "0.169.0")
         packages = {item["environment"]: item for item in plan["packages"]}
         self.assertEqual(packages["ruff"]["dependencies"], {"ruff": "==0.18.0"})
         self.assertEqual(packages["git"]["dependencies"], {"git": "==2.56.0"})

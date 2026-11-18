@@ -188,7 +188,7 @@ class ProviderCatalogTests(unittest.TestCase):
             "pi": ("formula", "pi-coding-agent", "1.5.2"),
             "opencode": ("formula", "opencode-v2", "2.2.5"),
             "claude": ("cask", "claude-code", "2.1.325"),
-            "codex": ("cask", "codex", "0.166.0"),
+            "codex": ("cask", "codex", "0.169.0"),
         }
         records = [record for record in self.catalog_records() if record[1] == "homebrew"]
         self.assertEqual({record[0] for record in records}, set(expected))

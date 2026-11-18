@@ -175,7 +175,7 @@ class VersionUpdateTests(unittest.TestCase):
         owned = [record for record in records if record[0] == name and record[5] == "exact"]
         floor = [record for record in records if record[0] == name and record[5] == "floor"]
         self.assertEqual([record[4] for record in owned], ["99.1.0"])
-        self.assertEqual([record[4] for record in floor], ["0.166.0"])
+        self.assertEqual([record[4] for record in floor], ["0.169.0"])
         self.assertEqual(len([record for record in records if record[0] == name]), 2)
         self.assertEqual(check(self.root)["agents"], 9)
 
