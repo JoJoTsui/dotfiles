@@ -226,8 +226,9 @@ pinned version, selects the declared host archive, requires an HTTPS URL and a
 64-character SHA-256 digest, downloads and verifies the archive, extracts
 `qodercli`, checks its exact version, and places those verified bytes under
 `~/.qoder/bin/qodercli`. Dotfiles owns that versioned executable and its two
-launchers. Linux x64 falls back to the manifest's
-baseline archive when the CPU lacks the required Bun feature flags. macOS
+launchers. The installer refuses symlinks in the release path before executing
+or installing the binary, preserving their targets. Linux x64 falls back to the
+manifest's baseline archive when the CPU lacks the required Bun feature flags. macOS
 reports Apple silicon under Rosetta so the native archive is selected.
 
 The common toolchain supplies Bun 1.4.2 and Node 26.12.1. Bootstrap checks both

@@ -540,6 +540,9 @@ install_native_release() {
     local exposed_commands=()
     root="$HOME/.$name"
     cli="$root/bin/$binary/$binary-$version"
+    for entry in "$root" "$root/bin" "$root/bin/$binary" "$cli"; do
+        [ ! -L "$entry" ] || fail "native agent release path is a symlink: $entry"
+    done
     IFS=, read -r -a exposed_commands <<< "$commands"
     for command in "${exposed_commands[@]}"; do
         agent_validate_launcher "$HOME/.local/bin/$command"

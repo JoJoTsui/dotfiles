@@ -168,6 +168,41 @@ install_native_release qoder "$2" 'qoder,qodercli' 'qodercli' 'https://qoder.inv
         self.assertEqual(target.read_bytes(), original)
         self.assertFalse((self.home / ".local/bin/qoder").exists())
 
+    def test_versioned_binary_symlink_is_not_executed_or_overwritten(self):
+        target = self.root / "device-executable"
+        original = self.cli_bytes("0.0.1")
+        self.write_executable(target, original)
+        self.cli.parent.mkdir(parents=True, exist_ok=True)
+        self.cli.symlink_to(target)
+        self.write_release(self.version)
+
+        result = self.install()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("native agent release path is a symlink", result.stderr)
+        self.assertTrue(self.cli.is_symlink())
+        self.assertEqual(target.read_bytes(), original)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.network_calls.exists())
+
+    def test_versioned_binary_directory_symlink_is_not_followed(self):
+        external = self.root / "device-releases"
+        target = external / self.cli.name
+        original = self.cli_bytes("0.0.1")
+        self.write_executable(target, original)
+        self.cli.parent.parent.mkdir(parents=True, exist_ok=True)
+        self.cli.parent.symlink_to(external, target_is_directory=True)
+        self.write_release(self.version)
+
+        result = self.install()
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("native agent release path is a symlink", result.stderr)
+        self.assertTrue(self.cli.parent.is_symlink())
+        self.assertEqual(target.read_bytes(), original)
+        self.assertFalse(self.calls.exists())
+        self.assertFalse(self.network_calls.exists())
+
     def test_downloaded_pinned_cli_owns_both_launchers_and_preserves_device_state(self):
         before = self.seed_device_state()
         content = self.write_release(self.version)
