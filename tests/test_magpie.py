@@ -1556,6 +1556,29 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(self.dsh_compact_value(), "")
         self.assertEqual(self.dsh_compact_commands(), [])
 
+    def test_an_agent_selection_without_dsh_preserves_gateway_settings(self):
+        def setup():
+            settings = self.home / ".config/magpie/settings.json"
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            settings.write_text(json.dumps({"pickedModels": {"dsh": ["device/model"]}}))
+            (self.state / "visible.json").write_text(json.dumps({"dsh": "device-provider"}))
+            (self.state / "dsh-compact.json").write_text(json.dumps({"value": "device/model"}))
+
+        result = self.apply(shell=["DEPLOY_AGENTS=(claude pi)"], setup=setup)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        settings = json.loads((self.home / ".config/magpie/settings.json").read_text())
+        self.assertEqual(settings["pickedModels"]["dsh"], ["device/model"])
+        self.assertIn("pi", settings["pickedModels"])
+        self.assertEqual(json.loads((self.state / "visible.json").read_text())["dsh"], "device-provider")
+        self.assertEqual(self.dsh_compact_value(), "device/model")
+        self.assertFalse(any(command.startswith(("dsh ", "visible dsh "))
+                             for command in self.commands()))
+        self.assertNotIn("wiring|dsh|", self.state_file().read_text())
+        result = self.apply(shell=["DEPLOY_AGENTS=(claude pi dsh)"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("dsh group/workhorse", self.commands())
+        self.assertIn("wiring|dsh|group/workhorse", self.state_file().read_text())
+
     def test_an_agent_selection_without_dsh_leaves_compaction_alone(self):
         # The public bootstrap resolves DOTFILES_AGENTS (or --agents) into
         # DEPLOY_AGENTS before it sources the engine. A selection that leaves

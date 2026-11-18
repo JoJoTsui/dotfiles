@@ -599,6 +599,7 @@ magpie_picked_write() {
     input=$(mktemp "${TMPDIR:-/tmp}/magpie-picked.XXXXXX") || return 1
     {
         for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
+            if [ "${MAGPIE_PICKED_AGENT[index]}" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
             printf '%s|%s\n' "${MAGPIE_PICKED_AGENT[index]}" "${MAGPIE_PICKED_MODELS[index]}"
         done
     } > "$input" || { rm -f "$input"; return 1; }
@@ -2105,6 +2106,7 @@ magpie_state_content() {
         done
         for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
             agent=${MAGPIE_WIRING_AGENT[index]}
+            if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
             printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
         done
         printf 'proxy|current|%s\n' "$MAGPIE_PROXY"
@@ -2408,6 +2410,7 @@ group-add:$group"
     DEPLOY_STEP=magpie-apply.visible
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
         agent=${MAGPIE_VISIBLE_AGENT[index]}; desired=${MAGPIE_VISIBLE_NAMES[index]}
+        if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
         current=$(magpie_visible_names "$agent" || true)
         if [ "$(magpie_names_sorted "$current")" = "$(magpie_names_sorted "$desired")" ]; then
             printf 'dotfiles: magpie: the agent %s is shown %s\n' "$agent" "$desired"
@@ -2421,6 +2424,7 @@ visible:$agent"
     DEPLOY_STEP=magpie-apply.picked
     for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
         agent=${MAGPIE_PICKED_AGENT[index]}; desired=${MAGPIE_PICKED_MODELS[index]}
+        if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
         current=$(magpie_picked_current "$agent") ||
             { magpie_fail "cannot read the picked models for $agent"; return 1; }
         if [ "$(magpie_names_sorted "$current")" = "$(magpie_names_sorted "$desired")" ]; then
@@ -2436,6 +2440,7 @@ picked:$agent"
     for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
         agent=${MAGPIE_WIRING_AGENT[index]}; group=${MAGPIE_WIRING_GROUP[index]}
         owner=${MAGPIE_WIRING_OWNER[index]}; enabled=${MAGPIE_WIRING_ENABLED[index]}
+        if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
         [ "$enabled" = yes ] || continue
         [ "$owner" = magpie ] || continue
         case "$agent" in
@@ -2708,9 +2713,14 @@ magpie_apply_summary() {
     done
     for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
         agent=${MAGPIE_WIRING_AGENT[index]}
+        if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then
+            printf 'dotfiles: magpie: the agent dsh is outside the selection and is left alone\n'
+            continue
+        fi
         printf 'dotfiles: magpie: the agent %s uses %s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
     done
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
+        if [ "${MAGPIE_VISIBLE_AGENT[index]}" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
         printf 'dotfiles: magpie: the agent %s is shown %s\n' \
             "${MAGPIE_VISIBLE_AGENT[index]}" "${MAGPIE_VISIBLE_NAMES[index]}"
     done

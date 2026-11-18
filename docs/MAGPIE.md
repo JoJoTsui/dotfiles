@@ -390,10 +390,11 @@ session to a different tier must not drag background summarisation up with it,
 so the wiring row is a gate, never the value. The field is set only when the
 `dsh` row in `deployment/magpie/wiring.tsv` is both enabled and Magpie-owned;
 a parked, inherited, or repo-owned row leaves it alone. A bootstrap agent
-selection that leaves `dsh` out also leaves the field alone, while a selection
-that includes `dsh` keeps the fixed route. A standalone apply, such as
-`dotfiles-magpie apply`, declares no agent selection and keeps the wiring row
-as its only gate.
+selection that leaves `dsh` out also leaves its visibility, picked models,
+wiring, and compaction field alone. The recorded wiring omits DSH in that case,
+so a later selection including `dsh` wires it normally. A standalone apply,
+such as `dotfiles-magpie apply`, declares no agent selection and keeps the
+wiring row as its gate.
 
 A read the deployment cannot parse is not an unset field: the getter fails
 closed unless the CLI reports `default` or a `magpie/<provider-or-group>/<model>`
