@@ -1539,30 +1539,28 @@ magpie_with_proxy_url() {
     local helper="$HOME/.local/bin/with-proxy" url=''
     [ -x "$helper" ] || helper=$(command -v with-proxy 2>/dev/null || true)
     [ -n "$helper" ] || return 1
-    url=$("$helper" --print-url 2>/dev/null) || return 1
+    url=$("$helper" --print-url-if-available 2>/dev/null) || return 1
     [ -n "$url" ] || return 1
     printf '%s' "$url"
 }
 
-# The proxy the deployment gives the gateway. The template's proxyUrl names
-# the device's endpoint, but a local port belongs to whichever proxy client
-# the device runs, so a loopback endpoint is resolved at call time through
-# with-proxy, the way the shell helpers resolve it.
+# The default template endpoint is a placeholder, so resolve it at call time.
+# Explicit device endpoints are used as supplied, even on a non-default port.
 magpie_proxy_resolve() {
     local url='' template=''
     if [ -n "${MAGPIE_PROXY_URL:-}" ]; then
         printf '%s' "$MAGPIE_PROXY_URL"
         return 0
     fi
+    if [ -n "${HTTP_PROXY_URL:-}" ]; then
+        printf '%s' "$HTTP_PROXY_URL"
+        return 0
+    fi
     template=$(magpie_template_proxy || true)
     case "$template" in
-        http://127.0.0.1:*|http://localhost:*|https://127.0.0.1:*|https://localhost:*)
-            url=$(magpie_with_proxy_url || true)
-            [ -n "$url" ] || url=$template
-            ;;
+        ''|http://127.0.0.1:7890) url=$(magpie_with_proxy_url || true) ;;
         *) url=$template ;;
     esac
-    [ -n "$url" ] || url=$(magpie_with_proxy_url || true)
     [ -n "$url" ] || return 1
     printf '%s' "$url"
 }
@@ -2200,10 +2198,6 @@ magpie_apply() {
     if [ -n "$MAGPIE_PROXY" ] && magpie_deployment_proxy_url "$MAGPIE_PROXY" >/dev/null; then
         MAGPIE_PROXY_TEMPORARY=yes
     fi
-    if [ -z "$MAGPIE_PROXY" ] && ! magpie_native_platform; then
-        magpie_fail 'cannot resolve the proxy endpoint for the Magpie providers'
-        return 1
-    fi
     if [ -n "$MAGPIE_PROXY" ] && [ "$MAGPIE_PROXY_TEMPORARY" = no ]; then
         MAGPIE_PROXY_CURRENT=$(magpie_proxy_current)
         if [ "$MAGPIE_PROXY_CURRENT" != "$MAGPIE_PROXY" ]; then
@@ -2223,6 +2217,8 @@ proxy"
         fi
         if [ "$MAGPIE_PROXY_TEMPORARY" = yes ]; then
             printf 'dotfiles: magpie: the deployment proxy is temporary; it is not written into the gateway settings\n'
+        else
+            printf 'dotfiles: magpie: no proxy endpoint available; the gateway proxy is unchanged\n'
         fi
     fi
 

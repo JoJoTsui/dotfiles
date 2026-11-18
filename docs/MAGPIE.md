@@ -317,19 +317,21 @@ TUI entry is the only writer.
 
 ## Proxy behaviour
 
-The gateway's own traffic to the providers leaves through the device proxy;
-the loopback traffic to the gateway stays direct.
+The gateway can use a device proxy for provider traffic; loopback traffic to
+the gateway stays direct.
 
-The endpoint comes from the template's `proxyUrl`. A remote endpoint is used
-as it is, because only the device knows it. A loopback endpoint is resolved
-at call time through `with-proxy --print-url`, because a local port belongs to
-whichever proxy client the device runs — Clash Verge on 7897, the deployment
-proxy on 7890 — and not to the operating system. `with-proxy --print-url` is
-also the fallback when the template names no endpoint. The value is written
-with `magpie settings set proxy` only when it differs from the current one.
+`MAGPIE_PROXY_URL` takes precedence, followed by an explicitly supplied
+`HTTP_PROXY_URL`. Otherwise, a custom template `proxyUrl` is used as supplied.
+The template's default `http://127.0.0.1:7890` is a placeholder: the apply
+asks `with-proxy --print-url-if-available` for an explicit `PROXY_HTTP` or an
+observed local listener, probing 7897 then 7890. A listening port does not
+prove that the proxy can reach a provider. If no endpoint is available, the
+apply preserves the existing gateway setting and reports that it is unchanged.
+The ordinary `with-proxy --print-url` retains its fallback for shell callers.
+The gateway setting is written only when the selected endpoint differs.
 
-On a device whose proxy client runs on another port than the template names,
-set `HTTP_PROXY_URL` before the deployment, or set the proxy once by hand:
+For a proxy on another port, set `HTTP_PROXY_URL` before deployment, or set the
+proxy once by hand:
 
 ```bash
 magpie settings set proxy http://127.0.0.1:7897

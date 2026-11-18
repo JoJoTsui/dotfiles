@@ -837,12 +837,45 @@ class MagpieApplyTests(unittest.TestCase):
         config.write_text('[data]\n    proxyUrl = "http://127.0.0.1:7890"\n', encoding="utf-8")
         helper = self.tools / "with-proxy"
         helper.parent.mkdir(parents=True, exist_ok=True)
-        helper.write_text('#!/bin/sh\n[ "$1" = --print-url ] && echo http://127.0.0.1:7897\n', encoding="utf-8")
+        helper.write_text('#!/bin/sh\n[ "$1" = --print-url-if-available ] && echo http://127.0.0.1:7897\n', encoding="utf-8")
         helper.chmod(0o755)
         environment = {"MAGPIE_PROXY_URL": "", "PATH": f"{self.tools}:/usr/bin:/bin"}
         result = self.apply(environment=environment)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("settings set proxy http://127.0.0.1:7897", self.commands())
+
+    def test_an_unavailable_default_proxy_preserves_the_gateway_setting(self):
+        self.seed_home()
+        config = self.home / ".config/chezmoi/chezmoi.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[data]\n    proxyUrl = "http://127.0.0.1:7890"\n', encoding="utf-8")
+        shutil.copy2(SOURCE / "dot_local/bin/executable_with-proxy", self.tools / "with-proxy")
+        (self.tools / "with-proxy").chmod(0o755)
+        nc = self.tools / "nc"
+        nc.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        nc.chmod(0o755)
+        (self.state / "proxy.txt").write_text(json.dumps("http://proxy.example.invalid:8080"))
+        result = self.apply(environment={"MAGPIE_PROXY_URL": ""})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(any(command.startswith("settings set proxy") for command in self.commands()))
+        self.assertEqual(json.loads((self.state / "proxy.txt").read_text()),
+                         "http://proxy.example.invalid:8080")
+        self.assertIn("no proxy endpoint available", result.stdout)
+
+    def test_a_custom_local_template_proxy_is_used_as_it_is(self):
+        self.seed_home()
+        config = self.home / ".config/chezmoi/chezmoi.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[data]\n    proxyUrl = "http://127.0.0.1:1234"\n', encoding="utf-8")
+        result = self.apply(environment={"MAGPIE_PROXY_URL": ""})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("settings set proxy http://127.0.0.1:1234", self.commands())
+
+    def test_an_explicit_template_environment_overrides_the_default_probe(self):
+        result = self.apply(environment={"MAGPIE_PROXY_URL": "",
+                                         "HTTP_PROXY_URL": "http://127.0.0.1:7890"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("settings set proxy http://127.0.0.1:7890", self.commands())
 
     def test_a_remote_proxy_from_the_template_is_used_as_it_is(self):
         self.seed_home()

@@ -28,6 +28,8 @@
 #
 # --print emits the export lines instead of exec'ing, which is how the shell
 # helper in .env_core reuses this resolution without copying the port list.
+# --print-url-if-available emits no fallback when neither a value nor a
+# listener is available, for callers that persist the chosen endpoint.
 
 set -euo pipefail
 
@@ -38,6 +40,7 @@ if_available=0
 case ${1:-} in
     --print) mode=print; shift ;;
     --print-url) mode=url; shift ;;
+    --print-url-if-available) mode=available-url; shift ;;
     --if-available) if_available=1; shift ;;
 esac
 
@@ -53,10 +56,13 @@ else
         fi
     done
 fi
+if [[ $mode == available-url && $available == 0 ]]; then
+    exit 1
+fi
 PROXY_HTTP=${PROXY_HTTP:-http://127.0.0.1:7890}
 PROXY_SOCKS=${PROXY_SOCKS:-socks5h://${PROXY_HTTP#http://}}
 
-if [[ $mode == url ]]; then
+if [[ $mode == url || $mode == available-url ]]; then
     printf '%s\n' "$PROXY_HTTP"
     exit 0
 fi
@@ -75,7 +81,7 @@ if [[ $mode == print ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-    echo "usage: with-proxy [--print|--print-url|--if-available] command [args...]" >&2
+    echo "usage: with-proxy [--print|--print-url|--print-url-if-available|--if-available] command [args...]" >&2
     exit 64
 fi
 

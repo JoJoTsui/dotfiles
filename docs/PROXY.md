@@ -114,6 +114,9 @@ The endpoint is resolved per call, not per platform. A port belongs to the
 proxy process that owns it — the deployment instance uses 7890, Clash Verge
 uses 7897, on every OS — so `with-proxy` probes 7897 then 7890 and falls back
 to 7890 when neither answers. An explicit `PROXY_HTTP` skips the probe.
+`with-proxy --print-url-if-available` instead exits unsuccessfully with no
+output when no endpoint is configured or observed; use it when persisting an
+endpoint, rather than persisting the ordinary fallback.
 `noproxy`, in both the POSIX and the Nu adapter, asks `with-proxy` for the same
 answer, so the port is never baked in at `chezmoi init` and one checkout
 serves a headless host and a desktop running a different client.

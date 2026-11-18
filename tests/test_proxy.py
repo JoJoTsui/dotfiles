@@ -11,6 +11,39 @@ import unittest
 SOURCE = Path(__file__).resolve().parents[1]
 
 
+class WithProxyTests(unittest.TestCase):
+    """The wrapper reports an endpoint only when it has one to use."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-with-proxy-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.nc = self.root / "nc"
+        self.nc.write_text('#!/bin/sh\n[ "$3" = "${LISTENING_PORT:-none}" ]\n')
+        self.nc.chmod(0o755)
+
+    def run_wrapper(self, *arguments, **environment):
+        return subprocess.run(
+            ["/bin/bash", str(SOURCE / "dot_local/bin/executable_with-proxy"), *arguments],
+            env={"HOME": str(self.root), "PATH": f"{self.root}:/usr/bin:/bin", **environment},
+            capture_output=True, text=True, timeout=10)
+
+    def test_available_url_requires_an_explicit_or_observed_endpoint(self):
+        missing = self.run_wrapper("--print-url-if-available")
+        self.assertNotEqual(missing.returncode, 0)
+        self.assertEqual(missing.stdout, "")
+        # Existing callers keep the legacy fallback.
+        legacy = self.run_wrapper("--print-url")
+        self.assertEqual(legacy.returncode, 0)
+        self.assertEqual(legacy.stdout.strip(), "http://127.0.0.1:7890")
+        observed = self.run_wrapper("--print-url-if-available", LISTENING_PORT="7897")
+        self.assertEqual(observed.returncode, 0)
+        self.assertEqual(observed.stdout.strip(), "http://127.0.0.1:7897")
+        explicit = self.run_wrapper("--print-url-if-available", PROXY_HTTP="http://proxy.example.invalid:8080")
+        self.assertEqual(explicit.returncode, 0)
+        self.assertEqual(explicit.stdout.strip(), "http://proxy.example.invalid:8080")
+
+
 class ProxyTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-proxy-")
