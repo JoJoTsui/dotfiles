@@ -5,7 +5,8 @@ The deployment adopts Magpie as the single model gateway at
 (model-provider catalog, model ids, group membership, which agent uses which
 group, and Claude Code's hand-written settings), Magpie owns *credentials and
 generated state* (provider keys, accounts, usage, Pi's `models.json`, DSH's
-Magpie route), and Codex's configuration belongs to neither. We rejected
+Magpie route, and Codex's separate Magpie profile/catalog), and Codex's base
+configuration and authentication remain device-owned. We rejected
 letting Magpie's agent adapters write every client config because that would
 put a second writer beside `deployment/client-settings/` and let a gateway
 upgrade silently change an agent; we also rejected templating Pi's generated
@@ -32,5 +33,17 @@ thinking levels) that would drift from Magpie's catalog.
   Existing providers are adopted without rewriting credentials.
 - `dotfiles-magpie status` is the only supported way to see drift; opening the
   app is not part of verification.
-- Codex is structurally protected: no code path calls `magpie codex`, and each
-  apply hashes `~/.codex/config.toml` before and after.
+- Codex's base `config.toml` and `auth.json` remain protected by before/after
+  hash guards and private backups. The selected separate-profile exception
+  permits only `magpie codex scope profile` followed by a profile model
+  selection. Magpie generates `magpie.config.toml` and `magpie-models.json`;
+  the credential-bearing profile stays 0600. Collision checks preserve
+  unrecorded device files, and an interrupted write can retry only against
+  exact recorded fingerprints.
+- Plain `codex` keeps the subscription configuration; `codex -p magpie`
+  starts new gateway sessions. Resume must restore the saved provider, not
+  migrate thread metadata. A combined in-session model picker was rejected
+  because it changes the base configuration; a provider-definitions-only
+  resume profile still needs isolated runtime verification. See
+  [the Codex verification boundary](../MAGPIE.md#resume-without-switching-a-threads-provider)
+  before application; synthetic profile tests do not establish live resume.

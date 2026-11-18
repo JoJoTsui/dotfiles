@@ -146,6 +146,35 @@ elif argv[:1] == ["pi"] and len(argv) == 2:
     models.parent.mkdir(parents=True, exist_ok=True)
     models.write_text(json.dumps({"providers": [{"id": "magpie", "name": "Magpie"}]}))
     print("ok")
+elif argv[:2] == ["codex", "scope"] and len(argv) == 3:
+    # Scope selection changes only Magpie's preference, before the next CLI
+    # invocation constructs the profile-only adapter.
+    if argv[2] != "profile":
+        sys.exit(2)
+    save("codex-scope.json", {"value": "profile"})
+    print("profile")
+elif argv[:1] == ["codex"] and len(argv) == 2:
+    scope = load("codex-scope.json", {"value": ""})["value"]
+    if scope != "profile":
+        # Selecting a model before profile scope would use the ordinary
+        # integration and change the base configuration.
+        codex = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
+        codex.write_text(codex.read_text() + "\\nmodel_provider = \\"magpie\\"\\n")
+        sys.exit(2)
+    if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX_AUTH") == "1":
+        auth = pathlib.Path(os.environ["HOME"]) / ".codex/auth.json"
+        auth.write_text('{"changed":true}\\n')
+    profile = pathlib.Path(os.environ["HOME"]) / ".codex/magpie.config.toml"
+    catalog = pathlib.Path(os.environ["HOME"]) / ".codex/magpie-models.json"
+    # The real writer preserves an existing mode and otherwise uses 0644.
+    profile.write_text('model_provider = "magpie"\\nmodel = "' + argv[1] +
+                       '"\\nmodel_catalog_json = "magpie-models.json"\\n'
+                       '[model_providers.magpie]\\nbase_url = "http://127.0.0.1:3425/v1"\\n'
+                       'experimental_bearer_token = "fixture-not-a-real-credential"\\n')
+    catalog.write_text('{"models":[]}\\n')
+    if os.environ.get("FAKE_MAGPIE_FAIL_CODEX_PROFILE") == "1":
+        sys.exit(1)
+    print("ok")
 elif argv[:1] == ["group"]:
     groups = load("groups.json", {})
     if argv[1] not in groups:
@@ -576,6 +605,13 @@ class MagpieApplyTests(unittest.TestCase):
         models = self.home / ".pi/agent/models.json"
         models.write_text(json.dumps({"providers": [{"id": "magpie", "name": "Magpie"}]}),
                           encoding="utf-8")
+        profile = self.home / ".codex/magpie.config.toml"
+        profile.write_text('model_provider = "magpie"\nmodel = "group/openai-stack"\n'
+                           'model_catalog_json = "magpie-models.json"\n'
+                           '[model_providers.magpie]\nbase_url = "http://127.0.0.1:3425/v1"\n'
+                           'experimental_bearer_token = "fixture-not-a-real-credential"\n', encoding="utf-8")
+        profile.chmod(0o600)
+        (self.home / ".codex/magpie-models.json").write_text('{"models":[]}\n', encoding="utf-8")
 
     def apply(self, *, credentials=True, environment=None, setup=None, merger=False, premerge=False,
               platform="macos", shell=None):
@@ -665,6 +701,154 @@ class MagpieApplyTests(unittest.TestCase):
         return [command for command in self.commands()
                 if command.startswith("dsh compact_model")]
 
+    def assert_codex_profile_collision_preserved(self, name, link=False):
+        target = self.home / "device-codex-file"
+        collision = self.home / ".codex" / name
+
+        def setup():
+            target.write_text("device-owned\n", encoding="utf-8")
+            if link:
+                collision.symlink_to(target)
+            else:
+                collision.write_text("device-owned\n", encoding="utf-8")
+                collision.chmod(0o600)
+
+        result = self.apply(setup=setup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Codex profile", result.stderr)
+        self.assertEqual(target.read_text(encoding="utf-8"), "device-owned\n")
+        if not link:
+            self.assertEqual(collision.read_text(encoding="utf-8"), "device-owned\n")
+        self.assertTrue(collision.is_symlink() if link else not collision.is_symlink())
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible claude ", "pi ", "dsh ", "codex ")) for command in self.commands()),
+            self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_an_existing_device_codex_profile_is_not_adopted_or_overwritten(self):
+        self.assert_codex_profile_collision_preserved("magpie.config.toml")
+
+    def test_an_existing_device_codex_catalog_is_not_adopted_or_overwritten(self):
+        self.assert_codex_profile_collision_preserved("magpie-models.json")
+
+    def test_a_linked_codex_profile_is_refused_without_touching_its_target(self):
+        self.assert_codex_profile_collision_preserved("magpie.config.toml", link=True)
+
+    def test_the_codex_profile_preserves_base_config_auth_and_credentials(self):
+        base = self.home / ".codex/config.toml"
+        auth = self.home / ".codex/auth.json"
+
+        def setup():
+            base.write_text('model = "chatgpt-native"\nmodel_provider = "origin"\n', encoding="utf-8")
+            auth.write_text('{"tokens":{"access_token":"fixture-not-a-real-credential"}}\n', encoding="utf-8")
+            auth.chmod(0o600)
+
+        result = self.apply(setup=setup)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(base.read_text(encoding="utf-8"),
+                         'model = "chatgpt-native"\nmodel_provider = "origin"\n')
+        self.assertEqual(auth.read_text(encoding="utf-8"),
+                         '{"tokens":{"access_token":"fixture-not-a-real-credential"}}\n')
+        commands = self.commands()
+        self.assertIn("codex scope profile", commands)
+        self.assertIn("codex group/openai-stack", commands)
+        self.assertLess(commands.index("codex scope profile"),
+                        commands.index("codex group/openai-stack"))
+        profile = self.home / ".codex/magpie.config.toml"
+        self.assertEqual(profile.stat().st_mode & 0o777, 0o600)
+        self.assertIn('model = "group/openai-stack"', profile.read_text(encoding="utf-8"))
+        self.assertTrue((self.home / ".codex/magpie-models.json").is_file())
+        backups = list((self.home / ".local/state/dotfiles/magpie/backups").iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / ".codex/config.toml").read_bytes(), base.read_bytes())
+        self.assertEqual((backups[0] / ".codex/auth.json").read_bytes(), auth.read_bytes())
+        self.assertEqual((backups[0] / ".codex/auth.json").stat().st_mode & 0o777, 0o600)
+
+        profile_mtime = profile.stat().st_mtime_ns
+        result = self.apply(setup=setup)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = self.commands()
+        self.assertEqual(commands.count("codex scope profile"), 1)
+        self.assertEqual(commands.count("codex group/openai-stack"), 1)
+        self.assertEqual(profile.stat().st_mtime_ns, profile_mtime)
+
+    def test_a_codex_auth_change_aborts_and_keeps_its_backup(self):
+        auth = self.home / ".codex/auth.json"
+
+        def setup():
+            auth.write_text('{"tokens":{"access_token":"fixture-original"}}\n', encoding="utf-8")
+            auth.chmod(0o600)
+
+        result = self.apply(setup=setup, environment={"FAKE_MAGPIE_TOUCH_CODEX_AUTH": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Codex authentication changed", result.stderr)
+        backups = list((self.home / ".local/state/dotfiles/magpie/backups").iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / ".codex/auth.json").read_text(encoding="utf-8"),
+                         '{"tokens":{"access_token":"fixture-original"}}\n')
+        self.assertFalse(self.state_file().exists())
+
+    def test_an_interrupted_codex_profile_write_retries_without_adopting_drift(self):
+        result = self.apply(environment={"FAKE_MAGPIE_FAIL_CODEX_PROFILE": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        profile = self.home / ".codex/magpie.config.toml"
+        self.assertEqual(profile.stat().st_mode & 0o777, 0o600)
+        self.assertFalse(self.state_file().exists())
+        self.assertEqual((self.home / ".codex/config.toml").read_text(encoding="utf-8"),
+                         'model = "gpt-6-luna"\n')
+
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("codex scope profile", self.commands())
+        self.assertTrue(self.state_file().is_file())
+
+    def test_an_excluded_codex_selection_preserves_profile_and_gateway_lists(self):
+        profile = self.home / ".codex/magpie.config.toml"
+
+        def setup():
+            profile.write_text("device-owned-profile\n", encoding="utf-8")
+            profile.chmod(0o600)
+            (self.home / ".codex/magpie-models.json").write_text('{"device":true}\n', encoding="utf-8")
+            settings = self.home / ".config/magpie/settings.json"
+            settings.parent.mkdir(parents=True, exist_ok=True)
+            settings.write_text(json.dumps({"pickedModels": {"codex": ["device/model"]}}), encoding="utf-8")
+            (self.state / "visible.json").write_text(json.dumps({"codex": "device-provider"}), encoding="utf-8")
+
+        result = self.apply(shell=["DEPLOY_AGENTS=(claude pi dsh)"], setup=setup)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(profile.read_text(encoding="utf-8"), "device-owned-profile\n")
+        settings = json.loads((self.home / ".config/magpie/settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(settings["pickedModels"]["codex"], ["device/model"])
+        self.assertEqual(json.loads((self.state / "visible.json").read_text(encoding="utf-8"))["codex"],
+                         "device-provider")
+        self.assertFalse(any(command.startswith(("codex ", "visible codex "))
+                             for command in self.commands()), self.commands())
+        self.assertIn("selection|codex|excluded", self.state_file().read_text(encoding="utf-8"))
+
+    def test_reapplication_repairs_codex_profile_drift(self):
+        self.assertEqual(self.apply().returncode, 0)
+        profile = self.home / ".codex/magpie.config.toml"
+        profile.write_text(profile.read_text(encoding="utf-8").replace(
+            'model = "group/openai-stack"', 'model = "group/conductor"'))
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('model = "group/openai-stack"', profile.read_text(encoding="utf-8"))
+        self.assertEqual(self.commands().count("codex group/openai-stack"), 2)
+
+    def test_interrupted_profile_files_cannot_be_changed_then_adopted(self):
+        self.assertNotEqual(self.apply(environment={"FAKE_MAGPIE_FAIL_CODEX_PROFILE": "1"}).returncode, 0)
+        profile = self.home / ".codex/magpie.config.toml"
+        profile.write_text(profile.read_text(encoding="utf-8") + "\n# device edit\n")
+        before = profile.read_bytes()
+        command_count = len(self.commands())
+        result = self.apply()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pending record", result.stderr)
+        self.assertEqual(profile.read_bytes(), before)
+        self.assertFalse(any(command.startswith("codex ")
+                             for command in self.commands()[command_count:]))
+
     def test_the_apply_preserves_existing_providers_and_wires_clients(self):
         result = self.apply()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -686,8 +870,8 @@ class MagpieApplyTests(unittest.TestCase):
         order = ["provider add codex", "settings set proxy",
                  "plugin add npm:@magpie-community/opencode-zed-auth@0.1.19",
                  "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
-                 "visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
-                 "pi group/workhorse", "dsh group/workhorse"]
+                 "visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible codex chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
+                 "codex scope profile", "codex group/openai-stack", "pi group/workhorse", "dsh group/workhorse"]
         positions = []
         for command in order:
             matches = [index for index, recorded in enumerate(commands) if recorded.startswith(command)]
@@ -701,6 +885,7 @@ class MagpieApplyTests(unittest.TestCase):
         narrowing = [command for command in self.commands() if len(command.split()) == 3
                      and command.startswith("visible ")]
         self.assertEqual(narrowing, ["visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
+                                     "visible codex chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
                                      "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
 
     def test_the_apply_writes_the_picked_models_and_is_idempotent(self):
@@ -758,8 +943,9 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(len(after), len(before) + 1, after)
         self.assertEqual(state.stat().st_mtime_ns, state_mtime)
         self.assertEqual([command for command in self.commands() if len(command.split()) == 3
-                          and command.startswith("visible ")][-3:],
+                          and command.startswith("visible ")][-4:],
                          ["visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
+                          "visible codex chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
                           "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
 
     def test_the_apply_registers_the_account_before_installing_the_plugin(self):
@@ -963,6 +1149,8 @@ class MagpieApplyTests(unittest.TestCase):
                     # in the store so passing it to the CLI would be detectable.
                     shutil.rmtree(self.state, ignore_errors=True)
                     shutil.rmtree(self.home / ".local/state/dotfiles/magpie", ignore_errors=True)
+                    for name in ("magpie.config.toml", "magpie-models.json"):
+                        (self.home / ".codex" / name).unlink(missing_ok=True)
                     self.provision(["opencode-go", "kimi-code-cn", "openai", "zed"])
 
                 result = self.apply(platform=platform, setup=setup)
@@ -1341,11 +1529,12 @@ class MagpieApplyTests(unittest.TestCase):
             if path.is_file():
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600, path)
 
-    def test_the_apply_never_writes_codex_claude_or_accounts(self):
+    def test_the_apply_limits_codex_to_its_profile_and_never_writes_claude_or_accounts(self):
         self.apply()
         commands = self.commands()
-        for forbidden in ("codex", "claude"):
-            self.assertFalse(any(command.split(" ")[0] == forbidden for command in commands), commands)
+        self.assertFalse(any(command.split(" ")[0] == "claude" for command in commands), commands)
+        self.assertEqual([command for command in commands if command.startswith("codex ")],
+                         ["codex scope profile", "codex group/openai-stack"])
         self.assertFalse(any(command.startswith("accounts add") for command in commands))
         self.assertFalse(any(command.startswith("accounts import") for command in commands))
         self.assertEqual([command for command in commands if command.startswith("accounts")],
@@ -1469,7 +1658,8 @@ class MagpieApplyTests(unittest.TestCase):
         result = self.apply()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(patch.read_bytes(), before)
-        self.assertNotIn("codex", [command.split(" ")[0] for command in self.commands()])
+        self.assertEqual([command for command in self.commands() if command.startswith("codex ")],
+                         ["codex scope profile", "codex group/openai-stack"])
 
     def test_a_changed_official_deepseek_row_aborts_the_apply(self):
         self.seed_home()
@@ -2068,12 +2258,13 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertIn("dsh-compact|unreadable", result.stdout)
         self.assertIn("dsh-compact", result.stderr)
 
-    def test_the_status_reports_the_three_visibility_rows(self):
+    def test_the_status_reports_the_four_visibility_rows(self):
         self.seed_home()
         self.healthy_gateway()
         result = self.run_command("status")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("visible|claude|" + self.catalog_column("visible.tsv", 1)["claude"], result.stdout)
+        self.assertIn("visible|codex|" + self.catalog_column("visible.tsv", 1)["codex"], result.stdout)
         self.assertIn("visible|pi|" + self.catalog_column("visible.tsv", 1)["pi"], result.stdout)
         self.assertIn("visible|dsh|" + self.catalog_column("visible.tsv", 1)["dsh"], result.stdout)
 

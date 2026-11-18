@@ -10,9 +10,9 @@
 #          another agent.
 # enabled  yes when the wiring applies, no when it is parked.
 #
-# The deployment never wires Codex, and it never lets Magpie write Claude
-# Code's settings.
+# Codex uses Magpie's separate profile; Claude Code's settings stay repo-owned.
 claude|group/conductor|repo|yes
+codex|group/openai-stack|magpie|yes
 pi|group/workhorse|magpie|yes
 dsh|group/workhorse|magpie|yes
 dsh-tui|-|inherited|yes

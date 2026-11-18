@@ -600,6 +600,7 @@ magpie_picked_write() {
     {
         for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
             if [ "${MAGPIE_PICKED_AGENT[index]}" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
+            if [ "${MAGPIE_PICKED_AGENT[index]}" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
             printf '%s|%s\n' "${MAGPIE_PICKED_AGENT[index]}" "${MAGPIE_PICKED_MODELS[index]}"
         done
     } > "$input" || { rm -f "$input"; return 1; }
@@ -1918,6 +1919,8 @@ magpie_snapshot_clients() (
     snapshot=$(mktemp -d "${TMPDIR:?}/magpie-clients.XXXXXX") || return 1
     for file in "$HOME/.claude/settings.json" "$HOME/.pi/agent/settings.json" \
         "$HOME/.pi/agent/models.json" "$HOME/.codex/config.toml" \
+        "$HOME/.codex/auth.json" "$HOME/.codex/magpie.config.toml" \
+        "$HOME/.codex/magpie-models.json" \
         "$HOME"/.dsh/profiles/*/cordis.patch.yml; do
         [ -f "$file" ] || continue
         rel=${file#"$HOME/"}
@@ -1940,7 +1943,9 @@ magpie_backup_create() (
     # Keep each file's path below the home: Claude's and Pi's settings.json
     # share a basename, and one must never overwrite the other.
     for file in "$source_home/.claude/settings.json" "$source_home/.pi/agent/settings.json" \
-        "$source_home/.pi/agent/models.json" "$source_home/.codex/config.toml"; do
+        "$source_home/.pi/agent/models.json" "$source_home/.codex/config.toml" \
+        "$source_home/.codex/auth.json" "$source_home/.codex/magpie.config.toml" \
+        "$source_home/.codex/magpie-models.json"; do
         [ -f "$file" ] || continue
         rel=${file#"$source_home/"}
         mkdir -p "$root/$(dirname "$rel")"
@@ -2107,10 +2112,14 @@ magpie_state_content() {
         for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
             agent=${MAGPIE_WIRING_AGENT[index]}
             if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
+            if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
             printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
         done
         if ! magpie_dsh_compact_selected; then
             printf 'selection|dsh|excluded\n'
+        fi
+        if ! magpie_agent_selected codex; then
+            printf 'selection|codex|excluded\n'
         fi
         printf 'proxy|current|%s\n' "$MAGPIE_PROXY"
         if [ -n "$MAGPIE_DSH_COMPACT_GROUP" ]; then
@@ -2157,13 +2166,195 @@ magpie_state_write() {
     mv -f "$staged" "$state"
 }
 
+magpie_codex_profile_pending_path() {
+    printf '%s/codex-profile.pending' "$(magpie_state_dir)"
+}
+
+magpie_codex_profile_fingerprint() {
+    local file=$1
+    [ ! -L "$file" ] || return 1
+    if [ -e "$file" ]; then
+        [ -f "$file" ] || return 1
+        magpie_sha256 "$file"
+    else
+        printf 'absent\n'
+    fi
+}
+
+# Record the exact files an interrupted first write may retry. A later edit or
+# deletion no longer matches this record and is treated as device drift.
+magpie_codex_profile_pending_write() {
+    local root pending staged
+    root=$(magpie_state_dir)
+    pending=$(magpie_codex_profile_pending_path)
+    [ ! -L "$root" ] || { magpie_fail 'the Magpie state directory is a symlink'; return 1; }
+    mkdir -p "$root" || { magpie_fail 'cannot create the Magpie state directory'; return 1; }
+    [ ! -L "$pending" ] || { magpie_fail 'the Codex profile pending record is a symlink'; return 1; }
+    staged=$(mktemp "$pending.XXXXXX") || { magpie_fail 'cannot stage the Codex profile pending record'; return 1; }
+    printf 'profile|%s\ncatalog|%s\n' "$1" "$2" > "$staged" || {
+        rm -f "$staged"; magpie_fail 'cannot write the Codex profile pending record'; return 1;
+    }
+    chmod 600 "$staged" || { rm -f "$staged"; return 1; }
+    mv -f "$staged" "$pending" || { rm -f "$staged"; return 1; }
+}
+
+magpie_codex_profile_pending_matches() {
+    local pending profile_record catalog_record profile_now catalog_now
+    pending=$(magpie_codex_profile_pending_path)
+    [ -f "$pending" ] && [ ! -L "$pending" ] || return 1
+    {
+        IFS='|' read -r _ profile_record
+        IFS='|' read -r _ catalog_record
+    } < "$pending"
+    profile_now=$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml") || return 1
+    catalog_now=$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json") || return 1
+    [ -n "$profile_record" ] && [ -n "$catalog_record" ] &&
+        [ "$profile_record" = "$profile_now" ] && [ "$catalog_record" = "$catalog_now" ]
+}
+
+magpie_codex_profile_pending_clear() {
+    local pending
+    pending=$(magpie_codex_profile_pending_path)
+    [ -e "$pending" ] || [ -L "$pending" ] || return 0
+    magpie_codex_profile_pending_matches || {
+        magpie_fail 'the interrupted Codex profile files changed; preserving them'
+        return 1
+    }
+    rm -f "$pending" || { magpie_fail 'cannot clear the Codex profile pending record'; return 1; }
+}
+
+# Read one simple string without printing any neighboring credential. The
+# profile schema uses plain quoted values for these keys; malformed or escaped
+# values are unreadable rather than guessed.
+magpie_codex_toml_string() {
+    local file=$1 section=$2 key=$3
+    awk -v section="$section" -v key="$key" '
+        BEGIN { active = (section == "") }
+        /^[[:space:]]*\[/ {
+            if (section == "") { exit }
+            line = $0
+            gsub(/[[:space:]]/, "", line)
+            active = (line == "[" section "]")
+            next
+        }
+        active {
+            pattern = "^[[:space:]]*" key "[[:space:]]*=[[:space:]]*\""
+            if ($0 !~ pattern) { next }
+            line = $0
+            sub(pattern, "", line)
+            if (line !~ /"[[:space:]]*(#.*)?$/) { exit 1 }
+            sub(/"[[:space:]]*(#.*)?$/, "", line)
+            if (line ~ /["\\]/) { exit 1 }
+            print line
+            found = 1
+            exit
+        }
+        END { if (!found) { exit 1 } }
+    ' "$file"
+}
+
+magpie_codex_profile_mode() {
+    if stat -f '%Lp' "$1" 2>/dev/null; then return 0; fi
+    stat -c '%a' "$1" 2>/dev/null
+}
+
+# Live profile health, with no bearer token in the report. This is used after
+# writing, on reapplication, and by status so recorded intent is not proof.
+magpie_codex_profile_report() {
+    local group=$1 profile="$HOME/.codex/magpie.config.toml"
+    local catalog="$HOME/.codex/magpie-models.json" python mode value drift=''
+    if [ ! -e "$profile" ] && [ ! -e "$catalog" ]; then
+        printf 'missing|'
+        return 0
+    fi
+    if [ -L "$profile" ] || [ -L "$catalog" ] || [ ! -f "$profile" ] || [ ! -f "$catalog" ]; then
+        printf 'unreadable|'
+        return 0
+    fi
+    for key in model_provider model model_catalog_json; do
+        case "$key" in
+            model_provider) expected=magpie ;;
+            model) expected=$group ;;
+            model_catalog_json) expected=magpie-models.json ;;
+        esac
+        if ! value=$(magpie_codex_toml_string "$profile" '' "$key"); then
+            printf 'unreadable|'
+            return 0
+        fi
+        [ "$value" = "$expected" ] || drift="$drift,$key"
+    done
+    if ! value=$(magpie_codex_toml_string "$profile" model_providers.magpie base_url); then
+        printf 'unreadable|'
+        return 0
+    fi
+    [ "$value" = "$MAGPIE_GATEWAY_DEFAULT/v1" ] || drift="$drift,base_url"
+    mode=$(magpie_codex_profile_mode "$profile") || mode=unknown
+    [ "$mode" = 600 ] || drift="$drift,mode"
+    python=$(magpie_python) || { printf 'unreadable|'; return 0; }
+    "$python" -c 'import json, sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$catalog" \
+        >/dev/null 2>&1 || { printf 'unreadable|'; return 0; }
+    if [ -n "$drift" ]; then printf 'drift|%s' "${drift#,}"; else printf 'wired|'; fi
+}
+
+magpie_agent_selected() {
+    [ "${DEPLOY_AGENTS+x}" = x ] || return 0
+    local wanted=$1 agent
+    for agent in ${DEPLOY_AGENTS[@]+"${DEPLOY_AGENTS[@]}"}; do
+        [ "$agent" = "$wanted" ] && return 0
+    done
+    return 1
+}
+
+# Whether the enabled Magpie-owned Codex row is in the current selection.
+magpie_codex_profile_enabled() {
+    local index agent
+    for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
+        if [ "${MAGPIE_WIRING_AGENT[index]}" = codex ]; then
+            [ "${MAGPIE_WIRING_OWNER[index]}" = magpie ] &&
+                [ "${MAGPIE_WIRING_ENABLED[index]}" = yes ] || return 1
+            break
+        fi
+    done
+    magpie_agent_selected codex
+}
+
+# A pre-existing profile is device state until a successful apply records it.
+# Check every target before CLI installation or gateway mutation. In particular,
+# Magpie's atomic writer follows symlinks, so a link is never an adoption seam.
+magpie_codex_profile_preflight() {
+    magpie_codex_profile_enabled || return 0
+    local profile="$HOME/.codex/magpie.config.toml"
+    local catalog="$HOME/.codex/magpie-models.json" file recorded pending
+    pending=$(magpie_codex_profile_pending_path)
+    for file in "$profile" "$catalog"; do
+        [ ! -L "$file" ] || { magpie_fail "the Codex profile path is a symlink: $file"; return 1; }
+        if [ -e "$file" ] && [ ! -f "$file" ]; then
+            magpie_fail "the Codex profile path is not a regular file: $file"
+            return 1
+        fi
+    done
+    if [ -e "$pending" ] || [ -L "$pending" ]; then
+        magpie_codex_profile_pending_matches || {
+            magpie_fail 'the interrupted Codex profile files do not match their pending record; preserving them'
+            return 1
+        }
+        return 0
+    fi
+    recorded=$(magpie_recorded_wiring "$(magpie_state_dir)/state.tsv" codex || true)
+    if [ -z "$recorded" ] && { [ -e "$profile" ] || [ -e "$catalog" ]; }; then
+        magpie_fail 'an unrecorded Codex profile or model catalog already exists; preserving it'
+        return 1
+    fi
+    return 0
+}
+
 # Apply the catalogs to the gateway. The deployment owns the intent; Magpie
 # owns the credentials and the generated files.
 magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local output live known current desired change='' entry used rest variable servable
-    local fatal='' missing='' manual='' manual_fatal='' guard='unchanged' backup='' codex_before codex_after forced
-    local id recorded names name version plugin_state state status client_migration=no policies=''
+    local fatal='' missing='' manual='' manual_fatal='' guard='unchanged' backup='' codex_before codex_after codex_auth_before codex_auth_after forced
+    local id recorded names name version plugin_state state status client_migration=no policies='' report=''
     local MAGPIE_DSH_COMPACT_GROUP='' MAGPIE_DSH_COMPACT_BEFORE=''
     local -a candidate_list
     platform=$(magpie_platform)
@@ -2174,6 +2365,9 @@ magpie_apply() {
     dir=$(magpie_catalog_dir)
     DEPLOY_STEP=magpie-apply.catalog
     magpie_catalog_validate "$dir" || return 1
+    codex_before=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+    codex_auth_before=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+    magpie_codex_profile_preflight || return 1
     printf 'dotfiles: magpie: %s provider(s), %s model role(s), %s group(s), %s agent(s) declared\n' \
         "${#MAGPIE_PROVIDER_ROLE[@]}" "${#MAGPIE_MODEL_ROLE[@]}" \
         "${#MAGPIE_GROUP_ID[@]}" "${#MAGPIE_WIRING_AGENT[@]}"
@@ -2347,7 +2541,6 @@ $role (source: $source; variable: $variable)"
     # Model discovery depends on an account provider being registered first.
     # Back up and guard Codex before this one credential-free mutation; if a
     # later model check fails the provider and backup remain for the next run.
-    codex_before=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
     if printf '%s\n' "$change" | grep -q '^provider:'; then
         DEPLOY_STEP=magpie-apply.backup
         backup=$(magpie_backup_create "$(magpie_backup_stamp)" "${DEPLOY_MAGPIE_BACKUP_SOURCE:-$HOME}") || return 1
@@ -2364,8 +2557,13 @@ $role (source: $source; variable: $variable)"
                 status=$?
             fi
             codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+            codex_auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
             if [ "$codex_before" != "$codex_after" ]; then
                 magpie_fail 'the Codex configuration changed during the apply; the backup is kept'
+                return 1
+            fi
+            if [ "$codex_auth_before" != "$codex_auth_after" ]; then
+                magpie_fail 'the Codex authentication changed during the apply; the backup is kept'
                 return 1
             fi
             [ "$status" = 0 ] || { magpie_fail "cannot add the Magpie provider $preset"; return 1; }
@@ -2453,6 +2651,7 @@ group-add:$group"
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
         agent=${MAGPIE_VISIBLE_AGENT[index]}; desired=${MAGPIE_VISIBLE_NAMES[index]}
         if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
+        if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
         current=$(magpie_visible_names "$agent" || true)
         if [ "$(magpie_names_sorted "$current")" = "$(magpie_names_sorted "$desired")" ]; then
             printf 'dotfiles: magpie: the agent %s is shown %s\n' "$agent" "$desired"
@@ -2467,6 +2666,7 @@ visible:$agent"
     for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
         agent=${MAGPIE_PICKED_AGENT[index]}; desired=${MAGPIE_PICKED_MODELS[index]}
         if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
+        if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
         current=$(magpie_picked_current "$agent") ||
             { magpie_fail "cannot read the picked models for $agent"; return 1; }
         if [ "$(magpie_names_sorted "$current")" = "$(magpie_names_sorted "$desired")" ]; then
@@ -2483,12 +2683,10 @@ picked:$agent"
         agent=${MAGPIE_WIRING_AGENT[index]}; group=${MAGPIE_WIRING_GROUP[index]}
         owner=${MAGPIE_WIRING_OWNER[index]}; enabled=${MAGPIE_WIRING_ENABLED[index]}
         if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
+        if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
         [ "$enabled" = yes ] || continue
         [ "$owner" = magpie ] || continue
         case "$agent" in
-            codex)
-                magpie_fail 'the deployment never wires Codex'
-                return 1 ;;
             claude)
                 magpie_fail 'the deployment writes the Claude Code settings itself'
                 return 1 ;;
@@ -2507,6 +2705,10 @@ picked:$agent"
         if [ "$agent" = pi ] && [ ! -f "$HOME/.pi/agent/models.json" ]; then
             forced=yes
             printf 'dotfiles: magpie: the Pi model file is missing; the agent %s will be wired again\n' "$agent"
+        fi
+        if [ "$agent" = codex ]; then
+            report=$(magpie_codex_profile_report "$group")
+            [ "${report%%|*}" = wired ] || forced=yes
         fi
         if [ "$recorded" = "$group" ] && [ "$forced" = no ]; then
             printf 'dotfiles: magpie: the agent %s is already wired to %s\n' "$agent" "$group"
@@ -2646,8 +2848,48 @@ client-settings"
                 *) continue ;;
             esac
             agent=${entry#wiring:}; group=${agent#*:}; agent=${agent%:*}
-            magpie_run "$agent" "$group" >/dev/null ||
-                { magpie_fail "cannot wire the agent $agent to $group"; return 1; }
+            if [ "$agent" = codex ]; then
+                magpie_codex_profile_pending_write \
+                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
+                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
+                if magpie_run codex scope profile >/dev/null; then status=0; else status=$?; fi
+                codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+                codex_auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+                [ "$codex_before" = "$codex_after" ] ||
+                    { magpie_fail 'the Codex configuration changed while selecting its profile'; return 1; }
+                [ "$codex_auth_before" = "$codex_auth_after" ] ||
+                    { magpie_fail 'the Codex authentication changed while selecting its profile'; return 1; }
+                [ "$status" = 0 ] || { magpie_fail 'cannot select the separate Codex profile'; return 1; }
+                if [ ! -e "$HOME/.codex/magpie.config.toml" ]; then
+                    (umask 077; set -C; : > "$HOME/.codex/magpie.config.toml") ||
+                        { magpie_fail 'cannot create the private Codex profile'; return 1; }
+                fi
+                [ ! -L "$HOME/.codex/magpie.config.toml" ] &&
+                    [ -f "$HOME/.codex/magpie.config.toml" ] ||
+                    { magpie_fail 'the Codex profile is not a regular file'; return 1; }
+                magpie_codex_profile_pending_write \
+                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
+                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
+                if magpie_run codex "$group" >/dev/null; then status=0; else status=$?; fi
+                magpie_codex_profile_pending_write \
+                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
+                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
+                codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+                codex_auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+                [ "$codex_before" = "$codex_after" ] ||
+                    { magpie_fail 'the Codex configuration changed during profile wiring'; return 1; }
+                [ "$codex_auth_before" = "$codex_auth_after" ] ||
+                    { magpie_fail 'the Codex authentication changed during profile wiring'; return 1; }
+                [ "$status" = 0 ] || { magpie_fail "cannot wire the Codex profile to $group"; return 1; }
+                chmod 600 "$HOME/.codex/magpie.config.toml" ||
+                    { magpie_fail 'cannot protect the Codex profile'; return 1; }
+                report=$(magpie_codex_profile_report "$group")
+                [ "${report%%|*}" = wired ] ||
+                    { magpie_fail 'the Codex profile did not retain the requested provider, model, catalog, gateway, and private mode'; return 1; }
+            else
+                magpie_run "$agent" "$group" >/dev/null ||
+                    { magpie_fail "cannot wire the agent $agent to $group"; return 1; }
+            fi
             printf 'dotfiles: magpie: the agent %s is wired to %s\n' "$agent" "$group"
         done <<< "$change"
 
@@ -2683,12 +2925,18 @@ client-settings"
 
     DEPLOY_STEP=magpie-apply.codex-guard
     codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+    codex_auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
     if [ "$codex_before" != "$codex_after" ]; then
         guard='changed'
         magpie_fail 'the Codex configuration changed during the apply; the backup is kept'
         return 1
     fi
-    printf 'dotfiles: magpie: the Codex configuration is unchanged\n'
+    if [ "$codex_auth_before" != "$codex_auth_after" ]; then
+        guard='changed'
+        magpie_fail 'the Codex authentication changed during the apply; the backup is kept'
+        return 1
+    fi
+    printf 'dotfiles: magpie: the Codex configuration and authentication are unchanged\n'
 
     DEPLOY_STEP=magpie-apply.state
     content=$(magpie_state_content "$guard")
@@ -2697,6 +2945,9 @@ client-settings"
     else
         magpie_state_write "$content" || return 1
         printf 'dotfiles: magpie: the state was recorded in %s\n' "$(magpie_state_dir)/state.tsv"
+    fi
+    if magpie_codex_profile_enabled; then
+        magpie_codex_profile_pending_clear || return 1
     fi
 
     magpie_apply_summary
@@ -2727,10 +2978,15 @@ magpie_apply_summary() {
             printf 'dotfiles: magpie: the agent dsh is outside the selection and is left alone\n'
             continue
         fi
+        if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then
+            printf 'dotfiles: magpie: the agent codex is outside the selection and is left alone\n'
+            continue
+        fi
         printf 'dotfiles: magpie: the agent %s uses %s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
     done
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
         if [ "${MAGPIE_VISIBLE_AGENT[index]}" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
+        if [ "${MAGPIE_VISIBLE_AGENT[index]}" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
         printf 'dotfiles: magpie: the agent %s is shown %s\n' \
             "${MAGPIE_VISIBLE_AGENT[index]}" "${MAGPIE_VISIBLE_NAMES[index]}"
     done
@@ -3028,9 +3284,12 @@ magpie_dsh_compact_state() {
 magpie_status() {
     local index role preset source required group agent proxy output models
     local known guard='' missing='' state credential version name plugin_state current desired count
-    local enabled report keys dsh_compact_state dsh_excluded=no
+    local enabled report keys dsh_compact_state dsh_excluded=no codex_excluded=no
     if grep -qx 'selection|dsh|excluded' "$(magpie_state_dir)/state.tsv" 2>/dev/null; then
         dsh_excluded=yes
+    fi
+    if grep -qx 'selection|codex|excluded' "$(magpie_state_dir)/state.tsv" 2>/dev/null; then
+        codex_excluded=yes
     fi
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
     if magpie_gateway_ready; then
@@ -3102,10 +3361,31 @@ magpie_status() {
             printf 'wiring|dsh|excluded\n'
             continue
         fi
+        if [ "$agent" = codex ] && [ "$codex_excluded" = yes ]; then
+            printf 'wiring|codex|excluded\n'
+            continue
+        fi
         # Claude's and Pi's settings are the deployment's own wiring, so the
         # status reads the live files instead of echoing the catalog intent.
         # A parked agent keeps the catalog row; its wiring is not required.
         case "$agent" in
+            codex)
+                if [ "$enabled" != yes ]; then
+                    printf 'wiring|%s|%s\n' "$agent" "$group"
+                    continue
+                fi
+                report=$(magpie_codex_profile_report "$group")
+                state=${report%%|*}; keys=${report#*|}
+                case "$state" in
+                    wired) printf 'wiring|codex|%s\n' "$group" ;;
+                    drift)
+                        printf 'wiring|codex|drift (%s)\n' "$keys"
+                        missing="$missing wiring codex" ;;
+                    *)
+                        printf 'wiring|codex|%s\n' "$state"
+                        missing="$missing wiring codex" ;;
+                esac
+                ;;
             claude|pi)
                 if [ "$enabled" != yes ]; then
                     printf 'wiring|%s|%s\n' "$agent" "$group"
@@ -3143,6 +3423,7 @@ magpie_status() {
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
         agent=${MAGPIE_VISIBLE_AGENT[index]}
         if [ "$agent" = dsh ] && [ "$dsh_excluded" = yes ]; then continue; fi
+        if [ "$agent" = codex ] && [ "$codex_excluded" = yes ]; then continue; fi
         if names=$(magpie_visible_names "$agent"); then
             [ -n "$names" ] || names='every model'
             printf 'visible|%s|%s\n' "$agent" "$names"
@@ -3154,6 +3435,7 @@ magpie_status() {
     for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
         agent=${MAGPIE_PICKED_AGENT[index]}; desired=${MAGPIE_PICKED_MODELS[index]}
         if [ "$agent" = dsh ] && [ "$dsh_excluded" = yes ]; then continue; fi
+        if [ "$agent" = codex ] && [ "$codex_excluded" = yes ]; then continue; fi
         if current=$(magpie_picked_current "$agent"); then
             if [ -z "$current" ]; then
                 count=0

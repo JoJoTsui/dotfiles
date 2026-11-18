@@ -323,10 +323,15 @@ explains every changed pair.
   unreadable from what the CLI answers now, not from recorded intent. Rejected
   or unavailable routes fall back to the original request; runtime routing is
   not verified, only the field and its preservation.
-  Codex's `~/.codex/config.toml` and `~/.codex/auth.json` belong to neither
-  side: no
-  code path calls `magpie codex`, and every apply hashes the Codex
-  configuration before and after its changes. `magpie visible` narrows an
+  Codex's `~/.codex/config.toml` and `~/.codex/auth.json` stay device-owned:
+  every apply guards both hashes. When Codex is selected, the deployment may
+  select `magpie codex scope profile` and wire only its separate
+  `~/.codex/magpie.config.toml` and `magpie-models.json`. The credential-bearing
+  profile stays 0600; unrecorded files and symlink targets are preserved, not
+  adopted. Plain `codex` retains its subscription configuration; `codex -p
+  magpie` starts Magpie sessions. Resume must preserve a thread's saved provider,
+  not retag sessions; read `docs/MAGPIE.md` for the verification boundary.
+  `magpie visible` narrows an
   agent and never ticks a star; `picked.tsv` is the star set, and the apply
   writes only the `pickedModels` key into Magpie's settings while preserving
   everything else. No code path runs `--only-picked`. A community plugin is

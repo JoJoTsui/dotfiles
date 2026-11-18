@@ -8,15 +8,16 @@ whose models the gateway serves under `provider/model`.
 The repository owns the *intent*: which providers exist, which models each
 routing group holds, and which agent uses which group. Magpie owns the
 *credentials and the generated state*: the provider keys, the accounts, the
-usage store, Pi's `models.json`, and DSH's Magpie route. Codex belongs to
-neither side and is never written.
+usage store, Pi's `models.json`, DSH's Magpie route, and Codex's separate
+Magpie profile and model catalog. Codex's base configuration and authentication
+remain device-owned; the deployment guards both files against changes.
 
 ## Ownership
 
 | Owner | Owns | Never owns |
 | --- | --- | --- |
 | The repository | the seven catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
-| Magpie | provider keys and accounts, the usage store, Pi's `~/.pi/agent/models.json`, DSH's Magpie route | the intent: which models a group holds |
+| Magpie | provider keys and accounts, the usage store, Pi's `~/.pi/agent/models.json`, DSH's Magpie route, Codex's `~/.codex/magpie.config.toml` and `magpie-models.json` | the intent: which models a group holds, Codex's base config and authentication |
 | Neither | `~/.codex/config.toml` and `~/.codex/auth.json`, the official OpenCode, Kimi Code, and MiniMax Code configurations | — |
 
 ## Install and adopt
@@ -172,8 +173,11 @@ suffixed member keeps Magpie's `effort=agent` default.
 
 `owner` is `repo` when the deployment writes the agent's configuration by
 hand, `magpie` when Magpie generates it, and `inherited` when the agent
-follows another agent. The deployment never wires Codex, and it never lets
-Magpie write Claude Code's settings.
+follows another agent. Codex is wired only through Magpie's separate-profile
+mode; Claude Code's settings remain repo-owned. An explicit bootstrap agent
+selection excluding Codex preserves its profile, visibility, and picked models.
+A standalone `dotfiles-magpie apply` has no selection and uses the enabled
+catalog rows.
 
 ### `visible.tsv` — `agent|names`
 
@@ -227,7 +231,9 @@ installed. For the Zed plugin that is `magpie plugin login zed`, or the
 `magpie-apply` runs after `install-agents` and before `prepare-shell`, so the
 app, the agents, and the client settings exist before the gateway is wired.
 
-1. Validate the catalogs.
+1. Validate the catalogs, capture the hashes of Codex's base configuration and
+   authentication, and preflight separate-profile collisions before installing
+   a CLI or changing the gateway.
 2. Ensure the gateway answers: `magpie status --json`. On the real account
    home the app is opened and waited for, and a headless host starts
    `magpie serve` and waits for it. A gateway that still does not answer
@@ -250,20 +256,86 @@ app, the agents, and the client settings exist before the gateway is wired.
 9. Narrow each agent: `magpie visible <agent> <names>`, only when it differs,
    and again for every agent whose picked list changed so the gateway serves
    the new list.
-10. Wire the Magpie-owned agents: `magpie pi group/workhorse` and
-    `magpie dsh group/workhorse`.
+10. Wire selected Magpie-owned agents. For Codex, run `magpie codex scope
+    profile` before `magpie codex group/openai-stack`; create a private profile
+    placeholder before Magpie writes it, and verify the resulting profile and
+    unchanged base config/authentication. Pi uses `magpie pi group/workhorse`;
+    DSH uses `magpie dsh group/workhorse` only when selected.
 11. Migrate the repo-owned client settings through the client-settings
     merger: Claude Code's gateway environment and `opus` alias, Pi's default
     provider and model. The step asks the merger whether the wiring would
     change a file before it backs up anything, so the backup holds the
     originals and a current device keeps its files and their modification
     times. The merge runs only after the gateway changes succeed.
-12. Verify that DSH's official `llm-deepseek` row is unchanged and that the
-    Codex configuration still hashes the same.
+12. Verify that DSH's official `llm-deepseek` row is unchanged and that both
+    Codex's base configuration and authentication still hash the same.
 13. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
 
 A run with nothing to change writes no files and keeps every modification
 time.
+
+## Codex: separate Magpie sessions
+
+The separate profile leaves plain `codex` on the device's existing subscription
+configuration. Start a **new** gateway session with:
+
+```bash
+codex -p magpie
+```
+
+The selected default is `group/openai-stack`; this is a separate invocation,
+not a combined subscription/Magpie model picker. Magpie generates
+`~/.codex/magpie.config.toml` and `~/.codex/magpie-models.json`. The profile
+contains a gateway bearer credential and stays mode 0600. Keep its contents
+out of terminal output, tickets, and Git. The deployment creates a private
+placeholder because the pinned Magpie writer otherwise creates new files
+with mode 0644.
+
+Before its first write, apply refuses an existing unrecorded profile/catalog
+or a symlink target. A successful apply records ownership; subsequent applies
+validate the live provider, model, catalog reference, gateway URL, JSON
+readability, and private profile mode rather than trusting recorded intent.
+Excluding Codex leaves its files and gateway lists alone.
+
+An interrupted write leaves `codex-profile.pending` under the Magpie state
+root. Its fingerprints permit retry only while the generated files match
+exactly. A later edit or deletion is preserved and blocks automatic retry;
+inspect the files and protected backup rather than clearing the record to
+force adoption. Scope selection can also refuse to proceed if ordinary Codex
+integration is already connected; apply does not disconnect or retag it.
+
+### Resume without switching a thread's provider
+
+Codex 0.169.0's interactive picker can discover sessions across providers:
+
+```bash
+codex resume --all --include-non-interactive
+```
+
+`--all` removes the working-directory filter; `--include-non-interactive` adds
+resumable Exec/AppServer sessions. Archived sessions are not included. Omit
+`-p magpie`, `-m`, and model/provider/reasoning-effort overrides: explicit
+selection can conflict with a thread's saved provider. `codex exec resume`
+always sends resolved settings and is not a generic mixed-provider substitute.
+
+**Verification boundary:** restoring a saved provider also requires its
+definition in the effective configuration. The Magpie definition lives in the
+separate profile, so the plain command above is not yet verified for
+Magpie-origin threads. A provider-definitions-only resume profile, with no
+model/provider/effort selection, still needs an isolated two-provider runtime
+check before this deployment can claim all-session resume. Existing session
+metadata must remain unchanged. These observations concern device Codex
+0.169.0; the repository's older pin needs its own compatibility check.
+
+The profile adapter has synthetic tests, and the approved Magpie 0.1.4404
+macOS ARM64 download matches the release-catalog digest. Execution of that
+payload was denied, so neither real profile generation nor live gateway
+resume is established by those results. Linked parent directories and
+hard-linked profile targets also remain part of the pre-application review.
+
+Primary sources: [Magpie's pinned profile adapter](https://github.com/yetone/magpie/blob/69233d6bcfda248a17b613a199e0f2735b0a3e08/internal/agent/codex_profile.go),
+[Codex resume configuration](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server/src/config_manager.rs#L521-L594),
+and the installed Codex 0.169.0 `resume --help` output.
 
 ## Provider credentials
 
@@ -358,7 +430,7 @@ The group IDs remain stable when a provider moves to a newer model:
 The Luna router retains its catalog members, but Codex, OpenAI, and OpenCode Go
 currently do not expose their Luna models in the GUI selections. An apply
 therefore reports that router as incomplete until those models are picked.
-The remaining groups are available to all three agents; only the default
+The remaining groups are available to the catalog's four agents; only the default
 differs. The picked list puts the preferred provider-prefixed models beside
 the groups, so a failed route can be replaced by an exact provider/model on
 the spot. A group member's `:effort` fixes the reasoning for that route; a
@@ -434,6 +506,8 @@ retained:
 - `~/.pi/agent/settings.json`
 - `~/.pi/agent/models.json`
 - `~/.codex/config.toml`
+- `~/.codex/auth.json`
+- `~/.codex/magpie.config.toml` and `~/.codex/magpie-models.json`, when present
 - every `~/.dsh/profiles/*/cordis.patch.yml`
 - `dsh-compact-model.txt`, the previous compaction model (0600)
 
@@ -444,10 +518,15 @@ setter clears it. For a blank record run `magpie dsh compact_model default`
 to clear the override; for a non-blank record pass the recorded
 `<provider-or-group>/<model>` ID to `magpie dsh compact_model
 <provider-or-group>/<model>`. The DSH profile itself is never rewritten.
-To roll back other files, copy a file from a backup over
-the live one. The Codex configuration is never written by the deployment, and
-every apply hashes it before and after the changes; a change aborts the run
-and keeps the backup. `~/.local/state/dotfiles/magpie/state.tsv` records what
+To roll back other files, restore the affected file from its protected backup,
+retaining private permissions. A newly created Magpie Codex profile has no prior
+file to restore: reconcile only the deployment-created profile/catalog and its
+recorded ownership, preserving the base config, authentication, and all session
+files. Removing the Magpie provider definition makes its threads unavailable
+until that definition returns; it does not convert them to subscription threads.
+The deployment never intentionally writes the base Codex configuration or
+authentication. Every apply hashes both before and after the changes; a change
+aborts the run and keeps the backup. `~/.local/state/dotfiles/magpie/state.tsv` records what
 the last apply did: the providers, the groups with their model order, the
 wiring, the proxy, the DSH compaction group, and the Codex guard verdict.
 
