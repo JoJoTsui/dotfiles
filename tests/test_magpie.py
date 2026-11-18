@@ -146,13 +146,39 @@ elif argv[:1] == ["pi"] and len(argv) == 2:
     models.parent.mkdir(parents=True, exist_ok=True)
     models.write_text(json.dumps({"providers": [{"id": "magpie", "name": "Magpie"}]}))
     print("ok")
+elif argv[:2] == ["codex", "scope"] and len(argv) == 2:
+    # The pinned CLI's read-only scope getter: "<Name> applies to <value>".
+    # An empty value is the ordinary integration, shown as "default".
+    override = os.environ.get("FAKE_MAGPIE_CODEX_SCOPE_OUTPUT")
+    if override is not None:
+        # A malformed successful answer enters through the same process
+        # boundary as a real CLI, so the engine must fail closed on it.
+        print(override)
+    else:
+        scope = load("codex-scope.json", {"value": ""})["value"]
+        print("Codex applies to " + (scope if scope else "default"))
 elif argv[:2] == ["codex", "scope"] and len(argv) == 3:
     # Scope selection changes only Magpie's preference, before the next CLI
-    # invocation constructs the profile-only adapter.
+    # invocation constructs the profile-only adapter. The pinned CLI refuses
+    # it while the ordinary Codex integration is connected, and says so.
     if argv[2] != "profile":
         sys.exit(2)
+    config = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
+    if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX_ON_SCOPE_SET") == "1":
+        # A setter that changes the base configuration and then fails: the
+        # deployment must notice the change instead of assuming the ordinary
+        # integration was left alone.
+        config.write_text(config.read_text() + "\\n# changed\\n")
+    if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX_AUTH_ON_SCOPE_SET") == "1":
+        auth = pathlib.Path(os.environ["HOME"]) / ".codex/auth.json"
+        auth.write_text('{"changed":true}\\n')
+    connected = config.exists() and 'model_provider = "magpie"' in config.read_text()
+    if connected or os.environ.get("FAKE_MAGPIE_FAIL_CODEX_SCOPE") == "1":
+        print("magpie: disconnect Codex from magpie first, "
+              "then change what it applies to", file=sys.stderr)
+        sys.exit(1)
     save("codex-scope.json", {"value": "profile"})
-    print("profile")
+    print("✓ Codex applies to profile")
 elif argv[:1] == ["codex"] and len(argv) == 2:
     scope = load("codex-scope.json", {"value": ""})["value"]
     if scope != "profile":
@@ -166,6 +192,17 @@ elif argv[:1] == ["codex"] and len(argv) == 2:
         auth.write_text('{"changed":true}\\n')
     profile = pathlib.Path(os.environ["HOME"]) / ".codex/magpie.config.toml"
     catalog = pathlib.Path(os.environ["HOME"]) / ".codex/magpie-models.json"
+    if profile.exists():
+        # The pinned writer parses the file it writes over and refuses one it
+        # cannot read, so a malformed profile is preserved.
+        for number, line in enumerate(profile.read_text().splitlines(), 1):
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or stripped.startswith("["):
+                continue
+            if "=" not in stripped:
+                print("magpie: %s: line %d: expected character =" % (profile, number),
+                      file=sys.stderr)
+                sys.exit(1)
     # The real writer preserves an existing mode and otherwise uses 0644.
     profile.write_text('model_provider = "magpie"\\nmodel = "' + argv[1] +
                        '"\\nmodel_catalog_json = "magpie-models.json"\\n'
@@ -441,6 +478,10 @@ class MagpieApplyTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.home = self.root / "home"
         self.home.mkdir()
+        # The engine stages its temporary files through mktemp, so the tests
+        # give it a temporary directory of their own instead of the system's.
+        self.tmp = self.root / "tmp"
+        self.tmp.mkdir()
         self.tools = self.root / "tools"
         self.tools.mkdir()
         self.fake = self.tools / "magpie"
@@ -641,6 +682,7 @@ class MagpieApplyTests(unittest.TestCase):
             "DEPLOY_PLATFORM": platform,
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "TMPDIR": str(self.tmp),
         }
         if platform in ("linux", "wsl"):
             # A headless host runs the native CLI. The fixture stands in for
@@ -734,6 +776,237 @@ class MagpieApplyTests(unittest.TestCase):
 
     def test_a_linked_codex_profile_is_refused_without_touching_its_target(self):
         self.assert_codex_profile_collision_preserved("magpie.config.toml", link=True)
+
+    def test_a_linked_codex_home_is_refused_without_writing_through_the_link(self):
+        target = self.home / "device-codex"
+        target.mkdir()
+        (target / "config.toml").write_text('model = "chatgpt-native"\n', encoding="utf-8")
+        codex = self.home / ".codex"
+
+        def setup():
+            shutil.rmtree(codex)
+            codex.symlink_to(target)
+
+        result = self.apply(setup=setup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Codex home is a symlink", result.stderr)
+        self.assertEqual((target / "config.toml").read_text(encoding="utf-8"),
+                         'model = "chatgpt-native"\n')
+        self.assertEqual(sorted(path.name for path in target.iterdir()), ["config.toml"])
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible ", "pi ", "dsh ", "codex ")) for command in self.commands()),
+            self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_hard_linked_codex_profile_is_refused_and_its_other_name_is_preserved(self):
+        alias = self.home / "device-profile.toml"
+        profile = self.home / ".codex/magpie.config.toml"
+
+        def setup():
+            alias.write_text('model = "device-model"\n', encoding="utf-8")
+            os.link(alias, profile)
+
+        result = self.apply(setup=setup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("other names", result.stderr)
+        self.assertEqual(alias.read_text(encoding="utf-8"), 'model = "device-model"\n')
+        self.assertEqual(profile.read_text(encoding="utf-8"), 'model = "device-model"\n')
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible ", "pi ", "dsh ", "codex ")) for command in self.commands()),
+            self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_hard_linked_codex_catalog_is_refused_and_its_other_name_is_preserved(self):
+        alias = self.home / "device-models.json"
+        catalog = self.home / ".codex/magpie-models.json"
+
+        def setup():
+            alias.write_text('{"device":true}\n', encoding="utf-8")
+            os.link(alias, catalog)
+
+        result = self.apply(setup=setup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("other names", result.stderr)
+        self.assertEqual(alias.read_text(encoding="utf-8"), '{"device":true}\n')
+        self.assertEqual(catalog.read_text(encoding="utf-8"), '{"device":true}\n')
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_recorded_codex_profile_with_another_name_is_refused_and_kept(self):
+        self.assertEqual(self.apply().returncode, 0)
+        profile = self.home / ".codex/magpie.config.toml"
+        alias = self.home / "device-profile.toml"
+        profile.unlink()
+        alias.write_text('model = "device-model"\n', encoding="utf-8")
+        os.link(alias, profile)
+        commands = len(self.commands())
+
+        result = self.apply()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("other names", result.stderr)
+        self.assertEqual(alias.read_text(encoding="utf-8"), 'model = "device-model"\n')
+        self.assertEqual(profile.read_text(encoding="utf-8"), 'model = "device-model"\n')
+        self.assertFalse(any(command.startswith(("codex ", "provider add ", "group add "))
+                             for command in self.commands()[commands:]), self.commands()[commands:])
+
+    def test_a_fresh_codex_home_is_created_privately(self):
+        def setup():
+            shutil.rmtree(self.home / ".codex")
+
+        result = self.apply(setup=setup)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        home = self.home / ".codex"
+        self.assertTrue(home.is_dir())
+        self.assertEqual(home.stat().st_mode & 0o777, 0o700)
+        profile = home / "magpie.config.toml"
+        self.assertTrue(profile.is_file())
+        self.assertEqual(profile.stat().st_mode & 0o777, 0o600)
+        self.assertTrue((home / "magpie-models.json").is_file())
+        # The base configuration and authentication stay device-owned: the
+        # deployment never creates them.
+        self.assertFalse((home / "config.toml").exists())
+        self.assertFalse((home / "auth.json").exists())
+
+    def test_a_codex_home_that_is_a_file_is_refused(self):
+        codex = self.home / ".codex"
+
+        def setup():
+            shutil.rmtree(codex)
+            codex.write_text("not a directory\n", encoding="utf-8")
+
+        result = self.apply(setup=setup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Codex home is not a directory", result.stderr)
+        self.assertEqual(codex.read_text(encoding="utf-8"), "not a directory\n")
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_connected_ordinary_codex_integration_stops_the_apply_before_the_gateway_changes(self):
+        def setup():
+            (self.home / ".codex/config.toml").write_text(
+                'model = "magpie/openai/gpt-6.1-sol"\nmodel_provider = "magpie"\n',
+                encoding="utf-8")
+
+        result = self.apply(setup=setup)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ordinary Codex integration is connected", result.stderr)
+        # The scope getter is read-only and the last command: nothing was
+        # changed, and the ordinary integration was neither disconnected nor
+        # retagged.
+        self.assertEqual(self.commands()[-1], "codex scope")
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible ", "pi ", "dsh ", "codex group")) for command in self.commands()),
+            self.commands())
+        self.assertEqual((self.home / ".codex/config.toml").read_text(encoding="utf-8"),
+                         'model = "magpie/openai/gpt-6.1-sol"\nmodel_provider = "magpie"\n')
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_refused_codex_scope_stops_the_apply_before_the_gateway_changes(self):
+        result = self.apply(environment={"FAKE_MAGPIE_FAIL_CODEX_SCOPE": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot select the separate Codex profile", result.stderr)
+        # The claim that the ordinary integration was left alone is backed by
+        # the hashes the preflight compared, not by the failed command.
+        self.assertIn("the Codex configuration and authentication are unchanged", result.stderr)
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible ", "pi ", "dsh ", "codex group")) for command in self.commands()),
+            self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_an_unreadable_codex_scope_stops_the_apply_before_the_gateway_changes(self):
+        result = self.apply(environment={"FAKE_MAGPIE_CODEX_SCOPE_OUTPUT": "Codex applies to maybe"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot read the Codex scope", result.stderr)
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible ", "pi ", "dsh ")) for command in self.commands()), self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_failed_codex_scope_getter_stops_the_apply_before_the_gateway_changes(self):
+        # A CLI whose read-only scope getter prints a valid answer and then
+        # fails: the answer is not evidence of a scope, so the apply stops
+        # before the gateway changes.
+        wrapper = self.tools / "magpie-broken-scope"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = codex ] && [ \"$2\" = scope ] && [ \"$#\" -eq 2 ]; then\n"
+            "  printf 'Codex applies to profile\\n'\n"
+            "  exit 44\n"
+            "fi\n"
+            "exec '" + str(self.fake) + "' \"$@\"\n", encoding="utf-8")
+        wrapper.chmod(0o755)
+        result = self.apply(environment={"MAGPIE_BIN": str(wrapper)})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot read the Codex scope", result.stderr)
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible ", "pi ", "dsh ", "codex ")) for command in self.commands()), self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_codex_scope_setter_that_changes_the_base_configuration_is_reported(self):
+        result = self.apply(environment={"FAKE_MAGPIE_TOUCH_CODEX_ON_SCOPE_SET": "1",
+                                         "FAKE_MAGPIE_FAIL_CODEX_SCOPE": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the Codex configuration changed while selecting its profile", result.stderr)
+        self.assertNotIn("the Codex configuration and authentication are unchanged", result.stderr)
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible ", "pi ", "dsh ", "codex group")) for command in self.commands()), self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_codex_scope_setter_that_changes_the_authentication_is_reported(self):
+        result = self.apply(environment={"FAKE_MAGPIE_TOUCH_CODEX_AUTH_ON_SCOPE_SET": "1",
+                                         "FAKE_MAGPIE_FAIL_CODEX_SCOPE": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the Codex authentication changed while selecting its profile", result.stderr)
+        self.assertNotIn("the Codex configuration and authentication are unchanged", result.stderr)
+        self.assertFalse(any(command.startswith((
+            "provider add ", "settings set ", "plugin add ", "group add ",
+            "visible ", "pi ", "dsh ", "codex group")) for command in self.commands()), self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_codex_profile_with_an_unreadable_link_count_is_refused_before_any_change(self):
+        self.assertEqual(self.apply().returncode, 0)
+        profile = self.home / ".codex/magpie.config.toml"
+        alias = self.home / "device-profile.toml"
+        profile.write_text(profile.read_text(encoding="utf-8").replace(
+            'model = "group/openai-stack"', 'model = "group/conductor"'), encoding="utf-8")
+        alias.write_text(profile.read_text(encoding="utf-8"), encoding="utf-8")
+        profile.unlink()
+        os.link(alias, profile)
+        before = alias.read_bytes()
+        state = self.state_file().read_text(encoding="utf-8")
+        # A stat that cannot answer leaves the link count unknown: an unknown
+        # count is never one link.
+        broken = self.tools / "stat"
+        broken.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        broken.chmod(0o755)
+        commands = len(self.commands())
+        result = self.apply()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("link count", result.stderr)
+        self.assertEqual(alias.read_bytes(), before)
+        self.assertFalse(any(command.startswith(("codex ", "provider add ", "group add "))
+                             for command in self.commands()[commands:]), self.commands()[commands:])
+        # The refused apply recorded nothing new.
+        self.assertEqual(self.state_file().read_text(encoding="utf-8"), state)
+
+    def test_a_malformed_recorded_codex_profile_is_preserved_and_reported(self):
+        self.assertEqual(self.apply().returncode, 0)
+        profile = self.home / ".codex/magpie.config.toml"
+        profile.write_text("device-owned-bytes\n", encoding="utf-8")
+        profile.chmod(0o600)
+        state = self.state_file().read_text(encoding="utf-8")
+
+        result = self.apply()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot wire the Codex profile", result.stderr)
+        self.assertIn("cannot be read and is preserved", result.stderr)
+        self.assertEqual(profile.read_text(encoding="utf-8"), "device-owned-bytes\n")
+        # The failed apply recorded nothing new.
+        self.assertEqual(self.state_file().read_text(encoding="utf-8"), state)
 
     def test_the_codex_profile_preserves_base_config_auth_and_credentials(self):
         base = self.home / ".codex/config.toml"
@@ -867,11 +1140,11 @@ class MagpieApplyTests(unittest.TestCase):
     def test_the_apply_runs_its_commands_in_the_declared_order(self):
         self.assertEqual(self.apply().returncode, 0)
         commands = self.commands()
-        order = ["provider add codex", "settings set proxy",
+        order = ["codex scope profile", "provider add codex", "settings set proxy",
                  "plugin add npm:@magpie-community/opencode-zed-auth@0.1.19",
                  "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
                  "visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible codex chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
-                 "codex scope profile", "codex group/openai-stack", "pi group/workhorse", "dsh group/workhorse"]
+                 "codex group/openai-stack", "pi group/workhorse", "dsh group/workhorse"]
         positions = []
         for command in order:
             matches = [index for index, recorded in enumerate(commands) if recorded.startswith(command)]
@@ -1016,6 +1289,7 @@ class MagpieApplyTests(unittest.TestCase):
             "DEPLOY_PLATFORM": "macos",
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "TMPDIR": str(self.tmp),
         }
         result = subprocess.run(["/bin/bash", str(script)], env=environment,
                                 capture_output=True, text=True, timeout=120)
@@ -1534,7 +1808,7 @@ class MagpieApplyTests(unittest.TestCase):
         commands = self.commands()
         self.assertFalse(any(command.split(" ")[0] == "claude" for command in commands), commands)
         self.assertEqual([command for command in commands if command.startswith("codex ")],
-                         ["codex scope profile", "codex group/openai-stack"])
+                         ["codex scope", "codex scope profile", "codex group/openai-stack"])
         self.assertFalse(any(command.startswith("accounts add") for command in commands))
         self.assertFalse(any(command.startswith("accounts import") for command in commands))
         self.assertEqual([command for command in commands if command.startswith("accounts")],
@@ -1642,6 +1916,7 @@ class MagpieApplyTests(unittest.TestCase):
             "DEPLOY_PLATFORM": "macos",
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "TMPDIR": str(self.tmp),
         }
         result = subprocess.run(["/bin/bash", str(script)], env=environment,
                                 capture_output=True, text=True, timeout=120)
@@ -1659,7 +1934,7 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(patch.read_bytes(), before)
         self.assertEqual([command for command in self.commands() if command.startswith("codex ")],
-                         ["codex scope profile", "codex group/openai-stack"])
+                         ["codex scope", "codex scope profile", "codex group/openai-stack"])
 
     def test_a_changed_official_deepseek_row_aborts_the_apply(self):
         self.seed_home()
@@ -1682,6 +1957,7 @@ class MagpieApplyTests(unittest.TestCase):
             "DEPLOY_PLATFORM": "macos",
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "TMPDIR": str(self.tmp),
         }
         result = subprocess.run(["/bin/bash", str(script)], env=environment,
                                 capture_output=True, text=True, timeout=120)
@@ -2025,6 +2301,7 @@ class MagpieCommandTests(MagpieApplyTests):
             "DEPLOY_PLATFORM": "macos",
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "TMPDIR": str(self.tmp),
         }
         environ.update(environment or {})
         return subprocess.run([str(self.command), *arguments], env=environ,

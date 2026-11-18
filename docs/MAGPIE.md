@@ -233,7 +233,10 @@ app, the agents, and the client settings exist before the gateway is wired.
 
 1. Validate the catalogs, capture the hashes of Codex's base configuration and
    authentication, and preflight separate-profile collisions before installing
-   a CLI or changing the gateway.
+   a CLI or changing the gateway. The preflight refuses a linked or
+   non-directory Codex home, a linked or non-regular profile or catalog path,
+   a generated file with another name, a profile path whose link count cannot
+   be read, and an unrecorded profile or catalog.
 2. Ensure the gateway answers: `magpie status --json`. On the real account
    home the app is opened and waited for, and a headless host starts
    `magpie serve` and waits for it. A gateway that still does not answer
@@ -241,35 +244,45 @@ app, the agents, and the client settings exist before the gateway is wired.
    is skipped before this point.
 3. Plan proxy, plugins, and providers; fail preflight for missing required
    credentials before changing gateway settings.
-4. Back up client files and register a missing credential-free ChatGPT account
+4. Select the separate Codex profile, before the gateway changes, the backup,
+   and the provider registration: read the scope with the read-only getter
+   `magpie codex scope`, and select it with `magpie codex scope profile` when
+   it is not selected yet. The getter has to succeed and answer `Codex
+   applies to default` or `Codex applies to profile`; a getter that fails
+   stops the run even when it printed an answer. The pinned CLI refuses that
+   change while the ordinary Codex integration is connected, so the run stops
+   there; the deployment disconnects and retags nothing. The base
+   configuration and authentication hashes are compared after the selection
+   whether the command succeeded or failed, and the run reports a change
+   rather than claiming the ordinary integration was preserved.
+5. Back up client files and register a missing credential-free ChatGPT account
    provider, then check that Codex's configuration is unchanged.
-5. Resolve the model roles against `GET /v1/models`. If this fails after the
+6. Resolve the model roles against `GET /v1/models`. If this fails after the
    account provider was registered, the provider and backup remain; client
    wiring and recorded deployment state have not been changed.
-6. Write the proxy when it differs and ensure the pinned plugins. `magpie
+7. Write the proxy when it differs and ensure the pinned plugins. `magpie
    plugin list --json` reports `.loaded[].spec`, so an absent package is
    installed and a loaded-but-off one is turned on.
-7. Ensure the groups: `magpie group add`, or `magpie group set` when the
+8. Ensure the groups: `magpie group add`, or `magpie group set` when the
    member order differs.
-8. Write the per-agent picked list into Magpie's settings, only when it
+9. Write the per-agent picked list into Magpie's settings, only when it
    differs.
-9. Narrow each agent: `magpie visible <agent> <names>`, only when it differs,
-   and again for every agent whose picked list changed so the gateway serves
-   the new list.
-10. Wire selected Magpie-owned agents. For Codex, run `magpie codex scope
-    profile` before `magpie codex group/openai-stack`; create a private profile
+10. Narrow each agent: `magpie visible <agent> <names>`, only when it differs,
+    and again for every agent whose picked list changed so the gateway serves
+    the new list.
+11. Wire selected Magpie-owned agents. For Codex, create a private profile
     placeholder before Magpie writes it, and verify the resulting profile and
     unchanged base config/authentication. Pi uses `magpie pi group/workhorse`;
     DSH uses `magpie dsh group/workhorse` only when selected.
-11. Migrate the repo-owned client settings through the client-settings
+12. Migrate the repo-owned client settings through the client-settings
     merger: Claude Code's gateway environment and `opus` alias, Pi's default
     provider and model. The step asks the merger whether the wiring would
     change a file before it backs up anything, so the backup holds the
     originals and a current device keeps its files and their modification
     times. The merge runs only after the gateway changes succeed.
-12. Verify that DSH's official `llm-deepseek` row is unchanged and that both
+13. Verify that DSH's official `llm-deepseek` row is unchanged and that both
     Codex's base configuration and authentication still hash the same.
-13. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
+14. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
 
 A run with nothing to change writes no files and keeps every modification
 time.
@@ -297,12 +310,41 @@ validate the live provider, model, catalog reference, gateway URL, JSON
 readability, and private profile mode rather than trusting recorded intent.
 Excluding Codex leaves its files and gateway lists alone.
 
+The preflight refuses a Codex home that is a symlink or not a directory, a
+profile or catalog path that is a symlink or not a regular file, and a
+generated file with another name. The pinned writer follows a symlink and
+writes a file with other names in place, so both would change a file the
+deployment does not own through an alias; the refusal keeps every alias's
+bytes as they are. A profile path whose link count cannot be read is refused
+as well: an unreadable count is not one link, so the run stops before it
+changes anything rather than guessing. A device without a Codex home gets one
+of its own: the deployment creates `~/.codex` privately (0700) and writes the
+profile placeholder privately (0600), and never widens the permissions of a
+home it finds. A recorded profile the pinned writer cannot parse is
+preserved, and the run says so instead of overwriting it.
+
+The scope is read with the read-only getter `magpie codex scope` and selected
+with `magpie codex scope profile` before the gateway changes, the backup, and
+the provider registration. The getter answers `Codex applies to default` or
+`Codex applies to profile`; an answer the deployment cannot read stops the
+run, so the installed Magpie CLI has to report the scope. The getter has to
+succeed: an answer printed by a command that failed is not a scope, and the
+run stops before the gateway changes. The pinned CLI refuses the selection
+while the ordinary Codex integration is connected (`magpie: disconnect Codex
+from magpie first, then change what it applies to`), so the run stops there
+and leaves the ordinary integration as it is: nothing is disconnected,
+retagged, or rewritten. The base configuration and authentication hashes are
+compared after the selection whether the command succeeded or failed, so a
+failed selection that still changed a file is reported as a change, and the
+run only says the configuration and authentication are unchanged when the
+comparison shows it. The deployment never writes the ordinary configuration
+itself.
+
 An interrupted write leaves `codex-profile.pending` under the Magpie state
 root. Its fingerprints permit retry only while the generated files match
 exactly. A later edit or deletion is preserved and blocks automatic retry;
 inspect the files and protected backup rather than clearing the record to
-force adoption. Scope selection can also refuse to proceed if ordinary Codex
-integration is already connected; apply does not disconnect or retag it.
+force adoption.
 
 ### Resume without switching a thread's provider
 
@@ -328,10 +370,21 @@ metadata must remain unchanged. These observations concern device Codex
 0.169.0; the repository's older pin needs its own compatibility check.
 
 The profile adapter has synthetic tests, and the approved Magpie 0.1.4404
-macOS ARM64 download matches the release-catalog digest. Execution of that
-payload was denied, so neither real profile generation nor live gateway
-resume is established by those results. Linked parent directories and
-hard-linked profile targets also remain part of the pre-application review.
+macOS ARM64 download matches the release-catalog digest. That payload was
+executed in an isolated synthetic home, with fabricated configuration and a
+fake gateway address, never against the device home, the live gateway, or a
+real credential. The run checked the payload digest before executing any of
+its bytes and asserted every outcome it claimed: the scope getter's answer
+(`Codex applies to default`, `Codex applies to profile`), the pinned CLI's
+refusal while the ordinary integration is connected (`magpie: disconnect
+Codex from magpie first, then change what it applies to`) with the base
+configuration unchanged, the preserved mode of a private placeholder, the
+writer's in-place write over a file with another name, the refusal over a
+profile it cannot parse, the unchanged base configuration and
+authentication hashes around the profile write, the address the profile
+names, and the number of requests the fake gateway received. The live port
+appeared in no output and in no generated file. It did not establish live
+gateway resume, and it is not application acceptance.
 
 Primary sources: [Magpie's pinned profile adapter](https://github.com/yetone/magpie/blob/69233d6bcfda248a17b613a199e0f2735b0a3e08/internal/agent/codex_profile.go),
 [Codex resume configuration](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server/src/config_manager.rs#L521-L594),
@@ -522,13 +575,23 @@ To roll back other files, restore the affected file from its protected backup,
 retaining private permissions. A newly created Magpie Codex profile has no prior
 file to restore: reconcile only the deployment-created profile/catalog and its
 recorded ownership, preserving the base config, authentication, and all session
-files. Removing the Magpie provider definition makes its threads unavailable
-until that definition returns; it does not convert them to subscription threads.
+files. The separate profile's scope is Magpie's own preference: `magpie codex
+scope` reads it, and `magpie codex scope default` puts the ordinary Codex
+integration back in charge of what Magpie writes. The pinned CLI refuses that
+change while the profile is wired, so the profile is disconnected first:
+`magpie codex default` removes the generated profile and catalog, and `magpie
+codex scope default` then returns the ordinary integration. Removing the
+Magpie provider definition makes its threads unavailable until that definition
+returns; it does not convert them to subscription threads.
 The deployment never intentionally writes the base Codex configuration or
 authentication. Every apply hashes both before and after the changes; a change
 aborts the run and keeps the backup. `~/.local/state/dotfiles/magpie/state.tsv` records what
 the last apply did: the providers, the groups with their model order, the
 wiring, the proxy, the DSH compaction group, and the Codex guard verdict.
+
+A refused collision is not a rollback: the deployment leaves the file it found
+as it is, so a profile or catalog with another name, a linked path, or a home
+that is not a directory is still the device's own file after the refusal.
 
 ## Other platforms
 
