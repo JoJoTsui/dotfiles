@@ -43,7 +43,9 @@ def save(name, value):
 
 
 argv = sys.argv[1:]
-if argv[:1] == ["status"]:
+if argv[:1] == ["--version"]:
+    print("magpie 0.1.4404")
+elif argv[:1] == ["status"]:
     if os.environ.get("FAKE_MAGPIE_FAIL_STATUS") == "1":
         sys.exit(1)
     print(json.dumps({"running": True, "gateway": os.environ["FAKE_MAGPIE_GATEWAY"]}))
@@ -413,6 +415,18 @@ class MagpieApplyTests(unittest.TestCase):
         self.fake = self.tools / "magpie"
         self.fake.write_text(FAKE_MAGPIE, encoding="utf-8")
         self.fake.chmod(0o755)
+        curl = self.tools / "curl"
+        curl.write_text(
+            "#!/bin/sh\nallowed=0\n"
+            "for arg do\n"
+            "  case \"$arg\" in\n"
+            "    \"${FAKE_MAGPIE_GATEWAY:-not-set}\"/*) allowed=1 ;;\n"
+            "    http://*|https://*) printf 'unexpected URL in synthetic test\\n' >&2; exit 98 ;;\n"
+            "  esac\n"
+            "done\n"
+            "[ \"$allowed\" = 1 ] || exit 98\n"
+            "exec /usr/bin/curl \"$@\"\n", encoding="utf-8")
+        curl.chmod(0o755)
         self.catalog = self.root / "catalog"
         self.catalog.mkdir()
         for name in CATALOGS:
@@ -437,6 +451,10 @@ class MagpieApplyTests(unittest.TestCase):
             "magpie|0.1.4404|linux-amd64|https://example.invalid/magpie-cli-linux-amd64|"
             + digest + "\n"
             "magpie|0.1.4404|linux-arm64|https://example.invalid/magpie-cli-linux-arm64|"
+            + digest + "\n"
+            "magpie|0.1.4404|macos-amd64|https://example.invalid/magpie-cli-darwin-amd64|"
+            + digest + "\n"
+            "magpie|0.1.4404|macos-arm64|https://example.invalid/magpie-cli-darwin-arm64|"
             + digest + "\n",
             encoding="utf-8")
         self.server = self.gateway()
@@ -568,12 +586,13 @@ class MagpieApplyTests(unittest.TestCase):
         lines += list(shell or [])
         environ = {
             "HOME": str(self.home),
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PATH": f"{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
             "MAGPIE_BIN": str(self.fake),
             "MAGPIE_CATALOG_DIR": str(self.catalog),
             "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
             "FAKE_MAGPIE_STATE": str(self.state),
             "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
+            "MAGPIE_APP": str(self.fake),
             "DEPLOY_PLATFORM": platform,
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
@@ -793,13 +812,14 @@ class MagpieApplyTests(unittest.TestCase):
             encoding="utf-8")
         environment = {
             "HOME": str(self.home),
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PATH": f"{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
             "MAGPIE_BIN": str(self.fake),
             "MAGPIE_CATALOG_DIR": str(self.catalog),
             "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
             "FAKE_MAGPIE_STATE": str(self.state),
             "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
             "FAKE_MAGPIE_FAIL_PLUGIN_LIST": "1",
+            "MAGPIE_APP": str(self.fake),
             "DEPLOY_PLATFORM": "macos",
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
@@ -977,7 +997,7 @@ class MagpieApplyTests(unittest.TestCase):
             encoding="utf-8")
         environment = {
             "HOME": str(self.home),
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PATH": f"{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
             "MAGPIE_BIN": str(self.fake),
             "MAGPIE_CATALOG_DIR": str(self.catalog),
             "DEPLOY_PLATFORM": "windows",
@@ -996,8 +1016,7 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertIn("magpie|0.1.4404|linux-arm64|https://github.com/yetone/magpie/releases/download/"
                       "v0.1.4404/magpie-cli-linux-arm64|"
                       "0ff5d9a9baedde4b8038a8ab8b08cfe3ad859afc721186da17b45386f94f763c", rows)
-        # The catalog also carries the published macOS CLI assets, although the
-        # macOS deployment does not yet install them.
+        # The catalog also pins the macOS CLI assets used when the app is absent.
         self.assertIn("magpie|0.1.4404|macos-amd64|https://github.com/yetone/magpie/releases/download/"
                       "v0.1.4404/magpie-cli-darwin-amd64|"
                       "d939a17e93956a50bc433d1a5356a3da0d7fc960c1988c7fa2890416ba11bfaa", rows)
@@ -1061,6 +1080,25 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("the Magpie release URL must use HTTPS", result.stderr)
 
+    def test_macos_apply_uses_the_verified_cli_when_the_app_is_missing(self):
+        # The installed fixture is also the gateway CLI: leave MAGPIE_BIN
+        # unset so the engine must select the verified native executable.
+        self.native_cli.write_text(FAKE_MAGPIE, encoding="utf-8")
+        digest = hashlib.sha256(self.native_cli.read_bytes()).hexdigest()
+        self.native_release_catalog.write_text(
+            "magpie|0.1.4404|macos-amd64|https://example.invalid/asset|" + digest + "\n"
+            "magpie|0.1.4404|macos-arm64|https://example.invalid/asset|" + digest + "\n",
+            encoding="utf-8")
+        result = self.apply(environment={
+            "MAGPIE_BIN": "",
+            "MAGPIE_APP": str(self.root / "missing-app"),
+            "MAGPIE_CLI_BIN": str(self.native_cli),
+            "MAGPIE_RELEASE_CATALOG": str(self.native_release_catalog),
+        })
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the CLI 0.1.4404 is installed", result.stdout)
+        self.assertIn("status --json", self.commands())
+
     def test_the_native_apply_wires_the_clients_only_after_the_gateway_answers(self):
         def provision_existing():
             # Every key-requiring provider is already provisioned; only the
@@ -1107,6 +1145,21 @@ class MagpieApplyTests(unittest.TestCase):
     def test_macos_app_does_not_persist_the_temporary_proxy(self):
         url = "http://127.0.0.1:7890"
         result = self.apply(credentials=False, environment={
+            "MAGPIE_PROXY_URL": url,
+            "DEPLOY_PROXY_URL": url,
+            "DEPLOY_PROXY_PID": "4242",
+        }, setup=lambda: self.provision(
+            ["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(any(command.startswith("settings set proxy") for command in self.commands()))
+        self.assertIn("deployment proxy is temporary", result.stdout)
+
+    def test_macos_cli_fallback_does_not_persist_the_temporary_proxy(self):
+        url = "http://127.0.0.1:7890"
+        result = self.apply(credentials=False, environment={
+            "MAGPIE_APP": str(self.root / "missing-app"),
+            "MAGPIE_CLI_BIN": str(self.native_cli),
+            "MAGPIE_RELEASE_CATALOG": str(self.native_release_catalog),
             "MAGPIE_PROXY_URL": url,
             "DEPLOY_PROXY_URL": url,
             "DEPLOY_PROXY_PID": "4242",
@@ -1297,13 +1350,14 @@ class MagpieApplyTests(unittest.TestCase):
             encoding="utf-8")
         environment = {
             "HOME": str(self.home),
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PATH": f"{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
             "MAGPIE_BIN": str(self.fake),
             "MAGPIE_CATALOG_DIR": str(self.catalog),
             "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
             "FAKE_MAGPIE_STATE": str(self.state),
             "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
             "FAKE_MAGPIE_TOUCH_CODEX": "1",
+            "MAGPIE_APP": str(self.fake),
             "DEPLOY_PLATFORM": "macos",
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
@@ -1335,13 +1389,14 @@ class MagpieApplyTests(unittest.TestCase):
             encoding="utf-8")
         environment = {
             "HOME": str(self.home),
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PATH": f"{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
             "MAGPIE_BIN": str(self.fake),
             "MAGPIE_CATALOG_DIR": str(self.catalog),
             "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
             "FAKE_MAGPIE_STATE": str(self.state),
             "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
             "FAKE_MAGPIE_TOUCH_DSH": "1",
+            "MAGPIE_APP": str(self.fake),
             "DEPLOY_PLATFORM": "macos",
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
@@ -1655,11 +1710,12 @@ class MagpieCommandTests(MagpieApplyTests):
     def run_command(self, *arguments, environment=None):
         environ = {
             "HOME": str(self.home),
-            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+            "PATH": f"{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
             "MAGPIE_BIN": str(self.fake),
             "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
             "FAKE_MAGPIE_STATE": str(self.state),
             "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
+            "MAGPIE_APP": str(self.fake),
             "DEPLOY_PLATFORM": "macos",
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
@@ -1974,6 +2030,12 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Magpie is not available on this platform", result.stderr)
 
+    def test_start_adopts_a_running_macos_app_gateway_without_a_native_cli(self):
+        self.seed_home()
+        result = self.run_command("start")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("gateway answers", result.stdout)
+
     def test_the_launcher_reports_the_missing_app_with_the_cask_command(self):
         launcher = self.home / ".local/bin/magpie"
         launcher.parent.mkdir(parents=True, exist_ok=True)
@@ -1986,6 +2048,23 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("brew install --cask magpie", result.stderr)
 
+    def test_the_macos_launcher_falls_back_to_the_native_cli_when_the_app_is_missing(self):
+        launcher = self.home / ".local/bin/magpie"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / "dot_local/bin/executable_magpie", launcher)
+        launcher.chmod(0o755)
+        cli = self.home / ".local/share/dotfiles/magpie/bin/magpie"
+        cli.parent.mkdir(parents=True)
+        cli.write_text("#!/bin/sh\nprintf 'native %s\\n' \"$*\"\n", encoding="utf-8")
+        cli.chmod(0o755)
+        result = subprocess.run([str(launcher), "--version"],
+                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin",
+                                     "DEPLOY_PLATFORM": "macos",
+                                     "MAGPIE_APP": str(self.root / "missing-app")},
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "native --version\n")
+
     def test_the_launcher_runs_the_app_binary(self):
         launcher = self.home / ".local/bin/magpie"
         launcher.parent.mkdir(parents=True, exist_ok=True)
@@ -1995,8 +2074,12 @@ class MagpieCommandTests(MagpieApplyTests):
         app.parent.mkdir(parents=True, exist_ok=True)
         app.write_text("#!/bin/sh\necho \"magpie 0.1.0\"\n", encoding="utf-8")
         app.chmod(0o755)
+        cli = self.root / "native-cli"
+        cli.write_text("#!/bin/sh\nprintf 'native cli\\n'\n", encoding="utf-8")
+        cli.chmod(0o755)
         result = subprocess.run([str(launcher), "--version"],
-                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin", "MAGPIE_APP": str(app)},
+                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin", "MAGPIE_APP": str(app),
+                                     "MAGPIE_CLI": str(cli)},
                                 capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("magpie 0.1.0", result.stdout)

@@ -304,8 +304,9 @@ explains every changed pair.
   catalog `deployment/magpie/releases.tsv` that pins the native CLI version
   and its SHA-256 digests, Claude Code's hand-written settings, Pi's default
   provider and model, the bootstrap switch, and the Codex hash guard. The
-  macOS application is adopted; Linux and WSL install the pinned native CLI
-  the release catalog names, and their lifecycle is explicit: the deployment
+  macOS application is adopted when present; otherwise macOS, Linux, and WSL
+  install the pinned native CLI the release catalog names. CLI lifecycle is
+  explicit: the deployment
   starts `magpie serve`, writes no systemd unit, no login item, and no
   registry key, and never writes its temporary proxy into the gateway's own
   settings. Native Windows currently installs only the CLI; it does not wire a

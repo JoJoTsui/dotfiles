@@ -1,10 +1,9 @@
 #!/bin/sh
 # Managed by dotfiles; the Magpie launcher.
 #
-# macOS runs the binary the application ships, so the CLI and the GUI are
-# one install. A headless host runs the native CLI that the deployment
-# installed from the pinned release; the macOS application wrapper never
-# replaces it.
+# macOS prefers the binary the application ships. When the application is
+# absent, it can use the native CLI installed from the pinned release, like a
+# headless host.
 APP="${MAGPIE_APP:-/Applications/magpie.app/Contents/MacOS/magpie}"
 CLI="${MAGPIE_CLI:-$HOME/.local/share/dotfiles/magpie/bin/magpie}"
 
@@ -17,11 +16,14 @@ if [ -z "$platform" ]; then
 fi
 
 if [ -n "${MAGPIE_APP:-}" ] || [ "$platform" = macos ]; then
-    if [ ! -x "$APP" ]; then
-        printf 'the Magpie app is not installed; install it with: brew install --cask magpie\n' >&2
-        exit 127
+    if [ -x "$APP" ]; then
+        exec "$APP" "$@"
     fi
-    exec "$APP" "$@"
+    if [ -x "$CLI" ]; then
+        exec "$CLI" "$@"
+    fi
+    printf 'the Magpie app is not installed; install it with: brew install --cask magpie, or install the CLI with: dotfiles-magpie install\n' >&2
+    exit 127
 fi
 
 if [ ! -x "$CLI" ]; then

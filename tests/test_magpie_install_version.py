@@ -30,7 +30,7 @@ def cli_script(reported_version, exit_status=0):
 
 
 class MagpieInstallVersionTests(unittest.TestCase):
-    def run_install(self, reported_version, digest=None, exit_status=0):
+    def run_install(self, reported_version, digest=None, exit_status=0, platform="linux"):
         """Run `dotfiles-magpie install` against an existing CLI in a fresh home.
 
         Returns the result, the CLI bytes after the run, whether the CLI was
@@ -60,12 +60,13 @@ class MagpieInstallVersionTests(unittest.TestCase):
                 digest = hashlib.sha256(content).hexdigest()
             catalog = home / "releases.tsv"
             catalog.write_text(
-                "magpie|" + PIN_VERSION + "|linux-amd64|https://example.invalid/asset|"
+                "magpie|" + PIN_VERSION + f"|{platform}-amd64|https://example.invalid/asset|"
                 + digest + "\n", encoding="utf-8")
 
             environment = {
                 "HOME": str(home), "PATH": f"{tools}:/usr/bin:/bin",
-                "DEPLOY_PLATFORM": "linux", "DEPLOY_ARCH": "x86_64",
+                "DEPLOY_PLATFORM": platform, "DEPLOY_ARCH": "x86_64",
+                "MAGPIE_APP": str(home / "missing-app"),
                 "MAGPIE_CLI_BIN": str(cli), "MAGPIE_RELEASE_CATALOG": str(catalog),
                 "DOTFILES_MAGPIE_ENGINE": str(ENGINE),
                 "MAGPIE_CLI_EXECUTED": str(executed),
@@ -93,6 +94,15 @@ class MagpieInstallVersionTests(unittest.TestCase):
         self.assertEqual(content, cli_script(reported), "the existing CLI was overwritten")
         self.assertFalse(downloaded)
 
+    def test_macos_preserves_and_does_not_execute_an_unrecognized_cli(self):
+        reported = "magpie " + PIN_VERSION
+        result, content, executed, downloaded = self.run_install(
+            reported, digest="0" * 64, platform="macos")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(executed)
+        self.assertFalse(downloaded)
+        self.assertEqual(content, cli_script(reported))
+
     def test_a_longer_version_does_not_satisfy_the_pin_after_bytes_are_verified(self):
         # The bytes match the pin, so a wrong version is a version mismatch, not
         # a reason to fall through to a download the way the old installer did.
@@ -109,7 +119,7 @@ class MagpieInstallVersionTests(unittest.TestCase):
         self.assertFalse(downloaded, "a verified but wrong-version CLI must not trigger a download")
         self.assertEqual(content, cli_script(reported))
 
-    def run_fresh_install(self, reported_version, exit_status=0):
+    def run_fresh_install(self, reported_version, exit_status=0, platform="linux"):
         """Install a fresh payload at the public seam with a fake downloader.
 
         The fake curl copies a fake CLI script into the download target, so no
@@ -130,7 +140,7 @@ class MagpieInstallVersionTests(unittest.TestCase):
 
             catalog = home / "releases.tsv"
             catalog.write_text(
-                "magpie|" + PIN_VERSION + "|linux-amd64|https://example.invalid/asset|"
+                "magpie|" + PIN_VERSION + f"|{platform}-amd64|https://example.invalid/asset|"
                 + hashlib.sha256(payload).hexdigest() + "\n", encoding="utf-8")
 
             curl = tools / "curl"
@@ -141,7 +151,8 @@ class MagpieInstallVersionTests(unittest.TestCase):
 
             environment = {
                 "HOME": str(home), "PATH": f"{tools}:/usr/bin:/bin",
-                "DEPLOY_PLATFORM": "linux", "DEPLOY_ARCH": "x86_64",
+                "DEPLOY_PLATFORM": platform, "DEPLOY_ARCH": "x86_64",
+                "MAGPIE_APP": str(home / "missing-app"),
                 "MAGPIE_RELEASE_CATALOG": str(catalog),
                 "DOTFILES_MAGPIE_ENGINE": str(ENGINE),
                 "FIXTURE_RELEASE": str(fixture),
@@ -156,6 +167,30 @@ class MagpieInstallVersionTests(unittest.TestCase):
             placed = cli.exists()
             content = cli.read_bytes() if placed else None
             return result, placed, content, payload, executed.exists(), list(tmpdir.iterdir())
+
+    def test_macos_can_install_a_verified_cli_when_the_app_is_missing(self):
+        result, placed, content, payload, executed, leftover = self.run_fresh_install(
+            PIN_VERSION, platform="macos")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(placed)
+        self.assertEqual(content, payload)
+        self.assertTrue(executed)
+        self.assertEqual(leftover, [])
+
+    def test_macos_adopts_the_application_without_downloading_a_cli(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-magpie-app-") as temporary:
+            home = Path(temporary)
+            app = home / "app"
+            app.write_text("#!/bin/sh\nexit 99\n", encoding="utf-8")
+            app.chmod(0o755)
+            result = subprocess.run(
+                ["/bin/bash", str(COMMAND), "install"],
+                env={"HOME": str(home), "PATH": "/usr/bin:/bin", "DEPLOY_PLATFORM": "macos",
+                     "MAGPIE_APP": str(app), "DOTFILES_MAGPIE_ENGINE": str(ENGINE)},
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("application provides the CLI", result.stderr)
+            self.assertFalse((home / ".local/share/dotfiles/magpie/bin/magpie").exists())
 
     def test_a_fresh_payload_with_a_wrong_version_is_rejected(self):
         # The downloaded bytes match the catalog digest, but --version reports

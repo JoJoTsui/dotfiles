@@ -92,12 +92,14 @@ case "$command" in
     status) magpie_status "$@" ;;
     providers) magpie_providers "$@" ;;
     test) magpie_test "$@" ;;
-    start) magpie_start_gateway "$@" ;;
+    start)
+        if magpie_cli_runtime; then magpie_start_gateway "$@"; else magpie_gateway_ensure "$@"; fi
+        ;;
     stop) magpie_stop_gateway "$@" ;;
     install)
-        if ! magpie_native_platform; then
-            printf 'dotfiles: magpie: macOS runs the application; install it with: brew install --cask magpie\n' >&2
-            exit 1
+        if ! magpie_cli_runtime; then
+            printf 'dotfiles: magpie: the macOS application provides the CLI\n' >&2
+            exit 0
         fi
         magpie_install_cli
         ;;

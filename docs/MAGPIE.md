@@ -29,30 +29,30 @@ brew install --cask magpie   # the operator's step; the deployment never install
 ```
 
 The deployment adopts the cask and records the floor it accepts
-(`0.1.4325`); it never installs the cask and never upgrades it. Every apply
-reports the app it found, and a missing or old app is a warning rather than a
-failure: the gateway may still answer from an earlier install.
+(`0.1.4325`); it never installs the cask and never upgrades it. When its
+application binary is absent, the deployment installs the pinned native CLI
+instead. The macOS release assets are pinned but have not been executed in the
+native verification for this change.
 
 The repository owns two managed commands:
 
-- `~/.local/bin/magpie` runs the binary the app ships, so the CLI and the GUI
-  are one install. It prints the cask command when the app is missing. On a
-  headless host it runs the native CLI the deployment installed instead, and
-  the macOS application wrapper never replaces it.
+- `~/.local/bin/magpie` runs the application binary when it is present, or the
+  installed native CLI when it is absent. It never replaces either binary.
 - `~/.local/bin/dotfiles-magpie` is the deployment's half of the gateway:
   `apply`, `status`, `providers`, `test`, `start`, `stop`, and `install`.
 
-The app owns the gateway and its login item. The deployment never installs
+The app owns its gateway and login item. The deployment never installs
 `magpie daemon`; it verifies `magpie status --json` and, on the real account
-home, opens the app once when nothing answers. On macOS a gateway that still
-does not answer fails the step with a command to start it. The step does not
-newly wire Claude Code or Pi before the gateway answers; existing wiring is
-preserved.
+home, opens the app once when nothing answers. Without the app it uses the
+native CLI lifecycle below. The step does not newly wire Claude Code or Pi
+before a gateway answers; existing wiring is preserved. If the app is installed
+later, stop any deployment-owned gateway with `dotfiles-magpie stop` before
+starting the application so the two do not compete for the same port.
 
-## The native CLI on Linux and WSL
+## The native CLI on Linux, WSL, and app-absent macOS
 
-A headless host has no application to open and no login item, so the
-deployment installs the native Magpie CLI instead. The release catalog
+Linux and WSL use the native Magpie CLI; macOS uses it when the app is absent.
+The release catalog
 `deployment/magpie/releases.tsv` owns the version every target shares and the
 SHA-256 digest that verifies each asset:
 
@@ -61,11 +61,10 @@ name|version|target|url|sha256
 ```
 
 The catalog carries Linux, macOS, and Windows targets, so the version and
-digests of one release live in one place. The macOS CLI rows record upstream
-release metadata only: the deployment does not yet install or run those assets
-when the app is absent. The deployment never resolves a release at run time:
-the URL and the digest are the pin. Downloaded bytes are verified before
-installation, and a failed download never touches a working CLI.
+digests of one release live in one place. The deployment never resolves a
+release at run time: the URL and the digest are the pin. Downloaded bytes are
+verified before installation, and a failed download never touches a working
+CLI.
 
 The CLI lives at `~/.local/share/dotfiles/magpie/bin/magpie`, beside the
 engine, so the managed command and the deployment step run one binary. The

@@ -172,15 +172,14 @@ magpie_row_fields() {
 }
 
 # The Magpie CLI. Every external call goes through this helper, so a test can
-# substitute a fake binary and record the exact command sequence. A headless
-# host runs the native CLI the deployment installed; the macOS application
-# ships its own binary, which the managed launcher starts.
+# substitute a fake binary and record the exact command sequence. Hosts without
+# the macOS application run the verified CLI the deployment installed.
 magpie_run() {
     if [ -n "${MAGPIE_BIN:-}" ]; then
         "${MAGPIE_BIN}" "$@"
         return $?
     fi
-    if magpie_native_platform; then
+    if magpie_cli_runtime; then
         local cli
         cli=$(magpie_cli_path)
         if [ ! -x "$cli" ]; then
@@ -211,6 +210,13 @@ magpie_native_platform() {
         *" $(magpie_platform) "*) return 0 ;;
     esac
     return 1
+}
+
+# Linux and WSL use the native CLI; a Mac without its app uses it too.
+magpie_cli_runtime() {
+    magpie_native_platform && return 0
+    [ "$(magpie_platform)" = macos ] &&
+        [ ! -x "${MAGPIE_APP:-/Applications/magpie.app/Contents/MacOS/magpie}" ]
 }
 
 # The native CLI the deployment runs. The override is the seam a test uses
@@ -1488,9 +1494,8 @@ magpie_deployment_proxy_url() {
     [ "$url" = "$DEPLOY_PROXY_URL" ]
 }
 
-# Ensure the gateway answers. The app owns the gateway on macOS; a headless
-# host has no application to open and no login item, so the deployment starts
-# the native gateway itself and waits for it to answer.
+# Ensure the gateway answers. The app owns the gateway when present on macOS;
+# otherwise the deployment starts the native gateway and waits for it to answer.
 magpie_gateway_ensure() {
     local attempt=0
     MAGPIE_GATEWAY_READY=no
@@ -1499,7 +1504,7 @@ magpie_gateway_ensure() {
         printf 'dotfiles: magpie: the gateway answers on %s\n' "$MAGPIE_GATEWAY"
         return 0
     fi
-    if magpie_native_platform; then
+    if magpie_cli_runtime; then
         printf 'dotfiles: magpie: the gateway does not answer; starting the native gateway\n'
         if magpie_start_gateway; then
             MAGPIE_GATEWAY_READY=yes
@@ -2168,23 +2173,20 @@ magpie_apply() {
         "${#MAGPIE_PROVIDER_ROLE[@]}" "${#MAGPIE_MODEL_ROLE[@]}" \
         "${#MAGPIE_GROUP_ID[@]}" "${#MAGPIE_WIRING_AGENT[@]}"
 
-    if [ "$platform" = macos ]; then
+    if [ "$platform" = macos ] && ! magpie_cli_runtime; then
         DEPLOY_STEP=magpie-apply.cask
         magpie_cask_report || true
     else
-        # A headless host runs the native CLI. The deployment installs the
-        # pinned release it verified, and never the desktop application.
+        # Headless hosts and Macs without the app use the verified native CLI.
         DEPLOY_STEP=magpie-apply.cli
         magpie_install_cli || return 1
     fi
 
     DEPLOY_STEP=magpie-apply.gateway
-    # The gateway is the step's subject. A host that cannot run Magpie is
-    # skipped by the platform guard above; a Mac that is missing the app, or
-    # has not opened it once, fails here with the command that fixes it, so a
-    # deployment can never leave agents wired to a gateway that is not there.
+    # A deployment can never leave agents newly wired to an unavailable
+    # gateway; report the startup command for the selected runtime.
     if ! magpie_gateway_ensure; then
-        if magpie_native_platform; then
+        if magpie_cli_runtime; then
             magpie_fail 'the Magpie gateway does not answer; start it with: dotfiles-magpie start'
         else
             magpie_fail 'the Magpie gateway does not answer; install or open the app and apply again'
