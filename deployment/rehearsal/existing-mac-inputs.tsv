@@ -1,0 +1,30 @@
+# Reviewed allow-list for the existing-Mac settings rehearsal.
+#
+# path<TAB>format<TAB>requirement
+#
+# The format is json, jsonc, toml, or text. A text input is copied verbatim
+# only when it holds no credential-shaped value; otherwise the rehearsal fails
+# closed or omits the file and counts it.
+#
+# The rehearsal reads only these files. Authentication stores, session files,
+# history databases, and every other tree stay on the device: `.claude.json`
+# holds the OAuth account and the user MCP fields, `auth.json` holds client
+# credentials, and the Atuin stores hold shell history. The helper refuses a
+# manifest that names any of them.
+#
+# The requirement column marks an input the rehearsal cannot proceed without
+# (required) or one the device may not have (optional).
+.claude/settings.json	json	required
+.codex/config.toml	toml	required
+.codex/hooks.json	json	optional
+.kimi-code/config.toml	toml	optional
+.kimi-code/tui.toml	toml	optional
+.kimi-code/mcp.json	json	optional
+.config/opencode/opencode.jsonc	jsonc	optional
+.pi/agent/settings.json	json	required
+.pi/agent/models-store.json	json	optional
+.qoder/settings.json	json	optional
+.minimax/mcp.json	json	optional
+.claude/CLAUDE.local.md	text	optional
+.codex/AGENTS.override.md	text	optional
+.config/ghostty/config.local.ghostty	text	optional

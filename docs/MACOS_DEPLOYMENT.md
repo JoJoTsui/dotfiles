@@ -126,7 +126,11 @@ and both verification layers below before it starts.
    Preserve credentials, providers, trust, unrelated instructions and skills,
    shell integrations, and terminal preferences. Report changed setting paths
    without exposing their values. Rehearse backed-up replacement of conflicting
-   launcher/skill symlinks while retaining the bootstrap's symlink guards.
+   launcher/skill symlinks while retaining the bootstrap's symlink guards. The
+   reviewed allow-listed rehearsal below is the settings-slice component of
+   this item only: it does not rehearse the backed-up replacement of
+   conflicting launcher/skill symlinks, the contents of unmanaged skills, the
+   live client transport, or credentials, and those requirements stay open.
 3. When existing Atuin stores come from a different release, use SQLite backup
    snapshots that include committed WAL contents. Verify the pinned runtime's
    migration/schema compatibility and isolated read/write behavior against those
@@ -146,6 +150,81 @@ macOS may adopt an exact matching existing Codex as specified in
 [ADR 0009](adr/0009-adopt-matching-macos-codex.md). Other agents retain their
 declared ownership; newer device versions are brought into the source pins and
 frozen locks only through an explicit reviewed update.
+
+### Existing-device settings rehearsal
+
+`deployment/rehearse_settings.py` builds a private, redacted projection of an
+explicitly allow-listed slice of the existing device's managed settings, so the
+merge and the preservation rules can be rehearsed before anything reaches the
+account home. The device keeps its own bytes, permissions, and modification
+times; the helper only reads it.
+
+The reviewed allow-list is `deployment/rehearsal/existing-mac-inputs.tsv`. It
+names client settings, the device's own instruction and terminal-preference
+files, and nothing else. Authentication stores, session files, and history
+databases stay on the device, and the helper refuses a manifest that names
+them. Review the manifest before the run; widening it needs a new decision.
+
+The helper needs Python 3.11 or newer, because TOML is read with the
+standard-library `tomllib`. Nothing is installed for it: the helper has no
+third-party dependency.
+
+```bash
+python3 deployment/rehearse_settings.py \
+  --source-home "$HOME" \
+  --manifest deployment/rehearsal/existing-mac-inputs.tsv \
+  --projection /private/tmp/dotfiles-rehearsal \
+  --report /private/tmp/dotfiles-rehearsal-report.json
+```
+
+The projection and the report must live outside the account home, so the
+rehearsal cannot write into the device, and their path must not traverse a
+symbolic link: use `/private/tmp` rather than `/tmp` on macOS. Both output
+paths must be new: the projection directory must be empty or absent, and the
+report path must not exist, so a rerun takes fresh output paths instead of
+writing over an earlier artifact. The report must not live inside the
+projection. The helper refuses a linked input or output path, a projection
+inside the source home, an existing report path, and a missing required
+input.
+
+Every structured input is parsed before the helper writes anything. JSON and
+JSONC are parsed and re-emitted; TOML is parsed as TOML and re-emitted as
+validated TOML, so a malformed TOML file refuses the rehearsal before any
+artifact exists, a credential-named key inside an inline table or a nested
+table is redacted, and a credential held in a multi-line string is redacted
+instead of being copied. Comments are inspected but are not carried into the
+projection. A credential-named field is redacted before the helper writes any
+artifact, and credential-shaped content under an unknown field name — a
+freeform `NAME=value` assignment whose value carries no vendor prefix
+included — fails closed; `--unknown-credential-policy omit` omits such a
+field and counts it instead.
+
+A credential is also recognized inside a string that the helper does not
+interpret: a quoted assignment name (`"ANTHROPIC_AUTH_TOKEN":"…"`,
+`'ANTHROPIC_AUTH_TOKEN': '…'`) is credential content whatever the value looks
+like, and a URL that carries userinfo (`http://user:password@host`) is
+credential content as well. The string is never parsed, evaluated, or run; the
+rule is a name and shape check. A URL without userinfo and a provider's
+environment-variable name stay ordinary values and are preserved. The
+projection keeps private permissions, and the report holds paths, counts, and
+checksums only, with the source checksum taken from the bytes that were read
+and the mode and modification time sampled around the read.
+
+Rehearse the merge against the projection with the ordinary bootstrap:
+
+```bash
+/bin/bash bootstrap.sh --home /private/tmp/dotfiles-rehearsal --apply-only
+```
+
+The projection proves the settings merge and the preservation rules for the
+allow-listed setting values of the fabricated fixtures: unrelated providers,
+trust records, instruction files, skills lists, and terminal preferences
+survive, and a conflicting skill symlink stays a symlink instead of becoming
+a write through it. It does not prove the backed-up replacement of
+conflicting launcher/skill symlinks, the contents of unmanaged skills, the
+live client transport, or that the device's live credentials still work, that
+the clients accept the projected values, or that the gateway routes a
+request.
 
 ### Fresh native installation
 
