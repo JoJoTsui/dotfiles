@@ -292,7 +292,10 @@ class DeploymentTests(unittest.TestCase):
         pixi = self.guards / "pixi"
         pixi.write_text('#!/bin/sh\ncase "$1 $2" in "--version ") echo "pixi ' + manager_pin("PIXI_VERSION") + '" ;; "exec "*) exit 0 ;; "global sync") exit 37 ;; *) exit 95 ;; esac\n')
         pixi.chmod(0o755)
-        result = self.deploy("--platform", "linux", env=dict(self.env,
+        # This full bootstrap targets a synthetic home, so opt out of the
+        # gateway: its real-home guard would otherwise fail before the pixi
+        # sync this test is meant to exercise.
+        result = self.deploy("--platform", "linux", "--no-magpie", env=dict(self.env,
                              DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_PIXI_BIN=str(pixi)))
         self.assertEqual(result.returncode, 37, result.stderr)
         self.assertIn("step install-common.pixi-sync failed (exit 37)", result.stderr)
@@ -302,7 +305,9 @@ class DeploymentTests(unittest.TestCase):
         downloader = self.guards / "curl"
         downloader.write_text('#!/bin/sh\nwhile [ "$#" -gt 0 ]; do if [ "$1" = -o ]; then shift; printf "corrupt archive\\n" > "$1"; exit 0; fi; shift; done\nexit 94\n')
         downloader.chmod(0o755)
-        result = self.deploy("--platform", "linux")
+        # Opt out of the gateway so the real-home guard does not fail before
+        # the manager download this test checks.
+        result = self.deploy("--platform", "linux", "--no-magpie")
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("SHA-256 mismatch", result.stderr)
         self.assertIn("step install-managers.pixi failed (exit 1)", result.stderr)

@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -15,6 +16,29 @@ from fixtures.skills import STATIC_LIBRARY, assert_skill_copies
 
 SOURCE = Path(__file__).resolve().parents[1]
 POWERSHELL = os.environ.get("DOTFILES_TEST_POWERSHELL") or shutil.which("pwsh") or shutil.which("powershell")
+
+
+def magpie_releases():
+    """The shared release catalog: the one owner of the version and digests."""
+    rows = {}
+    for line in (SOURCE / "deployment/magpie/releases.tsv").read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        name, version, target, url, sha256 = line.split("|")
+        rows[target] = {"name": name, "version": version, "target": target, "url": url, "sha256": sha256}
+    return rows
+
+
+def magpie_cmd_launcher_bytes():
+    """The exact .cmd bytes: ASCII-only and relative to the launcher's own dir.
+
+    The launcher lives in .local/bin and the binary in
+    .local/share/dotfiles/magpie/bin, so %~dp0 plus this fixed suffix locates
+    it without embedding HOME (which may be non-ASCII or contain % or !).
+    """
+    return (b"@echo off\r\nsetlocal DisableDelayedExpansion\r\n"
+            b'"%~dp0..\\share\\dotfiles\\magpie\\bin\\magpie.exe" %*\r\n'
+            b"exit /b %errorlevel%\r\n")
 
 
 @unittest.skipUnless(POWERSHELL, "set DOTFILES_TEST_POWERSHELL for the public Windows boundary")
@@ -1371,6 +1395,400 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertIn('firefox', plan['tools'])
         self.assertFalse(self.home.exists())
 
+    def test_the_plan_reports_the_shared_magpie_pin_and_the_cli_slice(self):
+        result = self.deploy("-Plan")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        magpie = plan["magpie"]
+        pin = magpie_releases()["windows-amd64"]
+        # The shared catalog owns the version, the URL, and the digest.
+        self.assertTrue(magpie["cli"])
+        self.assertEqual(magpie["version"], pin["version"])
+        self.assertEqual(magpie["target"], "windows-amd64")
+        self.assertEqual(magpie["url"], pin["url"])
+        self.assertEqual(magpie["sha256"], pin["sha256"])
+        self.assertTrue(magpie["url"].startswith("https://"))
+        self.assertRegex(magpie["sha256"], r"^[a-f0-9]{64}$")
+        self.assertEqual(magpie["path"], ".local/share/dotfiles/magpie/bin/magpie.exe")
+        # An installed CLI is not a wired gateway: the Windows boundary owns
+        # neither the providers nor the clients, and the plan says so.
+        self.assertFalse(magpie["gateway"])
+        self.assertTrue(magpie["gatewayReason"])
+        self.assertIn("install-magpie-cli", plan["actions"])
+        self.assertLess(plan["actions"].index("install-magpie-cli"), plan["actions"].index("prepare-shell"))
+        self.assertFalse(self.home.exists())
+
+    def test_the_magpie_opt_out_removes_the_cli_slice_and_says_why(self):
+        for arguments, environment in ((("-NoMagpie",), None), ((), {"DOTFILES_MAGPIE": "false"})):
+            with self.subTest(arguments=arguments):
+                result = self.deploy("-Plan", *arguments, env=dict(self.env, **(environment or {})))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plan = json.loads(result.stdout)
+                self.assertFalse(plan["magpie"]["cli"])
+                self.assertTrue(plan["magpie"]["reason"])
+                self.assertNotIn("install-magpie-cli", plan["actions"])
+                self.assertFalse(self.home.exists())
+
+    def test_the_restricted_modes_skip_the_magpie_cli(self):
+        for arguments, expected in ((("-ApplyOnly",), "apply-only"), (("-AgentsOnly",), "agents-only")):
+            with self.subTest(arguments=arguments):
+                result = self.deploy("-Plan", *arguments)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plan = json.loads(result.stdout)
+                self.assertFalse(plan["magpie"]["cli"])
+                self.assertIn(expected, plan["magpie"]["reason"])
+                self.assertNotIn("install-magpie-cli", plan["actions"])
+                self.assertFalse(self.home.exists())
+
+    def magpie_fixture(self, digest=None, reported_version=None, exit_code=0, catalog_row=None):
+        """A deployment source with a synthetic release catalog and payload."""
+        source = Path(tempfile.mkdtemp(prefix="magpie-source-", dir=self.root))
+        deployment = source / "deployment"
+        (deployment / "magpie").mkdir(parents=True)
+        shutil.copy2(SOURCE / "deployment/windows.ps1", deployment / "windows.ps1")
+        version = magpie_releases()["windows-amd64"]["version"]
+        if reported_version is None:
+            reported_version = version
+        payload = ('#!' + sys.executable + '\n'
+                   'import sys\n'
+                   'if sys.argv[1:] != ["--version"]:\n'
+                   '    raise SystemExit("self-install/update must not run")\n'
+                   f'print({reported_version!r})\n'
+                   f'raise SystemExit({exit_code})\n').encode()
+        archive = self.root / "magpie.exe"
+        archive.write_bytes(payload)
+        sha256 = hashlib.sha256(payload).hexdigest() if digest is None else digest
+        if catalog_row is None:
+            catalog_row = f"magpie|{version}|windows-amd64|https://example.invalid/magpie.exe|{sha256}"
+        (source / "deployment/magpie/releases.tsv").write_text(
+            "# name|version|target|url|sha256\n" + catalog_row + "\n", encoding="utf-8")
+        temporary = self.home / ".cache/tmp"
+        temporary.mkdir(parents=True, exist_ok=True)
+        script = self.root / "magpie-install.ps1"
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2.0
+function Stop-Deployment([string]$Message) { throw $Message }
+$script:FailureCode = 1
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{
+    data = (Join-Path $TargetHome '.local/share'); cache = (Join-Path $TargetHome '.cache')
+    state = (Join-Path $TargetHome '.local/state'); config = (Join-Path $TargetHome '.config')
+}
+$exceptions = @()
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+function Invoke-WebRequest([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing, [int]$TimeoutSec) {
+    if ($env:DOTFILES_TEST_MAGPIE_DOWNLOAD -ne '1') { throw 'unexpected download' }
+    if ($Uri -ne 'https://example.invalid/magpie.exe') { throw 'unexpected release URL' }
+    [IO.File]::Copy($env:DOTFILES_TEST_MAGPIE_PAYLOAD, $OutFile)
+}
+# Execute the synthetic payload through Python on either host. The release
+# reader, the digest check, and the install flow stay in place.
+$script:FixtureInvokeTool = ${function:Invoke-Tool}
+function Invoke-Tool([string]$Executable, [string]$Arguments, [switch]$Quiet) {
+    & $script:FixtureInvokeTool $env:DOTFILES_TEST_PYTHON (@($Executable) + $Arguments) -Quiet:$Quiet
+}
+Install-MagpieCli
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(source), DOTFILES_TEST_TARGET_HOME=str(self.home),
+                           DOTFILES_TEST_PYTHON=sys.executable, DOTFILES_TEST_MAGPIE_PAYLOAD=str(archive),
+                           DOTFILES_TEST_MAGPIE_DOWNLOAD='1', TEMP=str(temporary))
+        return script, environment, payload
+
+    def run_magpie_fixture(self, script, environment):
+        return subprocess.run([POWERSHELL, "-NoProfile", "-NonInteractive", "-File", str(script)],
+                              env=environment, capture_output=True, text=True, timeout=60)
+
+    def magpie_home_environment(self, environment, home):
+        """Point the fixture and its scratch directory at an isolated home."""
+        temporary = home / ".cache/tmp"
+        temporary.mkdir(parents=True, exist_ok=True)
+        return dict(environment, DOTFILES_TEST_TARGET_HOME=str(home), TEMP=str(temporary))
+
+    def test_the_magpie_cli_install_verifies_the_digest_and_keeps_device_state(self):
+        script, environment, payload = self.magpie_fixture()
+        preserved = self.home / ".local/share/dotfiles/magpie/device-state.txt"
+        preserved.parent.mkdir(parents=True, exist_ok=True)
+        preserved.write_text("device state stays\n")
+        result = self.run_magpie_fixture(script, environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        installed = self.home / ".local/share/dotfiles/magpie/bin/magpie.exe"
+        self.assertEqual(installed.read_bytes(), payload)
+        self.assertEqual((self.home / ".local/bin/magpie.cmd").read_bytes(), magpie_cmd_launcher_bytes())
+        self.assertIn("magpie.exe", (self.home / ".local/share/dotfiles/magpie/bin/magpie").read_text())
+        self.assertEqual(preserved.read_text(), "device state stays\n")
+        self.assertEqual(list(Path(environment["TEMP"]).iterdir()), [])
+
+    def test_a_cached_magpie_cli_is_reused_without_a_download(self):
+        script, environment, payload = self.magpie_fixture()
+        installed = self.home / ".local/share/dotfiles/magpie/bin/magpie.exe"
+        installed.parent.mkdir(parents=True, exist_ok=True)
+        installed.write_bytes(payload)
+        result = self.run_magpie_fixture(script, dict(environment, DOTFILES_TEST_MAGPIE_DOWNLOAD='0'))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(installed.read_bytes(), payload)
+        self.assertTrue((self.home / ".local/bin/magpie.cmd").exists())
+
+    def test_a_magpie_digest_mismatch_places_nothing(self):
+        script, environment, _payload = self.magpie_fixture(digest="0" * 64)
+        result = self.run_magpie_fixture(script, environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("SHA-256 mismatch", result.stderr)
+        self.assertFalse((self.home / ".local/share/dotfiles/magpie/bin/magpie.exe").exists())
+        self.assertFalse((self.home / ".local/bin/magpie.cmd").exists())
+        self.assertEqual(list(Path(environment["TEMP"]).iterdir()), [])
+
+    def test_a_magpie_release_that_reports_another_version_is_not_placed(self):
+        script, environment, _payload = self.magpie_fixture(reported_version="0.0.0")
+        result = self.run_magpie_fixture(script, environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("did not report its pinned version", result.stderr)
+        self.assertFalse((self.home / ".local/share/dotfiles/magpie/bin/magpie.exe").exists())
+        self.assertEqual(list(Path(environment["TEMP"]).iterdir()), [])
+
+    def test_a_magpie_release_with_a_nonexact_version_token_is_not_placed(self):
+        version = magpie_releases()["windows-amd64"]["version"]
+        for reported in (version + "0", version + "-rc1", version + "+build", "x" + version):
+            with self.subTest(reported=reported):
+                script, environment, _payload = self.magpie_fixture(reported_version=reported)
+                result = self.run_magpie_fixture(script, environment)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("did not report its pinned version", result.stderr)
+                self.assertFalse((self.home / ".local/share/dotfiles/magpie/bin/magpie.exe").exists())
+
+    def test_the_magpie_catalog_must_carry_https_and_a_digest(self):
+        version = magpie_releases()["windows-amd64"]["version"]
+        cases = ((f"magpie|{version}|windows-amd64|http://example.invalid/magpie.exe|{'0' * 64}", "HTTPS"),
+                 (f"magpie|{version}|windows-amd64|https://example.invalid/magpie.exe|not-a-digest", "SHA-256"),
+                 (f"magpie|{version}|windows-arm64|https://example.invalid/magpie.exe|{'0' * 64}", "windows-amd64"))
+        for row, expected in cases:
+            with self.subTest(row=row):
+                script, environment, _payload = self.magpie_fixture(catalog_row=row)
+                result = self.run_magpie_fixture(script, environment)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(expected, result.stderr)
+                self.assertFalse((self.home / ".local/share/dotfiles/magpie/bin/magpie.exe").exists())
+                self.assertEqual(list(Path(environment["TEMP"]).iterdir()), [])
+
+    def test_a_cached_magpie_cli_with_a_mismatched_digest_is_preserved_and_not_executed(self):
+        script, environment, _payload = self.magpie_fixture()
+        version = magpie_releases()["windows-amd64"]["version"]
+        marker = self.root / "mismatched-cli-was-executed"
+        # A device binary that reports the pinned version is still not the
+        # pinned bytes. Running it would create the marker; deploying must not.
+        device_binary = ("#!" + sys.executable + "\n"
+                         "import pathlib\n"
+                         f"pathlib.Path({str(marker)!r}).write_text('executed')\n"
+                         f"print({version!r})\n").encode()
+        cli = self.home / ".local/share/dotfiles/magpie/bin/magpie.exe"
+        cli.parent.mkdir(parents=True, exist_ok=True)
+        cli.write_bytes(device_binary)
+        result = self.run_magpie_fixture(script, dict(environment, DOTFILES_TEST_MAGPIE_DOWNLOAD='1'))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not match the pinned Magpie SHA-256", result.stderr)
+        self.assertEqual(cli.read_bytes(), device_binary)
+        self.assertFalse(marker.exists(), "an unverified cached binary was executed")
+        self.assertFalse((self.home / ".local/bin/magpie.cmd").exists())
+        self.assertFalse((self.home / ".local/share/dotfiles/magpie/bin/magpie").exists())
+        self.assertEqual(list(Path(environment["TEMP"]).iterdir()), [])
+
+    def test_identical_magpie_launchers_are_adopted_and_repeated_runs_are_idempotent(self):
+        script, environment, _payload = self.magpie_fixture()
+        first = self.run_magpie_fixture(script, environment)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        paths = (self.home / ".local/bin/magpie.cmd",
+                 self.home / ".local/share/dotfiles/magpie/bin/magpie",
+                 self.home / ".local/share/dotfiles/magpie/bin/magpie.exe")
+        before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in paths}
+        second = self.run_magpie_fixture(script, dict(environment, DOTFILES_TEST_MAGPIE_DOWNLOAD='0'))
+        self.assertEqual(second.returncode, 0, second.stderr)
+        for path, state in before.items():
+            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), state, path)
+
+    def test_conflicting_magpie_launchers_are_preserved_and_block_the_install(self):
+        cases = (
+            (".local/bin/magpie.cmd", b"@echo off\r\ndevice launcher\r\n",
+             ".local/share/dotfiles/magpie/bin/magpie"),
+            (".local/share/dotfiles/magpie/bin/magpie", b"#!/bin/sh\ndevice companion\n",
+             ".local/bin/magpie.cmd"),
+        )
+        for index, (relative, content, companion) in enumerate(cases):
+            with self.subTest(conflict=relative):
+                home = self.root / f"launcher-conflict-{index}"
+                script, environment, _payload = self.magpie_fixture()
+                environment = self.magpie_home_environment(environment, home)
+                conflict = home / relative
+                conflict.parent.mkdir(parents=True, exist_ok=True)
+                conflict.write_bytes(content)
+                result = self.run_magpie_fixture(script, dict(environment, DOTFILES_TEST_MAGPIE_DOWNLOAD='1'))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Magpie launcher", result.stderr)
+                self.assertEqual(conflict.read_bytes(), content)
+                self.assertFalse((home / companion).exists(), "mutated the other launcher on conflict")
+                self.assertFalse((home / ".local/share/dotfiles/magpie/bin/magpie.exe").exists())
+                self.assertEqual(list(Path(environment["TEMP"]).iterdir()), [])
+
+    def test_a_symlinked_magpie_launcher_is_refused_without_writing_through(self):
+        sentinel = self.original / "device-launcher"
+        sentinel.write_bytes(b"device launcher\n")
+        home = self.root / "magpie-symlink-device"
+        link = home / ".local/bin/magpie.cmd"
+        link.parent.mkdir(parents=True)
+        try:
+            link.symlink_to(sentinel)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        script, environment, _payload = self.magpie_fixture()
+        environment = self.magpie_home_environment(environment, home)
+        result = self.run_magpie_fixture(script, environment)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(sentinel.read_bytes(), b"device launcher\n")
+        self.assertFalse((home / ".local/share/dotfiles/magpie/bin/magpie.exe").exists())
+        self.assertEqual(list(Path(environment["TEMP"]).iterdir()), [])
+
+    def test_the_magpie_cmd_launcher_ignores_percent_signs_in_the_home(self):
+        # The launcher must not embed a home path, so a literal % in HOME cannot
+        # become cmd.exe variable expansion. It is identical for every home.
+        home = self.root / "device %MAGPIE% with spaces"
+        script, environment, _payload = self.magpie_fixture()
+        environment = self.magpie_home_environment(environment, home)
+        result = self.run_magpie_fixture(script, environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        cmd = (home / ".local/bin/magpie.cmd").read_bytes()
+        self.assertEqual(cmd, magpie_cmd_launcher_bytes())
+        self.assertNotIn(str(home).encode(), cmd)
+        self.assertNotIn(str(home / ".local/share/dotfiles/magpie/bin/magpie.exe").encode(), cmd)
+        self.assertNotIn(b"%%", cmd)
+        self.assertEqual((home / ".local/share/dotfiles/magpie/bin/magpie").read_text(),
+                         '#!/bin/sh\nexec "$(dirname -- "$0")/magpie.exe" "$@"\n')
+
+    def test_the_magpie_cmd_launcher_ignores_exclamation_marks_in_the_home(self):
+        # cmd.exe expands a literal ! when delayed expansion is on. A literal !
+        # in HOME can no longer reach the launcher, which stays byte-identical
+        # and keeps delayed expansion disabled. This reads the generated bytes
+        # only; no .cmd command execution is validated here.
+        home = self.root / "device !MAGPIE! with spaces"
+        script, environment, _payload = self.magpie_fixture()
+        environment = self.magpie_home_environment(environment, home)
+        result = self.run_magpie_fixture(script, environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        cmd = (home / ".local/bin/magpie.cmd").read_bytes()
+        self.assertEqual(cmd, magpie_cmd_launcher_bytes())
+        self.assertNotIn(b"!", cmd)
+        self.assertNotIn(str(home).encode(), cmd)
+
+    def test_the_magpie_cmd_launcher_is_ascii_for_a_non_ascii_home(self):
+        # cmd.exe may decode a batch file with a legacy code page: embedded
+        # UTF-8 home names get corrupted. The launcher references the binary
+        # through %~dp0 instead, so its own bytes stay pure ASCII.
+        home = self.root / "casa Única 日本語"
+        script, environment, _payload = self.magpie_fixture()
+        environment = self.magpie_home_environment(environment, home)
+        result = self.run_magpie_fixture(script, environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        cmd = (home / ".local/bin/magpie.cmd").read_bytes()
+        self.assertEqual(cmd, magpie_cmd_launcher_bytes())
+        cmd.decode("ascii")  # the launcher bytes never encode the home name
+        self.assertNotIn(str(home).encode("utf-8"), cmd)
+
+    def test_opt_out_and_restricted_plans_do_not_need_the_magpie_catalog(self):
+        source = self.root / "source without magpie catalog"
+        # Copy only the public files a PowerShell plan reads from $Source. A
+        # whole-tree copy would also stage ignored/untracked credential files
+        # in this temporary deployment source.
+        required = [
+            ".chezmoi.toml.tmpl",                 # source-tree validation
+            "deployment/windows.ps1",             # dot-sourced plan helpers
+            "deployment/bundles.tsv",             # Get-Bundles
+            "deployment/bundle-tools.tsv",        # Get-BundlePackages
+            "deployment/common-tools.tsv",        # Get-Packages
+            "deployment/windows-assets.json",     # exception records
+            "deployment/agents/providers.tsv",    # agent provider catalog
+            "deployment/agents/herdr-kinds.tsv",  # Herdr kind catalog
+        ]
+        # Bun locks are declared by the provider catalog itself. Only bun
+        # records carry a lock path; a native record's column holds a URL.
+        catalog = (SOURCE / "deployment/agents/providers.tsv").read_text(encoding="utf-8")
+        for line in catalog.splitlines():
+            if line and not line.startswith("#"):
+                fields = line.split("|")
+                if fields[1] == "bun":
+                    required.append(fields[13])
+        root = SOURCE.resolve()
+        for relative in required:
+            declared = Path(relative)
+            self.assertFalse(declared.is_absolute(), relative)
+            original = (root / declared).resolve()
+            original.relative_to(root)  # a declared lock must stay in the source
+            self.assertTrue(original.is_file(), relative)
+            destination = source / declared
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(original, destination)
+        copied = {path.relative_to(source).as_posix() for path in source.rglob("*") if path.is_file()}
+        self.assertEqual(copied, set(required))
+        # The Magpie release catalog is never copied: an opted-out or
+        # restricted plan must not read it, and a full plan must fail on it.
+        self.assertFalse((source / "deployment/magpie/releases.tsv").exists())
+        for arguments, environment in (
+            (("-NoMagpie",), None),
+            ((), {"DOTFILES_MAGPIE": "false"}),
+            (("-ApplyOnly",), None),
+            (("-AgentsOnly",), None),
+        ):
+            with self.subTest(arguments=arguments, environment=environment):
+                result = self.deploy("-Plan", *arguments, "-Source", str(source),
+                                     env=dict(self.env, **(environment or {})))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plan = json.loads(result.stdout)
+                self.assertFalse(plan["magpie"]["cli"])
+                self.assertIsNone(plan["magpie"]["version"])
+                self.assertNotIn("install-magpie-cli", plan["actions"])
+        # A full plan still requires the one catalog the adapter owns.
+        result = self.deploy("-Plan", "-Source", str(source))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Magpie release catalog", result.stderr)
+
+    def test_opt_out_preflight_ignores_magpie_only_symlinks_without_weakening_other_guards(self):
+        script = self.root / "magpie-preflight.ps1"
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$Source = $env:DOTFILES_TEST_SOURCE
+$roots = @{ appData = (Join-Path $TargetHome 'AppData/Roaming') }
+$exceptions = @()
+function Read-Catalog([string]$Relative) {
+    foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source $Relative))) {
+        if ($line -and -not $line.StartsWith('#')) { @{ columns = $line.Split('|') } }
+    }
+}
+. (Join-Path $Source 'deployment/windows.ps1')
+if ($env:DOTFILES_TEST_MAGPIE_ENABLED -eq '0') { Assert-OwnedState -MagpieEnabled:$false }
+else { Assert-OwnedState }
+''')
+        sentinel = self.original / "device-launcher"
+        sentinel.write_bytes(b"device launcher\n")
+        home = self.root / "magpie-preflight-device"
+        for relative, target, directory in (
+            (".local/share/dotfiles/magpie", self.original, True),
+            (".local/bin/magpie.cmd", sentinel, False),
+        ):
+            link = home / relative
+            link.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                link.symlink_to(target, target_is_directory=directory)
+            except OSError:
+                self.skipTest('OS policy prohibits creating the test symlink')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(home))
+        skipped = self.run_magpie_fixture(script, dict(environment, DOTFILES_TEST_MAGPIE_ENABLED='0'))
+        self.assertEqual(skipped.returncode, 0, skipped.stderr)
+        guarded = self.run_magpie_fixture(script, dict(environment, DOTFILES_TEST_MAGPIE_ENABLED='1'))
+        self.assertNotEqual(guarded.returncode, 0)
+        self.assertIn("symlink or reparse", guarded.stderr)
+        self.assertEqual(sentinel.read_bytes(), b"device launcher\n")
+        self.assertEqual(sorted(path.name for path in self.original.iterdir()), ["device-launcher"])
+
     def test_normal_nu_startup_loads_the_rendered_environment_without_config_flags(self):
         tool_home = os.environ.get('DOTFILES_TEST_TOOL_HOME')
         chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
@@ -1498,6 +1916,177 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertEqual(snapshot(), before)
 
 
+class WindowsMagpieCatalogTests(unittest.TestCase):
+    """The shared release catalog is the only owner of the Magpie pin.
+
+    These checks need no PowerShell: they read the catalog and the two
+    Windows entry points. They do not claim that the Windows installation
+    runs; the native gate owns that evidence.
+    """
+
+    def test_the_shared_catalog_pins_one_version_for_every_target(self):
+        rows = magpie_releases()
+        self.assertEqual(set(rows), {"linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"})
+        self.assertEqual(len({row["version"] for row in rows.values()}), 1)
+        for target, row in rows.items():
+            with self.subTest(target=target):
+                self.assertEqual(row["name"], "magpie")
+                self.assertTrue(row["url"].startswith("https://"))
+                self.assertRegex(row["sha256"], r"^[a-f0-9]{64}$")
+
+    def test_the_windows_entry_points_read_the_shared_catalog(self):
+        windows = (SOURCE / "deployment/windows.ps1").read_text(encoding="utf-8")
+        bootstrap = (SOURCE / "bootstrap.ps1").read_text(encoding="utf-8")
+        # The adapter reads the shared catalog and the one Windows target.
+        self.assertIn("deployment/magpie/releases.tsv", windows)
+        self.assertIn("windows-amd64", windows)
+        # The entry point asks the adapter for the pin instead of naming a
+        # release URL or a digest of its own.
+        self.assertIn("Get-MagpiePin", bootstrap)
+        for name, text in (("bootstrap.ps1", bootstrap), ("deployment/windows.ps1", windows)):
+            with self.subTest(source=name):
+                self.assertNotIn("magpie-cli-windows", text)
+                self.assertNotIn("github.com/yetone/magpie", text)
+
+    def test_the_windows_document_names_the_slice_and_its_limits(self):
+        document = (SOURCE / "docs/WINDOWS_DEPLOYMENT.md").read_text(encoding="utf-8")
+        self.assertIn("deployment/magpie/releases.tsv", document)
+        self.assertIn("-NoMagpie", document)
+        # The document separates the installed CLI from the gateway wiring.
+        self.assertIn("magpie.exe", document)
+        self.assertIn("does not wire", document)
+
+
+class WindowsMagpieVersionTests(unittest.TestCase):
+    """The Windows version check must accept only the pinned whole token.
+
+    These checks need no PowerShell: they read the pattern Test-MagpieVersion
+    builds and apply it with Python's regex engine, which shares the relevant
+    syntax with .NET. They do not claim the PowerShell runtime ran; the native
+    gate owns that evidence.
+    """
+
+    def version_regex(self):
+        windows = (SOURCE / "deployment/windows.ps1").read_text(encoding="utf-8")
+        match = re.search(
+            r"\$pattern\s*=\s*'([^']*)'\s*\+\s*\[regex\]::Escape\(\$Version\)\s*\+\s*'([^']*)'",
+            windows,
+        )
+        self.assertIsNotNone(match, "Test-MagpieVersion must escape the pin into a version pattern")
+        prefix, suffix = match.groups()
+        pin = magpie_releases()["windows-amd64"]["version"]
+        return re.compile(prefix + re.escape(pin) + suffix)
+
+    def test_only_the_exact_whitespace_token_is_accepted(self):
+        pin = magpie_releases()["windows-amd64"]["version"]
+        regex = self.version_regex()
+        cases = (
+            (pin, True),                              # exact
+            (f"magpie {pin}", True),                  # exact after a tool name
+            (f"magpie {pin} (commit abc123)", True),  # exact with trailing metadata
+            (f"\t{pin}\t", True),                     # exact between other whitespace
+            (f"{pin}0", False),                       # longer version
+            (f"{pin}1", False),                       # longer version
+            (f"{pin}-rc1", False),                    # prerelease
+            (f"{pin}+build", False),                  # build suffix
+            (f"x{pin}", False),                       # prefixed token
+            (f"magpie x{pin}", False),                # prefixed token after a tool name
+            (f"magpie {pin}0", False),                # longer version after a tool name
+            (f"other {pin}-rc1", False),              # prerelease with leading text
+            ("0.0.0", False),                         # another version
+        )
+        for reported, accepted in cases:
+            with self.subTest(reported=reported, accepted=accepted):
+                self.assertEqual(bool(regex.search(reported)), accepted)
+
+    def test_the_windows_token_check_agrees_with_the_unix_adapter(self):
+        # magpie.sh normalizes tabs/newlines to spaces, then requires the pin
+        # between spaces: case " $reported " in *" $want "*.
+        pin = magpie_releases()["windows-amd64"]["version"]
+        regex = self.version_regex()
+        cases = (pin, f"magpie {pin}", f"\t{pin}\t", f"{pin}0", f"{pin}-rc1",
+                 f"{pin}+build", f"x{pin}", f"other {pin}+build", "0.0.0")
+        for reported in cases:
+            with self.subTest(reported=reported):
+                normalized = reported.replace("\t", " ").replace("\n", " ")
+                unix_match = f" {pin} " in f" {normalized} "
+                self.assertEqual(bool(regex.search(reported)), unix_match)
+
+
+class WindowsMagpieSafetyTests(unittest.TestCase):
+    """Static checks for the Windows Magpie safety gates.
+
+    These need no PowerShell. They read the two entry points and the document;
+    the behavior tests in WindowsBoundaryTests run the same gates under the
+    public PowerShell fixture. Neither claims native Windows acceptance.
+    """
+
+    def sources(self):
+        return ((SOURCE / "bootstrap.ps1").read_text(encoding="utf-8"),
+                (SOURCE / "deployment/windows.ps1").read_text(encoding="utf-8"))
+
+    def test_a_cached_binary_is_hashed_before_it_is_executed(self):
+        _bootstrap, windows = self.sources()
+        digest = windows.index("install-magpie-cli.cached-digest")
+        version = windows.index("install-magpie-cli.cached-version")
+        self.assertLess(digest, version)
+        self.assertIn("does not match the pinned Magpie SHA-256", windows)
+        self.assertIn("preserved it unchanged", windows)
+
+    def test_launchers_are_adopted_identically_and_conflicts_fail_before_mutation(self):
+        _bootstrap, windows = self.sources()
+        self.assertIn('"%~dp0', windows)
+        self.assertIn("Test-MagpieLauncher", windows)
+        self.assertIn("is not the managed launcher", windows)
+        self.assertIn("move it aside before applying", windows)
+        self.assertLess(windows.index("Test-MagpieLauncher"), windows.index("install-magpie-cli.download"))
+
+    def test_the_cmd_launcher_disables_delayed_expansion_like_the_bun_launchers(self):
+        # Reads the source only. It does not run PowerShell or cmd.exe and does
+        # not claim that command execution was validated. The public PowerShell
+        # fixture owns the generated-byte assertion for a home containing !.
+        _bootstrap, windows = self.sources()
+        directive = '@echo off`r`nsetlocal DisableDelayedExpansion`r`n'
+        self.assertIn(directive, windows, "the Bun launchers must disable delayed expansion")
+        body = windows.split("function Get-MagpieCmdLauncher", 1)[1]
+        body = body.split("function Get-MagpiePosixLauncher", 1)[0]
+        self.assertIn(directive, body, "the Magpie .cmd must disable delayed expansion too")
+        # Argument forwarding and exit-code propagation are unchanged.
+        self.assertIn('" %*', body)
+        self.assertIn("exit /b %errorlevel%", body)
+
+    def test_the_cmd_launcher_resolves_the_binary_relatively_and_stays_ascii(self):
+        # Non-PowerShell assertion: the launcher is built from %~dp0 plus a
+        # fixed ASCII suffix, never from the (possibly non-ASCII) home path.
+        _bootstrap, windows = self.sources()
+        body = windows.split("function Get-MagpieCmdLauncher", 1)[1]
+        body = body.split("function Get-MagpiePosixLauncher", 1)[0]
+        self.assertIn("%~dp0", body)
+        self.assertIn(r"..\share\dotfiles\magpie\bin\magpie.exe", body)
+        self.assertNotIn("$Cli", body, "the launcher must not embed a home path")
+        self.assertNotIn("Replace('%', '%%')", body, "no home literal needs percent escaping")
+        self.assertNotIn("TargetHome", body)
+        relative = re.search(r"\$relative = '([^']+)'", body)
+        self.assertIsNotNone(relative, "the launcher must define a fixed ASCII relative suffix")
+        target = ('"%~dp0' + relative.group(1) + '" %*').encode("ascii")
+        self.assertIn(target, magpie_cmd_launcher_bytes())
+
+    def test_opt_out_gates_the_catalog_and_the_magpie_path_guards(self):
+        bootstrap, windows = self.sources()
+        self.assertIn("if ($magpie.enabled) { $magpiePin = Get-MagpiePin }", bootstrap)
+        self.assertIn("Assert-OwnedState -MagpieEnabled $magpie.enabled", bootstrap)
+        self.assertIn("param([bool]$MagpieEnabled = $true)", windows)
+        self.assertIn("if ($MagpieEnabled) {", windows)
+        self.assertIn("'.local/bin/magpie.cmd'", windows)
+
+    def test_the_document_records_the_safety_boundary(self):
+        document = (SOURCE / "docs/WINDOWS_DEPLOYMENT.md").read_text(encoding="utf-8")
+        for phrase in ("is hashed before it is", "preserved unchanged", "percent characters",
+                       "adopted without a rewrite", "read no Magpie release catalog"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, document)
+
+
 @unittest.skipUnless(os.name == 'nt' and os.environ.get('DOTFILES_TEST_NATIVE_WINDOWS_INSTALL') == '1',
                      'actual Windows installation runs on the native runner')
 class WindowsNativeInstallTests(unittest.TestCase):
@@ -1589,6 +2178,18 @@ class WindowsNativeInstallTests(unittest.TestCase):
                                             capture_output=True, text=True, timeout=60)
                 self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
                 self.assertIn(pin, diagnostic.stdout)
+        # The full deployment installs the pinned Magpie CLI, and the
+        # installed bytes are the release the shared catalog pins.
+        magpie = self.home / '.local/share/dotfiles/magpie/bin/magpie.exe'
+        self.assertTrue(magpie.is_file())
+        self.assertEqual(hashlib.sha256(magpie.read_bytes()).hexdigest(),
+                         magpie_releases()['windows-amd64']['sha256'])
+        launcher = self.home / '.local/bin/magpie.cmd'
+        self.assertTrue(launcher.is_file())
+        diagnostic = subprocess.run([str(launcher), '--version'], env=environment,
+                                    capture_output=True, text=True, timeout=60)
+        self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
+        self.assertIn(magpie_releases()['windows-amd64']['version'], diagnostic.stdout + diagnostic.stderr)
         doctor = subprocess.run([str(self.home / '.bun/bin/kimi.cmd'), 'doctor'], env=environment,
                                 capture_output=True, text=True, timeout=60)
         self.assertEqual(doctor.returncode, 0, doctor.stderr)

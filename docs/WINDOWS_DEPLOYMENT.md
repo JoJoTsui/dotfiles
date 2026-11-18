@@ -37,7 +37,7 @@ download is SHA-256 verified before extraction or execution. Rustup installs its
 manager with no default compiler toolchain. Windows build SDKs and graphical
 session prerequisites remain explicit, on-use dependencies.
 
-The six Bun-managed agents and CodeGraph use the same manifests and frozen Bun
+The eight Bun-managed agents and CodeGraph use the same manifests and frozen Bun
 locks as Unix. Qoder uses its pinned native Windows release manifest with the
 same SHA-256 verification. The verified executable is copied directly to
 `.qoder/bin/qodercli/qodercli-<version>.exe`; both managed Qoder commands invoke
@@ -106,6 +106,71 @@ markers are local and original files stay unchanged. File logging, including
 the search/daemon/AI child overrides, is disabled to prevent native-home logs.
 [Pinned native import mapping](https://github.com/atuinsh/atuin/blob/v18.23.0/crates/atuin-client/src/import/nu_histdb.rs).
 
+## The pinned Magpie CLI on native Windows
+
+A full native Windows deployment installs the pinned Magpie CLI. The shared
+release catalog `deployment/magpie/releases.tsv` owns the version every
+target shares and the SHA-256 digest that verifies each asset; the Windows
+adapter consumes its `windows-amd64` row and never resolves a release at run
+time. The download must use HTTPS and the payload is verified against the
+catalog digest before it is executed or placed. Windows ARM is outside the
+supported architecture matrix, so the `windows-arm64` row is never consumed
+here.
+
+The binary lives at `~/.local/share/dotfiles/magpie/bin/magpie.exe`, beside
+the POSIX companion that Git Bash runs. The native launcher
+`~/.local/bin/magpie.cmd` starts the pinned binary; the bare POSIX launcher
+in the same directory belongs to the source application and is never
+rewritten. A binary found at the managed CLI path is hashed before it is
+executed: only bytes matching the catalog digest are reused, and the
+`--version` check runs only after that. A device binary whose digest differs
+is preserved unchanged and fails with a diagnostic that says to move it
+aside; it is neither executed nor overwritten. The `.cmd` launcher resolves
+the binary relative to `%~dp0` instead of embedding the home path, so non-ASCII
+names and literal percent characters do not become batch-file text. It disables
+delayed expansion to preserve exclamation marks. These paths still need native
+Windows verification.
+
+Both managed launchers (`~/.local/bin/magpie.cmd` and the POSIX companion
+beside the binary) are preflighted before the binary is downloaded or either
+launcher is written. A byte-identical launcher left by an earlier run is
+adopted without a rewrite, which keeps repeated runs idempotent. Any other
+existing launcher — a device file, a directory, or a symlink — is preserved
+and fails with an actionable diagnostic before the CLI or a launcher is
+mutated. The normal symlink guards on all other managed paths still apply.
+The deployment reads no credential, writes no provider key, and starts no
+service.
+
+This slice installs the CLI only. The model gateway, the provider catalogs,
+the credential store, the client wiring, and the service lifecycle stay
+outside the Windows boundary: the catalogs and the POSIX engine are kept out
+of the Windows home, and the deployment does not wire Claude Code, Pi, or any
+other client to a gateway. `-Plan` reports the two apart, so an installed CLI
+is never read as a gateway-ready deployment:
+
+```text
+magpie.cli             the CLI this run installs
+magpie.version         the pinned version from the shared catalog
+magpie.target          windows-amd64
+magpie.url             the pinned release URL
+magpie.sha256          the pinned digest
+magpie.path            .local/share/dotfiles/magpie/bin/magpie.exe
+magpie.gateway         false on native Windows
+magpie.gatewayReason   why the gateway wiring is not part of this run
+magpie.reason          why the CLI was skipped, when it was
+```
+
+The CLI is installed by default in a full deployment. `-NoMagpie` turns the
+step off for one run, `DOTFILES_MAGPIE=false` turns it off for the device,
+and the restricted modes (`-ApplyOnly`, `-AgentsOnly`) never install it; each
+skip prints its reason. Those runs read no Magpie release catalog, report no
+pin in the plan, and do not reject symlinks at the Magpie-only CLI/launcher
+paths they will not write; the plan still keeps the two slices apart.
+
+These checks are source-reviewed and covered by the public fixture tests;
+the Windows behavior tests run only where PowerShell is available. The
+installed CLI did not wire a gateway or provide native acceptance evidence.
+
 Run `tests/native/windows.ps1` on Windows for the native acceptance gate. The
 workflow uses windows-2025 for both roles with read-only permissions and pinned
 Actions. It exercises actual installs/reapplication, stock PowerShell, managed
@@ -113,6 +178,7 @@ Nu/Git Bash paths, TUNA discovery, all five skill-discovery interfaces, native
 MCP launches/connections, temporary CodeGraph indexing only, and real Windows
 console/history/sync fixtures. Uploaded artifacts contain reports only.
 Both roles passed natively in run
-[38524061998](https://github.com/JoJoTsui/dotfiles/actions/runs/38524061998);
-[Windows evidence](verification/windows.md) records the distinct local checks,
-that result, and the two gates left deferred for an interactive Windows host.
+[38524061998](https://github.com/JoJoTsui/dotfiles/actions/runs/38524061998),
+before the Magpie CLI changes described above. Those changes still need a native
+Windows gate; [Windows evidence](verification/windows.md) records the earlier
+result and the two gates left deferred for an interactive Windows host.

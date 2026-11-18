@@ -53,7 +53,10 @@ class BundleInstallTests(unittest.TestCase):
             registry.parent.mkdir(parents=True)
             registry.write_text('version = 1\n[envs.device-extra]\nchannels = ["conda-forge"]\ndependencies = { zoxide = "==0.10.0" }\nexposed = { device-zoxide = "zoxide" }\n')
         selection = os.environ.get("DOTFILES_TEST_BUNDLE_SELECTION", "bio,gpu,desktop,developer,developer-portable")
-        command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--platform", "linux", "--arch", "x86_64"]
+        # The gateway slice has its own tests; this one measures the bundle
+        # installation, so the gateway step stays out of the run.
+        command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--home", str(home), "--platform", "linux",
+                   "--arch", "x86_64", "--no-magpie"]
         help_result = subprocess.run(command + ["--help"], env=environment, capture_output=True, text=True)
         if "--agents" in help_result.stdout:
             command += ["--agents", "none"]

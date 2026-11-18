@@ -425,5 +425,163 @@ class LinuxCommandBoundsTests(unittest.TestCase):
                         pass
 
 
+class LinuxMagpieIsolationTests(unittest.TestCase):
+    """The synthetic Linux gate keeps Magpie wiring honest without a live gateway."""
+
+    def test_default_public_plan_requires_magpie_and_its_apply_action(self):
+        plan = {"magpie": True, "actions": ["install-agents", "magpie-apply"]}
+        native_linux.require_public_magpie_enabled(plan)
+        for broken in (
+            {**plan, "magpie": False},
+            {**plan, "magpie": None},
+            {"magpie": True, "actions": ["install-agents"]},
+            {"actions": ["magpie-apply"]},
+        ):
+            with self.subTest(broken=broken), self.assertRaisesRegex(RuntimeError, "[Mm]agpie"):
+                native_linux.require_public_magpie_enabled(broken)
+
+    @unittest.skipUnless(os.name == "posix", "the public plan uses bootstrap.sh")
+    def test_real_public_linux_plan_still_enables_magpie(self):
+        plan = LinuxDefaultAgentSelectionTests().public_plan()
+        native_linux.require_public_magpie_enabled(plan)
+        self.assertIs(plan["magpie"], True)
+        self.assertIn("magpie-apply", plan["actions"])
+
+    def test_execution_command_runs_the_full_default_without_gateway_wiring(self):
+        base = ["/bin/bash", "bootstrap.sh", "--home", "/task/home"]
+        command = native_linux.bootstrap_execution_command(base, "linux-remote-compute")
+        self.assertEqual(command[:len(base)], base)
+        self.assertEqual(command[len(base):],
+                         ["--profile", "linux-remote-compute", "--no-magpie"])
+        self.assertEqual(command.count("--no-magpie"), 1)
+
+    def test_report_scope_labels_gateway_and_end_to_end_exclusions(self):
+        scope = native_linux.magpie_report_scope()
+        self.assertIn("enabled", scope["public_plan"])
+        self.assertIn("excluded", scope["gateway"])
+        self.assertLessEqual(scope["gateway"].count("excluded"), 1)
+        self.assertIn("excluded", scope["provider_accounts"])
+        self.assertIn("pending", scope["cli_installation"])
+
+    def test_cli_pin_reads_only_the_native_linux_row(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            catalog = root / "deployment/magpie/releases.tsv"
+            catalog.parent.mkdir(parents=True)
+            catalog.write_text(
+                "# comment\n"
+                "magpie|0.1.4404|linux-amd64|https://example.invalid/a|" + "a" * 64 + "\n"
+                "magpie|0.1.4404|linux-arm64|https://example.invalid/b|" + "b" * 64 + "\n")
+            pin = native_linux.magpie_cli_pin(root)
+        self.assertEqual(pin, {"version": "0.1.4404", "target": "linux-amd64",
+                               "url": "https://example.invalid/a", "digest": "a" * 64})
+
+    def test_cli_pin_rejects_missing_wrong_target_and_malformed_catalogs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            catalog = root / "deployment/magpie/releases.tsv"
+            catalog.parent.mkdir(parents=True)
+            with self.subTest(case="missing"):
+                with self.assertRaisesRegex(RuntimeError, "missing from the source"):
+                    native_linux.magpie_cli_pin(root)
+            catalog.write_text("magpie|0.1.4404|windows-amd64|https://example.invalid/a|"
+                               + "a" * 64 + "\n")
+            with self.subTest(case="wrong target"):
+                with self.assertRaisesRegex(RuntimeError, "no native Linux"):
+                    native_linux.magpie_cli_pin(root)
+            catalog.write_text("magpie|not-a-version|linux-amd64|https://example.invalid/a|"
+                               + "a" * 64 + "\n")
+            with self.subTest(case="bad version"):
+                with self.assertRaisesRegex(RuntimeError, "version is malformed"):
+                    native_linux.magpie_cli_pin(root)
+            catalog.write_text("magpie|0.1.4404|linux-amd64|https://example.invalid/a|deadbeef\n")
+            with self.subTest(case="bad digest"):
+                with self.assertRaisesRegex(RuntimeError, "digest is malformed"):
+                    native_linux.magpie_cli_pin(root)
+
+    def test_no_gateway_state_is_detected_without_touching_a_live_gateway(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            native_linux.require_no_gateway(home)
+            pid_file = home / native_linux.MAGPIE_GATEWAY_PID
+            pid_file.parent.mkdir(parents=True)
+            pid_file.write_text("123\n")
+            with self.assertRaisesRegex(RuntimeError, "started a gateway"):
+                native_linux.require_no_gateway(home)
+
+    def test_cli_evidence_requires_a_regular_executable_matching_the_pin(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            fake_cli = b"#!/bin/sh\necho 'magpie 0.1.4404'\n"
+            pin = {"version": "0.1.4404", "target": "linux-amd64",
+                   "digest": hashlib.sha256(fake_cli).hexdigest()}
+            cli = home / native_linux.MAGPIE_CLI_RELATIVE
+            cli.parent.mkdir(parents=True)
+            version_command = mock.Mock(return_value="magpie 0.1.4404\n")
+            with self.subTest(case="missing"):
+                with self.assertRaisesRegex(RuntimeError, "not installed as a regular executable"):
+                    native_linux.verify_magpie_cli_install(home, version_command, pin)
+                version_command.assert_not_called()
+            cli.write_bytes(fake_cli)
+            with self.subTest(case="not executable"):
+                with self.assertRaisesRegex(RuntimeError, "not installed as a regular executable"):
+                    native_linux.verify_magpie_cli_install(home, version_command, pin)
+                version_command.assert_not_called()
+            cli.chmod(0o755)
+            wrong_command = mock.Mock(return_value="magpie 0.1.4405\n")
+            with self.subTest(case="wrong version"):
+                with self.assertRaisesRegex(RuntimeError, "differs from the catalog pin"):
+                    native_linux.verify_magpie_cli_install(home, wrong_command, pin)
+                wrong_command.assert_called_once_with()
+            link = home / "alias"
+            link.symlink_to(cli)
+            link_command = mock.Mock(return_value="magpie 0.1.4404\n")
+            with self.subTest(case="symlink"):
+                with self.assertRaisesRegex(RuntimeError, "not installed as a regular executable"):
+                    native_linux.verify_magpie_cli_install(
+                        home, link_command, pin, cli_relative=str(link.relative_to(home)))
+                link_command.assert_not_called()
+
+    def test_same_version_wrong_digest_is_rejected_before_the_version_callback(self):
+        """A matching version string alone cannot prove the installed bytes are pinned."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            fake_cli = b"#!/bin/sh\necho 'magpie 0.1.4404'\n"
+            cli = home / native_linux.MAGPIE_CLI_RELATIVE
+            cli.parent.mkdir(parents=True)
+            cli.write_bytes(fake_cli)
+            cli.chmod(0o755)
+            version_command = mock.Mock(return_value="magpie 0.1.4404\n")
+            for broken in (
+                {"version": "0.1.4404", "target": "linux-amd64",
+                 "digest": hashlib.sha256(b"a substituted executable").hexdigest()},
+                {"version": "0.1.4404", "target": "linux-amd64",
+                 "digest": hashlib.sha256(b"other bytes").hexdigest()},
+                {"version": "0.1.4404", "target": "linux-amd64"},
+            ):
+                with self.subTest(pin=broken):
+                    with self.assertRaisesRegex(RuntimeError, "digest"):
+                        native_linux.verify_magpie_cli_install(home, version_command, broken)
+                    version_command.assert_not_called()
+
+    def test_matching_digest_invokes_the_version_callback_and_records_evidence(self):
+        """The pinned bytes pass once and the bounded version command runs exactly once."""
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            fake_cli = b"#!/bin/sh\necho 'magpie 0.1.4404'\n"
+            pin = {"version": "0.1.4404", "target": "linux-amd64",
+                   "digest": hashlib.sha256(fake_cli).hexdigest()}
+            cli = home / native_linux.MAGPIE_CLI_RELATIVE
+            cli.parent.mkdir(parents=True)
+            cli.write_bytes(fake_cli)
+            cli.chmod(0o755)
+            version_command = mock.Mock(return_value="magpie 0.1.4404\n")
+            evidence = native_linux.verify_magpie_cli_install(home, version_command, pin)
+            version_command.assert_called_once_with()
+            self.assertEqual(evidence, {"version": "0.1.4404", "target": "linux-amd64",
+                                        "cli": native_linux.MAGPIE_CLI_RELATIVE,
+                                        "gateway": "not started"})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,11 +1,31 @@
 #!/bin/sh
-# Managed by dotfiles; the Magpie application launcher.
+# Managed by dotfiles; the Magpie launcher.
 #
-# The Homebrew cask owns the app and the gateway process. The launcher only
-# starts the binary the app ships, so the CLI and the GUI are one install.
+# macOS runs the binary the application ships, so the CLI and the GUI are
+# one install. A headless host runs the native CLI that the deployment
+# installed from the pinned release; the macOS application wrapper never
+# replaces it.
 APP="${MAGPIE_APP:-/Applications/magpie.app/Contents/MacOS/magpie}"
-if [ ! -x "$APP" ]; then
-    printf 'the Magpie app is not installed; install it with: brew install --cask magpie\n' >&2
+CLI="${MAGPIE_CLI:-$HOME/.local/share/dotfiles/magpie/bin/magpie}"
+
+platform=${DEPLOY_PLATFORM:-}
+if [ -z "$platform" ]; then
+    case "$(uname -s)" in
+        Darwin) platform=macos ;;
+        *) platform=linux ;;
+    esac
+fi
+
+if [ -n "${MAGPIE_APP:-}" ] || [ "$platform" = macos ]; then
+    if [ ! -x "$APP" ]; then
+        printf 'the Magpie app is not installed; install it with: brew install --cask magpie\n' >&2
+        exit 127
+    fi
+    exec "$APP" "$@"
+fi
+
+if [ ! -x "$CLI" ]; then
+    printf 'the Magpie CLI is not installed; install it with: dotfiles-magpie install\n' >&2
     exit 127
 fi
-exec "$APP" "$@"
+exec "$CLI" "$@"

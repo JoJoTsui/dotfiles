@@ -45,16 +45,30 @@ Separate credential, trust, session, plugin, and cache files stay client-owned.
 A target whose merged content is unchanged keeps its file and its modification
 time, so services that read those files are not restarted for nothing.
 
-Claude Code and pi point at the Magpie model gateway. The merged Claude
-settings carry `ANTHROPIC_BASE_URL` `http://127.0.0.1:3425`, the token
-`magpie`, and the model `group/conductor`; no model-selecting variable is
-declared, because the gateway picks the model from the group. The merged pi
-settings select the provider `magpie` and the model `group/workhorse`. Pi's
-`~/.pi/agent/models.json` is Magpie-owned: the repository never templates it,
-and the gateway generates the provider block and the group model entry. The
-official OpenCode, Kimi Code, MiniMax Code, and Codex configurations are left
-byte for byte alone. See [Magpie](MAGPIE.md) for the ownership split and
+The gateway migration points Claude Code and pi at Magpie after readiness
+checks. Claude's endpoint is `http://127.0.0.1:3425`. The managed Haiku alias
+`ANTHROPIC_DEFAULT_HAIKU_MODEL` and its deprecated predecessor
+`ANTHROPIC_SMALL_FAST_MODEL` both select `codex/gpt-6.1-terra`, the
+classifier-level route. Claude Code's documented environment variables
+(<https://code.claude.com/docs/en/env-vars>) name the Haiku variable as the
+Haiku alias and the background-functionality model, and the small-fast variable
+as its predecessor. The Fable, Opus and Sonnet aliases keep `group/conductor`,
+and `CLAUDE_CODE_AUTO_MODE_MODEL` keeps `codex/gpt-6.1-terra` for the permission
+classifier. Pi selects the provider `magpie` and model `group/workhorse`.
+Pi's `~/.pi/agent/models.json` is
+Magpie-owned: the repository never templates it, and the gateway generates the
+provider block and the group model entry. The official OpenCode, Kimi Code,
+MiniMax Code, and Codex provider configurations remain device-owned. See
+[Magpie](MAGPIE.md) for the ownership split and
 [ADR 0014](adr/0014-magpie-owns-the-model-gateway.md).
+
+Scope: this changes the two alias values the gateway merge writes into Claude
+Code's settings. It does not claim that all compaction or summary traffic uses
+this alias, and it does not enforce child-agent model strength. Runtime
+verification that background functionality actually takes this route is
+**pending**. `tests/test_magpie_auxiliary_models.py` checks the rendered gateway
+settings and that the other managed aliases are unchanged; it makes no model
+requests.
 
 Claude keeps a declared plain `opus` default through client installation. The
 pinned client can change plain `opus` to `opus[1m]` while initializing plugins;
@@ -62,6 +76,19 @@ the final merge restores plain `opus` only when it was selected immediately
 before that installation. Explicit `opus[1m]` and custom models survive. The
 Magpie wiring declares `group/conductor` instead, so that restoration does not
 apply to it. Claude's own runtime metadata migrations remain client-owned.
+
+Claude Code's `env.CLAUDE_CODE_SUBAGENT_MODEL` is no longer a managed default or
+an enforced field. Claude Code normally inherits the parent model when no
+higher-priority subagent selection applies, so the deployment does not pin a
+separate model for them. Built-in agents and explicit selections can use other
+models. On an existing device the
+exact previously managed `group/conductor` value is retired once, but only when
+the pre-merge baseline records that same value; a different device value, or a
+value whose prior ownership the baseline cannot prove, is left untouched. The
+ordinary client-settings merge performs this check while the prior baseline is
+still present, before the gateway merge replaces it. This is a one-time cleanup
+of a deployment-owned value, not a universal ceiling on model strength: a
+device may still select any model for its subagents explicitly.
 
 Caveman gateway configuration and lifecycle are device-owned. Bootstrap leaves
 existing configuration, run state, and old merge baselines untouched and creates

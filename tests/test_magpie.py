@@ -1,4 +1,5 @@
 """The Magpie catalogs and the apply engine, without a real gateway."""
+import hashlib
 import http.server
 import json
 import os
@@ -8,6 +9,11 @@ import subprocess
 import tempfile
 import threading
 import unittest
+
+if __package__:
+    from .fixtures.magpie_engine import install_engine_shim
+else:
+    from fixtures.magpie_engine import install_engine_shim
 
 SOURCE = Path(__file__).resolve().parents[1]
 CATALOG = SOURCE / "deployment" / "magpie"
@@ -97,6 +103,34 @@ elif argv[:1] == ["visible"]:
         visible[argv[1]] = argv[2]
         save("visible.json", visible)
         print("saved")
+elif argv[:2] == ["dsh", "compact_model"]:
+    # The pinned CLI's compact_model field: the getter prints "<Name>
+    # compaction model <magpie/<id>|default>", the setter takes an id or a
+    # group and stores it without touching dsh's own profile.
+    if len(argv) == 2 and os.environ.get("FAKE_MAGPIE_FAIL_DSH_COMPACT_GET") == "1":
+        sys.exit(1)
+    if len(argv) == 3 and os.environ.get("FAKE_MAGPIE_FAIL_DSH_COMPACT_SET") == "1":
+        sys.exit(1)
+    current = load("dsh-compact.json", {"value": ""})["value"]
+    if len(argv) == 2:
+        override = os.environ.get("FAKE_MAGPIE_DSH_COMPACT_GET_OUTPUT")
+        if override is not None:
+            # A malformed successful answer enters through the same process
+            # boundary as a real CLI, so the engine must fail closed on it.
+            print(override)
+        else:
+            print("DeepSeek Harness compaction model " + (("magpie/" + current) if current else "default"))
+    else:
+        if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX_ON_COMPACT") == "1":
+            codex = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
+            codex.write_text(codex.read_text() + "\\n# changed\\n")
+        value = argv[2]
+        if value.startswith("magpie/"):
+            value = value[len("magpie/"):]
+        if not value or "/" not in value:
+            sys.exit(2)
+        save("dsh-compact.json", {"value": value})
+        print("✓ DeepSeek Harness compaction model magpie/" + value)
 elif argv[:1] == ["dsh"]:
     if os.environ.get("FAKE_MAGPIE_TOUCH_DSH") == "1":
         patch = pathlib.Path(os.environ["HOME"]) / ".dsh/profiles/default/cordis.patch.yml"
@@ -385,6 +419,26 @@ class MagpieApplyTests(unittest.TestCase):
             shutil.copy2(CATALOG / name, self.catalog / name)
         self.state = self.home / ".fake-magpie"
         self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        self.native_cli = self.tools / "magpie-native"
+        self.native_cli.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            "  --version) echo 'magpie 0.1.4404' ;;\n"
+            "  *) exit 0 ;;\n"
+            "esac\n", encoding="utf-8")
+        self.native_cli.chmod(0o755)
+        # The installer verifies cached CLI bytes against the release catalog
+        # before it executes them, so the fixture's release catalog carries the
+        # synthetic CLI's own digest for both native Linux targets. This keeps
+        # the fake apply paths off the network without weakening that check.
+        digest = hashlib.sha256(self.native_cli.read_bytes()).hexdigest()
+        self.native_release_catalog = self.root / "native-releases.tsv"
+        self.native_release_catalog.write_text(
+            "magpie|0.1.4404|linux-amd64|https://example.invalid/magpie-cli-linux-amd64|"
+            + digest + "\n"
+            "magpie|0.1.4404|linux-arm64|https://example.invalid/magpie-cli-linux-arm64|"
+            + digest + "\n",
+            encoding="utf-8")
         self.server = self.gateway()
         self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
@@ -454,13 +508,21 @@ class MagpieApplyTests(unittest.TestCase):
         (self.home / ".pi/agent/auth.json").write_text(
             json.dumps({"minimax-cn": {"key": "sk-fixture-minimax"}}), encoding="utf-8")
 
+    def provision(self, presets):
+        """Record the providers Magpie already knows on a headless host."""
+        self.state.mkdir(parents=True, exist_ok=True)
+        (self.state / "providers.json").write_text(json.dumps(list(presets)), encoding="utf-8")
+
     def healthy_client_wiring(self):
         """The client files a device carries once the gateway wired them.
 
         The status reads the live files, so a healthy fixture has to hold the
-        real wiring: Claude's gateway endpoint and tier aliases, Pi's default
-        provider, model and thinking level, and the model file Magpie
-        generates for Pi.
+        real wiring: Claude's gateway endpoint, the conductor work tiers, the
+        Terra background aliases and classifier, Pi's default provider, model
+        and thinking level, and the model file Magpie generates for Pi. DSH's
+        live compaction field holds the workhorse route. The subagent model is
+        absent: subagents inherit their parent natively and a device-owned
+        override is not deployment drift.
         """
         claude = self.home / ".claude/settings.json"
         claude.parent.mkdir(parents=True, exist_ok=True)
@@ -469,11 +531,11 @@ class MagpieApplyTests(unittest.TestCase):
                 "ANTHROPIC_AUTH_TOKEN": "magpie",
                 "ANTHROPIC_BASE_URL": "http://127.0.0.1:3425",
                 "ANTHROPIC_DEFAULT_FABLE_MODEL": "group/conductor",
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "group/conductor",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "codex/gpt-6.1-terra",
                 "ANTHROPIC_DEFAULT_OPUS_MODEL": "group/conductor",
                 "ANTHROPIC_DEFAULT_SONNET_MODEL": "group/conductor",
-                "ANTHROPIC_SMALL_FAST_MODEL": "group/conductor",
-                "CLAUDE_CODE_SUBAGENT_MODEL": "group/conductor",
+                "ANTHROPIC_SMALL_FAST_MODEL": "codex/gpt-6.1-terra",
+                "CLAUDE_CODE_AUTO_MODE_MODEL": "codex/gpt-6.1-terra",
             },
             "model": "opus",
         }, indent=2) + "\n", encoding="utf-8")
@@ -488,17 +550,22 @@ class MagpieApplyTests(unittest.TestCase):
         models.write_text(json.dumps({"providers": [{"id": "magpie", "name": "Magpie"}]}),
                           encoding="utf-8")
 
-    def apply(self, *, credentials=True, environment=None, setup=None, merger=False, premerge=False):
+    def apply(self, *, credentials=True, environment=None, setup=None, merger=False, premerge=False,
+              platform="macos", shell=None):
         """Run the apply engine against the fake gateway.
 
         The merger flag adds the deployment's client-settings merger, so the
         engine migrates the repo-owned client files the way the deployment
-        step does.
+        step does. The platform flag selects the macOS application or the
+        native CLI a headless host runs. The shell flag injects lines before
+        the engine is sourced, so a test can declare the bootstrap's agent
+        selection the way agents.sh does.
         """
         self.seed_home(credentials)
         if setup:
             setup()
         lines = ["export HOME=" + repr(str(self.home))]
+        lines += list(shell or [])
         environ = {
             "HOME": str(self.home),
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
@@ -507,10 +574,17 @@ class MagpieApplyTests(unittest.TestCase):
             "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
             "FAKE_MAGPIE_STATE": str(self.state),
             "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
-            "DEPLOY_PLATFORM": "macos",
+            "DEPLOY_PLATFORM": platform,
             "XDG_STATE_HOME": str(self.home / ".local/state"),
             "XDG_CONFIG_HOME": str(self.home / ".config"),
         }
+        if platform in ("linux", "wsl"):
+            # A headless host runs the native CLI. The fixture stands in for
+            # the pinned release, so the tests never reach the network. Point
+            # at the fixture catalog, whose digest matches the fake CLI bytes;
+            # the source catalog assertions below keep reading the real one.
+            environ["MAGPIE_CLI_BIN"] = str(self.native_cli)
+            environ["MAGPIE_RELEASE_CATALOG"] = str(self.native_release_catalog)
         if merger:
             self.write_chezmoi_config()
             lines += [
@@ -553,6 +627,15 @@ class MagpieApplyTests(unittest.TestCase):
 
     def state_file(self):
         return self.home / ".local/state/dotfiles/magpie/state.tsv"
+
+    def dsh_compact_value(self):
+        """The compaction id the fake gateway holds, empty when unset."""
+        path = self.state / "dsh-compact.json"
+        return json.loads(path.read_text())["value"] if path.exists() else ""
+
+    def dsh_compact_commands(self):
+        return [command for command in self.commands()
+                if command.startswith("dsh compact_model")]
 
     def test_the_apply_creates_the_providers_groups_and_wiring(self):
         result = self.apply()
@@ -789,6 +872,37 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("the provider minimax-cn has no credential", result.stdout)
 
+    def test_an_absent_optional_key_provider_is_reported_on_native_hosts(self):
+        # A key-requiring provider that is optional and absent must be reported
+        # without putting a key in argv on either native platform. The available
+        # providers and groups still apply.
+        text = self.read_catalog("providers.tsv").replace(
+            "minimax-cn|minimax-cn|json:~/.pi/agent/auth.json:minimax-cn.key|yes",
+            "minimax-cn|minimax-cn|json:~/.pi/agent/auth.json:minimax-cn.key|no")
+        self.write_catalog("providers.tsv", text)
+        for platform in ("linux", "wsl"):
+            with self.subTest(platform=platform):
+                def setup():
+                    # A fresh fake state per platform keeps each subtest a
+                    # standalone apply. Every key provider but minimax-cn is
+                    # present; the absent provider's fixture credential stays
+                    # in the store so passing it to the CLI would be detectable.
+                    shutil.rmtree(self.state, ignore_errors=True)
+                    shutil.rmtree(self.home / ".local/state/dotfiles/magpie", ignore_errors=True)
+                    self.provision(["opencode-go", "kimi-code-cn", "openai", "zed"])
+
+                result = self.apply(platform=platform, setup=setup)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("the provider minimax-cn needs its key provisioned interactively",
+                              result.stderr)
+                # No provider add for the absent provider, and no key in argv.
+                self.assertNotIn("provider add minimax-cn", self.commands())
+                self.assertFalse(any("sk-fixture" in command for command in self.commands()),
+                                 self.commands())
+                # The apply proceeds through the available providers and groups.
+                self.assertIn("provider add codex", self.commands())
+                self.assertTrue(self.state_file().is_file())
+
     def test_a_required_model_without_a_live_match_fails_with_the_model_list(self):
         self.seed_home()
         text = self.read_catalog("models.tsv").replace(
@@ -820,7 +934,7 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertIn("open the Magpie app", result.stderr)
         self.assertFalse(self.state_file().exists())
 
-    def test_an_apply_on_another_platform_reports_the_skip(self):
+    def test_an_apply_on_a_platform_without_magpie_reports_the_skip(self):
         self.seed_home()
         script = self.root / "apply.sh"
         script.write_text(
@@ -833,13 +947,171 @@ class MagpieApplyTests(unittest.TestCase):
             "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
             "MAGPIE_BIN": str(self.fake),
             "MAGPIE_CATALOG_DIR": str(self.catalog),
-            "DEPLOY_PLATFORM": "linux",
+            "DEPLOY_PLATFORM": "windows",
         }
         result = subprocess.run(["/bin/bash", str(script)], env=environment,
                                 capture_output=True, text=True, timeout=120)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Magpie is not available on this platform; skipped", result.stdout)
         self.assertEqual(self.commands(), [])
+
+    def test_the_release_catalog_owns_the_pinned_linux_digests(self):
+        rows = (CATALOG / "releases.tsv").read_text(encoding="utf-8").splitlines()
+        self.assertIn("magpie|0.1.4404|linux-amd64|https://github.com/yetone/magpie/releases/download/"
+                      "v0.1.4404/magpie-cli-linux-amd64|"
+                      "8d22941cff747677d09dce8131e74d76f06f0acfc1af249f942cbbbec058dfba", rows)
+        self.assertIn("magpie|0.1.4404|linux-arm64|https://github.com/yetone/magpie/releases/download/"
+                      "v0.1.4404/magpie-cli-linux-arm64|"
+                      "0ff5d9a9baedde4b8038a8ab8b08cfe3ad859afc721186da17b45386f94f763c", rows)
+        # The catalog carries the Windows targets too, so the version and the
+        # digests of the release live in one place for the later adapter.
+        self.assertTrue(any(row.startswith("magpie|0.1.4404|windows-amd64|") for row in rows))
+        self.assertTrue(any(row.startswith("magpie|0.1.4404|windows-arm64|") for row in rows))
+
+    def test_the_release_catalog_validates(self):
+        script = self.root / "release.sh"
+        script.write_text(
+            "DEPLOY_SOURCE=" + repr(str(SOURCE)) + "\n"
+            "source " + repr(str(ENGINE)) + "\n"
+            "magpie_release_validate " + repr(str(CATALOG / "releases.tsv")) + "\n",
+            encoding="utf-8")
+        result = subprocess.run(["/bin/bash", str(script)], capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stderr.strip(), "")
+
+    def test_a_release_row_without_a_digest_is_rejected(self):
+        catalog = self.root / "releases.tsv"
+        catalog.write_text(
+            "magpie|0.1.4404|linux-amd64|https://example.invalid/magpie-cli-linux-amd64|short\n",
+            encoding="utf-8")
+        script = self.root / "release.sh"
+        script.write_text(
+            "DEPLOY_SOURCE=" + repr(str(SOURCE)) + "\n"
+            "source " + repr(str(ENGINE)) + "\n"
+            "magpie_release_validate " + repr(str(catalog)) + "\n",
+            encoding="utf-8")
+        result = subprocess.run(["/bin/bash", str(script)], capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the Magpie release digest must be a lowercase SHA-256", result.stderr)
+
+    def test_a_release_row_without_https_is_rejected(self):
+        catalog = self.root / "releases.tsv"
+        catalog.write_text(
+            "magpie|0.1.4404|linux-amd64|http://example.invalid/magpie|"
+            "8d22941cff747677d09dce8131e74d76f06f0acfc1af249f942cbbbec058dfba\n",
+            encoding="utf-8")
+        script = self.root / "release.sh"
+        script.write_text(
+            "DEPLOY_SOURCE=" + repr(str(SOURCE)) + "\n"
+            "source " + repr(str(ENGINE)) + "\n"
+            "magpie_release_validate " + repr(str(catalog)) + "\n",
+            encoding="utf-8")
+        result = subprocess.run(["/bin/bash", str(script)], capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the Magpie release URL must use HTTPS", result.stderr)
+
+    def test_the_native_apply_wires_the_clients_only_after_the_gateway_answers(self):
+        def provision_existing():
+            # Every key-requiring provider is already provisioned; only the
+            # credential-free Codex account is added by this apply.
+            self.provision(["opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"])
+
+        result = self.apply(platform="linux", setup=provision_existing)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        commands = self.commands()
+        self.assertEqual(commands[0], "status --json")
+        self.assertLess(commands.index("status --json"), commands.index("provider add codex"))
+        self.assertIn("the CLI 0.1.4404 is installed", result.stdout)
+        self.assertTrue(self.state_file().is_file())
+
+    def test_the_native_apply_fails_with_the_start_command_when_the_gateway_is_down(self):
+        result = self.apply(platform="linux", environment={"FAKE_MAGPIE_FAIL_STATUS": "1",
+                                                           "MAGPIE_START_ATTEMPTS": "2"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the gateway does not answer", result.stderr)
+        self.assertIn("dotfiles-magpie start", result.stderr)
+        # A headless host owns no service registration: the deployment never
+        # writes a systemd unit, a login item, or a registry key.
+        self.assertFalse((self.home / ".config/systemd").exists())
+        self.assertFalse((self.home / ".local/share/systemd").exists())
+        self.assertFalse((self.home / ".config/systemd/user").exists())
+        # No client is wired to a gateway that is not there.
+        self.assertEqual([command for command in self.commands() if command.startswith("provider add")], [])
+        self.assertFalse(self.state_file().exists())
+
+    def test_the_temporary_deployment_proxy_is_not_written_into_the_gateway(self):
+        # The deployment started this proxy: its URL matches DEPLOY_PROXY_URL
+        # and it recorded a PID, so it owns the endpoint even on port 7890.
+        url = "http://127.0.0.1:7890"
+        result = self.apply(platform="linux", environment={
+            "MAGPIE_PROXY_URL": url,
+            "DEPLOY_PROXY_URL": url,
+            "DEPLOY_PROXY_PID": "4242",
+        }, setup=lambda: self.provision(
+            ["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("settings set proxy", self.commands())
+        self.assertIn("the deployment proxy is temporary", result.stdout)
+
+    def test_a_device_proxy_on_a_deployment_port_is_written_into_the_gateway(self):
+        # Same port, no ownership: the deployment reuses a proxy already on
+        # 7890, so DEPLOY_PROXY_URL names it but no PID is recorded. It belongs
+        # to the device and must be preserved, not treated as temporary.
+        url = "http://127.0.0.1:7890"
+        result = self.apply(platform="linux", environment={
+            "MAGPIE_PROXY_URL": url,
+            "DEPLOY_PROXY_URL": url,
+        }, setup=lambda: self.provision(
+            ["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("settings set proxy " + url, self.commands())
+        self.assertNotIn("the deployment proxy is temporary", result.stdout)
+
+    def test_a_proxy_at_a_different_url_is_not_the_deployment_proxy(self):
+        # A recorded PID and URL are not enough: the proxy the gateway resolves
+        # must be the exact URL the deployment started to be owned.
+        result = self.apply(platform="linux", environment={
+            "MAGPIE_PROXY_URL": "http://127.0.0.1:7890",
+            "DEPLOY_PROXY_URL": "http://127.0.0.1:7891",
+            "DEPLOY_PROXY_PID": "4242",
+        }, setup=lambda: self.provision(
+            ["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("settings set proxy http://127.0.0.1:7890", self.commands())
+        self.assertNotIn("the deployment proxy is temporary", result.stdout)
+
+    def test_a_device_proxy_is_written_into_the_gateway(self):
+        result = self.apply(platform="linux", setup=lambda: self.provision(
+            ["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("settings set proxy http://127.0.0.1:7897", self.commands())
+
+    def test_the_launcher_runs_the_native_cli_on_a_headless_host(self):
+        launcher = self.home / ".local/bin/magpie"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / "dot_local/bin/executable_magpie", launcher)
+        launcher.chmod(0o755)
+        cli = self.root / "magpie-native-cli"
+        cli.write_text("#!/bin/sh\necho 'magpie 0.1.4404'\n", encoding="utf-8")
+        cli.chmod(0o755)
+        result = subprocess.run([str(launcher), "--version"],
+                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin",
+                                     "DEPLOY_PLATFORM": "linux", "MAGPIE_CLI": str(cli)},
+                                capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("magpie 0.1.4404", result.stdout)
+
+    def test_the_launcher_names_the_install_command_when_the_native_cli_is_missing(self):
+        launcher = self.home / ".local/bin/magpie"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(SOURCE / "dot_local/bin/executable_magpie", launcher)
+        launcher.chmod(0o755)
+        result = subprocess.run([str(launcher), "--version"],
+                                env={"HOME": str(self.home), "PATH": "/usr/bin:/bin",
+                                     "DEPLOY_PLATFORM": "linux"},
+                                capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dotfiles-magpie install", result.stderr)
 
     def test_the_backups_are_private_and_only_ten_are_kept(self):
         self.seed_home()
@@ -882,6 +1154,52 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("KIMI_CODE_CN_API_KEY", result.stderr)
         self.assertIn("opencode-go.key", result.stderr)
+
+    def test_a_linux_apply_fails_closed_before_passing_a_provider_key_in_argv(self):
+        result = self.apply(platform="linux")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("provisioned interactively", result.stderr)
+        self.assertIn("apply again", result.stderr)
+        # The CLI takes the key in argv and does not prompt; the TUI is the
+        # masked entry point. The old text wrongly sent the operator to
+        # `magpie provider add <preset>` to paste a key at a prompt.
+        self.assertIn("magpie tui", result.stderr)
+        self.assertIn("kimi-code-cn preset", result.stderr)
+        self.assertNotIn("run: magpie provider add", result.stderr)
+        self.assertNotIn("paste the key at the prompt", result.stderr)
+        # A key passed to `provider add` would be readable from another
+        # process's argv, so no provider is added and no fixture key appears.
+        self.assertFalse(any("sk-fixture" in command for command in self.commands()),
+                         self.commands())
+        self.assertEqual([command for command in self.commands()
+                          if command.startswith("provider add")], [])
+
+    def test_a_required_key_provider_stops_the_wsl_apply_before_mutations(self):
+        result = self.apply(platform="wsl")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("provisioned interactively", result.stderr)
+        self.assertIn("magpie tui", result.stderr)
+        # A required, used key provider still stops the apply before any
+        # mutation: no provider is added, no key reaches argv, no state written.
+        self.assertEqual([command for command in self.commands()
+                          if command.startswith("provider add")], [])
+        self.assertFalse(any("sk-fixture" in command for command in self.commands()),
+                         self.commands())
+        self.assertFalse(self.state_file().exists())
+
+    def test_a_linux_apply_keeps_an_already_provisioned_provider_working(self):
+        result = self.apply(platform="linux", setup=lambda: self.provision(
+            ["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([command for command in self.commands()
+                          if command.startswith("provider add")], [])
+
+    def test_a_linux_apply_still_adds_the_credential_free_codex_account(self):
+        result = self.apply(platform="linux", setup=lambda: self.provision(
+            ["opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual([command for command in self.commands()
+                          if command.startswith("provider add")], ["provider add codex"])
 
     def test_gateway_backup_preserves_settings_before_the_initial_merge(self):
         if not self.chezmoi:
@@ -993,6 +1311,158 @@ class MagpieApplyTests(unittest.TestCase):
                          ["pi group/workhorse", "pi group/workhorse"])
         self.assertIn("wiring|pi|group/workhorse", self.state_file().read_text(encoding="utf-8"))
 
+    def test_the_apply_routes_dsh_compaction_to_workhorse(self):
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.dsh_compact_value(), "group/workhorse")
+        self.assertEqual(self.dsh_compact_commands(),
+                         ["dsh compact_model", "dsh compact_model group/workhorse"])
+        self.assertIn("dsh-compact|group/workhorse", self.state_file().read_text(encoding="utf-8"))
+
+    def test_a_second_apply_does_not_rewrite_the_compaction_choice(self):
+        self.assertEqual(self.apply().returncode, 0)
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("compaction already uses group/workhorse", result.stdout)
+        # The first apply reads then sets; the second reads again and stops.
+        # The recorded order is getter, setter, getter.
+        self.assertEqual(self.dsh_compact_commands(),
+                         ["dsh compact_model", "dsh compact_model group/workhorse",
+                          "dsh compact_model"])
+
+    def test_an_already_correct_compaction_choice_is_left_alone(self):
+        self.seed_home()
+        self.state.mkdir(parents=True, exist_ok=True)
+        (self.state / "dsh-compact.json").write_text(json.dumps({"value": "group/workhorse"}))
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.dsh_compact_commands(), ["dsh compact_model"])
+
+    def test_the_compaction_group_stays_workhorse_when_the_main_wiring_moves_to_conductor(self):
+        # Compaction is a lightweight auxiliary route. Moving DSH's main
+        # session group to the conductor tier must not drag it along; the
+        # enabled Magpie-owned row still only gates whether we set it at all.
+        wiring = self.catalog / "wiring.tsv"
+        wiring.write_text(wiring.read_text().replace(
+            "dsh|group/workhorse|magpie|yes", "dsh|group/conductor|magpie|yes"))
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.dsh_compact_value(), "group/workhorse")
+        self.assertIn("dsh compact_model group/workhorse", self.commands())
+        # The DSH session itself still starts on the conductor group.
+        self.assertIn("dsh group/conductor", self.commands())
+
+    def test_a_disabled_dsh_wiring_row_leaves_compaction_alone(self):
+        wiring = self.catalog / "wiring.tsv"
+        wiring.write_text(wiring.read_text().replace(
+            "dsh|group/workhorse|magpie|yes", "dsh|group/workhorse|magpie|no"))
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.dsh_compact_value(), "")
+        self.assertEqual(self.dsh_compact_commands(), [])
+
+    def test_the_compaction_change_backs_up_its_previous_value(self):
+        self.seed_home()
+        self.state.mkdir(parents=True, exist_ok=True)
+        (self.state / "dsh-compact.json").write_text(json.dumps({"value": "codex/gpt-6-luna"}))
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        backups = self.home / ".local/state/dotfiles/magpie/backups"
+        directories = list(backups.iterdir())
+        self.assertEqual(len(directories), 1)
+        record = directories[0] / "dsh-compact-model.txt"
+        self.assertEqual(record.read_text().strip(), "codex/gpt-6-luna")
+        self.assertEqual(record.stat().st_mode & 0o777, 0o600)
+
+    def test_the_compaction_set_preserves_unrelated_state(self):
+        self.seed_home()
+        self.state.mkdir(parents=True, exist_ok=True)
+        # The fake CLI stores the proxy as JSON. Seeding it any other way makes
+        # the getter unreadable, which would rewrite it for unrelated reasons.
+        proxy = self.state / "proxy.txt"
+        original = json.dumps("http://127.0.0.1:7897").encode()
+        proxy.write_bytes(original)
+        patch = self.home / ".dsh/profiles/default/cordis.patch.yml"
+        before = patch.read_bytes()
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(patch.read_bytes(), before)
+        self.assertEqual(proxy.read_bytes(), original)
+        self.assertEqual(self.dsh_compact_value(), "group/workhorse")
+
+    def test_a_codex_change_during_compaction_aborts_and_keeps_the_backup(self):
+        result = self.apply(environment={"FAKE_MAGPIE_TOUCH_CODEX_ON_COMPACT": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the Codex configuration changed during the apply", result.stderr)
+        self.assertTrue(list((self.home / ".local/state/dotfiles/magpie/backups").iterdir()))
+
+    def test_an_unreadable_compaction_read_aborts_without_setting_it(self):
+        result = self.apply(environment={"FAKE_MAGPIE_FAIL_DSH_COMPACT_GET": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot read the DeepSeek Harness compaction model", result.stderr)
+        self.assertEqual(self.dsh_compact_value(), "")
+        self.assertEqual([command for command in self.commands()
+                          if command == "dsh compact_model group/workhorse"], [])
+
+    def test_a_failing_compaction_set_aborts_the_apply(self):
+        result = self.apply(environment={"FAKE_MAGPIE_FAIL_DSH_COMPACT_SET": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot set the DeepSeek Harness compaction model", result.stderr)
+        self.assertEqual(self.dsh_compact_value(), "")
+
+    def test_an_unavailable_gateway_never_sets_compaction(self):
+        result = self.apply(platform="linux", environment={"FAKE_MAGPIE_FAIL_STATUS": "1",
+                                                           "MAGPIE_START_ATTEMPTS": "0"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.dsh_compact_commands(), [])
+
+    def test_a_repo_owned_dsh_wiring_row_leaves_compaction_alone(self):
+        wiring = self.catalog / "wiring.tsv"
+        wiring.write_text(wiring.read_text().replace(
+            "dsh|group/workhorse|magpie|yes", "dsh|group/workhorse|repo|yes"))
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.dsh_compact_value(), "")
+        self.assertEqual(self.dsh_compact_commands(), [])
+
+    def test_an_agent_selection_without_dsh_leaves_compaction_alone(self):
+        # The public bootstrap resolves DOTFILES_AGENTS (or --agents) into
+        # DEPLOY_AGENTS before it sources the engine. A selection that leaves
+        # DSH out must not touch its compaction field even though the wiring
+        # row is enabled and Magpie-owned.
+        result = self.apply(shell=["DEPLOY_AGENTS=(claude pi)"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.dsh_compact_value(), "")
+        self.assertEqual(self.dsh_compact_commands(), [])
+
+    def test_an_agent_selection_with_dsh_keeps_the_compaction_route(self):
+        result = self.apply(shell=["DEPLOY_AGENTS=(claude pi dsh)"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.dsh_compact_value(), "group/workhorse")
+        self.assertEqual(self.dsh_compact_commands(),
+                         ["dsh compact_model", "dsh compact_model group/workhorse"])
+
+    def test_the_apply_fails_closed_on_a_malformed_getter_answer(self):
+        # The fake CLI prints a successful but unparsable answer at the process
+        # boundary. Apply must not treat it as an unset field and must never
+        # hand an invented value to the setter. The pinned answers themselves
+        # (default, matching, other value) are covered through apply above and
+        # through status below; no private getter is called here.
+        for output in (
+            "garbage",
+            "DeepSeek Harness compaction model surprise",
+            "DeepSeek Harness compaction model magpie/group",
+            "DeepSeek Harness compaction model magpie//workhorse",
+            "DeepSeek Harness compaction model magpie/group/workhorse/extra",
+        ):
+            with self.subTest(output=output):
+                result = self.apply(environment={"FAKE_MAGPIE_DSH_COMPACT_GET_OUTPUT": output})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("cannot read the DeepSeek Harness compaction model", result.stderr)
+                self.assertEqual(self.dsh_compact_value(), "")
+                self.assertEqual([command for command in self.commands()
+                                  if command == "dsh compact_model group/workhorse"], [])
+
 
 class MagpieSwitchTests(unittest.TestCase):
     """The bootstrap switch decides whether the gateway is wired."""
@@ -1031,13 +1501,34 @@ class MagpieSwitchTests(unittest.TestCase):
                                  environment=dict(self.env, **(environment or {})))
                 self.assertFalse(plan["magpie"])
                 self.assertNotIn("magpie-apply", plan["actions"])
+    def test_the_linux_and_wsl_plans_wire_the_gateway(self):
+        for platform in ("linux", "wsl"):
+            with self.subTest(platform=platform):
+                plan = self.plan("--platform", platform)
+                self.assertTrue(plan["magpie"])
+                self.assertIn("magpie-apply", plan["actions"])
+                self.assertLess(plan["actions"].index("magpie-apply"), plan["actions"].index("prepare-shell"))
 
-    def test_the_linux_plan_reports_no_gateway_and_fails_nothing(self):
-        plan = self.plan("--platform", "linux")
+    def test_the_switch_removes_the_step_on_a_headless_host(self):
+        for arguments, environment in ((["--no-magpie"], None), ([], dict(DOTFILES_MAGPIE="false"))):
+            with self.subTest(arguments=arguments):
+                plan = self.plan("--platform", "linux", *arguments,
+                                 environment=dict(self.env, **(environment or {})))
+                self.assertFalse(plan["magpie"])
+                self.assertNotIn("magpie-apply", plan["actions"])
+
+    def test_the_windows_plan_reports_no_gateway_and_fails_nothing(self):
+        plan = self.plan("--platform", "windows", "--arch", "x86_64")
         self.assertFalse(plan["magpie"])
         self.assertNotIn("magpie-apply", plan["actions"])
 
-    def test_failed_full_bootstrap_removes_the_client_snapshot(self):
+    def test_full_bootstrap_guard_preserves_client_settings_on_a_synthetic_home(self):
+        # A full bootstrap with the gateway enabled probes the real account's
+        # loopback port, so the guard refuses a synthetic home before creating
+        # any state. This replaces the earlier failed-bootstrap snapshot-cleanup
+        # scenario: a synthetic home can no longer reach the snapshot step, and
+        # faking a bypass in production to keep that assertion is not allowed.
+        # The snapshot-cleanup assertion is therefore retired, not weakened.
         settings = self.home / ".claude/settings.json"
         settings.parent.mkdir(parents=True)
         settings.write_text('{"model":"opus"}\n', encoding="utf-8")
@@ -1046,10 +1537,17 @@ class MagpieSwitchTests(unittest.TestCase):
                                  "--home", str(self.home), "--platform", "macos"],
                                 cwd=SOURCE, env=environment, capture_output=True, text=True, timeout=120)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("install-managers.pixi", result.stderr)
+        self.assertIn("simulated or foreign home", result.stderr)
+        self.assertIn("--no-magpie", result.stderr)
+        # The guard fires before the snapshot and installer steps, so even a
+        # failing pixi is never reached and the pre-existing client settings
+        # survive byte-for-byte.
+        self.assertNotIn("install-managers.pixi", result.stderr)
         self.assertEqual(settings.read_text(encoding="utf-8"), '{"model":"opus"}\n')
+        # No target-home state means no temporary snapshot and no backups tree.
         self.assertEqual(list((self.home / ".cache/tmp").glob("magpie-clients.*")), [])
         self.assertFalse((self.home / ".local/state/dotfiles/magpie/backups").exists())
+        self.assertEqual([path for path in self.home.rglob("*") if path.is_file()], [settings])
 
     def test_a_restricted_apply_says_why_the_gateway_is_skipped(self):
         if not self.chezmoi:
@@ -1061,6 +1559,14 @@ class MagpieSwitchTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("dotfiles: magpie: skipped;", result.stdout)
 
+    def test_restricted_modes_keep_the_compaction_step_out(self):
+        # DSH compaction lives inside magpie-apply, so a restricted bootstrap
+        # that skips the step cannot reach the compaction field.
+        for arguments in (["--apply-only"], ["--agents-only"]):
+            with self.subTest(arguments=arguments):
+                plan = self.plan("--platform", "macos", *arguments)
+                self.assertNotIn("magpie-apply", plan["actions"])
+
 
 class MagpieCommandTests(MagpieApplyTests):
     """The managed command runs the same engine the deployment step runs."""
@@ -1071,9 +1577,13 @@ class MagpieCommandTests(MagpieApplyTests):
         self.command.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(SOURCE / "dot_local/bin/executable_dotfiles-magpie", self.command)
         self.command.chmod(0o755)
-        engine = self.home / ".local/share/dotfiles/magpie/engine.sh"
-        engine.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(ENGINE, engine)
+        # The command resolves the platform and the account home natively, so
+        # its guard rejects a synthetic HOME. Install the test-only shim at the
+        # engine path the command loads by default; it sources the real engine
+        # and neutralizes only the two guard inputs.
+        engine_dir = self.home / ".local/share/dotfiles/magpie"
+        engine_dir.mkdir(parents=True, exist_ok=True)
+        install_engine_shim(engine_dir, name="engine.sh")
         catalogs = self.home / ".config/dotfiles/magpie"
         catalogs.mkdir(parents=True, exist_ok=True)
         for name in CATALOGS:
@@ -1135,6 +1645,8 @@ class MagpieCommandTests(MagpieApplyTests):
         (self.state / "plugins.json").write_text(
             json.dumps({"loaded": [{"spec": spec}], "plugins": [{"spec": spec}]}), encoding="utf-8")
         (self.state / "proxy.txt").write_text(json.dumps("http://127.0.0.1:7897"), encoding="utf-8")
+        (self.state / "dsh-compact.json").write_text(
+            json.dumps({"value": "group/workhorse"}), encoding="utf-8")
 
     def test_every_catalog_reaches_the_managed_home(self):
         managed = SOURCE / "dot_config/dotfiles/magpie"
@@ -1160,6 +1672,68 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertIn("gateway|", result.stdout)
         self.assertIn("group|workhorse|", result.stdout)
         self.assertIn("wiring|pi|group/workhorse", result.stdout)
+
+    def test_the_status_accepts_the_migrated_claude_policy_without_a_subagent_key(self):
+        self.seed_home()
+        self.healthy_gateway()
+        settings = json.loads((self.home / ".claude/settings.json").read_text(encoding="utf-8"))
+        env = settings["env"]
+        for key in ("ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL"):
+            self.assertEqual(env[key], "group/conductor", key)
+        for key in ("ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
+                    "CLAUDE_CODE_AUTO_MODE_MODEL"):
+            self.assertEqual(env[key], "codex/gpt-6.1-terra", key)
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", env)
+        result = self.run_command("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("wiring|claude|group/conductor", result.stdout)
+        self.assertNotIn("drift", result.stdout)
+        self.assertNotIn("wiring claude", result.stderr)
+
+    def test_the_status_preserves_an_explicit_device_subagent_override(self):
+        self.seed_home()
+        self.healthy_gateway()
+        claude = self.home / ".claude/settings.json"
+        settings = json.loads(claude.read_text(encoding="utf-8"))
+        settings["env"]["CLAUDE_CODE_SUBAGENT_MODEL"] = "device/custom-model"
+        claude.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+        result = self.run_command("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("drift", result.stdout)
+        self.assertNotIn("wiring claude", result.stderr)
+        # A device-owned key is neither deployment wiring nor drift: status is
+        # read-only and leaves the explicit override exactly as it found it.
+        after = json.loads(claude.read_text(encoding="utf-8"))
+        self.assertEqual(after["env"]["CLAUDE_CODE_SUBAGENT_MODEL"], "device/custom-model")
+
+    def test_the_status_reports_drift_for_a_wrong_background_alias(self):
+        for key in ("ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL"):
+            with self.subTest(key=key):
+                self.seed_home()
+                self.healthy_gateway()
+                claude = self.home / ".claude/settings.json"
+                settings = json.loads(claude.read_text(encoding="utf-8"))
+                # The conductor group is the old value; a background alias that
+                # still points there is drift under the new policy.
+                settings["env"][key] = "group/conductor"
+                claude.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+                result = self.run_command("status")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("wiring|claude|drift (env.%s)" % key, result.stdout)
+                self.assertIn("wiring claude", result.stderr)
+
+    def test_the_status_reports_drift_for_a_wrong_classifier(self):
+        self.seed_home()
+        self.healthy_gateway()
+        claude = self.home / ".claude/settings.json"
+        settings = json.loads(claude.read_text(encoding="utf-8"))
+        settings["env"]["CLAUDE_CODE_AUTO_MODE_MODEL"] = "group/conductor"
+        claude.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("wiring|claude|drift (env.CLAUDE_CODE_AUTO_MODE_MODEL)", result.stdout)
+        self.assertIn("wiring claude", result.stderr)
 
     def test_the_status_names_the_drifted_client_wiring(self):
         self.seed_home()
@@ -1198,6 +1772,50 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("wiring|dsh|group/workhorse", result.stdout)
         self.assertIn("dsh-official-row|default|present", result.stdout)
+        self.assertIn("dsh-compact|group/workhorse", result.stdout)
+
+    def test_the_status_reports_a_matched_compaction_setting(self):
+        # The live field, not the recorded intent, is the evidence of health.
+        self.seed_home()
+        self.healthy_gateway()
+        result = self.run_command("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("dsh-compact|group/workhorse", result.stdout)
+        self.assertNotIn("dsh-compact", result.stderr)
+
+    def test_the_status_reports_a_drifted_compaction_setting(self):
+        self.seed_home()
+        self.healthy_gateway()
+        (self.state / "dsh-compact.json").write_text(
+            json.dumps({"value": "codex/gpt-6-luna"}), encoding="utf-8")
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dsh-compact|drift (codex/gpt-6-luna)", result.stdout)
+        self.assertIn("dsh-compact", result.stderr)
+
+    def test_recorded_compaction_intent_never_claims_health(self):
+        # A state.tsv that says the route was applied is not health: an unset
+        # live field is drift even when the recorded intent says otherwise.
+        self.seed_home()
+        self.healthy_gateway()
+        (self.state / "dsh-compact.json").unlink()
+        recorded = self.state_file()
+        recorded.parent.mkdir(parents=True, exist_ok=True)
+        recorded.write_text("dsh-compact|group/workhorse\ncodex-guard|unchanged\n", encoding="utf-8")
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dsh-compact|drift (default)", result.stdout)
+        self.assertIn("dsh-compact", result.stderr)
+
+    def test_the_status_reports_an_unreadable_compaction_setting(self):
+        # A successful but malformed getter answer is not an absent field.
+        self.seed_home()
+        self.healthy_gateway()
+        result = self.run_command("status", environment={
+            "FAKE_MAGPIE_DSH_COMPACT_GET_OUTPUT": "garbage"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("dsh-compact|unreadable", result.stdout)
+        self.assertIn("dsh-compact", result.stderr)
 
     def test_the_status_reports_the_three_visibility_rows(self):
         self.seed_home()
@@ -1289,7 +1907,7 @@ class MagpieCommandTests(MagpieApplyTests):
 
     def test_the_command_refuses_a_host_that_cannot_run_magpie(self):
         self.seed_home()
-        result = self.run_command("status", environment={"DEPLOY_PLATFORM": "linux"})
+        result = self.run_command("status", environment={"DEPLOY_PLATFORM": "windows"})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Magpie is not available on this platform", result.stderr)
 
@@ -1344,15 +1962,24 @@ class MagpieClientSettingsTests(unittest.TestCase):
         self.assertIn('"ANTHROPIC_AUTH_TOKEN": "magpie"', template)
         self.assertIn('"model": "opus"', template)
         self.assertNotIn('"ANTHROPIC_MODEL"', template)
-        for tier in ("ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-                     "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
-                     "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"):
+        # The work tiers keep the conductor group; the cheap background
+        # aliases and the auto-mode classifier route to Terra instead.
+        for tier in ("ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL",
+                     "ANTHROPIC_DEFAULT_SONNET_MODEL"):
             self.assertIn(f'"{tier}": "group/conductor"', template)
-        self.assertIn('"CLAUDE_CODE_AUTO_MODE_MODEL": "codex/gpt-6.1-terra"', template)
+        for tier in ("ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
+                     "CLAUDE_CODE_AUTO_MODE_MODEL"):
+            self.assertIn(f'"{tier}": "codex/gpt-6.1-terra"', template)
+        # Subagents inherit their parent's model natively; the deployment must
+        # not pin a separate (potentially stronger) subagent model.
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", template)
         self.assertNotIn("glm", template)
         # The wiring renders only for the magpie step's migration merge; an
-        # ordinary client-settings merge never carries it.
-        self.assertIn("{{- if and (eq .platform \"macos\") (eq (env \"DOTFILES_SETTINGS_MAGPIE\") \"true\") }}", template)
+        # ordinary client-settings merge never carries it. The macOS
+        # application and the native CLI both own a gateway, so the gate
+        # names every platform that has one.
+        self.assertIn('{{- if and (has .platform (list "macos" "linux" "wsl")) '
+                      '(eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}', template)
         self.assertNotIn("{{- if eq .platform \"macos\" }}", template)
 
     def test_the_client_settings_policy_enforces_the_magpie_wiring(self):
@@ -1365,7 +1992,6 @@ class MagpieClientSettingsTests(unittest.TestCase):
             ["env", "ANTHROPIC_DEFAULT_OPUS_MODEL"],
             ["env", "ANTHROPIC_DEFAULT_SONNET_MODEL"],
             ["env", "ANTHROPIC_SMALL_FAST_MODEL"],
-            ["env", "CLAUDE_CODE_SUBAGENT_MODEL"],
             ["env", "CLAUDE_CODE_AUTO_MODE_MODEL"],
             ["env", "DISABLE_AUTOUPDATER"],
             ["enabledPlugins", "serena@claude-plugins-official"],
@@ -1433,6 +2059,149 @@ class MagpieClientSettingsTests(unittest.TestCase):
         self.assertNotIn("defaultModel", pi)
 
 
+class ClaudeSubagentInheritanceTests(unittest.TestCase):
+    """The managed subagent model retires only when the baseline owns it.
+
+    These exercise the public `deploy_client_settings` seam against the
+    working tree, the same entry point `bootstrap.sh` and the gateway step
+    call. The ordinary merge (no gateway wiring) runs first and replaces the
+    baseline; the gateway merge (with wiring) runs second, so a migration has
+    to happen while the prior baseline is still available.
+    """
+
+    VALUE = "group/conductor"
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-subagent-model-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.state = self.home / ".local/state"
+        self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(("DOTFILES_", "XDG_", "PIXI_", "BUN_", "CARGO_", "RUSTUP_", "UV_",
+                                           "NPM_", "ATUIN_", "KIMI_", "PI_", "OPENCODE_", "CODEX_", "CLAUDE_"))
+                    and key not in ("GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL",
+                                    "NODE_OPTIONS", "ENV", "BASH_ENV", "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN")}
+        self.settings = self.home / ".claude/settings.json"
+        self.baseline = self.state / "dotfiles/client-settings/claude-settings.json"
+
+    def write_chezmoi_config(self):
+        config = self.home / ".config/chezmoi/chezmoi.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[data]\n    platform = "macos"\n    role = "workstation"\n'
+                          '    arch = "aarch64"\n    kimiApiKey = "REPLACE_ME"\n', encoding="utf-8")
+        (self.home / ".cache/tmp").mkdir(parents=True, exist_ok=True)
+
+    def write_settings(self, value, *, with_key=True):
+        self.settings.parent.mkdir(parents=True, exist_ok=True)
+        env = {}
+        if with_key:
+            env["CLAUDE_CODE_SUBAGENT_MODEL"] = value
+        self.settings.write_text(json.dumps({"model": "opus", "env": env}, indent=2) + "\n", encoding="utf-8")
+
+    def write_baseline(self, value, *, with_key=True):
+        self.baseline.parent.mkdir(parents=True, exist_ok=True)
+        env = {}
+        if with_key:
+            env["CLAUDE_CODE_SUBAGENT_MODEL"] = value
+        self.baseline.write_text(json.dumps({"env": env}), encoding="utf-8")
+
+    def merge(self, *, gateway=False):
+        """Run `deploy_client_settings` for the Claude policy in a simulated home."""
+        if not self.chezmoi:
+            self.skipTest("client settings merge requires chezmoi")
+        self.write_chezmoi_config()
+        script = self.root / ("gateway-merge.sh" if gateway else "ordinary-merge.sh")
+        script.write_text("\n".join([
+            "export HOME=" + repr(str(self.home)),
+            "export DEPLOY_SOURCE=" + repr(str(SOURCE)),
+            "export DEPLOY_HOME=$HOME",
+            "export DEPLOY_CHEZMOI=" + repr(str(self.chezmoi)),
+            "export XDG_CONFIG_HOME=" + repr(str(self.home / ".config")),
+            "export XDG_STATE_HOME=" + repr(str(self.state)),
+            "export TMPDIR=" + repr(str(self.home / ".cache/tmp")),
+            "fail() { printf 'dotfiles: %s\\n' \"$*\" >&2; exit 1; }",
+            'source "$DEPLOY_SOURCE/deployment/payload.sh"',
+            'source "$DEPLOY_SOURCE/deployment/client-settings.sh"',
+            "deploy_client_settings 0 %s claude-settings" % (1 if gateway else 0),
+        ]) + "\n", encoding="utf-8")
+        environ = dict(self.env, HOME=str(self.home), PATH="/usr/bin:/bin",
+                       XDG_CONFIG_HOME=str(self.home / ".config"),
+                       XDG_STATE_HOME=str(self.state))
+        return subprocess.run(["/bin/bash", str(script)], env=environ,
+                              capture_output=True, text=True, timeout=120)
+
+    def live(self):
+        return json.loads(self.settings.read_text())["env"]
+
+    def assert_merged(self, result):
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_fresh_install_has_no_subagent_model(self):
+        self.assert_merged(self.merge())
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", self.live())
+        self.assert_merged(self.merge(gateway=True))
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", self.live())
+        self.assertEqual(self.live()["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
+
+    def test_matching_prior_managed_value_is_migrated_then_stays_gone(self):
+        self.write_settings(self.VALUE)
+        self.write_baseline(self.VALUE)
+        self.assert_merged(self.merge())
+        # The ordinary merge removed the key and replaced the baseline, so the
+        # gateway merge that follows cannot undo the migration.
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", self.live())
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", json.loads(self.baseline.read_text())["env"])
+        self.assert_merged(self.merge(gateway=True))
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", self.live())
+        self.assertEqual(self.live()["ANTHROPIC_BASE_URL"], "http://127.0.0.1:3425")
+
+    def test_custom_device_value_survives_both_merges(self):
+        self.write_settings("device/custom-model")
+        self.write_baseline(self.VALUE)
+        self.assert_merged(self.merge())
+        self.assertEqual(self.live()["CLAUDE_CODE_SUBAGENT_MODEL"], "device/custom-model")
+        self.assert_merged(self.merge(gateway=True))
+        self.assertEqual(self.live()["CLAUDE_CODE_SUBAGENT_MODEL"], "device/custom-model")
+
+    def test_no_baseline_preserves_an_unowned_value(self):
+        self.write_settings(self.VALUE)
+        self.assertFalse(self.baseline.exists())
+        self.assert_merged(self.merge())
+        self.assertEqual(self.live()["CLAUDE_CODE_SUBAGENT_MODEL"], self.VALUE)
+
+    def test_conflicting_baseline_preserves_an_unowned_value(self):
+        self.write_settings(self.VALUE)
+        self.write_baseline("device/other-model")
+        self.assert_merged(self.merge())
+        self.assertEqual(self.live()["CLAUDE_CODE_SUBAGENT_MODEL"], self.VALUE)
+
+    def test_gateway_merge_after_baseline_was_replaced_preserves_the_value(self):
+        # The gateway merge sees a baseline the ordinary merge already rewrote.
+        # Without the prior managed value there is no ownership proof, so the
+        # value must be left alone even though it equals the old default.
+        self.write_settings(self.VALUE)
+        self.write_baseline(self.VALUE, with_key=False)
+        self.assert_merged(self.merge(gateway=True))
+        self.assertEqual(self.live()["CLAUDE_CODE_SUBAGENT_MODEL"], self.VALUE)
+
+    def test_repeated_runs_are_idempotent(self):
+        self.write_settings(self.VALUE)
+        self.write_baseline(self.VALUE)
+        self.assert_merged(self.merge())
+        ordinary = self.settings.read_bytes()
+        self.assert_merged(self.merge())
+        self.assertEqual(self.settings.read_bytes(), ordinary)
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", self.live())
+        self.assert_merged(self.merge(gateway=True))
+        gateway = self.settings.read_bytes()
+        self.assert_merged(self.merge(gateway=True))
+        self.assertEqual(self.settings.read_bytes(), gateway)
+        self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", self.live())
+
+
 class MagpiePiSettingsTests(unittest.TestCase):
     """Pi selects the Magpie provider and the workhorse group."""
 
@@ -1480,5 +2249,6 @@ class MagpiePiSettingsTests(unittest.TestCase):
 
     def test_the_pi_template_gates_the_wiring_on_the_migration_flag(self):
         template = (SOURCE / "deployment/client-settings/pi-settings.json.tmpl").read_text()
-        self.assertIn("{{- if and (eq .platform \"macos\") (eq (env \"DOTFILES_SETTINGS_MAGPIE\") \"true\") }}", template)
+        self.assertIn('{{- if and (has .platform (list "macos" "linux" "wsl")) '
+                      '(eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}', template)
         self.assertNotIn("{{- if eq .platform \"macos\" }}", template)

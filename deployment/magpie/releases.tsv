@@ -1,0 +1,14 @@
+# The Magpie native CLI releases. One catalog owns the version every target
+# shares and the digest that verifies each asset. The deployment never
+# resolves a release at run time: the URL and the SHA-256 below are the pin.
+#
+# name|version|target|url|sha256
+#
+# The Linux and WSL targets are the native CLI the headless deployment runs.
+# The Windows targets are the same release for the native Windows adapter,
+# which owns its own download; this catalog is the single place the version
+# and the digests live.
+magpie|0.1.4404|linux-amd64|https://github.com/yetone/magpie/releases/download/v0.1.4404/magpie-cli-linux-amd64|8d22941cff747677d09dce8131e74d76f06f0acfc1af249f942cbbbec058dfba
+magpie|0.1.4404|linux-arm64|https://github.com/yetone/magpie/releases/download/v0.1.4404/magpie-cli-linux-arm64|0ff5d9a9baedde4b8038a8ab8b08cfe3ad859afc721186da17b45386f94f763c
+magpie|0.1.4404|windows-amd64|https://github.com/yetone/magpie/releases/download/v0.1.4404/magpie-cli-windows-amd64.exe|bf14f5c0d969ca4835a952a89fe57bf311ecb98e1624b61481a9bec554047c8d
+magpie|0.1.4404|windows-arm64|https://github.com/yetone/magpie/releases/download/v0.1.4404/magpie-cli-windows-arm64.exe|b9d91db3b4cadc6ebf4cc5b560d568fa95481066837f513527d1b406881e8302

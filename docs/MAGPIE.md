@@ -36,19 +36,78 @@ failure: the gateway may still answer from an earlier install.
 The repository owns two managed commands:
 
 - `~/.local/bin/magpie` runs the binary the app ships, so the CLI and the GUI
-  are one install. It prints the cask command when the app is missing.
+  are one install. It prints the cask command when the app is missing. On a
+  headless host it runs the native CLI the deployment installed instead, and
+  the macOS application wrapper never replaces it.
 - `~/.local/bin/dotfiles-magpie` is the deployment's half of the gateway:
-  `apply`, `status`, and `providers`.
+  `apply`, `status`, `providers`, `test`, `start`, `stop`, and `install`.
 
 The app owns the gateway and its login item. The deployment never installs
 `magpie daemon`; it verifies `magpie status --json` and, on the real account
 home, opens the app once when nothing answers. On macOS a gateway that still
-does not answer fails the step, with the command that fixes it: a deployment
-never leaves Claude Code or Pi wired to a gateway that is not there.
+does not answer fails the step with a command to start it. The step does not
+newly wire Claude Code or Pi before the gateway answers; existing wiring is
+preserved.
+
+## The native CLI on Linux and WSL
+
+A headless host has no application to open and no login item, so the
+deployment installs the native Magpie CLI instead. The release catalog
+`deployment/magpie/releases.tsv` owns the version every target shares and the
+SHA-256 digest that verifies each asset:
+
+```text
+name|version|target|url|sha256
+```
+
+The catalog carries the Linux and Windows targets, so the version and digests
+of one release live in one place. The deployment never resolves a release at
+run time: the URL and the digest are the pin. Downloaded bytes are verified
+before installation, and a failed download never touches a working CLI.
+
+The CLI lives at `~/.local/share/dotfiles/magpie/bin/magpie`, beside the
+engine, so the managed command and the deployment step run one binary. The
+engine and the catalogs reach the Linux and WSL homes through the source
+application; the native Windows home keeps them out, because the PowerShell
+adapter owns that side.
+
+### The headless lifecycle
+
+The lifecycle is explicit, and it never assumes a desktop or a working
+systemd:
+
+- `dotfiles-magpie start` starts `magpie serve` in the background, writes the
+  pid and the log under `~/.local/state/dotfiles/magpie/gateway/`, and waits
+  until the gateway answers.
+- `dotfiles-magpie stop` stops the gateway the deployment started.
+- `dotfiles-magpie install` installs the pinned native release.
+
+The deployment writes no systemd unit, no login item, and no registry key.
+`magpie daemon install` exists upstream and is the operator's own choice; the
+deployment never runs it. A gateway that does not answer fails the step with
+the command that starts it; the step does not newly wire clients before the
+gateway answers. The lifecycle uses only `gateway.pid` to identify its
+process. An unrecognized or stale record is preserved and blocks a new start;
+inspect and reconcile that file before starting again. Existing gateway logs
+are preserved and a new log is used when the usual log already exists.
+
+The direct command requires the native account home for gateway operations:
+`apply`, `status`, `providers`, `test`, `start`, and `stop`. It also rejects a
+platform selector that does not match the native OS. `install` remains available
+in a synthetic home; gateway commands refuse that home rather than probing the
+shared loopback port. This boundary does not isolate an independently invoked
+Magpie CLI.
+
+The gateway the deployment starts does not inherit the deployment's proxy
+environment: that instance is temporary, and a gateway that kept it would
+reach the vendors through a port that stops with the deployment. For the same
+reason the deployment never writes a temporary proxy endpoint into the
+gateway's own settings.
 
 ## The switch
 
-The step is on by default on macOS and off on every other platform.
+The gateway wiring step is on by default on macOS, Linux, and WSL. The native
+Windows adapter installs the CLI by default but does not wire a gateway.
 
 ```bash
 bash bootstrap.sh --no-magpie          # turn the step off for one run
@@ -169,9 +228,10 @@ app, the agents, and the client settings exist before the gateway is wired.
 
 1. Validate the catalogs.
 2. Ensure the gateway answers: `magpie status --json`. On the real account
-   home the app is opened and waited for. A gateway that still does not answer
-   fails the step with the install/open command; a non-macOS host is skipped
-   before this point.
+   home the app is opened and waited for, and a headless host starts
+   `magpie serve` and waits for it. A gateway that still does not answer
+   fails the step with the command that fixes it; a platform without Magpie
+   is skipped before this point.
 3. Resolve the proxy and write it with `magpie settings set proxy` only when
    it differs.
 4. Ensure the pinned plugins, before the providers: `magpie plugin list
@@ -232,6 +292,27 @@ name, and fails the run because a required credential is missing.
 `dotfiles-magpie status` says so too. The key never enters git and never
 enters a ticket comment.
 
+### A key on a shared Linux or WSL host
+
+On macOS the apply adds a missing provider from the device store. A headless
+host has no such path: the pinned `magpie provider add` takes a key only as a
+command-line argument, and another process on a shared Linux or WSL host can
+read a process's argv. The deployment therefore never passes a key on that
+command line, and the CLI does not prompt for one there; the pinned CLI's
+masked key entry is in its text interface. When a catalog provider with an
+`env:` or `json:` source is not yet present, the apply stops before it adds any
+provider and names each preset to provision. Open the Magpie TUI, add each
+named preset there, then apply again:
+
+```bash
+magpie tui   # add each named preset; the key is entered with masked input
+```
+
+A provider that is already present is used as it is, and the credential-free
+`codex-account` provider is still added by the apply. The apply never reads a
+key-requiring provider's credential to pass it on that command line; the masked
+TUI entry is the only writer.
+
 ## Proxy behaviour
 
 The gateway's own traffic to the providers leaves through the device proxy;
@@ -251,6 +332,15 @@ set `HTTP_PROXY_URL` before the deployment, or set the proxy once by hand:
 ```bash
 magpie settings set proxy http://127.0.0.1:7897
 ```
+
+The deployment's own proxy instance is temporary: it starts with the
+deployment and stops with it. A gateway that keeps that endpoint would reach
+the vendors through a dead port, so the deployment writes it nowhere. Only the
+exact URL the deployment started, while its `DEPLOY_PROXY_PID` is still
+recorded, counts as that temporary instance. A proxy the device already runs
+is preserved even on the deployment's usual ports (7890-7894): when the
+deployment reuses one, `DEPLOY_PROXY_URL` names it but no PID is recorded, so
+the apply writes it into the gateway like any other device proxy.
 
 ## Group semantics
 
@@ -299,6 +389,43 @@ passes `group/<id>` to Magpie, so that group keeps its own routing and listed
 setting. A group with an unresolved member is left alone rather than created
 with a missing member.
 
+### DSH compaction
+
+Magpie's CLI owns DSH's compaction model field. The deployment reads and sets
+it only through `magpie dsh compact_model` and never edits
+`~/.dsh/profiles/*/cordis.patch.yml`, so the field stays Magpie's and the DSH
+profile keeps its operator-owned content. The apply backs up the previous
+value before writing a new one and leaves it byte-for-byte when the choice is
+already correct.
+
+DSH compaction uses a fixed lightweight route, `group/workhorse` (the
+`MAGPIE_DSH_COMPACT_TARGET` in `deployment/magpie.sh`), independently of the
+group the enabled `dsh` wiring row starts its sessions on. Moving the DSH
+session to a different tier must not drag background summarisation up with it,
+so the wiring row is a gate, never the value. The field is set only when the
+`dsh` row in `deployment/magpie/wiring.tsv` is both enabled and Magpie-owned;
+a parked, inherited, or repo-owned row leaves it alone. A bootstrap agent
+selection that leaves `dsh` out also leaves the field alone, while a selection
+that includes `dsh` keeps the fixed route. A standalone apply, such as
+`dotfiles-magpie apply`, declares no agent selection and keeps the wiring row
+as its only gate.
+
+A read the deployment cannot parse is not an unset field: the getter fails
+closed unless the CLI reports `default` or a `magpie/<provider-or-group>/<model>`
+choice, so an unreadable answer never turns into a guessed setting.
+`dotfiles-magpie status` reports the live field, not the recorded
+`dsh-compact` intent: it prints `dsh-compact|group/workhorse` when the field
+matches the fixed target, `dsh-compact|drift (<value>)` when it holds a
+different value (including `default` when unset), and
+`dsh-compact|unreadable` when the getter answer cannot be parsed. Drift or
+unreadability fails the status; a gated field prints no compaction line. The
+gateway applies the override only to requests it classifies as DSH compaction;
+a rejected or unavailable route falls back to the original request, and the
+setting alone does not prove that any request used a cheaper model. Runtime
+routing is not verified here: the fixture drives a fake CLI and a loopback
+gateway, so these checks prove the field and its preservation, not how a real
+compaction turn is served.
+
 ## Rollback
 
 When gateway migration needs a backup, a full bootstrap saves the client files
@@ -312,24 +439,30 @@ retained:
 - `~/.pi/agent/models.json`
 - `~/.codex/config.toml`
 - every `~/.dsh/profiles/*/cordis.patch.yml`
+- `dsh-compact-model.txt`, the previous compaction model (0600)
 
-To roll back, copy a file from a backup over the live one. The Codex
-configuration is never written by the deployment, and every apply hashes it
-before and after the changes; a change aborts the run and keeps the backup.
-`~/.local/state/dotfiles/magpie/state.tsv` records what the last apply did:
-the providers, the groups with their model order, the wiring, the proxy, and
-the Codex guard verdict.
+To roll back a compaction choice, read `dsh-compact-model.txt` first. The
+record may be blank, which means the previous field was unset: the pinned
+CLI's `internal/cli/main.go` maps `default` to an empty field and the DSH field
+setter clears it. For a blank record run `magpie dsh compact_model default`
+to clear the override; for a non-blank record pass the recorded
+`<provider-or-group>/<model>` ID to `magpie dsh compact_model
+<provider-or-group>/<model>`. The DSH profile itself is never rewritten.
+To roll back other files, copy a file from a backup over
+the live one. The Codex configuration is never written by the deployment, and
+every apply hashes it before and after the changes; a change aborts the run
+and keeps the backup. `~/.local/state/dotfiles/magpie/state.tsv` records what
+the last apply did: the providers, the groups with their model order, the
+wiring, the proxy, the DSH compaction group, and the Codex guard verdict.
 
 ## Other platforms
 
-Magpie is a macOS application today. On Linux, WSL, and native Windows the
-step reports `Magpie is not available on this platform` and completes, the
-engine and the catalogs stay out of the home, and `dotfiles-magpie` refuses
-in one line. Claude Code and Pi keep their device-owned endpoint and model
-there: the client-settings templates carry the gateway wiring only for the
-macOS migration merge, so no host is pointed at a gateway it cannot run. The
-catalogs are shaped so a later pinned native release can be added without
-changing the intent.
+The native Windows adapter plans and installs the pinned Magpie CLI by default,
+but does not start or wire a gateway, configure providers, or migrate clients.
+The Unix engine and catalogs stay out of the Windows home, and
+`dotfiles-magpie` is unavailable there. Claude Code and Pi retain their
+device-owned endpoints and models. The Windows CLI changes have not yet passed
+PowerShell or native Windows verification; see `docs/WINDOWS_DEPLOYMENT.md`.
 
 ## The command
 
@@ -339,6 +472,9 @@ dotfiles-magpie status      # gateway, proxy, plugins, providers, groups, visibi
 dotfiles-magpie providers   # the provider catalog and its credential sources
 dotfiles-magpie test        # one tiny completion per model role
 dotfiles-magpie test conductor.deepseek   # one role
+dotfiles-magpie start       # start the native gateway and wait until it answers
+dotfiles-magpie stop        # stop the gateway this deployment started
+dotfiles-magpie install     # install the pinned native CLI release
 ```
 
 `status` is read-only and exits non-zero when a required piece is missing.

@@ -12,7 +12,8 @@ param(
     [string]$Bundles,
     [switch]$Plan,
     [switch]$ApplyOnly,
-    [switch]$AgentsOnly
+    [switch]$AgentsOnly,
+    [switch]$NoMagpie
 )
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -250,6 +251,19 @@ function Get-Bundles {
     foreach ($name in $requested) { if ($name -notin $selected) { Stop-Deployment 'unknown bundle' } }
     return $selected
 }
+function Get-MagpieSelection {
+    # The pinned Magpie CLI is installed by default in a full Windows
+    # deployment. The switch is the explicit opt-out for one run and the
+    # environment selector is the device-wide one. The restricted modes apply
+    # files and install agents without the CLI, and they say why.
+    $selector = Get-Input 'DOTFILES_MAGPIE' 'true'
+    $enabled = $true
+    $reason = ''
+    if ($selector -eq 'false' -or $NoMagpie) { $enabled = $false; $reason = 'the Magpie step is disabled' }
+    if ($ApplyOnly) { $enabled = $false; $reason = 'apply-only applies files without the Magpie CLI' }
+    elseif ($AgentsOnly) { $enabled = $false; $reason = 'agents-only installs agents without the Magpie CLI' }
+    return [ordered]@{ enabled = $enabled; reason = $reason }
+}
 function Get-Packages {
     foreach ($row in (Read-Catalog 'deployment/common-tools.tsv')) {
         if ($row.columns[3] -ne 'all') { continue }
@@ -285,7 +299,16 @@ try {
     if ([string]::IsNullOrWhiteSpace($Source)) { Stop-Deployment 'Source must identify the dotfiles working tree' }
     $Source = [IO.Path]::GetFullPath($Source)
     if (-not [IO.File]::Exists((Join-Path $Source '.chezmoi.toml.tmpl'))) { Stop-Deployment 'Source must be the dotfiles working tree' }
+    # The native adapter owns the Magpie release pin, so its reader is
+    # available before the plan reports it.
+    . (Join-Path $Source 'deployment/windows.ps1')
     Test-AgentCatalog
+    $magpie = Get-MagpieSelection
+    # An opted-out or restricted run never installs the CLI, so it must not
+    # need the release catalog either. A full run still reads the one pin the
+    # native adapter owns.
+    $magpiePin = $null
+    if ($magpie.enabled) { $magpiePin = Get-MagpiePin }
     $selectedAgents = @(Get-Agents)
     $selectedBundles = @(Get-Bundles)
     $packages = @(Get-Packages)
@@ -337,7 +360,11 @@ try {
         }
         $agentPackages += $entry
     }
-    $actions = @('install-managers', 'apply-source', 'install-common', 'install-agents', 'prepare-shell')
+    $actions = @('install-managers', 'apply-source', 'install-common', 'install-agents')
+    # The CLI installs after the agents and before the shell is prepared, so
+    # a client that needs the command finds it in the managed PATH.
+    if ($magpie.enabled) { $actions += 'install-magpie-cli' }
+    $actions += 'prepare-shell'
     if ($ApplyOnly) { $actions = @('apply-source') }
     if ($AgentsOnly) { $actions = @('apply-source', 'install-agents') }
     $result = [ordered]@{
@@ -346,23 +373,39 @@ try {
         source = $Source; home = $TargetHome; roots = $roots; agents = $selectedAgents; bundles = $selectedBundles
         tools = @($tools | Select-Object -Unique); packages = $packages; bundlePackages = $bundlePackages; agentPackages = $agentPackages; actions = $actions; exceptions = $exceptions
         managers = [ordered]@{ pixi = ($exceptions | Where-Object { $_.name -eq 'pixi' }).version; chezmoi = ($exceptions | Where-Object { $_.name -eq 'chezmoi' }).version; rustup = ($exceptions | Where-Object { $_.name -eq 'rustup' }).version }
+        magpie = [ordered]@{
+            cli = $magpie.enabled
+            version = $(if ($magpiePin) { $magpiePin.version } else { $null })
+            target = $(if ($magpiePin) { $magpiePin.target } else { $null })
+            url = $(if ($magpiePin) { $magpiePin.url } else { $null })
+            sha256 = $(if ($magpiePin) { $magpiePin.sha256 } else { $null })
+            path = '.local/share/dotfiles/magpie/bin/magpie.exe'
+            gateway = $false
+            gatewayReason = 'the Windows adapter installs the CLI; it does not wire the model gateway, the providers, or the clients'
+            reason = $magpie.reason
+        }
         settings = [ordered]@{ mode = 'copy'; primaryShell = 'nu'; secondaryShells = @('git-bash'); systemChanges = $false; loginShellChanges = $false }
     }
     if (-not $TargetHome -or $TargetHome -eq [IO.Path]::GetPathRoot($TargetHome).TrimEnd([IO.Path]::DirectorySeparatorChar) -or $TargetHome -eq $Source) { Stop-Deployment 'TargetHome cannot be the filesystem root or Source' }
     if ($Plan) { $result | ConvertTo-Json -Depth 12; exit 0 }
     if (-not $ApplyOnly -and [Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { Stop-Deployment 'native installation requires Windows; Linux planning/rendering is separate evidence' }
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -and -not $EntryParameters.ContainsKey('TargetHome')) { Stop-Deployment 'foreign rendering requires an explicitly isolated TargetHome' }
-    . (Join-Path $Source 'deployment/windows.ps1')
     $script:InitialPath = $env:PATH
     $script:Step = 'validate-state'
-    Assert-OwnedState
+    Assert-OwnedState -MagpieEnabled $magpie.enabled
     Set-EnvironmentRoots
     $script:Step = 'prepare-state'
     foreach ($relative in @('.local/bin', '.config/chezmoi', '.cache/tmp', '.local/run')) { [IO.Directory]::CreateDirectory((Join-Path $TargetHome $relative)) | Out-Null }
     Install-Managers
     Apply-Source
     if ($AgentsOnly) { Install-Agents }
-    elseif (-not $ApplyOnly) { Install-Common; Install-Agents; Prepare-Shell }
+    elseif (-not $ApplyOnly) {
+        Install-Common
+        Install-Agents
+        if ($magpie.enabled) { Install-MagpieCli }
+        Prepare-Shell
+    }
+    if (-not $magpie.enabled) { [Console]::Out.WriteLine("dotfiles: magpie: skipped; $($magpie.reason)") }
     [Console]::Out.WriteLine("dotfiles: applied $($selection.profile) to $TargetHome (copy mode)")
 } catch {
     [Console]::Error.WriteLine('dotfiles: ' + $_.Exception.Message)

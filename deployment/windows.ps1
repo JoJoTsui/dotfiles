@@ -54,13 +54,21 @@ function Assert-InstallerDirectory([string]$Path) {
     }
 }
 function Assert-OwnedState {
+    # A restricted or opted-out run never writes the Magpie CLI or its
+    # launchers, so symlinks at those Magpie-only paths stay device-owned and
+    # are not rejected. Every other managed path keeps the normal guard.
+    param([bool]$MagpieEnabled = $true)
     Assert-SafePath $TargetHome
     $ancestor = [IO.Path]::GetDirectoryName($TargetHome)
     while ($ancestor) {
         if (Test-ReparsePath $ancestor) { Stop-Deployment 'TargetHome parent is a symlink or reparse point' }
         $ancestor = [IO.Path]::GetDirectoryName($ancestor)
     }
-    foreach ($relative in @('.local', '.local/bin', '.local/lib', '.local/share', '.local/state', '.local/run', '.config', '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml', '.bun', '.bun/bin', '.bun/managed', '.bun/install/global', '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin', '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi', '.pi/agent', '.qoder', '.minimax', '.minimax-code', '.minimax-code-install-logs')) {
+    $managedPaths = @('.local', '.local/bin', '.local/lib', '.local/share', '.local/state', '.local/run', '.config', '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml', '.bun', '.bun/bin', '.bun/managed', '.bun/install/global', '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin', '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi', '.pi/agent', '.qoder', '.minimax', '.minimax-code', '.minimax-code-install-logs')
+    if ($MagpieEnabled) {
+        $managedPaths += @('.local/share/dotfiles/magpie', '.local/share/dotfiles/magpie/bin', '.local/bin/magpie.cmd')
+    }
+    foreach ($relative in $managedPaths) {
         Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ([string]$relative))
     }
     if (-not $env:DOTFILES_SKILLS_DIR) {
@@ -1109,6 +1117,157 @@ function Install-Agents {
     $temporary = $statePath + '.tmp-' + [Guid]::NewGuid().ToString('N')
     Write-Utf8 $temporary $stateText
     Move-Item -LiteralPath $temporary -Destination $statePath -Force
+}
+function Get-MagpieRelease {
+    # The shared release catalog owns the Magpie CLI version every target
+    # shares and the digest that verifies each asset. The native Windows
+    # adapter consumes the windows-amd64 row and never resolves a release at
+    # run time: the URL and the digest are the pin. Windows ARM is outside
+    # the supported architecture matrix, so the windows-arm64 row is never
+    # consumed here.
+    $catalog = Join-Path $Source 'deployment/magpie/releases.tsv'
+    if (-not [IO.File]::Exists($catalog)) { Stop-Deployment 'missing Magpie release catalog' }
+    $rows = @()
+    $seen = @{}
+    foreach ($line in [IO.File]::ReadAllLines($catalog)) {
+        if (-not $line -or $line.StartsWith('#')) { continue }
+        $fields = $line.Split('|')
+        if ($fields.Count -ne 5) { Stop-Deployment "invalid Magpie release catalog row: $line" }
+        $name = $fields[0]; $version = $fields[1]; $target = $fields[2]; $url = $fields[3]; $sha256 = $fields[4]
+        if ($name -ne 'magpie') { Stop-Deployment "unknown Magpie release: $name" }
+        if ($version -notmatch '^[0-9]+(\.[0-9]+)*$') { Stop-Deployment "invalid Magpie release version: $version" }
+        if ($target -notin @('linux-amd64', 'linux-arm64', 'windows-amd64', 'windows-arm64')) {
+            Stop-Deployment "invalid Magpie release target: $target"
+        }
+        if ($seen.ContainsKey($target)) { Stop-Deployment "duplicate Magpie release target: $target" }
+        $seen[$target] = $true
+        if ($url -notmatch '^https://') { Stop-Deployment "the Magpie release URL must use HTTPS: $target" }
+        if ($sha256 -notmatch '^[a-f0-9]{64}$') { Stop-Deployment "the Magpie release digest must be a lowercase SHA-256: $target" }
+        $rows += [pscustomobject]@{ name = $name; version = $version; target = $target; url = $url; sha256 = $sha256 }
+    }
+    if ($rows.Count -eq 0) { Stop-Deployment 'the Magpie release catalog has no rows' }
+    return $rows
+}
+function Get-MagpiePin {
+    # The pin the native Windows target installs.
+    $pin = @(Get-MagpieRelease | Where-Object { $_.target -eq 'windows-amd64' })
+    if ($pin.Count -ne 1) { Stop-Deployment 'the Magpie release catalog has no windows-amd64 row' }
+    return $pin[0]
+}
+function Test-MagpieVersion([string]$Diagnostic, [string]$Version) {
+    if (-not $Diagnostic -or -not $Version) { return $false }
+    # Compare whole whitespace-delimited tokens, as the Unix adapter does.
+    # A substring match accepts a longer version (0.1.44040), a prerelease
+    # (0.1.4404-rc1), a build suffix (0.1.4404+build), or a prefixed token
+    # (x0.1.4404) as the exact pin, so require a token boundary on both sides.
+    $pattern = '(^|\s)' + [regex]::Escape($Version) + '(\s|$)'
+    return [bool]($Diagnostic -cmatch $pattern)
+}
+function Get-MagpieCmdLauncher {
+    # cmd.exe may parse a batch file with a legacy code page, so the absolute
+    # home path must never be embedded as UTF-8 text: a non-ASCII home name is
+    # corrupted and a literal % or ! changes cmd's expansion. Resolve the
+    # binary from the launcher's own directory instead. %~dp0 is that directory
+    # with a trailing backslash; the launcher lives in .local/bin and the binary
+    # in .local/share/dotfiles/magpie/bin, so every byte below is ASCII no
+    # matter what HOME contains. Keep delayed expansion disabled, quote the
+    # executable, forward %* and propagate the exit code.
+    $relative = '..\share\dotfiles\magpie\bin\magpie.exe'
+    return "@echo off`r`nsetlocal DisableDelayedExpansion`r`n" + '"%~dp0' + $relative + '" %*' + "`r`nexit /b %errorlevel%`r`n"
+}
+function Get-MagpiePosixLauncher {
+    return "#!/bin/sh`n" + 'exec "$(dirname -- "$0")/magpie.exe" "$@"' + "`n"
+}
+function Get-MagpieTextHash([string]$Text) {
+    $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes($Text)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $digest = $sha.ComputeHash($bytes) }
+    finally { $sha.Dispose() }
+    return ([BitConverter]::ToString($digest)).Replace('-', '').ToLowerInvariant()
+}
+function Test-MagpieLauncher([string]$Path, [string]$Text) {
+    # Returns $true only when a launcher already holds exactly the bytes this
+    # deployment writes, so a repeated run adopts it without a rewrite. Any
+    # other existing entry is preserved and reported before the CLI or a
+    # launcher is mutated: a link is never followed and a device file is never
+    # overwritten.
+    if (Test-ReparsePath $Path) {
+        Stop-Deployment "a symlink occupies the Magpie launcher $Path; move it aside before applying"
+    }
+    if ([IO.Directory]::Exists($Path)) {
+        Stop-Deployment "a directory occupies the Magpie launcher $Path; move it aside before applying"
+    }
+    if (-not [IO.File]::Exists($Path)) { return $false }
+    if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() -ne (Get-MagpieTextHash $Text)) {
+        Stop-Deployment "an existing Magpie launcher at $Path is not the managed launcher; move it aside before applying"
+    }
+    return $true
+}
+function Install-MagpieCli {
+    $script:Step = 'install-magpie-cli'
+    $pin = Get-MagpiePin
+    $directory = Join-Path $roots.data 'dotfiles/magpie/bin'
+    $cli = Join-Path $directory 'magpie.exe'
+    $cmdLauncher = Join-Path $TargetHome '.local/bin/magpie.cmd'
+    $posixLauncher = Join-Path $directory 'magpie'
+    Assert-SafePath $directory
+    Assert-SafePath $cli
+    Assert-SafePath (Join-Path $TargetHome '.local/bin')
+
+    # A cached binary is executed only after its digest matches the pin. The
+    # --version string alone does not identify the bytes, so an unowned device
+    # binary that happens to report the pinned version is preserved, never
+    # replaced, and never run.
+    $cachedValid = $false
+    if ([IO.File]::Exists($cli)) {
+        $script:Step = 'install-magpie-cli.cached-digest'
+        $actual = (Get-FileHash -LiteralPath $cli -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $pin.sha256) {
+            Stop-Deployment "a device binary at $cli does not match the pinned Magpie SHA-256; preserved it unchanged; move it aside before applying"
+        }
+        $script:Step = 'install-magpie-cli.cached-version'
+        $savedFailureCode = $script:FailureCode
+        try { $cached = (Invoke-Tool $cli @('--version') -Quiet).Trim() }
+        catch { $cached = '' }
+        finally { $script:FailureCode = $savedFailureCode }
+        if (-not (Test-MagpieVersion $cached $pin.version)) {
+            Stop-Deployment "the pinned Magpie binary at $cli did not report its pinned version"
+        }
+        $cachedValid = $true
+    } elseif ([IO.Directory]::Exists($cli)) {
+        Stop-Deployment "a directory occupies the Magpie CLI path $cli; move it aside before applying"
+    }
+
+    # Both launcher paths are checked before the binary is downloaded or any
+    # launcher is written, so a conflict fails without mutating the CLI or the
+    # launchers. Byte-identical launchers from an earlier run are adopted.
+    $script:Step = 'install-magpie-cli.launchers'
+    $cmdText = Get-MagpieCmdLauncher
+    $posixText = Get-MagpiePosixLauncher
+    $adoptCmd = Test-MagpieLauncher $cmdLauncher $cmdText
+    $adoptPosix = Test-MagpieLauncher $posixLauncher $posixText
+
+    if (-not $cachedValid) {
+        $script:Step = 'install-magpie-cli.download'
+        $scratch = Get-Scratch 'magpie'
+        try {
+            $archive = Join-Path $scratch 'magpie.exe'
+            # The download requires HTTPS and the pinned digest, and the
+            # payload is verified before it is executed or placed.
+            Download-Verified ([pscustomobject]@{ name = 'magpie'; url = $pin.url; sha256 = $pin.sha256 }) $archive
+            $script:Step = 'install-magpie-cli.verify'
+            $savedFailureCode = $script:FailureCode
+            try { $reported = (Invoke-Tool $archive @('--version') -Quiet).Trim() }
+            catch { $reported = '' }
+            finally { $script:FailureCode = $savedFailureCode }
+            if (-not (Test-MagpieVersion $reported $pin.version)) { Stop-Deployment 'the downloaded Magpie CLI did not report its pinned version' }
+            $script:Step = 'install-magpie-cli.install'
+            Copy-RegularTree $archive $cli
+        } finally { Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+    if (-not $adoptCmd) { Write-Utf8 $cmdLauncher $cmdText }
+    if (-not $adoptPosix) { Write-Utf8 $posixLauncher $posixText }
+    [Console]::Out.WriteLine("dotfiles: magpie: the CLI $($pin.version) is installed")
 }
 function Prepare-Shell {
     $script:Step = 'prepare-shell'

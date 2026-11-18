@@ -300,12 +300,30 @@ explains every changed pair.
   ownership, or preservation. Index creation stays an explicit project action.
 - **The Magpie model gateway owns the credentials and the generated agent
   files**: the deployment owns the seven catalogs under `deployment/magpie/`
-  (providers, models, groups, wiring, visible, picked, plugins),
-  Claude Code's hand-written settings, Pi's default provider and model, the
-  bootstrap switch, and the Codex hash guard. Magpie owns the provider keys,
+  (providers, models, groups, wiring, visible, picked, plugins), the release
+  catalog `deployment/magpie/releases.tsv` that pins the native CLI version
+  and its SHA-256 digests, Claude Code's hand-written settings, Pi's default
+  provider and model, the bootstrap switch, and the Codex hash guard. The
+  macOS application is adopted; Linux and WSL install the pinned native CLI
+  the release catalog names, and their lifecycle is explicit: the deployment
+  starts `magpie serve`, writes no systemd unit, no login item, and no
+  registry key, and never writes its temporary proxy into the gateway's own
+  settings. Native Windows currently installs only the CLI; it does not wire a
+  gateway or clients. Magpie owns the provider keys,
   the accounts, the usage store, Pi's generated `~/.pi/agent/models.json`, and
-  DSH's Magpie route; none of them is ever committed. Codex's
-  `~/.codex/config.toml` and `~/.codex/auth.json` belong to neither side: no
+  DSH's Magpie route and compaction field; none of them is ever committed.
+  Magpie's CLI owns the compaction field: the apply reads and sets it only
+  through `dsh compact_model`, never by editing the DSH profile, and uses a
+  fixed workhorse route independent of the group the DSH session's main
+  wiring row names. The enabled, Magpie-owned DSH wiring row and any bootstrap
+  DSH selection only gate whether the field is set, never its value. It backs
+  up the previous value and fails closed on a getter it cannot parse rather
+  than guessing. Live `status` reports the field as matched, drifted, or
+  unreadable from what the CLI answers now, not from recorded intent. Rejected
+  or unavailable routes fall back to the original request; runtime routing is
+  not verified, only the field and its preservation.
+  Codex's `~/.codex/config.toml` and `~/.codex/auth.json` belong to neither
+  side: no
   code path calls `magpie codex`, and every apply hashes the Codex
   configuration before and after its changes. `magpie visible` narrows an
   agent and never ticks a star; `picked.tsv` is the star set, and the apply

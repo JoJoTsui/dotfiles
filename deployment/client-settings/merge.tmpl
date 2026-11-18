@@ -131,6 +131,23 @@
 {{- if and (eq $policy "claude-settings") (eq (env "DOTFILES_SETTINGS_KEEP_PLAIN_OPUS") "1") (kindIs "string" (get $host "model")) (eq (get $host "model") "opus[1m]") -}}
 {{- $_ := set $host "model" "opus" -}}
 {{- end -}}
+{{- /* Retire the managed Claude subagent model so Claude Code inherits the
+       parent's model natively. Remove only the exact value this deployment
+       wrote, confirmed by the pre-merge baseline: a different device override
+       or a value whose prior ownership is unknown is left alone. The ordinary
+       client-settings merge runs this while the prior baseline is still
+       present, before the gateway merge replaces that baseline. */ -}}
+{{- if eq $policy "claude-settings" -}}
+{{- $liveEnv := get $host "env" -}}
+{{- $ownedEnv := get $previous "env" -}}
+{{- if and (kindIs "map" $liveEnv) (kindIs "map" $ownedEnv) -}}
+{{- if and (hasKey $liveEnv "CLAUDE_CODE_SUBAGENT_MODEL") (hasKey $ownedEnv "CLAUDE_CODE_SUBAGENT_MODEL") -}}
+{{- if and (eq (get $liveEnv "CLAUDE_CODE_SUBAGENT_MODEL") "group/conductor") (eq (get $ownedEnv "CLAUDE_CODE_SUBAGENT_MODEL") "group/conductor") -}}
+{{- $_ := unset $liveEnv "CLAUDE_CODE_SUBAGENT_MODEL" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- if not (hasKey $policies $policy) -}}{{- fail (printf "unknown client settings policy %q" $policy) -}}{{- end -}}
 {{- range $path := get $policies $policy -}}
 {{- $value := $desired -}}

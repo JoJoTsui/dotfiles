@@ -55,9 +55,10 @@ clash
 .bash_profile
 .bash_logout
 {{- end }}
-# The Magpie model gateway is a macOS application. Its engine and catalogs
-# stay out of the homes that cannot run it.
-{{- if ne .platform "macos" }}
+# The Magpie model gateway runs the macOS application or the native CLI on
+# Linux and WSL. Its engine and catalogs stay out of the native Windows home,
+# which the PowerShell adapter owns.
+{{- if eq .platform "windows" }}
 .config/dotfiles/magpie
 .local/share/dotfiles/magpie
 {{- end }}

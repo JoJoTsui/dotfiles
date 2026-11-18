@@ -67,6 +67,19 @@ current account's home. `--login-shell` requires normal shell preparation, so
 it cannot combine with `--apply-only` or `--agents-only`. Native Windows uses
 managed terminal shells and does not offer these account/system options.
 
+A full deployment also selects the Magpie gateway on macOS, Linux, and WSL. Its
+status probe talks to a shared loopback port, so bootstrap fails closed before
+creating any state when `--home` is not the current account's home on the
+detected native platform. The check uses the native account resolver rather
+than the inherited `HOME`, and the failure names `--no-magpie` as the opt-out
+for simulated or foreign homes. Planning, `--apply-only`, `--agents-only`, and
+an explicit `--no-magpie` or `DOTFILES_MAGPIE=false` are unaffected: a plan
+still reports the default Magpie selection, and restricted modes never probe a
+gateway. The direct `dotfiles-magpie` command separately requires the real
+account home and a matching native platform for `apply`, `status`, `providers`,
+`test`, `start`, and `stop`. Its `install` command remains available in a
+synthetic home for isolated CLI installation and verification.
+
 ## Common tools and registry ownership
 
 `deployment/common-tools.tsv` is the canonical common catalog. Each row names

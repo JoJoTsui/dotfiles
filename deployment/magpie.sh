@@ -29,6 +29,28 @@ MAGPIE_ENV_FILE=".config/dotfiles/magpie.env"
 # operator owns the app, the gateway process, and its login item.
 MAGPIE_CASK_NAME="magpie"
 MAGPIE_CASK_FLOOR="0.1.4325"
+# The platforms that run the native Magpie CLI. The macOS application owns
+# the gateway there; a headless host runs the native CLI, and the deployment
+# owns its lifecycle with an explicit start instead of a GUI.
+MAGPIE_NATIVE_PLATFORMS="linux wsl"
+# Where the native CLI is installed, relative to the home. It lives beside
+# the engine so the managed command and the deployment step run one binary.
+MAGPIE_CLI_RELATIVE=".local/share/dotfiles/magpie/bin/magpie"
+# The release catalog that owns the version and the digests that verify it.
+MAGPIE_RELEASE_CATALOG_SOURCE="deployment/magpie/releases.tsv"
+# How many seconds the deployment waits for a gateway it started to answer.
+MAGPIE_START_ATTEMPTS="${MAGPIE_START_ATTEMPTS:-30}"
+# How many seconds the deployment waits for a gateway it signalled to exit.
+MAGPIE_STOP_ATTEMPTS="${MAGPIE_STOP_ATTEMPTS:-10}"
+# The Claude Code auxiliary route the template pins: the cheap background
+# aliases and the auto-mode classifier stay on Terra while the work tiers
+# follow the wired group. Mirrors deployment/client-settings/claude-settings.json.tmpl.
+MAGPIE_CLAUDE_AUX_MODEL="codex/gpt-6.1-terra"
+# DSH's compaction override is a fixed lightweight route. It is deliberately
+# not derived from the group the dsh wiring row starts its sessions on: moving
+# the session to the conductor tier must not drag background summarisation up
+# with it. The wiring row is only a gate, never the value.
+MAGPIE_DSH_COMPACT_TARGET="group/workhorse"
 
 magpie_fail() {
     # The deployment owns the failure vocabulary; a standalone run reports the
@@ -150,9 +172,25 @@ magpie_row_fields() {
 }
 
 # The Magpie CLI. Every external call goes through this helper, so a test can
-# substitute a fake binary and record the exact command sequence.
+# substitute a fake binary and record the exact command sequence. A headless
+# host runs the native CLI the deployment installed; the macOS application
+# ships its own binary, which the managed launcher starts.
 magpie_run() {
-    "${MAGPIE_BIN:-magpie}" "$@"
+    if [ -n "${MAGPIE_BIN:-}" ]; then
+        "${MAGPIE_BIN}" "$@"
+        return $?
+    fi
+    if magpie_native_platform; then
+        local cli
+        cli=$(magpie_cli_path)
+        if [ ! -x "$cli" ]; then
+            printf 'dotfiles: magpie: the Magpie CLI is not installed; install it with: dotfiles-magpie install\n' >&2
+            return 127
+        fi
+        "$cli" "$@"
+        return $?
+    fi
+    magpie "$@"
 }
 
 # The platform the deployment runs on.
@@ -160,8 +198,26 @@ magpie_platform() {
     if [ -n "${DEPLOY_PLATFORM:-}" ]; then printf '%s' "$DEPLOY_PLATFORM"; return 0; fi
     case "$(uname -s)" in
         Darwin) printf 'macos' ;;
+        Linux)
+            if [ -n "${WSL_DISTRO_NAME:-}${WSL_INTEROP:-}" ]; then printf 'wsl'; else printf 'linux'; fi
+            ;;
         *) printf 'unsupported' ;;
     esac
+}
+
+# Whether the platform runs the native CLI rather than the macOS application.
+magpie_native_platform() {
+    case " $MAGPIE_NATIVE_PLATFORMS " in
+        *" $(magpie_platform) "*) return 0 ;;
+    esac
+    return 1
+}
+
+# The native CLI the deployment runs. The override is the seam a test uses
+# to point the engine at a fixture binary.
+magpie_cli_path() {
+    if [ -n "${MAGPIE_CLI_BIN:-}" ]; then printf '%s' "$MAGPIE_CLI_BIN"; return 0; fi
+    printf '%s' "$HOME/$MAGPIE_CLI_RELATIVE"
 }
 
 # The device state directory the apply records. The state belongs to the home
@@ -184,6 +240,272 @@ magpie_sha256() {
     else
         shasum -a 256 "$file" | awk '{print $1}'
     fi
+}
+
+# The release catalog that owns the Magpie CLI version and the digests that
+# verify each asset. The deployment reads the working tree; the managed
+# command reads the copy the source application leaves in the home.
+magpie_release_catalog() {
+    if [ -n "${MAGPIE_RELEASE_CATALOG:-}" ]; then printf '%s' "$MAGPIE_RELEASE_CATALOG"; return 0; fi
+    if [ -n "${DEPLOY_SOURCE:-}" ] && [ -f "${DEPLOY_SOURCE}/${MAGPIE_RELEASE_CATALOG_SOURCE}" ]; then
+        printf '%s' "${DEPLOY_SOURCE}/${MAGPIE_RELEASE_CATALOG_SOURCE}"
+        return 0
+    fi
+    printf '%s' "$HOME/.config/dotfiles/magpie/releases.tsv"
+}
+
+# The release target the platform and the architecture use.
+magpie_release_target() {
+    local arch=${DEPLOY_ARCH:-$(uname -m)}
+    case "$arch" in
+        x86_64|amd64) arch=amd64 ;;
+        aarch64|arm64) arch=arm64 ;;
+    esac
+    case "$(magpie_platform)" in
+        linux|wsl) printf 'linux-%s' "$arch" ;;
+        *) return 1 ;;
+    esac
+}
+
+# The pin of one target: version, URL, and digest.
+magpie_release_pin() {
+    local target=$1 file line name version row_target url sha
+    file=$(magpie_release_catalog)
+    [ -f "$file" ] || return 1
+    while IFS='|' read -r name version row_target url sha || [ -n "$name" ]; do
+        case "$name" in ''|\#*) continue ;; esac
+        [ "$name" = magpie ] || continue
+        [ "$row_target" = "$target" ] || continue
+        printf '%s|%s|%s' "$version" "$url" "$sha"
+        return 0
+    done < "$file"
+    return 1
+}
+
+# Validate the release catalog. A row without a version, an HTTPS URL, or a
+# SHA-256 digest is rejected before any download starts.
+magpie_release_validate() {
+    local file=${1:-} line name version target url sha seen=' '
+    [ -n "$file" ] || file=$(magpie_release_catalog)
+    [ -f "$file" ] || { magpie_fail 'the Magpie release catalog is missing'; return 1; }
+    [ ! -L "$file" ] || { magpie_fail 'the Magpie release catalog is a symlink'; return 1; }
+    while IFS='|' read -r name version target url sha || [ -n "$name" ]; do
+        case "$name" in ''|\#*) continue ;; esac
+        [ "$name" = magpie ] || { magpie_fail "unknown Magpie release: $name"; return 1; }
+        case "$version" in
+            ''|*[!0-9.]*) magpie_fail "invalid Magpie release version: $version"; return 1 ;;
+        esac
+        case "$target" in
+            linux-amd64|linux-arm64|windows-amd64|windows-arm64) ;;
+            *) magpie_fail "invalid Magpie release target: $target"; return 1 ;;
+        esac
+        case " $seen " in
+            *" $target "*) magpie_fail "duplicate Magpie release target: $target"; return 1 ;;
+        esac
+        seen="$seen$target "
+        case "$url" in
+            https://*) ;;
+            *) magpie_fail "the Magpie release URL must use HTTPS: $target"; return 1 ;;
+        esac
+        case "$sha" in
+            *[!0-9a-f]*|'') magpie_fail "the Magpie release digest must be a lowercase SHA-256: $target"; return 1 ;;
+        esac
+        if [ "${#sha}" -ne 64 ]; then
+            magpie_fail "the Magpie release digest must be 64 hex characters: $target"
+            return 1
+        fi
+    done < "$file"
+    return 0
+}
+
+# The version the CLI at $1 reports. The command's own exit status is part of
+# the answer, so it is returned rather than lost to a pipe: a binary that
+# prints the pin but fails --version is not a working CLI. Only the first line
+# is used, matching the previous `head -n1` behaviour.
+magpie_cli_version() {
+    local out status
+    out=$("$1" --version 2>/dev/null); status=$?
+    printf '%s' "${out%%$'\n'*}"
+    return "$status"
+}
+
+# Whether the reported version contains the pin as a complete whitespace
+# token. A substring match accepts a longer version (0.1.44040 for 0.1.4404)
+# or a prerelease built on the pin (0.1.4404-rc1), so compare whole tokens.
+magpie_cli_version_matches() {
+    local reported want
+    reported=$(printf '%s' "$1" | tr '\t\n' '  ')
+    want=$2
+    case " $reported " in
+        *" $want "*) return 0 ;;
+    esac
+    return 1
+}
+
+# Whether the CLI at $1 both runs --version successfully and reports the pin
+# at $2. Matching stdout alone is not enough: the command must exit cleanly.
+# Used for a cached binary and for a freshly downloaded payload alike.
+magpie_cli_version_ok() {
+    local version
+    version=$(magpie_cli_version "$1") || return 1
+    magpie_cli_version_matches "$version" "$2"
+}
+
+# The install destination belongs to the device when any component is a link:
+# writing the verified bytes through it would corrupt a device file, and
+# replacing the link would destroy a device entry. Under the home the whole
+# managed path is checked with the lifecycle guard. A fixture override may
+# point outside the home, where the leaf and its holding directory are the only
+# components the install writes, so the walk stops one level above them and
+# never mistakes a system symlink such as /var for a destination component.
+magpie_install_destination_safe() {
+    local cli=$1 parent
+    case "$cli" in
+        "$HOME"/*)
+            if magpie_path_has_symlink "$cli"; then return 1; fi
+            return 0
+            ;;
+    esac
+    parent=$(dirname "$cli") || return 1
+    if [ -L "$cli" ] || [ -L "$parent" ]; then return 1; fi
+    return 0
+}
+
+# Whether the regular file at the CLI path is the pinned bytes. A digest
+# match is the only proof that permits executing or reusing an existing CLI:
+# the version it reports is data from that file and cannot vouch for itself.
+magpie_cli_bytes_match_pin() {
+    local cli=$1 sha=$2 actual
+    [ -f "$cli" ] && [ ! -L "$cli" ] || return 1
+    actual=$(magpie_sha256 "$cli") || return 1
+    [ "$actual" = "$sha" ]
+}
+
+# Install the native CLI from the pinned release. An existing leaf is either
+# the pinned bytes, proven by the catalog digest, or a file this deployment did
+# not create: the latter is preserved, never executed, downloaded over, or
+# removed. A newly downloaded binary is verified before it is installed, and a
+# failed download never touches a working CLI.
+magpie_install_cli() {
+    local target pin version url sha cli download partial actual staged dir
+    magpie_release_validate || return 1
+    target=$(magpie_release_target) ||
+        { magpie_fail 'no Magpie CLI release is pinned for this platform'; return 1; }
+    pin=$(magpie_release_pin "$target") ||
+        { magpie_fail "the Magpie release catalog has no row for $target"; return 1; }
+    version=${pin%%|*}; pin=${pin#*|}
+    url=${pin%%|*}; sha=${pin#*|}
+    cli=$(magpie_cli_path)
+    # Refuse a symlinked destination, including a dangling link, before
+    # creating a directory, running the installed CLI, or replacing the leaf.
+    magpie_install_destination_safe "$cli" ||
+        { magpie_fail 'the Magpie CLI destination contains a symlink'; return 1; }
+    # Any existing leaf — regular file or directory — is unrecognized until
+    # its bytes prove they are the pinned release. Fail preserving it rather
+    # than executing it for a version string or overwriting it with a download.
+    if [ -e "$cli" ] || [ -L "$cli" ]; then
+        if ! magpie_cli_bytes_match_pin "$cli" "$sha"; then
+            magpie_fail 'the Magpie CLI path holds an unrecognized file; preserving it'
+            return 1
+        fi
+        # The bytes are the pinned release, so --version is safe to run. A
+        # digest match with a different reported version, or a --version that
+        # fails even when it prints the pin, is not a working CLI; preserve the
+        # verified file rather than downloading over it.
+        if ! magpie_cli_version_ok "$cli" "$version"; then
+            magpie_fail "the Magpie CLI at the install path does not report $version; preserving it"
+            return 1
+        fi
+        printf 'dotfiles: magpie: the CLI %s is installed\n' "$version"
+        return 0
+    fi
+    command -v curl >/dev/null 2>&1 ||
+        { magpie_fail 'the Magpie CLI installation requires curl'; return 1; }
+    # Download into a private, unique directory. A predictable cache path can
+    # be pre-created as a symlink to a device file, and curl writing through it
+    # would destroy that file. A fresh directory has no such entry, and its
+    # cleanup never touches unrelated cache contents.
+    download=$(mktemp -d "${TMPDIR:-/tmp}/magpie-download.XXXXXX") ||
+        { magpie_fail 'cannot create a private Magpie download directory'; return 1; }
+    partial="$download/magpie-cli-$version-$target"
+    if ! curl -fsSL --retry 2 --connect-timeout 15 --max-time 600 -o "$partial" "$url"; then
+        rm -rf "$download"
+        magpie_fail "cannot download the Magpie CLI $version ($target)"
+        return 1
+    fi
+    # Never act on a symlink or a non-regular file at the download target.
+    if [ -L "$partial" ] || [ ! -f "$partial" ]; then
+        rm -rf "$download"
+        magpie_fail 'the Magpie CLI download is not a regular file'
+        return 1
+    fi
+    actual=$(magpie_sha256 "$partial") || {
+        rm -rf "$download"
+        magpie_fail 'cannot read the Magpie CLI digest'
+        return 1
+    }
+    if [ "$actual" != "$sha" ]; then
+        rm -rf "$download"
+        magpie_fail "the Magpie CLI digest does not match the catalog: $target"
+        return 1
+    fi
+    chmod 755 "$partial" || {
+        rm -rf "$download"
+        magpie_fail 'cannot prepare the Magpie CLI download'
+        return 1
+    }
+    # The digest proves the bytes are the catalog release, so running --version
+    # is safe. Require the exact pinned version and a clean exit before the
+    # payload is placed; a mismatch cleans only this private download and
+    # leaves the destination absent.
+    if ! magpie_cli_version_ok "$partial" "$version"; then
+        rm -rf "$download"
+        magpie_fail "the downloaded Magpie CLI does not report $version"
+        return 1
+    fi
+    dir=$(dirname "$cli")
+    mkdir -p "$dir" || {
+        rm -rf "$download"
+        magpie_fail 'cannot create the Magpie CLI directory'
+        return 1
+    }
+    # The directory may have appeared after the first check. Refuse a link in
+    # the finished path before the verified bytes land.
+    magpie_install_destination_safe "$cli" ||
+        { rm -rf "$download"; magpie_fail 'the Magpie CLI destination contains a symlink'; return 1; }
+    # Finish with a rename inside the destination's own filesystem. A move
+    # across filesystems copies into the leaf and can leave a half-written CLI
+    # if interrupted; mktemp gives the staging leaf an unpredictable name that
+    # cannot be pre-seeded as a device link.
+    staged=$(mktemp "$dir/.magpie-cli.XXXXXX") || {
+        rm -rf "$download"
+        magpie_fail 'cannot stage the Magpie CLI download'
+        return 1
+    }
+    if ! cp "$partial" "$staged" || ! chmod 755 "$staged"; then
+        rm -f "$staged"
+        rm -rf "$download"
+        magpie_fail 'cannot stage the Magpie CLI download'
+        return 1
+    fi
+    # The leaf may have been created after the first check. A rename onto a
+    # directory would move the staged binary inside it, and a rename onto a
+    # file would replace bytes we cannot vouch for. Preserve either one.
+    if [ -e "$cli" ] || [ -L "$cli" ]; then
+        rm -f "$staged"
+        rm -rf "$download"
+        magpie_fail 'the Magpie CLI path appeared during installation; preserving it'
+        return 1
+    fi
+    if ! mv "$staged" "$cli"; then
+        rm -f "$staged"
+        rm -rf "$download"
+        magpie_fail 'cannot install the Magpie CLI'
+        return 1
+    fi
+    rm -rf "$download"
+    printf 'dotfiles: magpie: the CLI %s is installed\n' "$version"
+    return 0
 }
 
 # The Python the deployment reads JSON with.
@@ -873,20 +1195,317 @@ magpie_gateway_status() {
     MAGPIE_GATEWAY_JSON=$(magpie_run status --json 2>/dev/null) || return 1
     MAGPIE_GATEWAY=$(printf '%s' "$MAGPIE_GATEWAY_JSON" |
         sed -n 's/.*"gateway"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+    # The native CLI reports the address it listens on as "url" or "addr".
+    if [ -z "$MAGPIE_GATEWAY" ]; then
+        MAGPIE_GATEWAY=$(printf '%s' "$MAGPIE_GATEWAY_JSON" |
+            sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+    fi
+    if [ -z "$MAGPIE_GATEWAY" ]; then
+        MAGPIE_GATEWAY=$(printf '%s' "$MAGPIE_GATEWAY_JSON" |
+            sed -n 's/.*"addr"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+        [ -n "$MAGPIE_GATEWAY" ] && MAGPIE_GATEWAY="http://$MAGPIE_GATEWAY"
+    fi
     [ -n "$MAGPIE_GATEWAY" ] || MAGPIE_GATEWAY="$MAGPIE_GATEWAY_DEFAULT"
     return 0
 }
 
-# Ensure the gateway answers. The app owns the gateway, so the deployment
-# opens it on the real account home and waits; elsewhere it reports the
-# command and continues with a named warning.
+# Whether a status response is a well-formed JSON object that explicitly
+# reports the boolean true for "running". A missing key, a false, a string, a
+# number, or malformed JSON is not readiness: the gateway must say so itself.
+magpie_status_running_true() {
+    local json=$1 python
+    python=$(magpie_python) || return 1
+    printf '%s' "$json" | "$python" -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(1)
+if not isinstance(data, dict) or data.get("running") is not True:
+    raise SystemExit(1)
+'
+}
+
+# Whether the gateway answers. The status report is the source of truth: only
+# a well-formed response with boolean "running": true is ready.
+magpie_gateway_ready() {
+    magpie_gateway_status || return 1
+    magpie_status_running_true "$MAGPIE_GATEWAY_JSON" || return 1
+    return 0
+}
+
+# The directory the native gateway lifecycle owns.
+magpie_lifecycle_dir() {
+    printf '%s' "$(magpie_state_dir)/gateway"
+}
+
+# Whether any component of a path, including the leaf, is a symbolic link.
+# `-L` matches a dangling link too, which an existence test would silently
+# skip. The walk stops at the home: a symlinked home is the device's own
+# boundary, not a component the deployment is about to write through.
+magpie_path_has_symlink() {
+    local path=$1 parent
+    while :; do
+        [ -n "$path" ] || return 1
+        case "$path" in
+            "$HOME"|/|.) return 1 ;;
+        esac
+        if [ -L "$path" ]; then
+            return 0
+        fi
+        parent=$(dirname "$path") || return 1
+        [ "$parent" != "$path" ] || return 1
+        path=$parent
+    done
+}
+
+# The gateway lifecycle must own a plain directory tree. A symlink in a parent
+# or at the pid/log leaf belongs to the device: the deployment never writes
+# through it, removes it, or trusts a pid it names. Refuse before creating
+# directories, appending a log, writing a pid, or signalling a process. Callers
+# check this before any lifecycle read or write.
+magpie_lifecycle_paths_safe() {
+    local lifecycle pid log
+    lifecycle=$(magpie_lifecycle_dir) || return 1
+    pid="$lifecycle/gateway.pid"
+    log="$lifecycle/gateway.log"
+    if magpie_path_has_symlink "$lifecycle"; then return 1; fi
+    if magpie_path_has_symlink "$pid"; then return 1; fi
+    if magpie_path_has_symlink "$log"; then return 1; fi
+    return 0
+}
+
+# Allocate an unused, deployment-named log for a gateway started while the
+# canonical log is occupied. An existing regular file at the canonical log is
+# device-owned: start leaves it untouched and uses this fresh name instead. The
+# loop skips names that are already occupied. The pid is never renamed: only
+# the canonical name is ours to own and to stop, so the result is returned in
+# MAGPIE_LIFECYCLE_LOG alone.
+magpie_fresh_lifecycle_log() {
+    local lifecycle=$1 attempt=0 token log
+    MAGPIE_LIFECYCLE_LOG=''
+    while [ "$attempt" -lt 100 ]; do
+        token="$$-$RANDOM-$RANDOM"
+        log="$lifecycle/gateway.$token.log"
+        if [ ! -e "$log" ] && [ ! -L "$log" ]; then
+            MAGPIE_LIFECYCLE_LOG=$log
+            return 0
+        fi
+        attempt=$((attempt + 1))
+    done
+    return 1
+}
+
+# A fingerprint of a process that stays the same for its lifetime and changes
+# when a PID is reused. A bare PID is not ownership: before the deployment
+# signals a recorded gateway it compares this fingerprint with the one written
+# at start. Linux exposes a high-resolution start time in /proc; macOS reports
+# the start wall-clock time through ps.
+magpie_process_fingerprint() {
+    local pid=$1 stat
+    case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    if [ -r "/proc/$pid/stat" ]; then
+        stat=$(cat "/proc/$pid/stat" 2>/dev/null) || return 1
+        # The comm field is parenthesized and may contain spaces. Strip through
+        # its closing ")" so field 22 (starttime, in ticks) becomes token 20.
+        stat=${stat##*) }
+        set -- $stat
+        [ -n "${20:-}" ] || return 1
+        printf '%s' "${20}"
+        return 0
+    fi
+    if command -v ps >/dev/null 2>&1; then
+        stat=$(ps -o lstart= -p "$pid" 2>/dev/null | tr -d '[:space:]')
+        [ -n "$stat" ] || return 1
+        printf '%s' "$stat"
+        return 0
+    fi
+    return 1
+}
+
+# The pid recorded on the first line of a gateway pid file.
+magpie_gateway_pid() {
+    sed -n '1p' "$1" 2>/dev/null | tr -d '[:space:]'
+}
+
+# Whether the process in a gateway pid file is alive and still the one this
+# deployment launched. The second line is the fingerprint written at start; a
+# pid file without one, or a process whose fingerprint changed, is not owned.
+magpie_gateway_owned() {
+    local pid_file=$1 pid token current
+    pid=$(magpie_gateway_pid "$pid_file" || true)
+    [ -n "$pid" ] || return 1
+    token=$(sed -n '2p' "$pid_file" 2>/dev/null | tr -d '[:space:]' || true)
+    [ -n "$token" ] || return 1
+    current=$(magpie_process_fingerprint "$pid") || return 1
+    [ "$current" = "$token" ]
+}
+
+# Start the native gateway. The deployment owns the process: it writes a pid
+# file and a log under the state directory. It never installs a systemd unit,
+# a login item, or any other service registration, and it never starts a
+# desktop application.
+magpie_start_gateway() {
+    local cli lifecycle pid log old attempt=0
+    cli=$(magpie_cli_path)
+    if [ ! -x "$cli" ]; then
+        magpie_fail 'the Magpie CLI is not installed; install it with: dotfiles-magpie install'
+        return 1
+    fi
+    if magpie_gateway_ready; then
+        printf 'dotfiles: magpie: the gateway already answers on %s\n' "$MAGPIE_GATEWAY"
+        return 0
+    fi
+    lifecycle=$(magpie_lifecycle_dir)
+    # A symlink anywhere in the lifecycle path is a device boundary. Refuse it
+    # before mkdir, the log append, the pid write, or any signal: writing
+    # through it would corrupt a device file, and removing it would destroy a
+    # device entry. This also rejects dangling links.
+    magpie_lifecycle_paths_safe ||
+        { magpie_fail 'the Magpie gateway lifecycle path contains a symlink'; return 1; }
+    mkdir -p "$lifecycle" ||
+        { magpie_fail 'cannot create the Magpie gateway state directory'; return 1; }
+    pid="$lifecycle/gateway.pid"
+    # Only the canonical pid is ours. A gateway we launched that is still alive
+    # but not answering is left alone: starting again would orphan it and
+    # overwrite its record. Stop is the only way to retire it, and it
+    # establishes ownership the same way.
+    if [ -e "$pid" ] || [ -L "$pid" ]; then
+        if [ -f "$pid" ] && [ ! -L "$pid" ] && magpie_gateway_owned "$pid"; then
+            old=$(magpie_gateway_pid "$pid" || true)
+            magpie_fail "the gateway process $old is alive but does not answer; stop it with: dotfiles-magpie stop, then start again"
+            return 1
+        fi
+        # Any other record at the canonical name belongs to the device. Preserve
+        # it; never launch under a separate pid name, because stop must have one
+        # unambiguous record to own and signal.
+        magpie_fail 'the Magpie gateway pid file holds an unrecognized record; preserving it'
+        return 1
+    fi
+    # A pre-existing regular log belongs to the device: preserve its bytes and
+    # append this run's output to a fresh, uniquely named log. The pid stays
+    # canonical so stop still finds the process.
+    log="$lifecycle/gateway.log"
+    if [ -e "$log" ] || [ -L "$log" ]; then
+        magpie_fresh_lifecycle_log "$lifecycle" ||
+            { magpie_fail 'cannot allocate a Magpie gateway log'; return 1; }
+        log=$MAGPIE_LIFECYCLE_LOG
+    fi
+    # The gateway outlives this shell, so it runs detached. The deployment's
+    # own proxy instance is not inherited: it stops with the deployment, and
+    # a gateway that kept it would reach the vendors through a dead port.
+    (
+        cd "$HOME" || exit 1
+        env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+            -u ALL_PROXY -u all_proxy -u NO_PROXY -u no_proxy -u PROXY \
+            nohup "$cli" serve >>"$log" 2>&1 &
+        child=$!
+        # Record the process we launched, not just its pid. Stop compares this
+        # fingerprint before it signals anything, so a reused pid is never
+        # mistaken for our gateway.
+        stamp=$(magpie_process_fingerprint "$child" || true)
+        printf '%s\n%s\n' "$child" "$stamp" > "$pid"
+    )
+    while [ "$attempt" -lt "$MAGPIE_START_ATTEMPTS" ]; do
+        sleep 1
+        attempt=$((attempt + 1))
+        if magpie_gateway_ready; then
+            MAGPIE_GATEWAY_READY=yes
+            printf 'dotfiles: magpie: the gateway answers on %s\n' "$MAGPIE_GATEWAY"
+            return 0
+        fi
+    done
+    magpie_fail "the Magpie gateway does not answer; its log is $log"
+    return 1
+}
+
+# Stop the gateway the deployment started. Only the canonical gateway.pid is
+# ours to read: device-owned records under other names are never considered and
+# cannot block this stop. Ownership comes from the fingerprint recorded at start:
+# a pid file without one, or a pid that now names a different process, is never
+# signalled. "Stopped" is reported only after the process is confirmed gone.
+magpie_stop_gateway() {
+    local lifecycle pid recorded attempt=0
+    lifecycle=$(magpie_lifecycle_dir)
+    # Refuse a symlinked lifecycle path or pid/log leaf before reading, removing,
+    # or signalling anything. A device-owned link is preserved.
+    magpie_lifecycle_paths_safe ||
+        { magpie_fail 'the Magpie gateway lifecycle path contains a symlink'; return 1; }
+    pid="$lifecycle/gateway.pid"
+    # No canonical record means there is nothing of ours to stop. A device-owned
+    # file under another name (gateway-backup.pid, for example) is never read.
+    [ -e "$pid" ] || { printf 'dotfiles: magpie: no gateway process is recorded\n'; return 0; }
+    if [ ! -f "$pid" ] || [ -L "$pid" ]; then
+        magpie_fail 'the Magpie gateway pid file is not a regular file; preserving it'
+        return 1
+    fi
+    recorded=$(magpie_gateway_pid "$pid" || true)
+    case "$recorded" in ''|*[!0-9]*)
+        magpie_fail 'the gateway pid file does not name a process; not stopping anything'
+        return 1 ;;
+    esac
+    if ! magpie_gateway_owned "$pid"; then
+        # A live process named by a record without our fingerprint is not ours:
+        # leave both the process and the file untouched.
+        if kill -0 "$recorded" 2>/dev/null; then
+            magpie_fail 'cannot establish ownership of the recorded gateway process; not stopping it'
+            return 1
+        fi
+        # A stale record naming no live process may belong to the device, so
+        # preserve it rather than deleting it.
+        printf 'dotfiles: magpie: no gateway process is recorded\n'
+        return 0
+    fi
+    kill "$recorded" 2>/dev/null ||
+        { magpie_fail "cannot signal the gateway process $recorded"; return 1; }
+    while [ "$attempt" -lt "$MAGPIE_STOP_ATTEMPTS" ]; do
+        kill -0 "$recorded" 2>/dev/null || break
+        sleep 1
+        attempt=$((attempt + 1))
+    done
+    if kill -0 "$recorded" 2>/dev/null; then
+        magpie_fail "the gateway process $recorded is still running"
+        return 1
+    fi
+    rm -f "$pid"
+    printf 'dotfiles: magpie: the gateway process %s is stopped\n' "$recorded"
+    return 0
+}
+
+# Whether a proxy endpoint belongs to the deployment's own temporary proxy
+# instance. Ownership is not a property of the port: a proxy the device already
+# runs may use one of the deployment's usual ports. Only the exact URL the
+# deployment started, while its PID is still recorded, is deployment-owned.
+# That instance stops with the deployment, so a gateway must never keep it as
+# its permanent proxy; a pre-existing device proxy is preserved even there.
+magpie_deployment_proxy_url() {
+    local url=$1
+    [ -n "${DEPLOY_PROXY_PID:-}" ] || return 1
+    [ -n "${DEPLOY_PROXY_URL:-}" ] || return 1
+    [ "$url" = "$DEPLOY_PROXY_URL" ]
+}
+
+# Ensure the gateway answers. The app owns the gateway on macOS; a headless
+# host has no application to open and no login item, so the deployment starts
+# the native gateway itself and waits for it to answer.
 magpie_gateway_ensure() {
     local attempt=0
     MAGPIE_GATEWAY_READY=no
-    if magpie_gateway_status; then
+    if magpie_gateway_ready; then
         MAGPIE_GATEWAY_READY=yes
         printf 'dotfiles: magpie: the gateway answers on %s\n' "$MAGPIE_GATEWAY"
         return 0
+    fi
+    if magpie_native_platform; then
+        printf 'dotfiles: magpie: the gateway does not answer; starting the native gateway\n'
+        if magpie_start_gateway; then
+            MAGPIE_GATEWAY_READY=yes
+            return 0
+        fi
+        printf 'dotfiles: magpie: the gateway does not answer; start it with: dotfiles-magpie start\n' >&2
+        return 1
     fi
     if magpie_real_account_home; then
         printf 'dotfiles: magpie: the gateway does not answer; opening the Magpie app\n'
@@ -894,7 +1513,7 @@ magpie_gateway_ensure() {
         while [ "$attempt" -lt 30 ]; do
             sleep 1
             attempt=$((attempt + 1))
-            if magpie_gateway_status; then
+            if magpie_gateway_ready; then
                 MAGPIE_GATEWAY_READY=yes
                 printf 'dotfiles: magpie: the gateway answers on %s\n' "$MAGPIE_GATEWAY"
                 return 0
@@ -1395,8 +2014,73 @@ magpie_dsh_official_state() {
     done
 }
 
+# Whether the public bootstrap's agent selection includes DSH. The bootstrap
+# resolves DOTFILES_AGENTS (or --agents) into DEPLOY_AGENTS before it sources
+# this engine, so a selection that leaves DSH out must leave its compaction
+# field alone. A standalone apply declares no selection: there the wiring row
+# is the only gate, which keeps the managed command's existing behaviour.
+magpie_dsh_compact_selected() {
+    [ "${DEPLOY_AGENTS+x}" = x ] || return 0
+    local agent
+    for agent in ${DEPLOY_AGENTS[@]+"${DEPLOY_AGENTS[@]}"}; do
+        [ "$agent" = dsh ] && return 0
+    done
+    return 1
+}
+
+# The group DSH's compaction uses: the fixed workhorse route, independently of
+# the group the DSH session's main wiring row names. The row is only a gate: it
+# must be enabled and Magpie-owned. A parked, inherited, or repo-owned row
+# leaves the field alone, as does an agent selection that leaves DSH out.
+magpie_dsh_compact_group() {
+    local index
+    for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
+        [ "${MAGPIE_WIRING_AGENT[index]}" = dsh ] || continue
+        [ "${MAGPIE_WIRING_ENABLED[index]}" = yes ] || continue
+        [ "${MAGPIE_WIRING_OWNER[index]}" = magpie ] || continue
+        magpie_dsh_compact_selected || return 1
+        printf '%s' "$MAGPIE_DSH_COMPACT_TARGET"
+        return 0
+    done
+    return 1
+}
+
+# What the pinned CLI reports as DSH's compaction model. The compact_model
+# field prints "<agent> compaction model <value>", where the value is
+# "magpie/<id>" when set and "default" when unset (magpie v0.1.4404:
+# internal/cli/main.go's showField and internal/agent/dsh.go's field). Read it
+# through the CLI only, so Magpie's settings stay Magpie's. An unparsable,
+# successful answer is not an absent one: fail closed rather than guess at a
+# field Magpie owns.
+magpie_dsh_compact_current() {
+    local output token id provider model
+    output=$(magpie_run dsh compact_model 2>/dev/null) || return 1
+    [ -n "$output" ] || return 1
+    case "$output" in
+        *' compaction model '*) ;;
+        *) return 1 ;;
+    esac
+    token=${output##*[[:space:]]}
+    case "$token" in
+        default) printf '' ;;
+        magpie/*)
+            id=${token#magpie/}
+            provider=${id%%/*}
+            model=${id#*/}
+            # A Magpie choice is <provider-or-group>/<model>. Reject a bare
+            # name, an empty side, and any extra separator.
+            [ "$id" != "$provider" ] || return 1
+            [ -n "$model" ] || return 1
+            magpie_name_ok "$provider" || return 1
+            magpie_name_ok "$model" || return 1
+            printf '%s' "$id"
+            ;;
+        *) return 1 ;;
+    esac
+}
+
 # The state the apply records: the providers, the groups with their model
-# order, the wiring, the proxy, and the guard result.
+# order, the wiring, the proxy, the DSH compaction group, and the guard result.
 magpie_state_content() {
     local guard=$1 index role group agent provider
     {
@@ -1420,6 +2104,9 @@ magpie_state_content() {
             printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
         done
         printf 'proxy|current|%s\n' "$MAGPIE_PROXY"
+        if [ -n "$MAGPIE_DSH_COMPACT_GROUP" ]; then
+            printf 'dsh-compact|%s\n' "$MAGPIE_DSH_COMPACT_GROUP"
+        fi
         printf 'codex-guard|%s\n' "$guard"
     }
 }
@@ -1466,11 +2153,12 @@ magpie_state_write() {
 magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local credential output live known current desired change='' entry used rest variable servable
-    local fatal='' missing='' guard='unchanged' backup='' codex_before codex_after forced
+    local fatal='' missing='' manual='' manual_fatal='' guard='unchanged' backup='' codex_before codex_after forced
     local id recorded names name version plugin_state state client_migration=no policies=''
+    local MAGPIE_DSH_COMPACT_GROUP='' MAGPIE_DSH_COMPACT_BEFORE=''
     local -a candidate_list
     platform=$(magpie_platform)
-    if [ "$platform" != macos ]; then
+    if [ "$platform" != macos ] && ! magpie_native_platform; then
         printf 'dotfiles: magpie: Magpie is not available on this platform; skipped\n'
         return 0
     fi
@@ -1481,8 +2169,15 @@ magpie_apply() {
         "${#MAGPIE_PROVIDER_ROLE[@]}" "${#MAGPIE_MODEL_ROLE[@]}" \
         "${#MAGPIE_GROUP_ID[@]}" "${#MAGPIE_WIRING_AGENT[@]}"
 
-    DEPLOY_STEP=magpie-apply.cask
-    magpie_cask_report || true
+    if [ "$platform" = macos ]; then
+        DEPLOY_STEP=magpie-apply.cask
+        magpie_cask_report || true
+    else
+        # A headless host runs the native CLI. The deployment installs the
+        # pinned release it verified, and never the desktop application.
+        DEPLOY_STEP=magpie-apply.cli
+        magpie_install_cli || return 1
+    fi
 
     DEPLOY_STEP=magpie-apply.gateway
     # The gateway is the step's subject. A host that cannot run Magpie is
@@ -1490,19 +2185,46 @@ magpie_apply() {
     # has not opened it once, fails here with the command that fixes it, so a
     # deployment can never leave agents wired to a gateway that is not there.
     if ! magpie_gateway_ensure; then
-        magpie_fail 'the Magpie gateway does not answer; install or open the app and apply again'
+        if magpie_native_platform; then
+            magpie_fail 'the Magpie gateway does not answer; start it with: dotfiles-magpie start'
+        else
+            magpie_fail 'the Magpie gateway does not answer; install or open the app and apply again'
+        fi
         return 1
     fi
 
     DEPLOY_STEP=magpie-apply.proxy
     MAGPIE_PROXY=$(magpie_proxy_resolve || true)
-    [ -n "$MAGPIE_PROXY" ] || { magpie_fail 'cannot resolve the proxy endpoint for the Magpie providers'; return 1; }
-    MAGPIE_PROXY_CURRENT=$(magpie_proxy_current)
-    if [ "$MAGPIE_PROXY_CURRENT" != "$MAGPIE_PROXY" ]; then
-        change="$change
-proxy"
+    MAGPIE_PROXY_TEMPORARY=no
+    if magpie_native_platform && [ -n "$MAGPIE_PROXY" ] &&
+       magpie_deployment_proxy_url "$MAGPIE_PROXY" >/dev/null; then
+        MAGPIE_PROXY_TEMPORARY=yes
     fi
-    printf 'dotfiles: magpie: the providers use the proxy %s\n' "$MAGPIE_PROXY"
+    if [ -z "$MAGPIE_PROXY" ] && ! magpie_native_platform; then
+        magpie_fail 'cannot resolve the proxy endpoint for the Magpie providers'
+        return 1
+    fi
+    if [ -n "$MAGPIE_PROXY" ] && [ "$MAGPIE_PROXY_TEMPORARY" = no ]; then
+        MAGPIE_PROXY_CURRENT=$(magpie_proxy_current)
+        if [ "$MAGPIE_PROXY_CURRENT" != "$MAGPIE_PROXY" ]; then
+            change="$change
+proxy"
+        fi
+        printf 'dotfiles: magpie: the providers use the proxy %s\n' "$MAGPIE_PROXY"
+    else
+        # The deployment's own proxy instance is temporary. The gateway keeps
+        # the proxy it already has, because a setting that points at a port
+        # which stops with the deployment is worse than no setting at all.
+        MAGPIE_PROXY=$(magpie_proxy_current)
+        if [ -n "$MAGPIE_PROXY" ]; then
+            printf 'dotfiles: magpie: the providers keep the proxy %s\n' "$MAGPIE_PROXY"
+        else
+            printf 'dotfiles: magpie: the providers reach the vendors directly\n'
+        fi
+        if [ "$MAGPIE_PROXY_TEMPORARY" = yes ]; then
+            printf 'dotfiles: magpie: the deployment proxy is temporary; it is not written into the gateway settings\n'
+        fi
+    fi
 
     DEPLOY_STEP=magpie-apply.plugins
     # An unreadable plugin list is not an absent plugin: the deployment never
@@ -1558,6 +2280,20 @@ provider:$role"
 $role|$preset|$required|codex-account|none"
             continue
         fi
+        # `magpie provider add` takes a key only as a command-line argument,
+        # and another process on a shared Linux or WSL host can read a
+        # process's argv. The pinned CLI's masked key entry is in `magpie tui`.
+        # The deployment therefore never adds a key-requiring provider there:
+        # the operator provisions it in the TUI, and the next apply finds it
+        # present. The credential is not read here.
+        case "$source" in
+            env:*|json:*)
+                if magpie_native_platform; then
+                    manual="$manual
+$role|$preset|$source|$required"
+                    continue
+                fi ;;
+        esac
         credential=$(magpie_provider_credential "$source" || true)
         if [ -z "$credential" ]; then
             case "$source" in
@@ -1578,8 +2314,26 @@ $role|$preset|$required|$source|$variable"
 provider:$role"
         printf 'dotfiles: magpie: the provider %s will be added from %s\n' "$role" "$source"
     done
+    used=$(magpie_enabled_providers)
+    if [ -n "$manual" ]; then
+        while IFS='|' read -r role preset source required; do
+            [ -n "$role" ] || continue
+            printf 'dotfiles: magpie: the provider %s needs its key provisioned interactively; add the %s preset with: magpie tui\n' \
+                "$role" "$preset" >&2
+            # An absent optional provider, or one no enabled group uses, is only
+            # reported: the catalog promises its absence does not fail the apply.
+            # A required provider an enabled group uses stops the apply here,
+            # before any mutation, with the interactive provisioning guidance.
+            if [ "$required" = yes ] && magpie_list_contains "$used" "$preset"; then
+                manual_fatal=yes
+            fi
+        done <<< "$manual"
+        if [ "$manual_fatal" = yes ]; then
+            magpie_fail 'a key passed to magpie provider add is visible to other processes on a shared host; provision the listed provider(s) interactively in the Magpie TUI with magpie tui, then apply again'
+            return 1
+        fi
+    fi
     if [ -n "$missing" ]; then
-        used=$(magpie_enabled_providers)
         while IFS= read -r entry; do
             [ -n "$entry" ] || continue
             role=${entry%%|*}
@@ -1741,6 +2495,28 @@ wiring:$agent:$group"
         printf 'dotfiles: magpie: the agent %s will be wired to %s\n' "$agent" "$group"
     done
 
+    DEPLOY_STEP=magpie-apply.dsh-compact
+    # Lightweight DSH summaries use the fixed workhorse route, not the group
+    # the enabled DSH wiring row starts sessions on. The row only gates whether
+    # the field is set. The gateway applies the override only to requests it
+    # classifies as DSH compaction and leaves them as asked when the group is
+    # unavailable or disallowed; the setting alone does not prove a cheaper
+    # request. An unreadable field is not an absent one, so fail closed rather
+    # than guess.
+    if MAGPIE_DSH_COMPACT_GROUP=$(magpie_dsh_compact_group); then
+        if ! MAGPIE_DSH_COMPACT_BEFORE=$(magpie_dsh_compact_current); then
+            magpie_fail 'cannot read the DeepSeek Harness compaction model; not changing it'
+            return 1
+        fi
+        if [ "$MAGPIE_DSH_COMPACT_BEFORE" = "$MAGPIE_DSH_COMPACT_GROUP" ]; then
+            printf 'dotfiles: magpie: DeepSeek Harness compaction already uses %s\n' "$MAGPIE_DSH_COMPACT_GROUP"
+        else
+            change="$change
+dsh-compact"
+            printf 'dotfiles: magpie: DeepSeek Harness compaction will use %s\n' "$MAGPIE_DSH_COMPACT_GROUP"
+        fi
+    fi
+
     DEPLOY_STEP=magpie-apply.client-settings
     # The repo-owned Claude Code and Pi settings migrate only here: after the
     # gateway answers, and behind the same backup as the gateway's other client
@@ -1813,6 +2589,12 @@ client-settings"
             if [ "$source" = codex-account ]; then
                 magpie_run provider add "$preset" >/dev/null ||
                     { magpie_fail "cannot add the Magpie provider $preset"; return 1; }
+            elif magpie_native_platform; then
+                # Belt and braces: the planning step already stops a
+                # key-requiring provider on a shared host, so no credential
+                # ever reaches this command line there.
+                magpie_fail "the provider $role is not provisioned; add the $preset preset in the Magpie TUI with: magpie tui"
+                return 1
             else
                 credential=$(magpie_provider_credential "$source" || true)
                 [ -n "$credential" ] || { magpie_fail "the credential for $role is missing"; return 1; }
@@ -1875,6 +2657,22 @@ client-settings"
                 { magpie_fail "cannot wire the agent $agent to $group"; return 1; }
             printf 'dotfiles: magpie: the agent %s is wired to %s\n' "$agent" "$group"
         done <<< "$change"
+
+        DEPLOY_STEP=magpie-apply.dsh-compact
+        if printf '%s\n' "$change" | grep -qx 'dsh-compact'; then
+            # Magpie's own CLI writes its compaction field and preserves the
+            # rest of its settings. The previous value is the reversible
+            # record, kept beside the other pre-change backups at 0600.
+            if [ -n "$backup" ]; then
+                printf '%s\n' "$MAGPIE_DSH_COMPACT_BEFORE" > "$backup/dsh-compact-model.txt" ||
+                    { magpie_fail 'cannot record the previous DeepSeek Harness compaction model'; return 1; }
+                chmod 600 "$backup/dsh-compact-model.txt" ||
+                    { magpie_fail 'cannot protect the previous DeepSeek Harness compaction model'; return 1; }
+            fi
+            magpie_run dsh compact_model "$MAGPIE_DSH_COMPACT_GROUP" >/dev/null ||
+                { magpie_fail 'cannot set the DeepSeek Harness compaction model'; return 1; }
+            printf 'dotfiles: magpie: DeepSeek Harness compaction uses %s\n' "$MAGPIE_DSH_COMPACT_GROUP"
+        fi
 
         DEPLOY_STEP=magpie-apply.client-settings
         if [ "$client_migration" = yes ]; then
@@ -1946,6 +2744,9 @@ magpie_apply_summary() {
         printf 'dotfiles: magpie: the agent %s is shown %s\n' \
             "${MAGPIE_VISIBLE_AGENT[index]}" "${MAGPIE_VISIBLE_NAMES[index]}"
     done
+    if [ -n "$MAGPIE_DSH_COMPACT_GROUP" ]; then
+        printf 'dotfiles: magpie: DeepSeek Harness compaction uses %s\n' "$MAGPIE_DSH_COMPACT_GROUP"
+    fi
 }
 
 # Whether one credential source resolves. The value is never printed.
@@ -2071,7 +2872,7 @@ magpie_test() {
     local -a roles
     local failed=0
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
-    if ! magpie_gateway_status; then
+    if ! magpie_gateway_ready; then
         magpie_fail "the Magpie gateway does not answer on $MAGPIE_GATEWAY_DEFAULT"
         return 1
     fi
@@ -2127,10 +2928,12 @@ magpie_client_settings_file() {
 
 # The required client wiring of one agent, read from the live settings file.
 # The client-settings templates are the writer and this is the same contract:
-# Claude's gateway endpoint and tier aliases, Pi's default provider, model,
-# and thinking level. Two fields are deliberately never read: the credential
-# ANTHROPIC_AUTH_TOKEN, and Claude's own model alias, which the client may
-# rewrite after a run while the tier aliases keep routing to the group.
+# Claude's gateway endpoint, its work tiers on the wired group, and its cheap
+# aliases and classifier on the pinned Terra route; Pi's default provider,
+# model, and thinking level. Three fields are deliberately never read: the
+# credential ANTHROPIC_AUTH_TOKEN, Claude's own model alias, which the client
+# may rewrite after a run, and CLAUDE_CODE_SUBAGENT_MODEL, which the device
+# owns and may override without becoming deployment drift.
 # Prints "state|detail": wired, missing, or unreadable with an empty detail,
 # or drift with the comma-joined key paths that differ. Only the named keys
 # are read; no other setting and no credential value reaches the report.
@@ -2144,11 +2947,11 @@ magpie_client_wiring_state() {
             spec=$(printf '%s\n' \
                 "[\"env\",\"ANTHROPIC_BASE_URL\"]|$MAGPIE_GATEWAY_DEFAULT" \
                 "[\"env\",\"ANTHROPIC_DEFAULT_FABLE_MODEL\"]|$group" \
-                "[\"env\",\"ANTHROPIC_DEFAULT_HAIKU_MODEL\"]|$group" \
+                "[\"env\",\"ANTHROPIC_DEFAULT_HAIKU_MODEL\"]|$MAGPIE_CLAUDE_AUX_MODEL" \
                 "[\"env\",\"ANTHROPIC_DEFAULT_OPUS_MODEL\"]|$group" \
                 "[\"env\",\"ANTHROPIC_DEFAULT_SONNET_MODEL\"]|$group" \
-                "[\"env\",\"ANTHROPIC_SMALL_FAST_MODEL\"]|$group" \
-                "[\"env\",\"CLAUDE_CODE_SUBAGENT_MODEL\"]|$group")
+                "[\"env\",\"ANTHROPIC_SMALL_FAST_MODEL\"]|$MAGPIE_CLAUDE_AUX_MODEL" \
+                "[\"env\",\"CLAUDE_CODE_AUTO_MODE_MODEL\"]|$MAGPIE_CLAUDE_AUX_MODEL")
             ;;
         pi)
             spec=$(printf '%s\n' \
@@ -2208,15 +3011,36 @@ PYTHON
     return 0
 }
 
+# The live DSH compaction field as status reports it. Health comes from what
+# the CLI answers now, never from the "dsh-compact" line in the applied state:
+# a recorded intent can outlive a device that never had the field set. Prints
+# "matched|", "drifted|<live value>", "unreadable|", or "gated|" when neither
+# the wiring nor the agent selection asks for the override.
+magpie_dsh_compact_state() {
+    local current
+    magpie_dsh_compact_group >/dev/null || { printf 'gated|'; return 0; }
+    if ! current=$(magpie_dsh_compact_current); then
+        printf 'unreadable|'
+        return 0
+    fi
+    [ -n "$current" ] || current=default
+    if [ "$current" = "$MAGPIE_DSH_COMPACT_TARGET" ]; then
+        printf 'matched|'
+    else
+        printf 'drifted|%s' "$current"
+    fi
+    return 0
+}
+
 # The state of the gateway, the proxy, the providers, the groups, the wiring,
-# and the last Codex guard result. A missing required piece is a failing
-# status.
+# the live DSH compaction field, and the last Codex guard result. A missing
+# required piece is a failing status.
 magpie_status() {
     local index role preset source required group agent proxy output models
     local known guard='' missing='' state credential version name plugin_state current desired count
-    local enabled report keys
+    local enabled report keys dsh_compact_state
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
-    if magpie_gateway_status; then
+    if magpie_gateway_ready; then
         printf 'gateway|%s|answers\n' "$MAGPIE_GATEWAY"
     else
         printf 'gateway|%s|does not answer\n' "$MAGPIE_GATEWAY_DEFAULT"
@@ -2347,6 +3171,20 @@ magpie_status() {
         fi
     done
     magpie_dsh_official_state
+    dsh_compact_state=$(magpie_dsh_compact_state)
+    case "${dsh_compact_state%%|*}" in
+        matched)
+            printf 'dsh-compact|%s\n' "$MAGPIE_DSH_COMPACT_TARGET"
+            ;;
+        drifted)
+            printf 'dsh-compact|drift (%s)\n' "${dsh_compact_state#*|}"
+            missing="$missing dsh-compact"
+            ;;
+        unreadable)
+            printf 'dsh-compact|unreadable\n'
+            missing="$missing dsh-compact"
+            ;;
+    esac
     if [ -f "$(magpie_state_dir)/state.tsv" ]; then
         guard=$(grep '^codex-guard|' "$(magpie_state_dir)/state.tsv" 2>/dev/null | head -n1)
         [ -n "$guard" ] || guard='codex-guard|unknown'

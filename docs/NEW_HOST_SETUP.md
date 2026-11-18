@@ -158,6 +158,44 @@ macOS, Windows, and WSL workflows run on native runners. A Linux render or
 foreign package resolution is not a substitute for native execution. See
 [the full matrix and evidence map](verification/complete-matrix.md).
 
+### Native Ubuntu acceptance and the Magpie boundary
+
+`tests/native_linux.py` is the native Linux x86_64 acceptance gate. Its runtime
+preflight requires an unprivileged Ubuntu 20.04 or 24.04 Linux x86_64 userspace:
+on macOS it fails before any installation, so a macOS host cannot claim a
+native Linux pass. An emulated or foreign origin must be reported through
+`--execution` rather than presented as native evidence. Its target is a fresh
+synthetic home on that machine, with the account home, credentials, and
+installed tool prefixes excluded from the environment.
+
+The gate first validates the **default public plan**, including its Magpie
+gateway step and `magpie-apply` action, and records that plan in `plan.json`.
+The bootstrap it actually executes then uses `--no-magpie`, so the synthetic
+home never probes, starts, or uses a gateway and never touches real provider
+accounts, credentials, or model traffic. A default-port `magpie status` from
+that home could reach the real account's gateway, so the gate never calls it.
+The report labels the live gateway and the default end-to-end Magpie path as
+**excluded**, not verified.
+
+The pinned native Magpie CLI is checked separately: the gate runs the public
+`dotfiles-magpie install` command in the synthetic home, which verifies the
+release digest without starting a gateway, then confirms the installed binary
+is a regular executable whose version matches the release catalog. A gateway
+lifecycle file in the synthetic home fails the gate.
+
+```sh
+python3 tests/native_linux.py --home /tmp/dotfiles-linux-home \
+  --artifacts /tmp/dotfiles-linux-artifacts \
+  --ubuntu-release 24.04 --execution native
+```
+
+`--home` must be absent, outside the checkout, and distinct from the account
+home; `--artifacts` must be absent or empty. The report records the runtime,
+the default plan, the executed `--no-magpie` commands, the Magpie exclusions,
+and the CLI evidence. Its result is native Linux evidence only; see
+[Magpie deployment](MAGPIE.md) for the separately authorized device check that
+wires a live gateway and provider accounts.
+
 Version updates are proposal-driven. `dotfiles-agents update SELECTION` performs
 the selected transaction; to review or run it manually, use the explicit
 refresh and verification workflow:

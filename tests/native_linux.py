@@ -3,6 +3,12 @@
 The caller owns the Linux runtime, image, resource limits, and network route.
 This gate installs only the default selection; it never claims T9K kernel,
 network-filesystem, legacy-home migration, or native Windows evidence.
+
+The default public plan is validated with Magpie enabled, but the synthetic
+home bootstraps with --no-magpie: no gateway is probed, started, or used and
+no real provider accounts are touched. The pinned native Magpie CLI is
+installed and checked separately, without starting a gateway, because a
+default-port `magpie status` could otherwise reach the real account's gateway.
 """
 import argparse
 import hashlib
@@ -35,6 +41,8 @@ DEFAULT_AGENTS = {"kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder
 LOG_LIMIT = 2 * 1024 * 1024
 TASK_CPUS = 4
 TASK_MEMORY_BYTES = 8 * 1024 ** 3
+MAGPIE_CLI_RELATIVE = ".local/share/dotfiles/magpie/bin/magpie"
+MAGPIE_GATEWAY_PID = ".local/state/dotfiles/magpie/gateway/gateway.pid"
 
 
 def require(condition, message):
@@ -47,6 +55,85 @@ def require_default_agents(plan):
     require(set(plan["agents"]) == DEFAULT_AGENTS and len(plan["agents"]) == len(DEFAULT_AGENTS)
             and {item["name"] for item in plan["agentPackages"]} == DEFAULT_AGENTS | {"codegraph"},
             f"plan does not include all {len(DEFAULT_AGENTS)} default agents and CodeGraph")
+
+
+def require_public_magpie_enabled(plan):
+    """The default public plan must still declare the Magpie gateway step.
+
+    The synthetic home runs with --no-magpie, so checking the public plan keeps
+    the gate honest: a plan that silently dropped Magpie would otherwise pass.
+    """
+    require(plan.get("magpie") is True,
+            "default public plan does not enable the Magpie gateway")
+    require("magpie-apply" in plan.get("actions", []),
+            "default public plan does not include the magpie-apply action")
+
+
+def bootstrap_execution_command(base, profile):
+    """Full default bootstrap for the synthetic home, without gateway wiring."""
+    return [*base, "--profile", profile, "--no-magpie"]
+
+
+def magpie_report_scope():
+    """Report fields that label what the Magpie step does and does not prove."""
+    return {
+        "public_plan": "enabled: the default public plan includes Magpie and magpie-apply",
+        "gateway": "excluded: --no-magpie; no live gateway is probed, started, or used",
+        "provider_accounts": "excluded: no real credentials, accounts, or model traffic in the synthetic home",
+        "cli_installation": "pending: pinned native CLI verified separately without a gateway",
+    }
+
+
+def magpie_cli_pin(source=SOURCE):
+    """The pinned native Linux Magpie CLI from the single release catalog."""
+    catalog = source / "deployment/magpie/releases.tsv"
+    require(catalog.is_file() and not catalog.is_symlink(),
+            "the Magpie release catalog is missing from the source")
+    for line in catalog.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("|")
+        if len(fields) != 5:
+            continue
+        name, version, target, url, digest = fields
+        if name == "magpie" and target == "linux-amd64":
+            require(re.fullmatch(r"[0-9]+(?:\.[0-9]+)+", version) is not None,
+                    "the pinned Magpie version is malformed")
+            require(re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+                    "the pinned Magpie digest is malformed")
+            return {"version": version, "target": target, "url": url, "digest": digest}
+    raise RuntimeError("no native Linux Magpie release is pinned")
+
+
+def require_no_gateway(home):
+    """The synthetic home must hold no gateway lifecycle state."""
+    require(not (home / MAGPIE_GATEWAY_PID).exists(),
+            "Magpie CLI verification started a gateway in the synthetic home")
+
+
+def verify_magpie_cli_install(home, version_command, pin, cli_relative=MAGPIE_CLI_RELATIVE):
+    """Check the installed bytes once, then validate the CLI version, without a gateway.
+
+    The digest of the installed binary is verified before the supplied version
+    command runs, so a substituted executable with a matching version string
+    cannot pass and the large binary is hashed only once. The caller supplies
+    the version command so the native gate keeps its normal bounded command
+    path; no release is downloaded and no gateway is probed or started here.
+    """
+    cli = home / cli_relative
+    require(cli.is_file() and not cli.is_symlink() and os.access(cli, os.X_OK),
+            "pinned Magpie CLI was not installed as a regular executable")
+    digest = pin.get("digest")
+    require(isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest) is not None,
+            "the Magpie catalog pin has no valid digest")
+    actual = hashlib.sha256(cli.read_bytes()).hexdigest()
+    require(actual == digest, "installed Magpie CLI digest differs from the catalog pin")
+    output = version_command()
+    require(first_line_version_matches(output, pin["version"]),
+            "installed Magpie CLI differs from the catalog pin")
+    require_no_gateway(home)
+    return {"version": pin["version"], "target": pin["target"],
+            "cli": cli_relative, "gateway": "not started"}
 
 
 def write_json(path, value):
@@ -448,7 +535,9 @@ def main():
     report = {"schema_version": 1, "status": "running", "profile": "linux-remote-compute",
               "execution": args.execution, "native_t9k_pass": False, "installation_cache": "empty",
               "home": str(args.home), "checks": [], "commands": [], "suites": [],
-              "limits": "Linux userspace evidence; no T9K kernel/netfs/legacy migration or Windows claim"}
+              "magpie": magpie_report_scope(),
+              "limits": "Linux userspace evidence; no T9K kernel/netfs/legacy migration, Windows claim, "
+                        "live Magpie gateway, provider accounts, or end-to-end model path"}
     report["resources_before"] = resource_snapshot()
     report["disk_free_bytes_before"] = shutil.disk_usage(args.artifacts).free
     started = time.monotonic()
@@ -512,6 +601,7 @@ def main():
             require(plan["platform"] == "linux" and plan["arch"] == "x86_64" and plan["role"] == "remote-compute",
                     "plan does not target Linux x86_64 remote compute")
             require_default_agents(plan)
+            require_public_magpie_enabled(plan)
             require(not plan["bundles"] and not plan["settings"]["systemChanges"]
                     and not plan["settings"]["loginShellChanges"] and plan["settings"]["mode"] == "copy",
                     "plan expands beyond default copy-mode user deployment")
@@ -519,8 +609,8 @@ def main():
             return plan
         check("canonical and legacy default plans", planning)
         plan = json.loads((args.artifacts / "plan.json").read_text())
-        full = [*bootstrap, "--profile", "linux-remote-compute"]
-        check("full default bootstrap from empty home and caches",
+        full = bootstrap_execution_command(bootstrap, "linux-remote-compute")
+        check("bootstrap without gateway wiring from empty home and caches",
               lambda: command("bootstrap-first", full, timeout=args.install_timeout) and "completed")
         require(not (args.home / ".codex/auth.json").exists(), "fresh bootstrap created authentication")
         require("REPLACE_ME" in (args.home / ".claude/settings.json").read_text(),
@@ -626,9 +716,27 @@ def main():
             return {"synthetic_auth": "preserved", "settings": "preserved", "history": "preserved",
                     "pixi_and_bun_inventory": "preserved", "managed_files": "stable", "sync": "pending activation",
                     "generated_metadata_changed": len(metadata_changed)}
-        check("full default reapplication and synthetic device preservation", reapplication)
+        check("reapplication without gateway wiring and synthetic device preservation", reapplication)
         check("installed inventory, exact pins, and executable commands after reapplication", pinned_commands)
         check("actual fetched default skill discovery after reapplication", lambda: installed_skills("reapplied"))
+
+        def magpie_cli():
+            # The default public plan was validated with Magpie enabled, but the
+            # install above ran with --no-magpie. Install only the pinned native
+            # CLI through its public command: it verifies the digest and never
+            # probes, starts, or uses a gateway, nor reads provider accounts.
+            pin = magpie_cli_pin()
+            command("magpie-cli-install", [args.home / ".local/bin/dotfiles-magpie", "install"], env=managed)
+            # Check the installed bytes once through the verifier, then let it
+            # run the normal bounded version command; a matching version string
+            # alone is not identity.
+            def version_command():
+                return command("magpie-cli-version", [args.home / MAGPIE_CLI_RELATIVE, "--version"], env=managed)
+            evidence = verify_magpie_cli_install(args.home, version_command, pin)
+            report["magpie"]["cli_installation"] = (
+                "verified: pinned native CLI installed without starting a gateway")
+            return evidence
+        check("pinned native Magpie CLI installation without a gateway", magpie_cli)
 
         test_env = dict(managed, DOTFILES_TEST_PLATFORM="linux", DOTFILES_TEST_ROLE="remote-compute",
                         DOTFILES_TEST_CHEZMOI=str(args.home / ".local/bin/chezmoi"), DOTFILES_TEST_TOOL_HOME=str(args.home),

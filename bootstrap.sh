@@ -99,8 +99,8 @@ Conflicting explicit preset/component flags are errors.
 Every state root is scoped to the target home. System Bash configuration and
 the account login shell change only with their explicit options; auth, history
 imports, and project indexes remain separate actions.
-The Magpie model gateway is wired on macOS unless --no-magpie or
-DOTFILES_MAGPIE=false turns the step off.
+The Magpie model gateway is wired on macOS, Linux, and WSL unless --no-magpie
+or DOTFILES_MAGPIE=false turns the step off.
 HELP
             exit 0 ;;
         --plan) DEPLOY_PLAN=true; shift ;;
@@ -155,25 +155,34 @@ if "$DEPLOY_APPLY_ONLY"; then
 elif "$DEPLOY_AGENTS_ONLY"; then
     DEPLOY_ACTIONS=(install-managers apply-source install-agents)
 fi
-# The Magpie step is on by default on macOS and off everywhere else. It runs
-# after the agents are installed and before the shell is prepared, so the
-# gateway, the agents, and the client settings exist before it wires them.
-DEPLOY_MAGPIE_REASON='Magpie is not available on this platform'
-if [ "$DEPLOY_PLATFORM" = macos ]; then
-    DEPLOY_MAGPIE=true
-    DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
-fi
+# The Magpie step is on by default on macOS, Linux, and WSL, and off on
+# native Windows. It runs after the agents are installed and before the shell
+# is prepared, so the gateway, the agents, and the client settings exist
+# before it wires them.
+DEPLOY_MAGPIE_REASON='Magpie is not available on native Windows'
+case "$DEPLOY_PLATFORM" in
+    macos|linux|wsl)
+        DEPLOY_MAGPIE=true
+        DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
+        ;;
+esac
 if [ "${DOTFILES_MAGPIE:-true}" = false ] || "$CLI_NO_MAGPIE"; then
     DEPLOY_MAGPIE=false
     DEPLOY_MAGPIE_REASON='the Magpie step is disabled'
 fi
-if [ "$DEPLOY_PLATFORM" != macos ]; then
-    DEPLOY_MAGPIE_REASON='Magpie is not available on this platform'
-elif "$DEPLOY_APPLY_ONLY"; then
-    DEPLOY_MAGPIE_REASON='--apply-only applies files without the gateway'
-elif "$DEPLOY_AGENTS_ONLY"; then
-    DEPLOY_MAGPIE_REASON='--agents-only installs agents without the gateway'
-fi
+case "$DEPLOY_PLATFORM" in
+    macos|linux|wsl)
+        if "$DEPLOY_APPLY_ONLY"; then
+            DEPLOY_MAGPIE_REASON='--apply-only applies files without the gateway'
+        elif "$DEPLOY_AGENTS_ONLY"; then
+            DEPLOY_MAGPIE_REASON='--agents-only installs agents without the gateway'
+        fi
+        ;;
+    *)
+        DEPLOY_MAGPIE=false
+        DEPLOY_MAGPIE_REASON='Magpie is not available on native Windows'
+        ;;
+esac
 if "$DEPLOY_MAGPIE" && ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
     actions=()
     for action in "${DEPLOY_ACTIONS[@]}"; do
@@ -230,6 +239,17 @@ fi
 # from HOME so an isolated test environment cannot impersonate the real account.
 if "$DEPLOY_SYSTEM_CONFIG" || "$DEPLOY_LOGIN_SHELL"; then
     assert_real_account_home
+fi
+
+# A full deployment that selects Magpie probes the gateway's shared loopback
+# port. Against a synthetic or foreign home that port belongs to the real
+# account, so fail closed before any state is created. The resolver reads the
+# current account home from the native account database and compares it with
+# the target on the native platform; inherited HOME is never an authority.
+if "$DEPLOY_MAGPIE" && ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
+    if ! installer_real_account_home; then
+        fail 'the Magpie gateway step cannot target a simulated or foreign home; re-run with --no-magpie'
+    fi
 fi
 
 # Refuse pre-existing state directory symlinks before mkdir or installers can

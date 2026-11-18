@@ -53,10 +53,6 @@
     ],
     [
       "env",
-      "CLAUDE_CODE_SUBAGENT_MODEL"
-    ],
-    [
-      "env",
       "CLAUDE_CODE_AUTO_MODE_MODEL"
     ],
     [

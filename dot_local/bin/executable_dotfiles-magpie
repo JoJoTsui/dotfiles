@@ -7,17 +7,20 @@
 set -euo pipefail
 
 usage() {
-    printf 'usage: dotfiles-magpie apply|status|providers|test\n' >&2
+    printf 'usage: dotfiles-magpie apply|status|providers|test|start|stop|install\n' >&2
     printf '  apply      apply the model catalogs to the local gateway\n' >&2
     printf '  status     report the gateway, the providers, the groups, and the wiring\n' >&2
     printf '  providers  report the model provider catalog and its credential sources\n' >&2
     printf '  test [role...]  send one tiny completion to each model role\n' >&2
+    printf '  start      start the native gateway and wait until it answers\n' >&2
+    printf '  stop       stop the gateway this deployment started\n' >&2
+    printf '  install    install the pinned native CLI release\n' >&2
 }
 
 command=${1:-}
 if [ "$#" -gt 0 ]; then shift; fi
 case "$command" in
-    apply|status|providers|test) ;;
+    apply|status|providers|test|start|stop|install) ;;
     -h|--help|help)
         usage
         exit 0
@@ -28,24 +31,30 @@ case "$command" in
         ;;
 esac
 
-# Magpie is a macOS application. A host that cannot run it says so instead of
-# failing on a missing engine. The deployment selector decides the platform,
-# so the command and the deployment step agree.
+# The macOS application and the native CLI are the two ways to run Magpie.
+# The deployment selector decides the platform, so the command and the
+# deployment step agree.
 platform=${DEPLOY_PLATFORM:-}
 if [ -z "$platform" ]; then
     case "$(uname -s)" in
         Darwin) platform=macos ;;
+        Linux)
+            if [ -n "${WSL_DISTRO_NAME:-}${WSL_INTEROP:-}" ]; then platform=wsl; else platform=linux; fi
+            ;;
         *) platform=unsupported ;;
     esac
 fi
-if [ "$platform" != macos ]; then
-    if [ "$command" = apply ]; then
-        printf 'dotfiles: magpie: Magpie is not available on this platform; skipped\n'
-        exit 0
-    fi
-    printf 'dotfiles: magpie: Magpie is not available on this platform\n' >&2
-    exit 1
-fi
+case "$platform" in
+    macos|linux|wsl) ;;
+    *)
+        if [ "$command" = apply ]; then
+            printf 'dotfiles: magpie: Magpie is not available on this platform; skipped\n'
+            exit 0
+        fi
+        printf 'dotfiles: magpie: Magpie is not available on this platform\n' >&2
+        exit 1
+        ;;
+esac
 
 engine="${DOTFILES_MAGPIE_ENGINE:-$HOME/.local/share/dotfiles/magpie/engine.sh}"
 if [ ! -f "$engine" ]; then
@@ -55,9 +64,41 @@ fi
 # shellcheck source=/dev/null
 source "$engine"
 
+# Direct gateway commands probe the device's shared loopback port and can
+# start, stop, or reconfigure a gateway. The bootstrap step guards the
+# deployment path; this is the matching boundary for the command. Both inputs
+# are resolved natively: an overridable platform selector or an inherited HOME
+# is never an authority, so a synthetic or foreign home cannot reach the real
+# account's gateway. Fail closed before any command function runs.
+case "$command" in
+    apply|status|providers|test|start|stop)
+        # $platform comes from the overridable deployment selector; $(uname -s)
+        # is the native kernel. A gateway command is only valid when the two
+        # agree, so a foreign selector cannot turn a synthetic home into a
+        # gateway boundary even when the real-account check is neutralized.
+        direct_platform=''
+        case "$platform:$(uname -s)" in
+            macos:Darwin|linux:Linux|wsl:Linux) direct_platform=$platform ;;
+        esac
+        if [ -z "$direct_platform" ] || ! magpie_real_account_home; then
+            printf 'dotfiles: magpie: the gateway commands require the real account home on a supported platform\n' >&2
+            exit 1
+        fi
+        ;;
+esac
+
 case "$command" in
     apply) magpie_apply "$@" ;;
     status) magpie_status "$@" ;;
     providers) magpie_providers "$@" ;;
     test) magpie_test "$@" ;;
+    start) magpie_start_gateway "$@" ;;
+    stop) magpie_stop_gateway "$@" ;;
+    install)
+        if ! magpie_native_platform; then
+            printf 'dotfiles: magpie: macOS runs the application; install it with: brew install --cask magpie\n' >&2
+            exit 1
+        fi
+        magpie_install_cli
+        ;;
 esac

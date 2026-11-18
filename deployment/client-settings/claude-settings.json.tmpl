@@ -1,22 +1,21 @@
 {
   "enabledPlugins": {"serena@claude-plugins-official": false},
   "env": {
-{{- if and (eq .platform "macos") (eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}
+{{- if and (has .platform (list "macos" "linux" "wsl")) (eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}
     "ANTHROPIC_AUTH_TOKEN": "magpie",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:3425",
     "ANTHROPIC_DEFAULT_FABLE_MODEL": "group/conductor",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "group/conductor",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "codex/gpt-6.1-terra",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "group/conductor",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "group/conductor",
-    "ANTHROPIC_SMALL_FAST_MODEL": "group/conductor",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "group/conductor",
+    "ANTHROPIC_SMALL_FAST_MODEL": "codex/gpt-6.1-terra",
     "CLAUDE_CODE_AUTO_MODE_MODEL": "codex/gpt-6.1-terra",
 {{- end }}
     "API_TIMEOUT_MS": "3000000",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "DISABLE_AUTOUPDATER": "1"
   },
-{{- if and (eq .platform "macos") (eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}
+{{- if and (has .platform (list "macos" "linux" "wsl")) (eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}
   "model": "opus",
 {{- end }}
   "alwaysThinkingEnabled": true,
