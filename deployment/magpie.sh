@@ -600,7 +600,7 @@ magpie_picked_write() {
     {
         for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
             if [ "${MAGPIE_PICKED_AGENT[index]}" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
-            if [ "${MAGPIE_PICKED_AGENT[index]}" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
+            if magpie_codex_profile_skipped "${MAGPIE_PICKED_AGENT[index]}"; then continue; fi
             printf '%s|%s\n' "${MAGPIE_PICKED_AGENT[index]}" "${MAGPIE_PICKED_MODELS[index]}"
         done
     } > "$input" || { rm -f "$input"; return 1; }
@@ -2112,7 +2112,7 @@ magpie_state_content() {
         for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
             agent=${MAGPIE_WIRING_AGENT[index]}
             if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
-            if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
+            if magpie_codex_profile_skipped "$agent"; then continue; fi
             printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
         done
         if ! magpie_dsh_compact_selected; then
@@ -2316,6 +2316,17 @@ magpie_codex_profile_enabled() {
         fi
     done
     magpie_agent_selected codex
+}
+
+# Whether an agent's Codex row is skipped by the deployment. Only Codex has
+# a separate profile, and it is skipped when that profile is not enabled.
+# Every site that skips an agent asks this one question, so the sites
+# cannot drift apart.
+magpie_codex_profile_skipped() {
+    local agent=$1
+    [ "$agent" = codex ] || return 1
+    magpie_codex_profile_enabled && return 1
+    return 0
 }
 
 # The Codex home the deployment writes the separate profile into.
@@ -2787,7 +2798,7 @@ group-add:$group"
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
         agent=${MAGPIE_VISIBLE_AGENT[index]}; desired=${MAGPIE_VISIBLE_NAMES[index]}
         if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
-        if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
+        if magpie_codex_profile_skipped "$agent"; then continue; fi
         current=$(magpie_visible_names "$agent" || true)
         if [ "$(magpie_names_sorted "$current")" = "$(magpie_names_sorted "$desired")" ]; then
             printf 'dotfiles: magpie: the agent %s is shown %s\n' "$agent" "$desired"
@@ -2802,7 +2813,7 @@ visible:$agent"
     for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
         agent=${MAGPIE_PICKED_AGENT[index]}; desired=${MAGPIE_PICKED_MODELS[index]}
         if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
-        if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
+        if magpie_codex_profile_skipped "$agent"; then continue; fi
         current=$(magpie_picked_current "$agent") ||
             { magpie_fail "cannot read the picked models for $agent"; return 1; }
         if [ "$(magpie_names_sorted "$current")" = "$(magpie_names_sorted "$desired")" ]; then
@@ -2819,7 +2830,7 @@ picked:$agent"
         agent=${MAGPIE_WIRING_AGENT[index]}; group=${MAGPIE_WIRING_GROUP[index]}
         owner=${MAGPIE_WIRING_OWNER[index]}; enabled=${MAGPIE_WIRING_ENABLED[index]}
         if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
-        if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
+        if magpie_codex_profile_skipped "$agent"; then continue; fi
         [ "$enabled" = yes ] || continue
         [ "$owner" = magpie ] || continue
         case "$agent" in
@@ -3006,6 +3017,12 @@ client-settings"
                 [ ! -L "$HOME/.codex/magpie.config.toml" ] &&
                     [ -f "$HOME/.codex/magpie.config.toml" ] ||
                     { magpie_fail 'the Codex profile is not a regular file'; return 1; }
+                # The profile carries the gateway bearer credential, so it is
+                # private before the writer runs: a profile that a device
+                # chmod, a copy, or an older run left at another mode never
+                # receives the credential while another user can read it.
+                chmod 600 "$HOME/.codex/magpie.config.toml" ||
+                    { magpie_fail 'cannot protect the Codex profile before it is written'; return 1; }
                 magpie_codex_profile_pending_write \
                     "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
                     "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
@@ -3125,7 +3142,7 @@ magpie_apply_summary() {
             printf 'dotfiles: magpie: the agent dsh is outside the selection and is left alone\n'
             continue
         fi
-        if [ "$agent" = codex ] && ! magpie_codex_profile_enabled; then
+        if magpie_codex_profile_skipped "$agent"; then
             printf 'dotfiles: magpie: the agent codex is outside the selection and is left alone\n'
             continue
         fi
@@ -3133,7 +3150,7 @@ magpie_apply_summary() {
     done
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
         if [ "${MAGPIE_VISIBLE_AGENT[index]}" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
-        if [ "${MAGPIE_VISIBLE_AGENT[index]}" = codex ] && ! magpie_codex_profile_enabled; then continue; fi
+        if magpie_codex_profile_skipped "${MAGPIE_VISIBLE_AGENT[index]}"; then continue; fi
         printf 'dotfiles: magpie: the agent %s is shown %s\n' \
             "${MAGPIE_VISIBLE_AGENT[index]}" "${MAGPIE_VISIBLE_NAMES[index]}"
     done

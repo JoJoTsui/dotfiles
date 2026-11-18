@@ -27,6 +27,22 @@ MANIFEST = SOURCE / "deployment/rehearsal/existing-mac-inputs.tsv"
 DEVICE_TOKEN = "synthetic-device-token"
 DEVICE_API_KEY = "synthetic-device-api-key"
 
+# A trust digest is an integrity value, not a credential: it carries no
+# secret, and it has the credential shape of a long hexadecimal string.
+SYNTHETIC_DIGEST = "sha256:" + "0123456789abcdef" * 4
+SYNTHETIC_CONTENT_DIGEST = "sha256:" + "fedcba9876543210" * 4
+SYNTHETIC_UNKNOWN_VALUE = "sk-syntheticunknownvalue123456"
+
+# A fabricated Codex configuration that carries the device's hook trust
+# digests next to ordinary settings.
+DIGEST_CODEX_CONFIG = (
+    'model = "device-model"\n'
+    '[hooks.state."synthetic-hook"]\n'
+    'trusted_hash = "%s"\n'
+    'trusted_content_hash = "%s"\n'
+    'state = "trusted"\n'
+) % (SYNTHETIC_DIGEST, SYNTHETIC_CONTENT_DIGEST)
+
 DEVICE_SETTINGS = {
     ".claude/settings.json": json.dumps({
         "model": "device-model",
@@ -63,6 +79,16 @@ DEVICE_SETTINGS = {
                                   "hooks": [{"type": "command", "command": "device-policy"}]}]},
     }),
 }
+
+
+def load_helper():
+    """The rehearsal helper as a module, so that its seams can be driven."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("rehearse_settings", HELPER)
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    return helper
 
 
 class RehearsalTests(unittest.TestCase):
@@ -745,6 +771,223 @@ class RehearsalTests(unittest.TestCase):
         self.assertIn("TOML", result.stderr)
         self.assertFalse(self.projection.exists())
         self.assertFalse(self.report.exists())
+
+    def test_a_digest_named_field_with_a_credential_shaped_value_is_projected(self):
+        self.write_device_file(".codex/config.toml", DIGEST_CODEX_CONFIG)
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = tomllib.loads((self.projection / ".codex/config.toml").read_text())
+        state = projected["hooks"]["state"]["synthetic-hook"]
+        # A trust digest is an integrity value: it is projected as it is.
+        self.assertEqual(state["trusted_hash"], SYNTHETIC_DIGEST)
+        self.assertEqual(state["trusted_content_hash"], SYNTHETIC_CONTENT_DIGEST)
+        self.assertEqual(state["state"], "trusted")
+        self.assertEqual(projected["model"], "device-model")
+
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["totals"]["integrity_fields"], 2)
+        self.assertEqual(report["totals"]["unknown_credential_fields"], 0)
+        self.assertEqual(report["totals"]["omitted_fields"], 0)
+        self.assertEqual(report["totals"]["redacted_fields"], 0)
+        self.assertTrue(report["source_unchanged"])
+
+    def test_a_credential_named_field_is_redacted_even_when_it_is_hash_named(self):
+        self.write_device_file(".codex/config.toml", (
+            'model = "device-model"\n'
+            'api_key_hash = "%s"\n'
+            'token_hash = "%s"\n'
+            'trusted_hash = "%s"\n'
+        ) % (SYNTHETIC_DIGEST, SYNTHETIC_DIGEST, SYNTHETIC_DIGEST))
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = tomllib.loads((self.projection / ".codex/config.toml").read_text())
+        # The credential-name rule wins over the integrity rule.
+        self.assertEqual(projected["api_key_hash"], "<redacted>")
+        self.assertEqual(projected["token_hash"], "<redacted>")
+        self.assertEqual(projected["trusted_hash"], SYNTHETIC_DIGEST)
+
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["totals"]["redacted_fields"], 2)
+        self.assertEqual(report["totals"]["integrity_fields"], 1)
+        text = self.report.read_text()
+        self.assertNotIn(SYNTHETIC_DIGEST, text)
+
+    def test_an_unknown_credential_shaped_value_under_an_ordinary_name_still_fails_closed(self):
+        self.write_device_file(".codex/config.toml", (
+            'model = "device-model"\n'
+            'device_note = "%s"\n'
+            '[hooks.state."synthetic-hook"]\n'
+            'trusted_hash = "%s"\n'
+        ) % (SYNTHETIC_UNKNOWN_VALUE, SYNTHETIC_DIGEST))
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("credential-shaped", result.stderr)
+        self.assertNotIn(SYNTHETIC_UNKNOWN_VALUE, result.stdout + result.stderr)
+        self.assertFalse(self.projection.exists())
+        self.assertFalse(self.report.exists())
+
+    def test_an_unknown_credential_shaped_value_is_omitted_with_a_count_beside_digests(self):
+        self.write_device_file(".codex/config.toml", (
+            'model = "device-model"\n'
+            'device_note = "%s"\n'
+            '[hooks.state."synthetic-hook"]\n'
+            'trusted_hash = "%s"\n'
+        ) % (SYNTHETIC_UNKNOWN_VALUE, SYNTHETIC_DIGEST))
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project("--unknown-credential-policy", "omit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = tomllib.loads((self.projection / ".codex/config.toml").read_text())
+        self.assertNotIn("device_note", projected)
+        # The digest is not unknown data: it is projected even under the
+        # alternative policy.
+        self.assertEqual(projected["hooks"]["state"]["synthetic-hook"]["trusted_hash"],
+                         SYNTHETIC_DIGEST)
+
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["totals"]["omitted_fields"], 1)
+        self.assertEqual(report["totals"]["unknown_credential_fields"], 1)
+        self.assertEqual(report["totals"]["integrity_fields"], 1)
+        self.assertNotIn(SYNTHETIC_UNKNOWN_VALUE, self.report.read_text())
+
+    def test_the_projected_record_count_of_a_file_with_digests_matches_the_source(self):
+        self.write_device_file(".codex/config.toml", DIGEST_CODEX_CONFIG)
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        report = json.loads(self.report.read_text())
+        entry = report["files"][0]
+        self.assertEqual(entry["status"], "projected")
+        self.assertEqual(entry["projected"]["records"], entry["source"]["records"])
+        self.assertEqual(entry["source"]["records"], 4)
+        self.assertEqual(report["totals"]["projected_records"],
+                         report["totals"]["records"])
+
+    def test_the_hook_trust_digests_survive_the_public_bootstrap(self):
+        self.write_device_file(".codex/config.toml", DIGEST_CODEX_CONFIG)
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        applied = self.deploy()
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+
+        merged = tomllib.loads((self.projection / ".codex/config.toml").read_text())
+        state = merged["hooks"]["state"]["synthetic-hook"]
+        self.assertEqual(state["trusted_hash"], SYNTHETIC_DIGEST)
+        self.assertEqual(state["trusted_content_hash"], SYNTHETIC_CONTENT_DIGEST)
+        self.assertEqual(state["state"], "trusted")
+
+    def test_an_oauth_table_key_leaf_is_redacted_by_the_name_of_its_table(self):
+        # A credential leaf under an `oauth` table carries a name that says
+        # nothing on its own: only the table says that the leaf holds a
+        # credential, and a client may store the credential itself there.
+        self.write_device_file(".kimi-code/config.toml", (
+            'oauth_provider = "managed:kimi-code"\n'
+            '\n'
+            '[providers."managed:kimi-code".oauth]\n'
+            'key = "synthetic-oauth-reference"\n'
+            'storage = "file"\n'
+            'host = "https://oauth.example.invalid"\n'
+        ))
+        self.write_manifest([".kimi-code/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = tomllib.loads((self.projection / ".kimi-code/config.toml").read_text())
+        oauth = projected["providers"]["managed:kimi-code"]["oauth"]
+        self.assertEqual(oauth["key"], "<redacted>")
+        # The other names under the table are not credentials: an enum, a
+        # URL, and a provider name keep their values.
+        self.assertEqual(oauth["storage"], "file")
+        self.assertEqual(oauth["host"], "https://oauth.example.invalid")
+        # A provider name outside an `oauth` table is not a credential.
+        self.assertEqual(projected["oauth_provider"], "managed:kimi-code")
+
+        report = json.loads(self.report.read_text())
+        entry = report["files"][0]
+        self.assertEqual(entry["redacted_fields"], 1)
+        self.assertEqual(report["totals"]["redacted_fields"], 1)
+        # Redaction replaces a value in place, so the record count is kept.
+        self.assertEqual(entry["projected"]["records"], entry["source"]["records"])
+        self.assertNotIn("synthetic-oauth-reference", self.report.read_text())
+
+    def test_an_oauth_object_key_leaf_is_redacted_in_a_json_document(self):
+        self.write_device_file(".kimi-code/settings.json", json.dumps({
+            "provider": "managed:kimi-code",
+            "oauth": {"key": "synthetic-oauth-reference", "storage": "file"},
+        }))
+        self.write_manifest([".kimi-code/settings.json\tjson\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = json.loads((self.projection / ".kimi-code/settings.json").read_text())
+        self.assertEqual(projected["oauth"]["key"], "<redacted>")
+        self.assertEqual(projected["oauth"]["storage"], "file")
+        self.assertEqual(projected["provider"], "managed:kimi-code")
+
+        report = json.loads(self.report.read_text())
+        entry = report["files"][0]
+        self.assertEqual(entry["redacted_fields"], 1)
+        self.assertEqual(entry["projected"]["records"], entry["source"]["records"])
+        self.assertNotIn("synthetic-oauth-reference", self.report.read_text())
+
+    def test_the_end_of_run_fingerprints_are_reported_next_to_the_read_ones(self):
+        self.write_manifest([".pi/agent/settings.json\tjson\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        report = json.loads(self.report.read_text())
+        self.assertTrue(report["source_unchanged"])
+        entry = report["files"][0]
+        for key in ("sha256", "mode", "mtime_ns"):
+            self.assertEqual(entry["source_final"][key], entry["source"][key])
+
+    def test_a_source_that_changes_after_the_read_is_reported_as_changed(self):
+        # The change is driven through the helper's own end-of-run pass, so
+        # the verdict does not depend on a race.
+        helper = load_helper()
+        self.write_manifest([".pi/agent/settings.json\tjson\trequired"])
+        original = helper.final_fingerprints
+        changed = []
+
+        def mutate_then_fingerprint(source_home, relatives):
+            if not changed:
+                changed.append(True)
+                path = Path(source_home) / ".pi/agent/settings.json"
+                path.write_text(path.read_text() + "\n")
+            return original(source_home, relatives)
+
+        helper.final_fingerprints = mutate_then_fingerprint
+        try:
+            status = helper.main([
+                "--source-home", str(self.home),
+                "--manifest", str(self.manifest),
+                "--projection", str(self.projection),
+                "--report", str(self.report),
+            ])
+        finally:
+            helper.final_fingerprints = original
+        self.assertEqual(status, 0)
+
+        report = json.loads(self.report.read_text())
+        self.assertFalse(report["source_unchanged"])
+        entry = report["files"][0]
+        self.assertNotEqual(entry["source_final"]["sha256"], entry["source"]["sha256"])
 
 
 if __name__ == "__main__":

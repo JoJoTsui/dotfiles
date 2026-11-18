@@ -210,6 +210,19 @@ projection keeps private permissions, and the report holds paths, counts, and
 checksums only, with the source checksum taken from the bytes that were read
 and the mode and modification time sampled around the read.
 
+A field whose name says that it holds an integrity value is not a credential,
+even when its value has a credential shape: the last segment of the name is
+`hash`, `digest`, `checksum`, `fingerprint`, `sha`, `sha256`, `sha512`, or
+`comp_hash`. A hook trust digest (`trusted_hash`, `trusted_content_hash`)
+carries no secret, and it is the device-local state that the rehearsal has to
+carry into the projection, because the projection is what proves that the
+deployment preserves it. Such a value is projected as it is and counted as an
+integrity value in the value-free report. The credential-name rule wins over
+the integrity rule: `api_key_hash` is still redacted. Every other unknown
+credential-shaped value keeps the existing behaviour — the default policy fails
+the rehearsal closed, and `--unknown-credential-policy omit` drops the field
+and counts it.
+
 Rehearse the merge against the projection with the ordinary bootstrap:
 
 ```bash

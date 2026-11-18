@@ -54,6 +54,11 @@ thinking levels) that would drift from Magpie's catalog.
   starts new gateway sessions. Resume must restore the saved provider, not
   migrate thread metadata. A combined in-session model picker was rejected
   because it changes the base configuration; a provider-definitions-only
-  resume profile still needs isolated runtime verification. See
+  resume layer still needs isolated runtime verification. See
   [the Codex verification boundary](../MAGPIE.md#resume-without-switching-a-threads-provider)
   before application; synthetic profile tests do not establish live resume.
+  Amended by
+  [the neutral resume layer ADR](0015-neutral-codex-resume-layer.md): the
+  provider-definitions-only layer is a managed command, and its isolated
+  runtime verification against two fake providers is recorded there and in
+  `docs/MAGPIE.md`.

@@ -261,3 +261,9 @@ _Avoid_: Agent setup, agent install
 The repository-owned list of model providers, model ids and routing groups the
 deployment applies to the gateway. It never carries a credential.
 _Avoid_: Provider catalog, agent catalog
+
+**Provider-preserving resume**:
+Resuming a thread so that it keeps the provider, the model, and the reasoning
+effort it saved. A layer that carries provider definitions only preserves it;
+a layer that selects a provider, a model, or an effort replaces it.
+_Avoid_: Provider switch, retagging, migration

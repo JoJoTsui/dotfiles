@@ -270,7 +270,7 @@ can be retained safely during migration. See the
 | Agent | Managed file(s) | Local-only / secrets | Notes |
 | --- | --- | --- | --- |
 | **Claude Code** | merged `~/.claude/settings.json`, owned MCP in `~/.claude.json` | OAuth fields, plugins, hooks, statusline, `settings.local.json` | Magpie gateway at `127.0.0.1:3425`, model `group/conductor`; CodeGraph stdio enabled; T9K workarounds → `docs/CLAUDE_SETUP_T9K.md` |
-| **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
+| **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included; resume a thread with `dotfiles-codex-resume`, which keeps its saved provider, model, and effort |
 | **kimi-code** | merged `~/.kimi-code/config.toml`, `tui.toml`, owned `mcp.json` entry | `credentials/`, `oauth/`, sessions | key default from `KIMI_API_KEY`; `kimi login` per host; CodeGraph stdio enabled |
 | **pi** | `~/.pi/agent/settings.json`; `models.json` is Magpie-owned | `auth.json` (MiniMax key), `sessions/`, `trust.json` | Magpie provider, model `group/workhorse`; Magpie generates `models.json`; `pi auth login` per host |
 | **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; CodeGraph MCP, no dotfiles-managed proxy providers; remote profile ignores update events |
@@ -339,7 +339,9 @@ The step runs on macOS by default and is turned off with `--no-magpie` or
 it and never installs it. Claude Code runs on `group/conductor`: Codex
 GPT-6.1 Sol at medium, then the paid OpenAI API's GPT-6.1 Sol, then Kimi
 K3.1 Pro at max. `group/openai-stack` keeps GPT-6.1 Terra for manual use. Pi
-and `dsh` run on `group/workhorse` (MiniMax and DeepSeek, both at max). Codex stays on its own
+and `dsh` run on `group/workhorse` (MiniMax and DeepSeek, both at max). The
+deployment writes the separate Magpie profile `~/.codex/magpie.config.toml`
+(mode 0600), which only `codex -p magpie` uses; plain `codex` keeps its own
 ChatGPT Pro configuration, which the deployment never writes. Provider
 credentials are read from the stores that already hold them; the Kimi Code
 China plan key lives in `~/.config/dotfiles/magpie.env` as
