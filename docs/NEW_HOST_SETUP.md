@@ -183,6 +183,12 @@ release digest without starting a gateway, then confirms the installed binary
 is a regular executable whose version matches the release catalog. A gateway
 lifecycle file in the synthetic home fails the gate.
 
+The report also records the installed DSH TUI automation adapter's own
+capability verdict for the pinned DSH runtime as `validated`, `unvalidated`, or
+`unknown`. This verdict is separate from the installation result and does not
+establish headless profile wiring, a model request, or Magpie routing. An
+unvalidated or unknown adapter is not headless automation acceptance.
+
 ```sh
 python3 tests/native_linux.py --home /tmp/dotfiles-linux-home \
   --artifacts /tmp/dotfiles-linux-artifacts \

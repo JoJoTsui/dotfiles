@@ -30,6 +30,7 @@ try:
 except ModuleNotFoundError:
     tomllib = None
 
+from dsh_adapter import capability_status
 from pins import common_pin, manager_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -82,6 +83,15 @@ def magpie_report_scope():
         "provider_accounts": "excluded: no real credentials, accounts, or model traffic in the synthetic home",
         "cli_installation": "pending: pinned native CLI verified separately without a gateway",
     }
+
+
+def probe_dsh_adapter(home, installed_version, command):
+    """Record adapter self-validation, not headless execution or routing."""
+    try:
+        output = command([home / ".local/bin/dst", "cli", "capabilities", "--json"])
+    except (RuntimeError, OSError, subprocess.SubprocessError):
+        return {"status": "unknown"}
+    return capability_status(output, installed_version)
 
 
 def magpie_cli_pin(source=SOURCE):
@@ -661,6 +671,11 @@ def main():
                             f"command differs from its catalog version: {exposed}")
                 versions[exposed] = output.strip().splitlines()[0]
             report["versions"] = versions
+            dsh = next(package for package in plan["agentPackages"] if package["name"] == "dsh")
+            report["dsh_adapter"] = probe_dsh_adapter(
+                args.home, dsh["version"],
+                lambda arguments: command("dsh-adapter-capabilities", arguments,
+                                          env=managed, cwd=args.home, timeout=60))
             report.setdefault("managed_snapshot", snapshot(args.home, plan))
             return {"commands": len(versions), "installed_environments": len(installed)}
         check("regular managed files, installed pins, and executable commands", pinned_commands)

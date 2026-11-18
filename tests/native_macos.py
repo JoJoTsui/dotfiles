@@ -19,6 +19,8 @@ import sys
 import tempfile
 import time
 
+from dsh_adapter import capability_status
+
 SOURCE = Path(__file__).resolve().parents[1]
 MIRROR = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
@@ -336,16 +338,9 @@ def check_dsh_adapter(home, installed_version, env):
                      env=env, cwd=home, timeout=60, allow_failure=True)
         if result.returncode != 0:
             return {"status": "unknown"}
-        data = json.loads(result.stdout)
-    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+    except (OSError, subprocess.TimeoutExpired):
         return {"status": "unknown"}
-    if not isinstance(data, dict) or data.get("runtimeVersion") != installed_version:
-        return {"status": "unknown"}
-    validated = data.get("validated")
-    if not isinstance(validated, bool):
-        return {"status": "unknown"}
-    return {"status": "validated" if validated else "unvalidated",
-            "runtime_version": installed_version}
+    return capability_status(result.stdout, installed_version)
 
 
 def check_pinned_tools(home, plan, report):

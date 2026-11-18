@@ -50,6 +50,38 @@ class LinuxDefaultAgentSelectionTests(unittest.TestCase):
                     native_linux.require_default_agents(narrowed)
 
 
+class LinuxDshAdapterProbeTests(unittest.TestCase):
+    def test_the_gate_reports_an_unvalidated_installed_adapter(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-linux-dsh-") as temporary:
+            home = Path(temporary)
+            launcher = home / ".local/bin/dst"
+            launcher.parent.mkdir(parents=True)
+            launcher.write_text(
+                "#!/bin/sh\n"
+                "[ \"$*\" = 'cli capabilities --json' ] || exit 2\n"
+                "printf '%s\\n' '{\"runtimeVersion\":\"0.2.2-rc.1\",\"validated\":false}'\n")
+            launcher.chmod(0o755)
+            records = []
+            def run_probe(arguments):
+                return native_linux.run(arguments, env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
+                                        cwd=home, timeout=10, log=home / "probe.log", records=records)
+            result = native_linux.probe_dsh_adapter(home, "0.2.2-rc.1", run_probe)
+            self.assertEqual(result, {"status": "unvalidated", "runtime_version": "0.2.2-rc.1"})
+            self.assertEqual(records[0]["command"][1:], ["cli", "capabilities", "--json"])
+            cases = (
+                ('{"runtimeVersion":"0.2.2-rc.1","validated":true}', 0, "validated"),
+                ('{"runtimeVersion":"0.2.2-rc.5","validated":false}', 0, "unknown"),
+                ('{"runtimeVersion":"0.2.2-rc.1","validated":"false"}', 0, "unknown"),
+                ('invalid-json', 0, "unknown"),
+                ('{"runtimeVersion":"0.2.2-rc.1","validated":true}', 3, "unknown"),
+            )
+            for output, exit_code, expected in cases:
+                with self.subTest(output=output, exit_code=exit_code):
+                    launcher.write_text(f"#!/bin/sh\nprintf '%s\\n' '{output}'\nexit {exit_code}\n")
+                    self.assertEqual(native_linux.probe_dsh_adapter(
+                        home, "0.2.2-rc.1", run_probe)["status"], expected)
+
+
 class LinuxSuiteAuditTests(unittest.TestCase):
     def test_native_history_exclusions_are_named_and_other_required_skips_fail(self):
         summary = {"tests_run": 8, "successful": True, "skipped": [{
