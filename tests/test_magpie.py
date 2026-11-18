@@ -55,6 +55,8 @@ elif argv[:2] == ["provider", "add"]:
     if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX") == "1":
         codex = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
         codex.write_text(codex.read_text() + "\\n# changed\\n")
+    if os.environ.get("FAKE_MAGPIE_FAIL_PROVIDER_ADD") == "1":
+        sys.exit(1)
     providers = load("providers.json", [])
     if argv[2] not in providers:
         providers.append(argv[2])
@@ -474,8 +476,13 @@ class MagpieApplyTests(unittest.TestCase):
                 self.wfile.write(body)
 
             def do_GET(self):
+                models = self.server.models
+                if self.server.provider_state is not None:
+                    path = self.server.provider_state / "providers.json"
+                    providers = json.loads(path.read_text()) if path.exists() else []
+                    models = [model for model in models if model.split("/", 1)[0] in providers]
                 self.reply(200, {"object": "list",
-                                 "data": [{"id": model} for model in self.server.models]})
+                                 "data": [{"id": model} for model in models]})
 
             def do_POST(self):
                 length = int(self.headers.get("Content-Length") or 0)
@@ -493,6 +500,7 @@ class MagpieApplyTests(unittest.TestCase):
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         server.completions = []
         server.models = list(MODELS)
+        server.provider_state = None
         server.reject_completions = False
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return server
@@ -675,8 +683,8 @@ class MagpieApplyTests(unittest.TestCase):
     def test_the_apply_runs_its_commands_in_the_declared_order(self):
         self.assertEqual(self.apply().returncode, 0)
         commands = self.commands()
-        order = ["settings set proxy", "plugin add npm:@magpie-community/opencode-zed-auth@0.1.19",
-                 "provider add codex",
+        order = ["provider add codex", "settings set proxy",
+                 "plugin add npm:@magpie-community/opencode-zed-auth@0.1.19",
                  "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
                  "visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
                  "pi group/workhorse", "dsh group/workhorse"]
@@ -754,14 +762,14 @@ class MagpieApplyTests(unittest.TestCase):
                          ["visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
                           "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn"])
 
-    def test_the_apply_installs_the_pinned_plugin_before_the_providers(self):
+    def test_the_apply_registers_the_account_before_installing_the_plugin(self):
         result = self.apply()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         commands = self.commands()
         installs = [command for command in commands
                     if command == "plugin add npm:@magpie-community/opencode-zed-auth@0.1.19"]
         self.assertEqual(len(installs), 1, commands)
-        self.assertLess(commands.index(installs[0]), commands.index("provider add codex"))
+        self.assertLess(commands.index("provider add codex"), commands.index(installs[0]))
         self.assertNotIn("plugin on zed", commands)
 
     def test_a_fresh_homes_empty_plugin_array_installs_the_pin_once(self):
@@ -991,6 +999,43 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         groups = json.loads((self.state / "groups.json").read_text())
         self.assertEqual(groups["conductor"], "codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,kimi-code-cn/k3.1-pro:max")
+
+    def test_new_chatgpt_provider_is_added_before_resolving_its_models(self):
+        self.server.provider_state = self.state
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("provider add codex", self.commands())
+        groups = json.loads((self.state / "groups.json").read_text())
+        self.assertIn("codex/gpt-6.2-sol:medium", groups["conductor"])
+        backups = list((self.home / ".local/state/dotfiles/magpie/backups").iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / ".codex/config.toml").read_text(), 'model = "gpt-6-luna"\n')
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.commands().count("provider add codex"), 1)
+
+    def test_failed_provider_registration_still_checks_codex_guard(self):
+        result = self.apply(environment={"FAKE_MAGPIE_TOUCH_CODEX": "1",
+                                         "FAKE_MAGPIE_FAIL_PROVIDER_ADD": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("the Codex configuration changed during the apply", result.stderr)
+        backups = list((self.home / ".local/state/dotfiles/magpie/backups").iterdir())
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / ".codex/config.toml").read_text(), 'model = "gpt-6-luna"\n')
+        self.assertFalse(self.state_file().exists())
+
+    def test_missing_model_after_provider_registration_preserves_backup_and_client_state(self):
+        self.server.provider_state = self.state
+        self.server.models = [model for model in MODELS if model != "codex/gpt-6.1-terra"]
+        result = self.apply()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("chatgpt.terra has no model", result.stderr)
+        self.assertEqual(self.commands().count("provider add codex"), 1)
+        self.assertFalse(any(command.startswith(("group add ", "visible claude ", "pi ", "dsh "))
+                             for command in self.commands()))
+        self.assertFalse(self.state_file().exists())
+        backups = list((self.home / ".local/state/dotfiles/magpie/backups").iterdir())
+        self.assertEqual(len(backups), 1)
 
     def test_missing_required_chatgpt_account_stops_before_gateway_mutation(self):
         result = self.apply(environment={"FAKE_MAGPIE_NO_ACCOUNT": "1"})

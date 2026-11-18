@@ -2163,7 +2163,7 @@ magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local output live known current desired change='' entry used rest variable servable
     local fatal='' missing='' manual='' manual_fatal='' guard='unchanged' backup='' codex_before codex_after forced
-    local id recorded names name version plugin_state state client_migration=no policies=''
+    local id recorded names name version plugin_state state status client_migration=no policies=''
     local MAGPIE_DSH_COMPACT_GROUP='' MAGPIE_DSH_COMPACT_BEFORE=''
     local -a candidate_list
     platform=$(magpie_platform)
@@ -2342,6 +2342,36 @@ $role (source: $source; variable: $variable)"
         done <<< "$fatal"
         magpie_fail 'a required model provider has no credential'
         return 1
+    fi
+
+    # Model discovery depends on an account provider being registered first.
+    # Back up and guard Codex before this one credential-free mutation; if a
+    # later model check fails the provider and backup remain for the next run.
+    codex_before=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+    if printf '%s\n' "$change" | grep -q '^provider:'; then
+        DEPLOY_STEP=magpie-apply.backup
+        backup=$(magpie_backup_create "$(magpie_backup_stamp)" "${DEPLOY_MAGPIE_BACKUP_SOURCE:-$HOME}") || return 1
+        printf 'dotfiles: magpie: the client files are backed up in %s\n' "$backup"
+        DEPLOY_STEP=magpie-apply.providers
+        while IFS= read -r entry; do
+            case "$entry" in provider:*) ;; *) continue ;; esac
+            role=${entry#provider:}
+            preset=$(magpie_list_value "$MAGPIE_PROVIDER_PRESET_ROWS" "$role")
+            preset=${preset#*=}
+            if magpie_run provider add "$preset" >/dev/null; then
+                status=0
+            else
+                status=$?
+            fi
+            codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+            if [ "$codex_before" != "$codex_after" ]; then
+                magpie_fail 'the Codex configuration changed during the apply; the backup is kept'
+                return 1
+            fi
+            [ "$status" = 0 ] || { magpie_fail "cannot add the Magpie provider $preset"; return 1; }
+            MAGPIE_PROVIDER_PRESENT="$MAGPIE_PROVIDER_PRESENT|$preset|"
+            printf 'dotfiles: magpie: the provider %s was added\n' "$preset"
+        done <<< "$change"
     fi
 
     DEPLOY_STEP=magpie-apply.models
@@ -2535,15 +2565,13 @@ client-settings"
         printf 'dotfiles: magpie: the repo-owned client settings are left to the deployment merge\n'
     fi
 
-    # The Codex configuration is never written by the deployment. Its digest is
-    # taken before the changes and compared after them.
-    codex_before=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+    # The Codex digest was taken before any provider registration.
     # A visibility- or pick-only run changes no client file, so it takes no
     # backup. The picked list is Magpie's own settings, rewritten atomically
     # for the pickedModels key alone.
     client_change=$(printf '%s\n' "$change" | grep -v '^visible:' | grep -v '^picked:' | grep -v '^$' || true)
     if [ -n "$change" ]; then
-        if [ -n "$client_change" ]; then
+        if [ -n "$client_change" ] && [ -z "$backup" ]; then
             DEPLOY_STEP=magpie-apply.backup
             backup=$(magpie_backup_create "$(magpie_backup_stamp)" "${DEPLOY_MAGPIE_BACKUP_SOURCE:-$HOME}") || return 1
             printf 'dotfiles: magpie: the client files are backed up in %s\n' "$backup"
@@ -2569,28 +2597,6 @@ client-settings"
                 printf 'dotfiles: magpie: the plugin %s was turned on\n' "$name"
             fi
         done
-
-        DEPLOY_STEP=magpie-apply.providers
-        while IFS= read -r entry; do
-            case "$entry" in
-                provider:*) ;;
-                *) continue ;;
-            esac
-            role=${entry#provider:}
-            preset=$(magpie_list_value "$MAGPIE_PROVIDER_PRESET_ROWS" "$role")
-            preset=${preset#*=}
-            source=$(magpie_provider_source "$role")
-            if [ "$source" = codex-account ]; then
-                magpie_run provider add "$preset" >/dev/null ||
-                    { magpie_fail "cannot add the Magpie provider $preset"; return 1; }
-            else
-                # Planning never schedules a key-based provider for creation.
-                magpie_fail "the provider $role is not provisioned; add the $preset preset in the Magpie TUI with: magpie tui"
-                return 1
-            fi
-            MAGPIE_PROVIDER_PRESENT="$MAGPIE_PROVIDER_PRESENT|$preset|"
-            printf 'dotfiles: magpie: the provider %s was added\n' "$preset"
-        done <<< "$change"
 
         DEPLOY_STEP=magpie-apply.groups
         for (( index=0; index<${#MAGPIE_GROUP_ID[@]}; index++ )); do

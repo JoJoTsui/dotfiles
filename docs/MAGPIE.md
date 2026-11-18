@@ -233,13 +233,16 @@ app, the agents, and the client settings exist before the gateway is wired.
    `magpie serve` and waits for it. A gateway that still does not answer
    fails the step with the command that fixes it; a platform without Magpie
    is skipped before this point.
-3. Resolve the proxy and write it with `magpie settings set proxy` only when
-   it differs.
-4. Ensure the pinned plugins, before the providers: `magpie plugin list
-   --json` reports `.loaded[].spec`, so an absent package is installed and a
-   loaded-but-off one is turned on.
-5. Ensure the providers in catalog order.
-6. Resolve the model roles against `GET /v1/models`.
+3. Plan proxy, plugins, and providers; fail preflight for missing required
+   credentials before changing gateway settings.
+4. Back up client files and register a missing credential-free ChatGPT account
+   provider, then check that Codex's configuration is unchanged.
+5. Resolve the model roles against `GET /v1/models`. If this fails after the
+   account provider was registered, the provider and backup remain; client
+   wiring and recorded deployment state have not been changed.
+6. Write the proxy when it differs and ensure the pinned plugins. `magpie
+   plugin list --json` reports `.loaded[].spec`, so an absent package is
+   installed and a loaded-but-off one is turned on.
 7. Ensure the groups: `magpie group add`, or `magpie group set` when the
    member order differs.
 8. Write the per-agent picked list into Magpie's settings, only when it
