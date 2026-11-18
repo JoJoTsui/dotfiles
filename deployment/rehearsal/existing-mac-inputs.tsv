@@ -14,6 +14,12 @@
 #
 # The requirement column marks an input the rehearsal cannot proceed without
 # (required) or one the device may not have (optional).
+#
+# A field whose name says that it holds an integrity value (the last segment
+# is hash, digest, checksum, fingerprint, sha, sha256, sha512, or comp_hash)
+# is not a credential: a hook trust digest carries no secret and is projected
+# as it is, so the projection can prove that the deployment preserves it. A
+# credential-named field stays redacted whatever its value is.
 .claude/settings.json	json	required
 .codex/config.toml	toml	required
 .codex/hooks.json	json	optional

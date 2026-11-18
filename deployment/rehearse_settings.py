@@ -24,7 +24,7 @@ import tomllib
 
 REDACTED = "<redacted>"
 SCHEMA = "dotfiles.existing-settings-rehearsal/1"
-HELPER_VERSION = "3"
+HELPER_VERSION = "4"
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -53,6 +53,17 @@ CREDENTIAL_NAME_SEGMENTS = {
     "apikey", "auth", "authorization", "bearer", "credential", "credentials",
     "password", "passwd", "passphrase", "privatekey", "secret", "secrets",
     "token", "tokens",
+}
+
+# A field whose name says that it holds an integrity value is not a
+# credential: a trust digest carries no secret, and it is exactly the
+# device-local state that the rehearsal has to carry into the projection,
+# because the projection is what proves that the deployment preserves it.
+# The last segment of the name decides, so `trusted_hash` and
+# `trustedContentHash` name an integrity value.
+INTEGRITY_NAME_SEGMENTS = {
+    "hash", "digest", "checksum", "fingerprint", "sha", "sha256", "sha512",
+    "comp_hash",
 }
 
 # A value that looks like a credential under a field name that does not say so
@@ -143,6 +154,16 @@ def name_is_credential(name):
         if segment == "key" and index and segments[index - 1] in ("api", "private"):
             return True
     return False
+
+
+def name_is_integrity(name):
+    """True when the last segment of a name says it holds an integrity value."""
+    if not isinstance(name, str):
+        return False
+    segments = name_segments(name)
+    if not segments:
+        return False
+    return segments[-1] in INTEGRITY_NAME_SEGMENTS
 
 
 def is_credential_key(name):
@@ -313,6 +334,13 @@ def redact_structure(value, relative, policy, counts):
                 result[key] = blank_container(item, counts)
                 continue
             if isinstance(item, str) and looks_like_credential(item):
+                # The credential-name rule wins over the integrity rule, so
+                # `api_key_hash` is still redacted above. An integrity-named
+                # field is not a credential: its value is projected as it is.
+                if name_is_integrity(key):
+                    counts["integrity"] += 1
+                    result[key] = item
+                    continue
                 unknown(relative, policy, counts)
                 counts["omitted"] += 1
                 continue
@@ -484,6 +512,10 @@ def check_redacted(value, relative):
                          "the projection for %s still holds a credential-named field"
                          % relative)
                 continue
+            if isinstance(item, str) and name_is_integrity(key):
+                # An integrity-named field carries an integrity value, not a
+                # credential: it is projected as it is.
+                continue
             check_redacted(item, relative)
     elif isinstance(value, list):
         for item in value:
@@ -520,7 +552,8 @@ def project_toml(text, relative, policy, counts):
 
 def project_document(entry, text, policy):
     """Return the projected text, its record count, and the field counts."""
-    counts = {"redacted": 0, "omitted": 0, "unknown": 0, "redacted_leaves": 0}
+    counts = {"redacted": 0, "omitted": 0, "unknown": 0, "redacted_leaves": 0,
+              "integrity": 0}
     relative = entry["path"]
     if entry["format"] == "text":
         if looks_like_credential(text):
@@ -632,7 +665,8 @@ def main(argv=None):
         refuse_excluded_input(entry["path"])
 
     prepared = []
-    totals = {"files": 0, "records": 0, "redacted": 0, "omitted": 0, "unknown": 0}
+    totals = {"files": 0, "records": 0, "redacted": 0, "omitted": 0, "unknown": 0,
+              "integrity": 0}
     for entry in entries:
         relative = entry["path"]
         source = os.path.join(source_home, relative)
@@ -665,6 +699,7 @@ def main(argv=None):
         totals["redacted"] += counts["redacted"]
         totals["omitted"] += counts["omitted"]
         totals["unknown"] += counts["unknown"]
+        totals["integrity"] += counts["integrity"]
         if projected is None:
             prepared.append({"path": relative, "format": entry["format"],
                              "status": "omitted", "required": entry["requirement"] == "required",
@@ -675,7 +710,8 @@ def main(argv=None):
                              "projected": {"records": 0},
                              "redacted_fields": counts["redacted"],
                              "omitted_fields": counts["omitted"],
-                             "unknown_credential_fields": counts["unknown"]})
+                             "unknown_credential_fields": counts["unknown"],
+                             "integrity_fields": counts["integrity"]})
             continue
         prepared.append({
             "path": relative,
@@ -690,6 +726,7 @@ def main(argv=None):
             "redacted_fields": counts["redacted"],
             "omitted_fields": counts["omitted"],
             "unknown_credential_fields": counts["unknown"],
+            "integrity_fields": counts["integrity"],
             "_text": projected,
         })
 
@@ -721,6 +758,7 @@ def main(argv=None):
                 "redacted_fields": item["redacted_fields"],
                 "omitted_fields": item["omitted_fields"],
                 "unknown_credential_fields": item["unknown_credential_fields"],
+                "integrity_fields": item["integrity_fields"],
             })
             continue
         target = os.path.join(str(projection), item["path"])
@@ -740,6 +778,7 @@ def main(argv=None):
             "redacted_fields": item["redacted_fields"],
             "omitted_fields": item["omitted_fields"],
             "unknown_credential_fields": item["unknown_credential_fields"],
+            "integrity_fields": item["integrity_fields"],
         })
 
     report = {
@@ -749,6 +788,12 @@ def main(argv=None):
         "source_home": source_home,
         "projection": projection,
         "unknown_credential_policy": arguments.unknown_credential_policy,
+        "policy_notes": {
+            "credential_names": "a credential-named field is redacted by name",
+            "integrity_names": "an integrity-named field is not a credential; "
+                               "its value is projected as it is",
+            "unknown_credential_shaped_values": arguments.unknown_credential_policy,
+        },
         "source_unchanged": all(
             all(entry["source"][key] == entry["source_after"][key]
                 for key in ("sha256", "mode", "mtime_ns"))
@@ -768,6 +813,7 @@ def main(argv=None):
             "redacted_fields": totals["redacted"],
             "omitted_fields": totals["omitted"],
             "unknown_credential_fields": totals["unknown"],
+            "integrity_fields": totals["integrity"],
         },
     }
     write_private(report_path, json.dumps(report, indent=2, ensure_ascii=False) + "\n")

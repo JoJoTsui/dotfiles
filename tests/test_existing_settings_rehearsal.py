@@ -27,6 +27,22 @@ MANIFEST = SOURCE / "deployment/rehearsal/existing-mac-inputs.tsv"
 DEVICE_TOKEN = "synthetic-device-token"
 DEVICE_API_KEY = "synthetic-device-api-key"
 
+# A trust digest is an integrity value, not a credential: it carries no
+# secret, and it has the credential shape of a long hexadecimal string.
+SYNTHETIC_DIGEST = "sha256:" + "0123456789abcdef" * 4
+SYNTHETIC_CONTENT_DIGEST = "sha256:" + "fedcba9876543210" * 4
+SYNTHETIC_UNKNOWN_VALUE = "sk-syntheticunknownvalue123456"
+
+# A fabricated Codex configuration that carries the device's hook trust
+# digests next to ordinary settings.
+DIGEST_CODEX_CONFIG = (
+    'model = "device-model"\n'
+    '[hooks.state."synthetic-hook"]\n'
+    'trusted_hash = "%s"\n'
+    'trusted_content_hash = "%s"\n'
+    'state = "trusted"\n'
+) % (SYNTHETIC_DIGEST, SYNTHETIC_CONTENT_DIGEST)
+
 DEVICE_SETTINGS = {
     ".claude/settings.json": json.dumps({
         "model": "device-model",
@@ -745,6 +761,123 @@ class RehearsalTests(unittest.TestCase):
         self.assertIn("TOML", result.stderr)
         self.assertFalse(self.projection.exists())
         self.assertFalse(self.report.exists())
+
+    def test_a_digest_named_field_with_a_credential_shaped_value_is_projected(self):
+        self.write_device_file(".codex/config.toml", DIGEST_CODEX_CONFIG)
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = tomllib.loads((self.projection / ".codex/config.toml").read_text())
+        state = projected["hooks"]["state"]["synthetic-hook"]
+        # A trust digest is an integrity value: it is projected as it is.
+        self.assertEqual(state["trusted_hash"], SYNTHETIC_DIGEST)
+        self.assertEqual(state["trusted_content_hash"], SYNTHETIC_CONTENT_DIGEST)
+        self.assertEqual(state["state"], "trusted")
+        self.assertEqual(projected["model"], "device-model")
+
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["totals"]["integrity_fields"], 2)
+        self.assertEqual(report["totals"]["unknown_credential_fields"], 0)
+        self.assertEqual(report["totals"]["omitted_fields"], 0)
+        self.assertEqual(report["totals"]["redacted_fields"], 0)
+        self.assertTrue(report["source_unchanged"])
+
+    def test_a_credential_named_field_is_redacted_even_when_it_is_hash_named(self):
+        self.write_device_file(".codex/config.toml", (
+            'model = "device-model"\n'
+            'api_key_hash = "%s"\n'
+            'token_hash = "%s"\n'
+            'trusted_hash = "%s"\n'
+        ) % (SYNTHETIC_DIGEST, SYNTHETIC_DIGEST, SYNTHETIC_DIGEST))
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = tomllib.loads((self.projection / ".codex/config.toml").read_text())
+        # The credential-name rule wins over the integrity rule.
+        self.assertEqual(projected["api_key_hash"], "<redacted>")
+        self.assertEqual(projected["token_hash"], "<redacted>")
+        self.assertEqual(projected["trusted_hash"], SYNTHETIC_DIGEST)
+
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["totals"]["redacted_fields"], 2)
+        self.assertEqual(report["totals"]["integrity_fields"], 1)
+        text = self.report.read_text()
+        self.assertNotIn(SYNTHETIC_DIGEST, text)
+
+    def test_an_unknown_credential_shaped_value_under_an_ordinary_name_still_fails_closed(self):
+        self.write_device_file(".codex/config.toml", (
+            'model = "device-model"\n'
+            'device_note = "%s"\n'
+            '[hooks.state."synthetic-hook"]\n'
+            'trusted_hash = "%s"\n'
+        ) % (SYNTHETIC_UNKNOWN_VALUE, SYNTHETIC_DIGEST))
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("credential-shaped", result.stderr)
+        self.assertNotIn(SYNTHETIC_UNKNOWN_VALUE, result.stdout + result.stderr)
+        self.assertFalse(self.projection.exists())
+        self.assertFalse(self.report.exists())
+
+    def test_an_unknown_credential_shaped_value_is_omitted_with_a_count_beside_digests(self):
+        self.write_device_file(".codex/config.toml", (
+            'model = "device-model"\n'
+            'device_note = "%s"\n'
+            '[hooks.state."synthetic-hook"]\n'
+            'trusted_hash = "%s"\n'
+        ) % (SYNTHETIC_UNKNOWN_VALUE, SYNTHETIC_DIGEST))
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project("--unknown-credential-policy", "omit")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = tomllib.loads((self.projection / ".codex/config.toml").read_text())
+        self.assertNotIn("device_note", projected)
+        # The digest is not unknown data: it is projected even under the
+        # alternative policy.
+        self.assertEqual(projected["hooks"]["state"]["synthetic-hook"]["trusted_hash"],
+                         SYNTHETIC_DIGEST)
+
+        report = json.loads(self.report.read_text())
+        self.assertEqual(report["totals"]["omitted_fields"], 1)
+        self.assertEqual(report["totals"]["unknown_credential_fields"], 1)
+        self.assertEqual(report["totals"]["integrity_fields"], 1)
+        self.assertNotIn(SYNTHETIC_UNKNOWN_VALUE, self.report.read_text())
+
+    def test_the_projected_record_count_of_a_file_with_digests_matches_the_source(self):
+        self.write_device_file(".codex/config.toml", DIGEST_CODEX_CONFIG)
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        report = json.loads(self.report.read_text())
+        entry = report["files"][0]
+        self.assertEqual(entry["status"], "projected")
+        self.assertEqual(entry["projected"]["records"], entry["source"]["records"])
+        self.assertEqual(entry["source"]["records"], 4)
+        self.assertEqual(report["totals"]["projected_records"],
+                         report["totals"]["records"])
+
+    def test_the_hook_trust_digests_survive_the_public_bootstrap(self):
+        self.write_device_file(".codex/config.toml", DIGEST_CODEX_CONFIG)
+        self.write_manifest([".codex/config.toml\ttoml\trequired"])
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        applied = self.deploy()
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+
+        merged = tomllib.loads((self.projection / ".codex/config.toml").read_text())
+        state = merged["hooks"]["state"]["synthetic-hook"]
+        self.assertEqual(state["trusted_hash"], SYNTHETIC_DIGEST)
+        self.assertEqual(state["trusted_content_hash"], SYNTHETIC_CONTENT_DIGEST)
+        self.assertEqual(state["state"], "trusted")
 
 
 if __name__ == "__main__":
