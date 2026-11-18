@@ -32,7 +32,7 @@ Findings that shaped the rules (checked 2026-10-28):
   `with-proxy codex exec ...` succeeds where the direct call times out. Fall back
   to a healthy client rather than retrying blindly.
 
-Operational commands and the free-model defaults live in the shared instructions.
+Operational commands and the model-selection policy live in the shared instructions.
 This note records why they look the way they do.
 
 ## Transports
