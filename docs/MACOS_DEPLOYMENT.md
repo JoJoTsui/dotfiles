@@ -167,7 +167,9 @@ CodeGraph indexing is confined to its explicit temporary test fixture.
 The verifier passes `--no-magpie` and records the account gateway exclusion:
 synthetic homes carry no operator provider accounts and must not borrow a live
 gateway. Magpie account wiring needs a separate authorized device check; this
-gate makes no claim about its readiness.
+gate makes no claim about its readiness. To verify a scoped deployment, pass
+`--agents` with the canonical comma-separated agent names used by bootstrap;
+the report records the selection and the gate checks that the plan matches it.
 
 When DSH and `dst` are selected, the report's `dsh_adapter` field records the
 installed automation adapter's capability verdict for the pinned DSH runtime:

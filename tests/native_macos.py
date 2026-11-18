@@ -517,6 +517,8 @@ def main():
     parser.add_argument("--role", choices=("workstation", "remote-compute"), required=True)
     parser.add_argument("--bundles", default="",
                         help="comma-separated optional bundle names to install with the common defaults")
+    parser.add_argument("--agents", default="",
+                        help="comma-separated agent selection to verify instead of the defaults")
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--package-cache", type=Path,
                         help="seed allowed public caches from a canonical private snapshot; reports cache-assisted installation")
@@ -536,6 +538,7 @@ def main():
               "installation_timeout_seconds": args.install_timeout,
               "installation_cache": "cache-assisted" if args.package_cache else "empty",
               "account_gateway": "excluded: synthetic homes have no operator accounts",
+              "agents": [name for name in args.agents.split(",") if name] if args.agents else "default",
               "bundles": [name for name in args.bundles.split(",") if name]}
     if os.environ.get("GITHUB_RUN_ID"):
         report["run_url"] = f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
@@ -582,12 +585,17 @@ def main():
                        "--role", args.role, "--no-magpie"]
             if args.bundles:
                 command += ["--bundles", args.bundles]
+            if args.agents:
+                command += ["--agents", args.agents]
             phase = "profile detection"
             checkpoint(phase)
             plan = json.loads(run([*command, "--plan"], env=env, cwd=SOURCE).stdout)
             require(plan["platform"] == "macos" and plan["arch"] == args.arch and plan["role"] == args.role,
                     "detected macOS deployment profile")
             require(plan.get("magpie") is False, "synthetic installation excludes account gateway wiring")
+            if args.agents:
+                require(set(plan["agents"]) == set(args.agents.split(",")),
+                        "requested agent selection reached the native plan")
             if args.bundles:
                 require(plan.get("bundles") == sorted(name for name in args.bundles.split(",") if name),
                         "requested bundle selection reached the native plan")

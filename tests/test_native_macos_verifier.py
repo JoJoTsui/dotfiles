@@ -186,6 +186,35 @@ class NativeVerifierSourceIdentityTests(unittest.TestCase):
 
 
 class NativeVerifierAccountIsolationTests(unittest.TestCase):
+    def test_scoped_agents_reach_plan_and_install(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report = Path(temporary) / "report.json"
+            commands = []
+
+            def run(arguments, **kwargs):
+                commands.append(arguments)
+                if "--plan" in arguments:
+                    return subprocess.CompletedProcess(arguments, 0, json.dumps({
+                        "platform": "macos", "arch": "aarch64", "role": "workstation",
+                        "magpie": False, "agents": ["claude", "pi"]}))
+                raise RuntimeError("fixture stops before installation")
+
+            with patch.object(sys, "argv", ["native_macos.py", "--arch", "aarch64",
+                                            "--role", "workstation", "--agents", "claude,pi",
+                                            "--report", str(report)]), \
+                 patch.object(sys, "platform", "darwin"), \
+                 patch.object(native_macos.platform, "machine", return_value="arm64"), \
+                 patch.object(native_macos.platform, "platform", return_value="synthetic macOS"), \
+                 patch.object(native_macos, "source_state", return_value={}), \
+                 patch.object(native_macos.subprocess, "check_output", return_value="15.8.1"), \
+                 patch.object(native_macos, "run", side_effect=run), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(native_macos.main(), 1)
+            self.assertEqual(len(commands), 2)
+            self.assertTrue(all(command[command.index("--agents") + 1] == "claude,pi"
+                                for command in commands))
+            self.assertEqual(json.loads(report.read_text())["agents"], ["claude", "pi"])
+
     def test_synthetic_installs_exclude_the_account_gateway_and_reject_an_enabled_plan(self):
         for gateway in (False, True):
             with self.subTest(gateway=gateway), tempfile.TemporaryDirectory() as temporary:
