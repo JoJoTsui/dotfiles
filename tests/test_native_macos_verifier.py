@@ -219,5 +219,71 @@ class NativeVerifierAccountIsolationTests(unittest.TestCase):
                 self.assertEqual(len(commands), 1 if gateway else 2)
 
 
+class NativeVerifierDshAdapterTests(unittest.TestCase):
+    def test_installed_versions_report_adapter_capabilities(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-dsh-adapter-") as temporary:
+            home = Path(temporary) / "device with spaces"
+            scripts = {
+                ".pixi/bin/pixi": "printf 'pixi 0.83.0\\n'",
+                ".cargo/bin/rustup": "printf 'rustup 1.29.2\\n'",
+                ".bun/bin/dsh": "printf '0.2.2-rc.1\\n'",
+                ".bun/bin/dsh-tui": "printf 'dsh-tui 0.20.1\\n'",
+                ".bun/bin/dst": (
+                    "if [ \"$1\" = --version ]; then printf 'dst 0.20.1\\n'; "
+                    "elif [ \"$*\" = 'cli capabilities --json' ]; then "
+                    "printf '%s\\n' '{\"runtimeVersion\":\"0.2.2-rc.1\",\"validated\":false}'; "
+                    "else exit 2; fi"
+                ),
+                ".local/bin/dotfiles-history": "printf 'pending activation\\n'",
+            }
+            for relative, body in scripts.items():
+                target = home / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text("#!/bin/sh\n" + body + "\n")
+                target.chmod(0o755)
+            for command in ("dsh", "dsh-tui", "dst"):
+                target = home / ".local/bin" / command
+                target.write_bytes((home / ".bun/bin" / command).read_bytes())
+                target.chmod(0o755)
+            plan = {"packages": [], "agentPackages": [
+                {"name": "dsh", "manager": "bun", "commands": ["dsh"],
+                 "version": "0.2.2-rc.1", "policy": "exact"},
+                {"name": "dsh-tui", "manager": "bun", "commands": ["dsh-tui", "dst"],
+                 "version": "0.20.1", "policy": "exact"},
+            ]}
+            report = {}
+            native_macos.check_pinned_tools(home, plan, report)
+            self.assertEqual(report["dsh_adapter"], {
+                "status": "unvalidated", "runtime_version": "0.2.2-rc.1"})
+
+            cases = (
+                ('{"runtimeVersion":"0.2.2-rc.1","validated":true}', 0, "validated"),
+                ('{"runtimeVersion":"0.2.2-rc.5","validated":true}', 0, "unknown"),
+                ('{"runtimeVersion":"0.2.2-rc.5","validated":false}', 0, "unknown"),
+                ('{"runtimeVersion":"0.2.2-rc.1","validated":"true"}', 0, "unknown"),
+                ('{"runtimeVersion":"0.2.2-rc.1"}', 0, "unknown"),
+                ('{"validated":true}', 0, "unknown"),
+                ('invalid-json', 0, "unknown"),
+                ('{"runtimeVersion":"0.2.2-rc.1","validated":true}', 3, "unknown"),
+            )
+            for output, exit_code, expected in cases:
+                with self.subTest(output=output, exit_code=exit_code):
+                    body = (
+                        "#!/bin/sh\n"
+                        "if [ \"$1\" = --version ]; then printf 'dst 0.20.1\\n'; "
+                        "elif [ \"$*\" = 'cli capabilities --json' ]; then "
+                        f"printf '%s\\n' '{output}'; exit {exit_code}; "
+                        "else exit 2; fi\n"
+                    )
+                    for relative in (".bun/bin/dst", ".local/bin/dst"):
+                        (home / relative).write_text(body)
+                    report = {}
+                    native_macos.check_pinned_tools(home, plan, report)
+                    self.assertEqual(report["dsh_adapter"]["status"], expected)
+            report = {}
+            native_macos.check_pinned_tools(home, {"packages": [], "agentPackages": plan["agentPackages"][:1]}, report)
+            self.assertEqual(report["dsh_adapter"], {"status": "not-selected"})
+
+
 if __name__ == "__main__":
     unittest.main()

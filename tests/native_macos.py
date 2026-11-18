@@ -329,6 +329,25 @@ def version_at_least(output, minimum):
     return reported >= floor
 
 
+def check_dsh_adapter(home, installed_version, env):
+    """Report adapter validation separately from installation and routing."""
+    try:
+        result = run([str(home / ".local/bin/dst"), "cli", "capabilities", "--json"],
+                     env=env, cwd=home, timeout=60, allow_failure=True)
+        if result.returncode != 0:
+            return {"status": "unknown"}
+        data = json.loads(result.stdout)
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return {"status": "unknown"}
+    if not isinstance(data, dict) or data.get("runtimeVersion") != installed_version:
+        return {"status": "unknown"}
+    validated = data.get("validated")
+    if not isinstance(validated, bool):
+        return {"status": "unknown"}
+    return {"status": "validated" if validated else "unvalidated",
+            "runtime_version": installed_version}
+
+
 def check_pinned_tools(home, plan, report):
     env = managed_environment(home)
     versions = {}
@@ -369,6 +388,11 @@ def check_pinned_tools(home, plan, report):
                 require(package["version"] in output, f"pinned agent version: {command}")
             versions[command] = output.strip().splitlines()[0]
     report["versions"] = versions
+    dsh = next((package for package in plan["agentPackages"] if package["name"] == "dsh"), None)
+    if dsh and "dst" in versions:
+        report["dsh_adapter"] = check_dsh_adapter(home, dsh["version"], env)
+    else:
+        report["dsh_adapter"] = {"status": "not-selected"}
     status = run([str(home / ".local/bin/dotfiles-history"), "status"], env=env, cwd=home)
     require("pending activation" in status.stdout, "history stays pending without account setup")
     require(not (home / ".codegraph").exists() and not (SOURCE / ".codegraph").exists(),

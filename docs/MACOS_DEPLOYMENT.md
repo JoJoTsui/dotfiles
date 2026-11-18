@@ -169,6 +169,14 @@ synthetic homes carry no operator provider accounts and must not borrow a live
 gateway. Magpie account wiring needs a separate authorized device check; this
 gate makes no claim about its readiness.
 
+When DSH and `dst` are selected, the report's `dsh_adapter` field records the
+installed automation adapter's capability verdict for the pinned DSH runtime:
+`validated`, `unvalidated`, or `unknown` when the probe fails or its output is
+unreadable or mismatched. An omitted pair is `not-selected`. This is separate
+from the installation result: a passed installation with an unvalidated or
+unknown adapter is not headless automation acceptance. Even a validated
+adapter does not establish profile wiring or a successful model request.
+
 `--install-timeout` sets a positive bounded timeout for each full bootstrap
 invocation; its default remains 2400 seconds for CI. `--keep-failed-home`
 retains a failed private synthetic fixture for diagnosis; successful fixtures
