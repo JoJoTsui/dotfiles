@@ -2318,19 +2318,69 @@ magpie_codex_profile_enabled() {
     magpie_agent_selected codex
 }
 
+# The Codex home the deployment writes the separate profile into.
+magpie_codex_home() {
+    printf '%s/.codex' "$HOME"
+}
+
+# How many names one file has. The pinned writer writes a file with other
+# names in place, so a change through one name changes the other.
+magpie_link_count() {
+    local file=$1 count
+    if count=$(stat -c '%h' "$file" 2>/dev/null) && [ -n "$count" ]; then
+        printf '%s' "$count"
+        return 0
+    fi
+    if count=$(stat -f '%l' "$file" 2>/dev/null) && [ -n "$count" ]; then
+        printf '%s' "$count"
+        return 0
+    fi
+    return 1
+}
+
 # A pre-existing profile is device state until a successful apply records it.
 # Check every target before CLI installation or gateway mutation. In particular,
 # Magpie's atomic writer follows symlinks, so a link is never an adoption seam.
 magpie_codex_profile_preflight() {
     magpie_codex_profile_enabled || return 0
-    local profile="$HOME/.codex/magpie.config.toml"
-    local catalog="$HOME/.codex/magpie-models.json" file recorded pending
+    local home profile catalog file recorded pending links
+    home=$(magpie_codex_home)
+    profile="$home/magpie.config.toml"
+    catalog="$home/magpie-models.json"
     pending=$(magpie_codex_profile_pending_path)
+    # A linked Codex home is another directory: the writer would create the
+    # profile there, and the deployment would change a file it does not own.
+    if [ -L "$home" ]; then
+        magpie_fail "the Codex home is a symlink: $home"
+        return 1
+    fi
+    if [ -e "$home" ] && [ ! -d "$home" ]; then
+        magpie_fail "the Codex home is not a directory: $home"
+        return 1
+    fi
     for file in "$profile" "$catalog"; do
         [ ! -L "$file" ] || { magpie_fail "the Codex profile path is a symlink: $file"; return 1; }
         if [ -e "$file" ] && [ ! -f "$file" ]; then
             magpie_fail "the Codex profile path is not a regular file: $file"
             return 1
+        fi
+        # The pinned writer writes a file with other names in place, so a
+        # change through one name would change the other: a generated file
+        # with another name is never an adoption seam.
+        if [ -f "$file" ]; then
+            # An unreadable link count is not one link: the deployment cannot
+            # tell an alias from a single name, so it refuses.
+            links=$(magpie_link_count "$file") ||
+                { magpie_fail "cannot read the link count of the Codex profile path: $file"; return 1; }
+            case "$links" in
+                ''|*[!0-9]*)
+                    magpie_fail "cannot read the link count of the Codex profile path: $file"
+                    return 1 ;;
+            esac
+            if [ "$links" -gt 1 ]; then
+                magpie_fail "the Codex profile path has other names: $file"
+                return 1
+            fi
         fi
     done
     if [ -e "$pending" ] || [ -L "$pending" ]; then
@@ -2348,6 +2398,83 @@ magpie_codex_profile_preflight() {
     return 0
 }
 
+# The scope the pinned CLI reports, read without changing anything. The
+# getter prints "<Name> applies to <value>"; an empty value is the ordinary
+# integration, shown as "default". An answer the engine cannot read is a
+# failure, never a guess, and a getter that failed is a failure even when it
+# printed something that looks like an answer.
+magpie_codex_scope_read() {
+    local output
+    output=$(magpie_run codex scope 2>/dev/null) || return 1
+    printf '%s\n' "$output" | awk '
+        BEGIN { esc = sprintf("%c", 27); found = "" }
+        {
+            line = $0
+            gsub(esc "\\[[0-9;]*m", "", line)
+            gsub(/^[ \t]+/, "", line)
+            gsub(/[ \t]+$/, "", line)
+            count = split(line, parts, /[ \t]+/)
+            if (count < 4) { next }
+            value = parts[count]
+            if (parts[count - 1] != "to" || parts[count - 2] != "applies") { next }
+            if (value != "profile" && value != "default") { next }
+            if (found == "") { found = value }
+            else if (found != value) { conflict = 1 }
+        }
+        END {
+            if (conflict || found == "") { exit 1 }
+            print found
+        }
+    '
+}
+
+# Whether the ordinary Codex integration is connected: the base configuration
+# names magpie as Codex's provider. The pinned CLI refuses the scope change
+# then, so the deployment asks before it changes anything.
+magpie_codex_ordinary_connected() {
+    local config provider
+    config="$(magpie_codex_home)/config.toml"
+    [ -f "$config" ] || return 1
+    [ ! -L "$config" ] || return 1
+    provider=$(magpie_codex_toml_string "$config" '' model_provider 2>/dev/null) || return 1
+    [ "$provider" = magpie ]
+}
+
+# The scope the pinned CLI selects, checked before the gateway changes. The
+# pinned CLI refuses the change while the ordinary Codex integration is
+# connected; the deployment reports that and leaves the ordinary integration
+# alone, disconnecting and retagging nothing.
+magpie_codex_scope_preflight() {
+    local before=$1 auth_before=$2 after auth_after scope status=0
+    magpie_codex_profile_enabled || return 0
+    scope=$(magpie_codex_scope_read) || {
+        magpie_fail 'cannot read the Codex scope; the installed Magpie CLI must report the separate profile scope'
+        return 1
+    }
+    if [ "$scope" = profile ]; then
+        MAGPIE_CODEX_SCOPE=profile
+        return 0
+    fi
+    if magpie_codex_ordinary_connected; then
+        magpie_fail 'the ordinary Codex integration is connected to the Magpie gateway; the separate profile is not selected and the ordinary integration is left as it is'
+        return 1
+    fi
+    if magpie_run codex scope profile >/dev/null 2>&1; then status=0; else status=$?; fi
+    # The guards run whether the setter succeeded or not: a failed command
+    # can still have changed the files the deployment promised to preserve.
+    after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
+    auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+    [ "$before" = "$after" ] ||
+        { magpie_fail 'the Codex configuration changed while selecting its profile'; return 1; }
+    [ "$auth_before" = "$auth_after" ] ||
+        { magpie_fail 'the Codex authentication changed while selecting its profile'; return 1; }
+    [ "$status" = 0 ] || {
+        magpie_fail 'cannot select the separate Codex profile; the ordinary Codex integration is connected or the scope cannot be changed safely; the Codex configuration and authentication are unchanged'
+        return 1
+    }
+    MAGPIE_CODEX_SCOPE=profile
+}
+
 # Apply the catalogs to the gateway. The deployment owns the intent; Magpie
 # owns the credentials and the generated files.
 magpie_apply() {
@@ -2356,6 +2483,9 @@ magpie_apply() {
     local fatal='' missing='' manual='' manual_fatal='' guard='unchanged' backup='' codex_before codex_after codex_auth_before codex_auth_after forced
     local id recorded names name version plugin_state state status client_migration=no policies='' report=''
     local MAGPIE_DSH_COMPACT_GROUP='' MAGPIE_DSH_COMPACT_BEFORE=''
+    # The scope the separate Codex profile is selected under, set by the
+    # scope preflight before the gateway changes.
+    MAGPIE_CODEX_SCOPE=''
     local -a candidate_list
     platform=$(magpie_platform)
     if [ "$platform" != macos ] && ! magpie_native_platform; then
@@ -2537,6 +2667,12 @@ $role (source: $source; variable: $variable)"
         magpie_fail 'a required model provider has no credential'
         return 1
     fi
+
+    # The separate profile is selected before the gateway changes: the pinned
+    # CLI refuses the scope change while the ordinary Codex integration is
+    # connected, and the deployment leaves that integration alone.
+    DEPLOY_STEP=magpie-apply.codex-scope
+    magpie_codex_scope_preflight "$codex_before" "$codex_auth_before" || return 1
 
     # Model discovery depends on an account provider being registered first.
     # Back up and guard Codex before this one credential-free mutation; if a
@@ -2849,18 +2985,21 @@ client-settings"
             esac
             agent=${entry#wiring:}; group=${agent#*:}; agent=${agent%:*}
             if [ "$agent" = codex ]; then
+                # The scope was selected in the preflight, before the gateway
+                # changes; a profile is never written for another scope.
+                [ "$MAGPIE_CODEX_SCOPE" = profile ] ||
+                    { magpie_fail 'the separate Codex profile is not selected'; return 1; }
                 magpie_codex_profile_pending_write \
                     "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
                     "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
-                if magpie_run codex scope profile >/dev/null; then status=0; else status=$?; fi
-                codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
-                codex_auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
-                [ "$codex_before" = "$codex_after" ] ||
-                    { magpie_fail 'the Codex configuration changed while selecting its profile'; return 1; }
-                [ "$codex_auth_before" = "$codex_auth_after" ] ||
-                    { magpie_fail 'the Codex authentication changed while selecting its profile'; return 1; }
-                [ "$status" = 0 ] || { magpie_fail 'cannot select the separate Codex profile'; return 1; }
                 if [ ! -e "$HOME/.codex/magpie.config.toml" ]; then
+                    # A device without a Codex home gets one of its own,
+                    # private: the deployment creates the directory it writes
+                    # the profile into, and never widens an existing one.
+                    if [ ! -d "$HOME/.codex" ]; then
+                        (umask 077; mkdir -p "$HOME/.codex") ||
+                            { magpie_fail 'cannot create the private Codex home'; return 1; }
+                    fi
                     (umask 077; set -C; : > "$HOME/.codex/magpie.config.toml") ||
                         { magpie_fail 'cannot create the private Codex profile'; return 1; }
                 fi
@@ -2880,7 +3019,15 @@ client-settings"
                     { magpie_fail 'the Codex configuration changed during profile wiring'; return 1; }
                 [ "$codex_auth_before" = "$codex_auth_after" ] ||
                     { magpie_fail 'the Codex authentication changed during profile wiring'; return 1; }
-                [ "$status" = 0 ] || { magpie_fail "cannot wire the Codex profile to $group"; return 1; }
+                [ "$status" = 0 ] || {
+                    report=$(magpie_codex_profile_report "$group")
+                    if [ "${report%%|*}" = unreadable ]; then
+                        magpie_fail "cannot wire the Codex profile to $group; the recorded Codex profile cannot be read and is preserved"
+                    else
+                        magpie_fail "cannot wire the Codex profile to $group"
+                    fi
+                    return 1
+                }
                 chmod 600 "$HOME/.codex/magpie.config.toml" ||
                     { magpie_fail 'cannot protect the Codex profile'; return 1; }
                 report=$(magpie_codex_profile_report "$group")

@@ -36,10 +36,20 @@ thinking levels) that would drift from Magpie's catalog.
 - Codex's base `config.toml` and `auth.json` remain protected by before/after
   hash guards and private backups. The selected separate-profile exception
   permits only `magpie codex scope profile` followed by a profile model
-  selection. Magpie generates `magpie.config.toml` and `magpie-models.json`;
-  the credential-bearing profile stays 0600. Collision checks preserve
-  unrecorded device files, and an interrupted write can retry only against
-  exact recorded fingerprints.
+  selection. The scope selection is read with the read-only getter and made
+  before the gateway changes, because the pinned CLI refuses it while the
+  ordinary Codex integration is connected; the deployment disconnects and
+  retags nothing. The getter has to succeed: an answer printed by a command
+  that failed is not a scope. The base configuration and authentication
+  hashes are compared after the selection whether the command succeeded or
+  failed, so the run never claims a preservation it did not observe.
+  Magpie generates `magpie.config.toml` and `magpie-models.json`;
+  the credential-bearing profile stays 0600, and a device without a Codex home
+  gets a private one. Collision checks preserve unrecorded device files, a
+  linked or non-directory Codex home, a linked or non-regular profile path, a
+  generated file with another name, which the pinned writer would change
+  through the alias, and a profile path whose link count cannot be read.
+  An interrupted write can retry only against exact recorded fingerprints.
 - Plain `codex` keeps the subscription configuration; `codex -p magpie`
   starts new gateway sessions. Resume must restore the saved provider, not
   migrate thread metadata. A combined in-session model picker was rejected
