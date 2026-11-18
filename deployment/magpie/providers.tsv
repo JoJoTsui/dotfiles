@@ -6,10 +6,11 @@
 #                  and a model candidate's provider prefix refer to it.
 # magpie provider  the Magpie preset that owns the provider's accounts. The
 #                  preset is Magpie's own name for one account type.
-# key source       where the credential comes from: codex-account (a ChatGPT
-#                  account Magpie reads), env:NAME (a variable in
-#                  ~/.config/dotfiles/magpie.env), or json:PATH:KEY (a key in
-#                  a JSON store on the device). A json: source is read only.
+# key source       the device source reported by status: codex-account (a
+#                  ChatGPT account Magpie reads), env:NAME (a variable in
+#                  ~/.config/dotfiles/magpie.env), json:PATH:KEY (a key in a
+#                  JSON store), or plugin-account. Apply never passes a key to
+#                  a command; absent key-based presets are provisioned in TUI.
 # required         yes when the provider must exist for the apply to pass, no
 #                  when its absence is reported and the apply continues.
 #

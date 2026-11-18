@@ -676,7 +676,7 @@ magpie_env_value() {
 }
 
 # The credential of one provider row, read from the store the catalog names.
-# The value is used once, to add the provider, and never printed.
+# Status uses this only to report whether the source resolves.
 magpie_provider_credential() {
     local source=$1 rest key path
     case "$source" in
@@ -2156,7 +2156,7 @@ magpie_state_write() {
 # owns the credentials and the generated files.
 magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
-    local credential output live known current desired change='' entry used rest variable servable
+    local output live known current desired change='' entry used rest variable servable
     local fatal='' missing='' manual='' manual_fatal='' guard='unchanged' backup='' codex_before codex_after forced
     local id recorded names name version plugin_state state client_migration=no policies=''
     local MAGPIE_DSH_COMPACT_GROUP='' MAGPIE_DSH_COMPACT_BEFORE=''
@@ -2278,39 +2278,18 @@ provider:$role"
 $role|$preset|$required|codex-account|none"
             continue
         fi
-        # `magpie provider add` takes a key only as a command-line argument,
-        # and another process on a shared Linux or WSL host can read a
-        # process's argv. The pinned CLI's masked key entry is in `magpie tui`.
-        # The deployment therefore never adds a key-requiring provider there:
-        # the operator provisions it in the TUI, and the next apply finds it
-        # present. The credential is not read here.
+        # The CLI accepts provider keys only in argv, so the operator adds
+        # missing key-based presets through the masked Magpie TUI instead.
         case "$source" in
             env:*|json:*)
-                if magpie_native_platform; then
-                    manual="$manual
+                manual="$manual
 $role|$preset|$source|$required"
-                    continue
-                fi ;;
+                ;;
+            *)
+                missing="$missing
+$role|$preset|$required|$source|none"
+                ;;
         esac
-        credential=$(magpie_provider_credential "$source" || true)
-        if [ -z "$credential" ]; then
-            case "$source" in
-                env:*) variable=${source#env:} ;;
-                json:*)
-                    rest=${source#json:}
-                    variable=${rest##*:}
-                    source="json:${rest%:*}"
-                    ;;
-                *) variable=none ;;
-            esac
-            missing="$missing
-$role|$preset|$required|$source|$variable"
-            continue
-        fi
-        MAGPIE_PROVIDER_READY="$MAGPIE_PROVIDER_READY|$preset|"
-        change="$change
-provider:$role"
-        printf 'dotfiles: magpie: the provider %s will be added from %s\n' "$role" "$source"
     done
     used=$(magpie_enabled_providers)
     if [ -n "$manual" ]; then
@@ -2327,7 +2306,7 @@ provider:$role"
             fi
         done <<< "$manual"
         if [ "$manual_fatal" = yes ]; then
-            magpie_fail 'a key passed to magpie provider add is visible to other processes on a shared host; provision the listed provider(s) interactively in the Magpie TUI with magpie tui, then apply again'
+            magpie_fail 'a key passed to magpie provider add is visible to other processes; provision the listed provider(s) interactively in the Magpie TUI with magpie tui, then apply again'
             return 1
         fi
     fi
@@ -2587,17 +2566,10 @@ client-settings"
             if [ "$source" = codex-account ]; then
                 magpie_run provider add "$preset" >/dev/null ||
                     { magpie_fail "cannot add the Magpie provider $preset"; return 1; }
-            elif magpie_native_platform; then
-                # Belt and braces: the planning step already stops a
-                # key-requiring provider on a shared host, so no credential
-                # ever reaches this command line there.
+            else
+                # Planning never schedules a key-based provider for creation.
                 magpie_fail "the provider $role is not provisioned; add the $preset preset in the Magpie TUI with: magpie tui"
                 return 1
-            else
-                credential=$(magpie_provider_credential "$source" || true)
-                [ -n "$credential" ] || { magpie_fail "the credential for $role is missing"; return 1; }
-                magpie_run provider add "$preset" "$credential" >/dev/null ||
-                    { magpie_fail "cannot add the Magpie provider $preset"; return 1; }
             fi
             MAGPIE_PROVIDER_PRESENT="$MAGPIE_PROVIDER_PRESENT|$preset|"
             printf 'dotfiles: magpie: the provider %s was added\n' "$preset"
@@ -2776,8 +2748,8 @@ magpie_catalog_model_ids() {
 }
 
 # The model provider catalog with the state of every credential source. A
-# provider already in Magpie owns its credential there; the source is only
-# needed to add it. The value of a credential is never printed.
+# provider already in Magpie owns its credential there; the source is reported
+# for operator provisioning. The value of a credential is never printed.
 magpie_providers() {
     local index role preset source required state
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1

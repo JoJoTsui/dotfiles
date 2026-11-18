@@ -27,8 +27,9 @@ thinking levels) that would drift from Magpie's catalog.
 
 ## Consequences
 
-- A fresh Mac reaches the same wiring from the repo alone; credentials are
-  re-read from device stores or `~/.config/dotfiles/magpie.env`.
+- A fresh Mac reaches the same wiring after the operator provisions missing
+  key-based providers in Magpie's masked TUI; apply never passes keys in argv.
+  Existing providers are adopted without rewriting credentials.
 - `dotfiles-magpie status` is the only supported way to see drift; opening the
   app is not part of verification.
 - Codex is structurally protected: no code path calls `magpie codex`, and each

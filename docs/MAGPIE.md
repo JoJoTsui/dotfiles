@@ -142,7 +142,7 @@ the same bytes.
 | --- | --- |
 | role | the repository name of one model provider; a group member and a model candidate's provider prefix refer to it |
 | magpie provider | the Magpie preset that owns the provider's accounts |
-| key source | `codex-account`, `env:NAME`, or `json:PATH:KEY` |
+| key source | `codex-account`, `plugin-account`, `env:NAME`, or `json:PATH:KEY` |
 | required | `yes` when the provider must exist, `no` when its absence is only reported |
 
 ### `models.tsv` — `role|candidate ids|required`
@@ -264,9 +264,10 @@ time.
 
 ## Provider credentials
 
-The deployment reads the stores that already hold the credentials, so the same
-key is never pasted twice. The value is used once, to add the provider, and
-never reaches a log, a report, or the repository.
+Magpie owns provider accounts and keys. The apply uses an existing provider
+as it is and never passes a key to a command. The provider catalog's source
+fields describe the device stores; the `providers` status command can check
+whether those sources resolve without reporting their values.
 
 | Source | Store | Notes |
 | --- | --- | --- |
@@ -275,44 +276,24 @@ never reaches a log, a report, or the repository.
 | `json:PATH:KEY` | a JSON store on the device | read only, by a dotted key path |
 | `plugin-account` | a provider a pinned plugin serves | signed in with `magpie plugin login <provider>` or the app's Plugins page; optional, as `zed` is |
 
-### The Kimi Code China key
+### Provisioning a missing provider
 
-The Kimi Code China plan key is created at
-<https://www.kimi.com/code/console> and stored as `KIMI_CODE_CN_API_KEY` in
-`~/.config/dotfiles/magpie.env`:
-
-```bash
-mkdir -p ~/.config/dotfiles
-printf 'KIMI_CODE_CN_API_KEY=<the key>\n' > ~/.config/dotfiles/magpie.env
-chmod 600 ~/.config/dotfiles/magpie.env
-```
-
-Until the key exists, the conductor group is incomplete: the apply still
-builds the `chatgpt` and `workhorse` groups, reports the missing member by
-name, and fails the run because a required credential is missing.
-`dotfiles-magpie status` says so too. The key never enters git and never
-enters a ticket comment.
-
-### A key on a shared Linux or WSL host
-
-On macOS the apply adds a missing provider from the device store. A headless
-host has no such path: the pinned `magpie provider add` takes a key only as a
-command-line argument, and another process on a shared Linux or WSL host can
-read a process's argv. The deployment therefore never passes a key on that
-command line, and the CLI does not prompt for one there; the pinned CLI's
-masked key entry is in its text interface. When a catalog provider with an
-`env:` or `json:` source is not yet present, the apply stops before it adds any
-provider and names each preset to provision. Open the Magpie TUI, add each
-named preset there, then apply again:
+On macOS, Linux, and WSL, the pinned `magpie provider add` accepts a key as a
+command-line argument, which other processes may see. The apply does not use
+that interface for key-based providers. For a missing required provider used by
+an enabled group, it stops before changing gateway settings, plugins, or
+providers and names each preset to provision; a missing optional provider is
+reported without stopping the apply.
+Add the named presets using the TUI's masked key entry, then apply again:
 
 ```bash
-magpie tui   # add each named preset; the key is entered with masked input
+magpie tui
 ```
 
-A provider that is already present is used as it is, and the credential-free
-`codex-account` provider is still added by the apply. The apply never reads a
-key-requiring provider's credential to pass it on that command line; the masked
-TUI entry is the only writer.
+For example, the Kimi Code China preset uses the plan key from
+<https://www.kimi.com/code/console>. Do not put the key in a shell command or
+argument. An existing provider remains untouched, and the credential-free
+`codex-account` provider can still be added by the apply.
 
 ## Proxy behaviour
 
@@ -324,8 +305,9 @@ the gateway stays direct.
 The template's default `http://127.0.0.1:7890` is a placeholder: the apply
 asks `with-proxy --print-url-if-available` for an explicit `PROXY_HTTP` or an
 observed local listener, probing 7897 then 7890. A listening port does not
-prove that the proxy can reach a provider. If no endpoint is available, the
-apply preserves the existing gateway setting and reports that it is unchanged.
+prove that it belongs to a proxy or can reach a provider. If no endpoint is
+available, the apply preserves the existing gateway setting and reports that it
+is unchanged.
 The ordinary `with-proxy --print-url` retains its fallback for shell callers.
 The gateway setting is written only when the selected endpoint differs.
 

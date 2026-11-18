@@ -498,12 +498,12 @@ class MagpieApplyTests(unittest.TestCase):
 
     def seed_home(self, credentials=True):
         """A device with the client files Magpie may touch."""
-        # The plugin-owned provider is present on the device but not added by
-        # the provider catalog (it has no key source).
+        # Key-based providers are already provisioned in Magpie; codex uses
+        # the credential-free account path and can still be added by apply.
         self.state.mkdir(parents=True, exist_ok=True)
         providers = self.state / "providers.json"
         if not providers.exists():
-            providers.write_text(json.dumps(["zed"]), encoding="utf-8")
+            providers.write_text(json.dumps(["zed", "opencode-go", "kimi-code-cn", "minimax-cn", "openai"]), encoding="utf-8")
         (self.home / ".codex").mkdir(parents=True, exist_ok=True)
         (self.home / ".codex/config.toml").write_text('model = "gpt-6-luna"\n', encoding="utf-8")
         (self.home / ".claude").mkdir(parents=True, exist_ok=True)
@@ -656,15 +656,14 @@ class MagpieApplyTests(unittest.TestCase):
         return [command for command in self.commands()
                 if command.startswith("dsh compact_model")]
 
-    def test_the_apply_creates_the_providers_groups_and_wiring(self):
+    def test_the_apply_preserves_existing_providers_and_wires_clients(self):
         result = self.apply()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         commands = self.commands()
         self.assertIn("provider add codex", commands)
-        self.assertIn("provider add kimi-code-cn sk-fixture-kimi", commands)
-        self.assertIn("provider add opencode-go sk-fixture-opencode", commands)
-        self.assertIn("provider add minimax-cn sk-fixture-minimax", commands)
-        self.assertIn("provider add openai sk-fixture-openai", commands)
+        self.assertEqual([command for command in commands if command.startswith("provider add")],
+                         ["provider add codex"])
+        self.assertFalse(any("sk-fixture" in command for command in commands))
         self.assertTrue(any(command.startswith("group add conductor models=") for command in commands))
         self.assertEqual([command for command in commands if command == "pi group/workhorse"],
                          ["pi group/workhorse"])
@@ -676,8 +675,7 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(self.apply().returncode, 0)
         commands = self.commands()
         order = ["settings set proxy", "plugin add npm:@magpie-community/opencode-zed-auth@0.1.19",
-                 "provider add codex", "provider add opencode-go",
-                 "provider add kimi-code-cn", "provider add minimax-cn", "provider add openai",
+                 "provider add codex",
                  "group add chatgpt", "group add openai-stack", "group add conductor", "group add workhorse",
                  "visible claude chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible pi chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn", "visible dsh chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,kimi-code-cn,opencode-go,minimax-cn",
                  "pi group/workhorse", "dsh group/workhorse"]
@@ -911,19 +909,33 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("brew install --cask magpie", result.stderr)
 
+    def test_macos_never_passes_a_missing_provider_key_in_arguments(self):
+        result = self.apply(setup=lambda: self.provision(["zed"]))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("magpie tui", result.stderr)
+        self.assertNotIn("sk-fixture", result.stdout + result.stderr)
+        self.assertFalse(any(command.startswith("provider add") for command in self.commands()))
+        self.assertFalse(any("sk-fixture" in command for command in self.commands()))
+
     def test_a_missing_optional_provider_warns_and_the_apply_continues(self):
         text = self.read_catalog("providers.tsv").replace(
             "minimax-cn|minimax-cn|json:~/.pi/agent/auth.json:minimax-cn.key|yes",
             "minimax-cn|minimax-cn|json:~/.pi/agent/auth.json:minimax-cn.key|no")
         self.write_catalog("providers.tsv", text)
 
-        def drop_minimax():
-            # Only the optional provider loses its credential.
-            (self.home / ".pi/agent/auth.json").unlink()
-
-        result = self.apply(setup=drop_minimax)
+        # Keep the optional key in the fixture store, but omit its provider.
+        result = self.apply(setup=lambda: self.provision(
+            ["opencode-go", "kimi-code-cn", "openai", "zed"]))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("the provider minimax-cn has no credential", result.stdout)
+        self.assertIn("the provider minimax-cn needs its key provisioned interactively", result.stderr)
+        self.assertFalse(any("sk-fixture" in command for command in self.commands()))
+
+    def test_an_absent_plugin_account_is_not_reported_as_a_tui_key(self):
+        result = self.apply(setup=lambda: self.provision(
+            ["opencode-go", "kimi-code-cn", "minimax-cn", "openai"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the provider zed has no credential", result.stdout)
+        self.assertNotIn("zed preset", result.stderr)
 
     def test_an_absent_optional_key_provider_is_reported_on_native_hosts(self):
         # A key-requiring provider that is optional and absent must be reported
@@ -1265,14 +1277,15 @@ class MagpieApplyTests(unittest.TestCase):
         settings = [command for command in self.commands() if command.startswith("settings set")]
         self.assertEqual(settings, ["settings set proxy http://127.0.0.1:7897"])
 
-    def test_a_missing_required_credential_fails_and_names_the_variable(self):
-        result = self.apply(credentials=False)
+    def test_a_missing_required_provider_fails_with_provisioning_guidance(self):
+        result = self.apply(credentials=False, setup=lambda: self.provision(["zed"]))
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("KIMI_CODE_CN_API_KEY", result.stderr)
-        self.assertIn("opencode-go.key", result.stderr)
+        self.assertIn("kimi-code-cn preset", result.stderr)
+        self.assertIn("opencode-go preset", result.stderr)
+        self.assertIn("magpie tui", result.stderr)
 
     def test_a_linux_apply_fails_closed_before_passing_a_provider_key_in_argv(self):
-        result = self.apply(platform="linux")
+        result = self.apply(platform="linux", setup=lambda: self.provision(["zed"]))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("provisioned interactively", result.stderr)
         self.assertIn("apply again", result.stderr)
@@ -1291,7 +1304,7 @@ class MagpieApplyTests(unittest.TestCase):
                           if command.startswith("provider add")], [])
 
     def test_a_required_key_provider_stops_the_wsl_apply_before_mutations(self):
-        result = self.apply(platform="wsl")
+        result = self.apply(platform="wsl", setup=lambda: self.provision(["zed"]))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("provisioned interactively", result.stderr)
         self.assertIn("magpie tui", result.stderr)
@@ -1780,7 +1793,8 @@ class MagpieCommandTests(MagpieApplyTests):
         self.seed_home()
         result = self.run_command("apply")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("provider add kimi-code-cn sk-fixture-kimi", self.commands())
+        self.assertIn("provider add codex", self.commands())
+        self.assertFalse(any("sk-fixture" in command for command in self.commands()))
         self.assertTrue(self.state_file().is_file())
 
     def test_the_status_exits_zero_on_a_healthy_gateway(self):
@@ -2018,6 +2032,7 @@ class MagpieCommandTests(MagpieApplyTests):
 
     def test_the_providers_report_names_the_source_and_never_the_value(self):
         self.seed_home(credentials=False)
+        self.provision(["zed"])
         result = self.run_command("providers")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("env:KIMI_CODE_CN_API_KEY", result.stdout)
