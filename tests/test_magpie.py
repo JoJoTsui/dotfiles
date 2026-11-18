@@ -1578,6 +1578,7 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("dsh group/workhorse", self.commands())
         self.assertIn("wiring|dsh|group/workhorse", self.state_file().read_text())
+        self.assertNotIn("selection|dsh|excluded", self.state_file().read_text())
 
     def test_an_agent_selection_without_dsh_leaves_compaction_alone(self):
         # The public bootstrap resolves DOTFILES_AGENTS (or --agents) into
@@ -1819,6 +1820,21 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertIn("provider add codex", self.commands())
         self.assertFalse(any("sk-fixture" in command for command in self.commands()))
         self.assertTrue(self.state_file().is_file())
+
+    def test_status_respects_the_last_dsh_exclusion(self):
+        result = self.apply(shell=["DEPLOY_AGENTS=(claude pi)"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.healthy_gateway()
+        settings = self.home / ".config/magpie/settings.json"
+        data = json.loads(settings.read_text())
+        data["pickedModels"]["dsh"] = ["device/model"]
+        settings.write_text(json.dumps(data))
+        (self.state / "dsh-compact.json").write_text(json.dumps({"value": "device/model"}))
+        result = self.run_command("status")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("wiring|dsh|excluded", result.stdout)
+        self.assertNotIn("dsh-compact|drift", result.stdout)
+        self.assertNotIn("picked dsh", result.stderr)
 
     def test_the_status_exits_zero_on_a_healthy_gateway(self):
         self.seed_home()

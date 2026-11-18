@@ -392,7 +392,9 @@ so the wiring row is a gate, never the value. The field is set only when the
 a parked, inherited, or repo-owned row leaves it alone. A bootstrap agent
 selection that leaves `dsh` out also leaves its visibility, picked models,
 wiring, and compaction field alone. The recorded wiring omits DSH in that case,
-so a later selection including `dsh` wires it normally. A standalone apply,
+so a later selection including `dsh` wires it normally. Status reports DSH as
+excluded using the last applied selection instead of treating its unchanged
+settings as drift. A standalone apply,
 such as `dotfiles-magpie apply`, declares no agent selection and keeps the
 wiring row as its gate.
 

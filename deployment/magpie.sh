@@ -2109,6 +2109,9 @@ magpie_state_content() {
             if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
             printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
         done
+        if ! magpie_dsh_compact_selected; then
+            printf 'selection|dsh|excluded\n'
+        fi
         printf 'proxy|current|%s\n' "$MAGPIE_PROXY"
         if [ -n "$MAGPIE_DSH_COMPACT_GROUP" ]; then
             printf 'dsh-compact|%s\n' "$MAGPIE_DSH_COMPACT_GROUP"
@@ -3018,7 +3021,10 @@ magpie_dsh_compact_state() {
 magpie_status() {
     local index role preset source required group agent proxy output models
     local known guard='' missing='' state credential version name plugin_state current desired count
-    local enabled report keys dsh_compact_state
+    local enabled report keys dsh_compact_state dsh_excluded=no
+    if grep -qx 'selection|dsh|excluded' "$(magpie_state_dir)/state.tsv" 2>/dev/null; then
+        dsh_excluded=yes
+    fi
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
     if magpie_gateway_ready; then
         printf 'gateway|%s|answers\n' "$MAGPIE_GATEWAY"
@@ -3085,6 +3091,10 @@ magpie_status() {
         agent=${MAGPIE_WIRING_AGENT[index]}
         group=${MAGPIE_WIRING_GROUP[index]}
         enabled=${MAGPIE_WIRING_ENABLED[index]}
+        if [ "$agent" = dsh ] && [ "$dsh_excluded" = yes ]; then
+            printf 'wiring|dsh|excluded\n'
+            continue
+        fi
         # Claude's and Pi's settings are the deployment's own wiring, so the
         # status reads the live files instead of echoing the catalog intent.
         # A parked agent keeps the catalog row; its wiring is not required.
@@ -3125,6 +3135,7 @@ magpie_status() {
     done
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
         agent=${MAGPIE_VISIBLE_AGENT[index]}
+        if [ "$agent" = dsh ] && [ "$dsh_excluded" = yes ]; then continue; fi
         if names=$(magpie_visible_names "$agent"); then
             [ -n "$names" ] || names='every model'
             printf 'visible|%s|%s\n' "$agent" "$names"
@@ -3135,6 +3146,7 @@ magpie_status() {
     done
     for (( index=0; index<${#MAGPIE_PICKED_AGENT[@]}; index++ )); do
         agent=${MAGPIE_PICKED_AGENT[index]}; desired=${MAGPIE_PICKED_MODELS[index]}
+        if [ "$agent" = dsh ] && [ "$dsh_excluded" = yes ]; then continue; fi
         if current=$(magpie_picked_current "$agent"); then
             if [ -z "$current" ]; then
                 count=0
@@ -3151,7 +3163,11 @@ magpie_status() {
         fi
     done
     magpie_dsh_official_state
-    dsh_compact_state=$(magpie_dsh_compact_state)
+    if [ "$dsh_excluded" = yes ]; then
+        dsh_compact_state='gated|'
+    else
+        dsh_compact_state=$(magpie_dsh_compact_state)
+    fi
     case "${dsh_compact_state%%|*}" in
         matched)
             printf 'dsh-compact|%s\n' "$MAGPIE_DSH_COMPACT_TARGET"
