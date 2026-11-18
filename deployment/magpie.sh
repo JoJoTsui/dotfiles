@@ -3006,6 +3006,12 @@ client-settings"
                 [ ! -L "$HOME/.codex/magpie.config.toml" ] &&
                     [ -f "$HOME/.codex/magpie.config.toml" ] ||
                     { magpie_fail 'the Codex profile is not a regular file'; return 1; }
+                # The profile carries the gateway bearer credential, so it is
+                # private before the writer runs: a profile that a device
+                # chmod, a copy, or an older run left at another mode never
+                # receives the credential while another user can read it.
+                chmod 600 "$HOME/.codex/magpie.config.toml" ||
+                    { magpie_fail 'cannot protect the Codex profile before it is written'; return 1; }
                 magpie_codex_profile_pending_write \
                     "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
                     "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1

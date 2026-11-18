@@ -192,6 +192,12 @@ elif argv[:1] == ["codex"] and len(argv) == 2:
         auth.write_text('{"changed":true}\\n')
     profile = pathlib.Path(os.environ["HOME"]) / ".codex/magpie.config.toml"
     catalog = pathlib.Path(os.environ["HOME"]) / ".codex/magpie-models.json"
+    # The mode the writer was handed: the deployment has to make the profile
+    # private before the credential is written into it, so the writer can
+    # report what it was given.
+    save("codex-profile-mode.json", {
+        "mode": oct(profile.stat().st_mode & 0o7777) if profile.exists() else "absent",
+    })
     if profile.exists():
         # The pinned writer parses the file it writes over and refuses one it
         # cannot read, so a malformed profile is preserved.
@@ -1108,6 +1114,34 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn('model = "group/openai-stack"', profile.read_text(encoding="utf-8"))
         self.assertEqual(self.commands().count("codex group/openai-stack"), 2)
+
+    def test_the_codex_profile_is_private_before_the_writer_runs(self):
+        # A profile that a device chmod, a copy, or an older run left at
+        # another mode must not receive the gateway credential while another
+        # user can read it.
+        self.assertEqual(self.apply().returncode, 0)
+        profile = self.home / ".codex/magpie.config.toml"
+        profile.chmod(0o644)
+
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(profile.stat().st_mode & 0o777, 0o600)
+        # The writer itself saw the private profile: the repair happened
+        # before the write, not after it.
+        recorded = json.loads((self.state / "codex-profile-mode.json").read_text())
+        self.assertEqual(recorded["mode"], "0o600")
+
+    def test_a_failed_codex_writer_leaves_the_profile_private(self):
+        # A failed write must not leave a readable credential behind.
+        self.assertEqual(self.apply().returncode, 0)
+        profile = self.home / ".codex/magpie.config.toml"
+        profile.chmod(0o644)
+
+        result = self.apply(environment={"FAKE_MAGPIE_FAIL_CODEX_PROFILE": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(profile.stat().st_mode & 0o777, 0o600)
+        recorded = json.loads((self.state / "codex-profile-mode.json").read_text())
+        self.assertEqual(recorded["mode"], "0o600")
 
     def test_interrupted_profile_files_cannot_be_changed_then_adopted(self):
         self.assertNotEqual(self.apply(environment={"FAKE_MAGPIE_FAIL_CODEX_PROFILE": "1"}).returncode, 0)
