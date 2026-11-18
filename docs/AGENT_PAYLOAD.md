@@ -290,13 +290,22 @@ The common instructions use portable command discovery, a pointer to owned
 preferred-workflows section that names the mattpocock skills, Herdr, Worktrunk,
 and RTK as the first choice in their area and points at the detailed section or
 skill instead of repeating it, a cross-agent delegation contract with verified
-one-shot commands for Codex, Kimi, Pi, OpenCode, Qoder, and MiniMax Code, the
-collaboration rules recorded in [cross-agent collaboration](AGENT_COLLABORATION.md),
+one-shot commands for Codex, Kimi, Pi, OpenCode, Qoder, and MiniMax Code, a
+conductor/workhorse route policy asking for children no stronger than their
+parents, the collaboration rules recorded in
+[cross-agent collaboration](AGENT_COLLABORATION.md),
 the optional [Herdr](HERDR.md) multi-pane workflow, the
 [resource-budget](AGENT_RESOURCES.md) rules, the
 [shared-host and remote-job](AGENT_REMOTE_JOBS.md) pattern with bounded search,
 and the cache-discipline rules recorded in
 [caching and context budget](AGENT_CACHING.md).
+
+The delegation policy keeps planning and supervision with the conductor and
+bounded lightweight work with the workhorse. It asks the parent to use supported
+inheritance or verify a child route no stronger than its own, and to skip
+delegation when it cannot. A new process may use a different default; static
+model groups and fallback do not enforce a dynamic ceiling. On a gateway host
+the roles use the groups in [Magpie](MAGPIE.md).
 
 CodeGraph is the primary code-query path: its MCP entry is registered for every
 client. Graphify is optional and per repository. The `graphify` command is the

@@ -247,6 +247,30 @@ class AgentPayloadTests(unittest.TestCase):
         for heading in ("## Skills", "## RTK", "## Worktree persistence", "## Worktree hygiene"):
             self.assertIn(heading, block)
 
+    def test_delegation_instructions_describe_model_role_policy(self):
+        result = self.deploy("--agents", "none")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        destinations = [destination for kind, _, destination in self.payload_targets()
+                        if kind == "block"]
+        for relative in destinations:
+            path = self.home / relative
+            with self.subTest(destination=relative):
+                block = self.managed_instruction_block(path.read_text())
+                self.assertIn("## Cross-agent delegation", block)
+                section = block.split("## Cross-agent delegation", 1)[1].split("\n## ", 1)[0]
+                # A workhorse takes the bounded task; the conductor keeps the
+                # intelligent-heavy planning and supervision.
+                self.assertIn("workhorse", section)
+                self.assertIn("conductor", section)
+                self.assertIn("planning", section)
+                self.assertIn("supervision", section)
+                self.assertIn("no stronger", section)
+                self.assertIn("inheritance", section)
+                self.assertIn("configured default", section)
+                self.assertIn("do not delegate", section)
+                self.assertNotIn("the same client with its configured default", section)
+                self.assertNotIn("Use each client's configured default model", section)
+
     def test_rtk_stays_instruction_only(self):
         catalog = (SOURCE / "deployment/skills.tsv").read_text().splitlines()
         names = {line.split("|")[0] for line in catalog if line and not line.startswith("#")}

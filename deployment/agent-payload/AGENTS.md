@@ -227,9 +227,19 @@ bounded task.
 
 Where the host requires an outbound proxy, prefix Codex with the managed
 `with-proxy` launcher; the exact route belongs in device-local instructions.
-Use each client's configured default model; confirm it with `opencode models`,
-`pi --list-models`, or `qoder --list-models`. Codex and Kimi resolve models from
-their own configuration, so pass one only when you know its name.
+Confirm the routes a client offers with `opencode models`, `pi --list-models`,
+or `qoder --list-models`. Codex and Kimi resolve models from their own
+configuration, so pass one only when you know its name.
+
+Use the **conductor** for planning, review, and supervision; prefer a
+**workhorse** for bounded lightweight tasks. On a Magpie host these are
+`group/conductor` and `group/workhorse`; the names describe intent, not a
+verified ranking of every model behind them.
+
+Keep a child no stronger than its parent: use supported parent-model inheritance
+or select and verify a suitable route. A new process may use a different
+configured default, and group fallback is not an enforced ceiling. If you
+cannot establish a suitable route, do not delegate.
 
 Rules:
 
