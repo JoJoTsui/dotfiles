@@ -1,0 +1,543 @@
+#!/usr/bin/env bash
+# dotfiles-codex-resume — resume a Codex thread from any directory and keep
+# the provider, the model, and the reasoning effort that thread saved.
+#
+# The command adds provider *definitions* only. It never selects a model, a
+# provider, or a reasoning effort, so Codex restores the thread's own saved
+# settings. The Magpie credential is never owned here: it is read from
+# Magpie's own profile at run time and handed to the child through the
+# environment, so it never reaches argv, a file, or a log.
+set -uo pipefail
+
+usage() {
+    cat <<'EOF'
+usage: dotfiles-codex-resume [SESSION_ID] [PROMPT] [options]
+
+  Without --last the first positional is the session id of the thread to
+  resume and the second is an optional prompt to start that thread with; the
+  picker is shown when the session id is absent.
+
+  With --last the thread is the most recent one, and the first positional is
+  not a session id: codex resume reads it as the prompt of that most recent
+  thread, exactly as `codex resume` reads it. A session id together with
+  --last is refused, because codex resume would type that id as the prompt
+  instead of resuming the thread: drop --last to resume that thread.
+
+options:
+  --last         continue the most recent thread without the picker
+  -C, --cd DIR   the working directory to resume in
+  --no-alt-screen  run the picker without the alternate screen
+
+The resume covers every working directory and the resumable non-interactive
+threads. An explicit model, provider, reasoning effort, or profile is refused:
+it would defeat the per-thread preservation of the saved provider, the saved
+model, and the saved reasoning effort.
+
+The command needs Codex 0.169.0 or newer: the preservation depends on the
+selection rule of that release, and an older Codex refuses a resume whose
+thread saved another provider.
+EOF
+}
+
+refuse() {
+    printf 'dotfiles-codex-resume: refusing %s: %s\n' "$1" "$2" >&2
+    exit 2
+}
+
+preserved() {
+    printf 'a resumed thread keeps its own saved provider, saved model, and saved reasoning effort'
+}
+
+command -v codex >/dev/null 2>&1 || {
+    printf 'dotfiles-codex-resume: codex is not installed\n' >&2
+    exit 127
+}
+command -v python3 >/dev/null 2>&1 || {
+    printf 'dotfiles-codex-resume: python3 is not installed\n' >&2
+    exit 127
+}
+
+session=''
+prompt=''
+positional=0
+last=0
+passthrough=()
+user_overrides=()
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --last)
+            last=1
+            shift
+            ;;
+        --last=*)
+            last=1
+            shift
+            ;;
+        -m|--model|--model=*)
+            refuse "$1" "$(preserved); an explicit model would replace the thread's saved model."
+            ;;
+        --model-provider|--model-provider=*)
+            refuse "$1" "$(preserved); an explicit provider would reroute the thread away from its saved provider."
+            ;;
+        -p|--profile|--profile=*)
+            refuse "$1" "a profile layer selects a provider, a model, or an effort for the whole session, which defeats the per-thread preservation of the saved provider, the saved model, and the saved reasoning effort."
+            ;;
+        -c|--config)
+            [ "$#" -ge 2 ] || refuse "$1" "a configuration override needs a key=value pair."
+            user_overrides+=("$2")
+            shift 2
+            ;;
+        --config=*)
+            user_overrides+=("${1#--config=}")
+            shift
+            ;;
+        -C|--cd)
+            [ "$#" -ge 2 ] || refuse "$1" "a directory is needed."
+            passthrough+=("--cd" "$2")
+            shift 2
+            ;;
+        --cd=*)
+            passthrough+=("--cd" "${1#--cd=}")
+            shift
+            ;;
+        --no-alt-screen)
+            passthrough+=("$1")
+            shift
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            refuse "$1" "only --last, --cd, and --no-alt-screen are passed through to codex resume."
+            ;;
+        *)
+            positional=$((positional + 1))
+            case "$positional" in
+                1) session="$1" ;;
+                2) prompt="$1" ;;
+                *) refuse "$1" "a resume takes a session id and an optional prompt." ;;
+            esac
+            shift
+            ;;
+    esac
+done
+
+while [ "$#" -gt 0 ]; do
+    positional=$((positional + 1))
+    case "$positional" in
+        1) session="$1" ;;
+        2) prompt="$1" ;;
+        *) refuse "$1" "a resume takes a session id and an optional prompt." ;;
+    esac
+    shift
+done
+
+# Codex's own rule for --last (finalize_resume_interactive in codex
+# 0.169.0): with --last and no prompt, the session id is reinterpreted as
+# the prompt of the most recent thread. The command passes the positionals
+# through unchanged and Codex reads them, so a session id given with --last
+# would be typed as a prompt instead of resuming that thread. The
+# combination is refused instead of resumed silently.
+session_id_pattern='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+if [ "$last" -eq 1 ] && [ -n "$session" ] && [[ "$session" =~ $session_id_pattern ]]; then
+    refuse "--last $session" "with --last, codex resume reads the first positional as the prompt of the most recent thread, not as a session id; drop --last to resume that thread."
+fi
+
+# Codex trims the key of a configuration override before it applies it
+# (parse_overrides: `k.trim()`), so a spaced key would slip past a plain
+# comparison. The refusal trims the key the same way.
+refusal=$(python3 - ${user_overrides[@]+"${user_overrides[@]}"} <<'PY'
+import sys
+
+PRESERVED = (
+    "a resumed thread keeps its own saved provider, saved model, and saved "
+    "reasoning effort"
+)
+MESSAGES = {
+    "model": PRESERVED + "; an explicit model would replace the thread's saved model.",
+    "model_provider": PRESERVED
+    + "; an explicit provider would reroute the thread away from its saved provider.",
+    "model_reasoning_effort": PRESERVED
+    + "; an explicit reasoning effort would replace the thread's saved reasoning effort.",
+}
+
+# The provider definition this command owns. It is derived from Magpie's own
+# profile and it carries the gateway credential, so an override of it would
+# reroute the thread away from its saved provider and would hand the
+# credential to another endpoint. The provider definitions the command
+# appends come after the user's overrides, and Codex applies the overrides
+# in order, so such an override would be overwritten in silence.
+OWNED_TABLE = "model_providers.magpie"
+OWNED = (
+    "the command owns the model_providers.magpie provider definition; an "
+    "override of it would reroute the thread away from its saved provider."
+)
+
+for override in sys.argv[1:]:
+    key = override.split("=", 1)[0].strip()
+    message = MESSAGES.get(key)
+    if message:
+        print("dotfiles-codex-resume: refusing -c %s: %s" % (override, message))
+        sys.exit(2)
+    if key == OWNED_TABLE or key.startswith(OWNED_TABLE + "."):
+        print("dotfiles-codex-resume: refusing -c %s: %s" % (override, OWNED))
+        sys.exit(2)
+PY
+)
+if [ "$?" -ne 0 ]; then
+    printf '%s\n' "$refusal" >&2
+    exit 2
+fi
+
+# The guarantee depends on the selection rule of Codex 0.169.0: an older Codex
+# requires the saved provider to equal the provider of the current
+# configuration, so a neutral layer alone is not enough there.
+minimum_codex_version=0.169.0
+codex_version=$(codex --version 2>&1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+version_refusal=$(python3 - "$minimum_codex_version" "$codex_version" <<'PY'
+import sys
+
+floor = sys.argv[1]
+found = sys.argv[2]
+
+
+def parts(text):
+    return tuple(int(part) for part in text.split("."))
+
+
+if not found:
+    print(
+        "the Codex version could not be read from `codex --version`; "
+        "%s or newer is required" % floor
+    )
+    sys.exit(1)
+if parts(found) < parts(floor):
+    print(
+        "Codex %s is older than the required %s; a resume that keeps a thread's "
+        "saved provider needs %s or newer" % (found, floor, floor)
+    )
+    sys.exit(1)
+PY
+)
+if [ "$?" -ne 0 ]; then
+    printf 'dotfiles-codex-resume: %s\n' "$version_refusal" >&2
+    exit 2
+fi
+
+# The provider layer comes from Magpie's own profile. It carries definitions
+# only; the credential travels in the environment, never in an override.
+layer=$(python3 - <<'PY'
+import os
+import sys
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    tomllib = None
+
+CREDENTIAL_ENV = "DOTFILES_CODEX_RESUME_MAGPIE_TOKEN"
+PROVIDER = "magpie"
+TABLE = "model_providers." + PROVIDER
+
+# Keys of a provider definition that carry no credential and no device state.
+CARRIED = (
+    "name",
+    "base_url",
+    "wire_api",
+    "requires_openai_auth",
+    "request_max_retries",
+    "stream_max_retries",
+    "stream_idle_timeout_ms",
+    "websocket_connect_timeout_ms",
+    "supports_websockets",
+    "supports_standalone_web_search",
+)
+
+# Header names whose value is a credential rather than a routing hint.
+SECRET_HEADER = ("authorization", "api-key", "apikey", "token", "secret", "password")
+# The actor header is routing, not a credential: Codex reads it from the
+# provider's own header table to offer the OpenAI actor tools.
+ACTOR_HEADER = "x-openai-actor-authorization"
+
+
+def note(message):
+    print("N\t" + message)
+
+
+def literal(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    text = str(value)
+    text = text.replace("\\", "\\\\").replace('"', '\\"')
+    text = text.replace("\n", "\\n").replace("\t", "\\t").replace("\r", "\\r")
+    return '"' + text + '"'
+
+
+def linked(path):
+    """Why the path is not a plain file of its own, when it is not one.
+
+    The deployment's Codex boundary refuses an aliased path: a link, a
+    non-regular file, and a file with another name are all a path the
+    deployment does not own. The resume command reads the same two paths, so
+    it refuses them the same way and degrades instead of reading through the
+    link.
+    """
+    if os.path.islink(path):
+        return "is a symlink"
+    if os.path.exists(path) and not os.path.isfile(path):
+        return "is not a regular file"
+    try:
+        links = os.stat(path).st_nlink
+    except OSError:
+        return None
+    if links > 1:
+        return "has another name"
+    return None
+
+
+def load(path):
+    if not os.path.isfile(path):
+        return None
+    try:
+        if tomllib is not None:
+            with open(path, "rb") as handle:
+                return tomllib.load(handle)
+        with open(path, encoding="utf-8") as handle:
+            return parse_toml_subset(handle.read())
+    except Exception as error:
+        note("cannot read %s: %s" % (path, error))
+        return None
+
+
+def unescape(text):
+    result = []
+    index = 0
+    while index < len(text):
+        character = text[index]
+        if character == "\\" and index + 1 < len(text):
+            index += 1
+            following = text[index]
+            result.append({"n": "\n", "t": "\t", "r": "\r"}.get(following, following))
+        else:
+            result.append(character)
+        index += 1
+    return "".join(result)
+
+
+def split_inline(text):
+    parts = []
+    current = []
+    quoted = False
+    for character in text:
+        if character == '"':
+            quoted = not quoted
+        if character == "," and not quoted:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(character)
+    if "".join(current).strip():
+        parts.append("".join(current))
+    return parts
+
+
+def parse_value(text):
+    text = text.strip()
+    if text.startswith("{") and text.endswith("}"):
+        table = {}
+        for part in split_inline(text[1:-1]):
+            key, _, value = part.partition("=")
+            if not _:
+                continue
+            table[key.strip().strip('"')] = parse_value(value)
+        return table
+    if text.startswith('"') and text.endswith('"') and len(text) >= 2:
+        return unescape(text[1:-1])
+    if text.startswith("'") and text.endswith("'") and len(text) >= 2:
+        return text[1:-1]
+    if text in ("true", "false"):
+        return text == "true"
+    try:
+        return int(text)
+    except ValueError:
+        pass
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    return text
+
+
+def parse_toml_subset(text):
+    """Read the plain tables, keys, and inline tables a provider holds.
+
+    This is the reader for a python3 without tomllib. It is deliberately
+    small: a value it cannot read stays a string and the profile is then
+    reported as unusable rather than half applied.
+    """
+    document = {}
+    table = document
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            table = document
+            for part in line[1:-1].split("."):
+                table = table.setdefault(part.strip().strip('"'), {})
+            continue
+        key, separator, value = line.partition("=")
+        if not separator:
+            continue
+        table[key.strip().strip('"')] = parse_value(value)
+    return document
+
+
+def slug(name):
+    return "".join(character if character.isalnum() else "_" for character in name).upper()
+
+
+codex_home = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
+profile_path = os.path.join(codex_home, "magpie.config.toml")
+base_path = os.path.join(codex_home, "config.toml")
+
+# An aliased input is refused the way the deployment's Codex boundary refuses
+# one: it is not read through the link, and the command degrades with a
+# message instead.
+if os.path.islink(codex_home):
+    note(
+        "the Codex home at %s is a symlink; it is not read through the link, "
+        "and the resume continues without the Magpie provider definition"
+        % codex_home
+    )
+    sys.exit(0)
+
+profile_link = linked(profile_path)
+if profile_link:
+    note(
+        "the Magpie profile at %s %s; it is not read through the link, and the "
+        "resume continues without the Magpie provider definition"
+        % (profile_path, profile_link)
+    )
+    sys.exit(0)
+
+base_link = linked(base_path)
+if base_link:
+    note(
+        "the base Codex configuration at %s %s; it is not read through the link, "
+        "and the resume continues without the Magpie provider definition"
+        % (base_path, base_link)
+    )
+    sys.exit(0)
+
+profile = load(profile_path)
+if profile is None:
+    note("no Magpie profile at %s; resuming without the Magpie provider definition" % profile_path)
+    sys.exit(0)
+
+provider = profile.get("model_providers", {}).get(PROVIDER)
+if not isinstance(provider, dict):
+    note("the Magpie profile at %s defines no model_providers.%s; resuming without it" % (profile_path, PROVIDER))
+    sys.exit(0)
+if not provider.get("name") or not provider.get("base_url"):
+    note("the Magpie provider in %s has no name or no base URL; resuming without it" % profile_path)
+    sys.exit(0)
+
+base = load(base_path) or {}
+if PROVIDER in base.get("model_providers", {}):
+    note("the device's own model_providers.%s definition is in use; the Magpie profile was not injected" % PROVIDER)
+    sys.exit(0)
+
+overrides = []
+environment = []
+
+
+def add_override(key, value):
+    overrides.append(key + "=" + literal(value))
+
+
+for key in CARRIED:
+    if key in provider:
+        add_override(TABLE + "." + key, provider[key])
+
+headers = provider.get("http_headers") or {}
+if not isinstance(headers, dict):
+    note("the Magpie provider has no usable http_headers table; resuming without it")
+    sys.exit(0)
+for name, value in headers.items():
+    lowered = str(name).lower()
+    if lowered != ACTOR_HEADER and any(marker in lowered for marker in SECRET_HEADER):
+        variable = "DOTFILES_CODEX_RESUME_HEADER_" + slug(name)
+        environment.append((variable, str(value)))
+        add_override(TABLE + ".env_http_headers." + str(name), variable)
+    else:
+        add_override(TABLE + ".http_headers." + str(name), value)
+
+query = provider.get("query_params") or {}
+if not isinstance(query, dict):
+    note("the Magpie provider has no usable query_params table; resuming without it")
+    sys.exit(0)
+for name, value in query.items():
+    lowered = str(name).lower()
+    if any(marker in lowered for marker in SECRET_HEADER):
+        note("the Magpie provider carries a credential in a query parameter; resuming without it")
+        sys.exit(0)
+    add_override(TABLE + ".query_params." + str(name), value)
+
+if "env_key" in provider:
+    add_override(TABLE + ".env_key", provider["env_key"])
+elif "experimental_bearer_token" in provider:
+    environment.append((CREDENTIAL_ENV, str(provider["experimental_bearer_token"])))
+    add_override(TABLE + ".env_key", CREDENTIAL_ENV)
+
+for override in overrides:
+    print("O\t" + override)
+for name, value in environment:
+    print("E\t" + name + "\t" + value)
+PY
+)
+layer_status=$?
+if [ "$layer_status" -ne 0 ]; then
+    printf 'dotfiles-codex-resume: cannot read the Magpie provider definition; no resume was started\n' >&2
+    exit 3
+fi
+
+generated=()
+environment=()
+while IFS=$'\t' read -r kind first second; do
+    case "$kind" in
+        O) generated+=("$first") ;;
+        E) environment+=("$first=$second") ;;
+        N) printf 'dotfiles-codex-resume: %s\n' "$first" >&2 ;;
+    esac
+done <<< "$layer"
+for assignment in ${environment[@]+"${environment[@]}"}; do
+    export "$assignment"
+done
+
+args=(resume --all --include-non-interactive)
+[ "$last" -eq 1 ] && args+=(--last)
+[ -n "$session" ] && args+=("$session")
+[ -n "$prompt" ] && args+=("$prompt")
+for option in ${passthrough[@]+"${passthrough[@]}"}; do
+    args+=("$option")
+done
+for override in ${user_overrides[@]+"${user_overrides[@]}"}; do
+    args+=(-c "$override")
+done
+# The provider definitions come last: they are the layer this command owns.
+for override in ${generated[@]+"${generated[@]}"}; do
+    args+=(-c "$override")
+done
+
+exec codex "${args[@]}"

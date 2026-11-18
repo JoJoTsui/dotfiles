@@ -348,26 +348,144 @@ force adoption.
 
 ### Resume without switching a thread's provider
 
-Codex 0.169.0's interactive picker can discover sessions across providers:
+Resume a thread with the managed command:
 
 ```bash
-codex resume --all --include-non-interactive
+dotfiles-codex-resume
 ```
 
-`--all` removes the working-directory filter; `--include-non-interactive` adds
-resumable Exec/AppServer sessions. Archived sessions are not included. Omit
-`-p magpie`, `-m`, and model/provider/reasoning-effort overrides: explicit
-selection can conflict with a thread's saved provider. `codex exec resume`
-always sends resolved settings and is not a generic mixed-provider substitute.
+It runs `codex resume --all --include-non-interactive`, so the picker lists
+every working directory and the resumable Exec/AppServer threads. The
+positionals are passed through and Codex reads them: without `--last` the
+first positional is the session id and the second is the prompt; with
+`--last` the thread is the most recent one and the first positional is the
+prompt of that thread, exactly as `codex resume` reads it. A session id
+together with `--last` is refused with a message that names the fix — drop
+`--last` to resume that thread — because Codex would otherwise type the id
+as the prompt. `--cd` and `--no-alt-screen`
+are passed through as well. Archived threads are not resumable and are not
+offered. `codex exec resume` always sends resolved settings and is not a
+substitute for this command.
+
+The command adds a **provider-definitions-only** layer. It never sets
+`model`, `model_provider`, or `model_reasoning_effort`, so Codex restores the
+thread's own saved provider, model, and reasoning effort. The definitions come
+from Magpie's own `~/.codex/magpie.config.toml` at run time: the deployment
+never owns, copies, or persists the gateway credential. The provider table
+reaches Codex as command-line configuration overrides, and the credential
+reaches it through the environment with the provider's `env_key` mechanism, so
+it never enters argv, a deployment-owned file, a log, a report, or this
+repository. A base configuration that already defines `model_providers.magpie`
+wins: the device's own definition is left alone. Without a Magpie profile the
+command degrades to a plain resume and says so on stderr.
+
+The two files it reads are refused when they are aliased, the same way the
+deployment's Codex boundary refuses an aliased path: a symlink, a path that is
+not a regular file, and a file with another name are never read through the
+link. The command degrades to a plain resume with a message on stderr instead,
+and it applies the same rule to a linked Codex home.
+
+Plain `codex` keeps the subscription defaults for a new session, and
+`codex -p magpie` keeps the gateway defaults for a new session. Neither is
+changed by the resume command.
+
+The command refuses the overrides that would defeat the preservation, with a
+message that names it: `--model`, `--model-provider`, `-c model=…`,
+`-c model_provider=…`, `-c model_reasoning_effort=…`, and `--profile`. They
+are refused, not ignored. The key of a configuration override is compared the
+way Codex compares it: Codex trims the key before it applies the override, so
+`-c ' model = "gpt-6.1-sol"'` selects the very same setting and is refused as
+well.
+
+An override of the provider table the command owns, `model_providers.magpie.*`,
+is refused as well. That table is derived from Magpie's own profile and the
+gateway credential is attached to it, so an override of it would reroute the
+thread away from its saved provider and would hand the credential to another
+endpoint; the command appends its own definitions after the user's overrides,
+so such an override would be overwritten in silence. A provider the command
+does not generate is the user's own business: `-c model_providers.other.…`
+still reaches Codex.
+
+The command needs Codex 0.169.0 or newer and refuses an older one with a
+message that names both versions. Below 0.169.0 the app server required the
+saved provider of a thread to equal the provider of the current configuration,
+so a neutral layer alone was not enough to resume a thread of another
+provider. A newer Codex has to be checked again before it is claimed.
 
 **Verification boundary:** restoring a saved provider also requires its
-definition in the effective configuration. The Magpie definition lives in the
-separate profile, so the plain command above is not yet verified for
-Magpie-origin threads. A provider-definitions-only resume profile, with no
-model/provider/effort selection, still needs an isolated two-provider runtime
-check before this deployment can claim all-session resume. Existing session
-metadata must remain unchanged. These observations concern device Codex
-0.169.0; the repository's older pin needs its own compatibility check.
+definition in the effective configuration, and a selection layer would replace
+the saved settings instead of restoring them. The synthetic runtime check
+below establishes both facts for Codex 0.169.0. Existing session metadata
+stays unchanged: the command neither retags a session nor writes into the
+Codex home. These observations concern device Codex 0.169.0, which is also the
+repository pin; another version needs its own check.
+
+The synthetic run used a fresh Codex home, two fake loopback providers with
+the Responses API over SSE, and threads with a different saved provider,
+model, and reasoning effort each. The resumed turn reached the thread's own
+endpoint with the thread's saved model and effort, while the two failures the
+same run has to avoid were observed first: a saved-versus-requested provider
+mismatch through the Magpie profile, and a Magpie thread without the provider
+definition. The live gateway on `127.0.0.1:3425` was not part of the run: the
+fake providers bound ephemeral loopback ports, and the real Codex home, its
+sessions, and its authentication were never read. See
+[the neutral resume layer ADR](../adr/0015-neutral-codex-resume-layer.md).
+
+The interactive picker path is proven on a pty-capable host: the driver waits
+for the picker to render, waits for the session list to load, accepts the row
+the picker highlights, waits for the thread view, writes the prompt, and
+submits it, each in a write of its own, because text and Return in one write
+are read as a paste. The wait for the list is a step of its own, because the
+picker renders in two stages: its header and its footer are on the screen
+while the list is still loading ("Loading sessions…", the counter
+"0 / 0… · 0%"), and a Return sent in that state accepts no row. The list has
+rows when the picker shows its counter with a non-zero total ("1 / 4"). The
+driver sends no arrow key: the picker orders the list and picks the
+highlighted row itself, so no row of its own can be named, and no row is
+claimed. The acceptance is a property: whichever row the picker highlights,
+the resumed turn carries that thread's own saved provider, model, and
+reasoning effort.
+The synthetic home turns the startup update check off, so the update prompt of
+a fresh Codex home cannot be accepted by the driver.
+
+A turn produces more than one request at the provider: Codex sends a request
+of its own for the thread title, and that request carries the configuration's
+own reasoning effort. It is not the resumed turn. The check therefore asserts
+on the request whose `prompt_cache_key` matches the thread's creation
+request, and the auxiliary request is recorded separately. Every fake
+provider is searched for that request: the picker may highlight a row of any
+provider, and the turn of a thread of another provider reaches that
+provider's endpoint, not the Magpie one.
+
+The runtime class of `tests/test_codex_resume.py` is opt-in, because it needs
+the real Codex CLI and a pseudo terminal. It runs with:
+
+```bash
+DOTFILES_TEST_CODEX_RESUME=1 python3 -m unittest tests.test_codex_resume -v
+```
+
+The deterministic part of the suite (the fake-Codex unit tests) always runs,
+and `tests/verify_portable.py` never starts the real CLI or a pty.
+
+**Known limitation:** the credential reaches Codex through the environment, so
+the shell commands the resumed agent runs inherit it, the same way the other
+`env_key` providers of this device already do. The command does not override
+`shell_environment_policy`: a merge would replace the device's own list
+instead of extending it.
+
+**Known limitation (model metadata):** the layer carries provider definitions
+only, so a thread whose model the active catalog does not know — every Magpie
+group id — runs with Codex's fallback model metadata, and Codex says so
+(`warning: Model metadata for `magpie-only/group-openai-stack` not found.
+Defaulting to fallback metadata; this can degrade performance and cause
+issues.`). The fallback changes what Codex assumes about the model: the
+context window it assumes, the model-specific tool modes, and the web search
+tool. The routing still holds: the thread's own saved provider, its saved
+model, and its saved reasoning effort are used as they were saved. The
+catalog is not carried: `model_catalog_json` resolves a model by its exact
+slug alone and replaces the active catalog for the whole process, so carrying
+it would take the model metadata away from the other threads resumed in the
+same run.
 
 The profile adapter has synthetic tests, and the approved Magpie 0.1.4404
 macOS ARM64 download matches the release-catalog digest. That payload was

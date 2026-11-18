@@ -270,7 +270,7 @@ can be retained safely during migration. See the
 | Agent | Managed file(s) | Local-only / secrets | Notes |
 | --- | --- | --- | --- |
 | **Claude Code** | merged `~/.claude/settings.json`, owned MCP in `~/.claude.json` | OAuth fields, plugins, hooks, statusline, `settings.local.json` | Magpie gateway at `127.0.0.1:3425`, model `group/conductor`; CodeGraph stdio enabled; T9K workarounds → `docs/CLAUDE_SETUP_T9K.md` |
-| **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included |
+| **Codex** | `~/.codex/config.toml` | `auth.json`, per-project trust, hook hashes | providers use `env_key` (`DEEPSEEK_API_KEY`, `OMNIROUTE_API_KEY`) — no tokens in the file; codegraph MCP included; resume a thread with `dotfiles-codex-resume`, which keeps its saved provider, model, and effort |
 | **kimi-code** | merged `~/.kimi-code/config.toml`, `tui.toml`, owned `mcp.json` entry | `credentials/`, `oauth/`, sessions | key default from `KIMI_API_KEY`; `kimi login` per host; CodeGraph stdio enabled |
 | **pi** | `~/.pi/agent/settings.json`; `models.json` is Magpie-owned | `auth.json` (MiniMax key), `sessions/`, `trust.json` | Magpie provider, model `group/workhorse`; Magpie generates `models.json`; `pi auth login` per host |
 | **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; CodeGraph MCP, no dotfiles-managed proxy providers; remote profile ignores update events |
