@@ -168,13 +168,16 @@ native Linux pass. An emulated or foreign origin must be reported through
 synthetic home on that machine, with the account home, credentials, and
 installed tool prefixes excluded from the environment.
 
-The gate first validates the **default public plan**, including its Magpie
-gateway step and `magpie-apply` action, and records that plan in `plan.json`.
-The bootstrap it actually executes then uses `--no-magpie`, so the synthetic
+The gate first validates the public plan for the selected agents, including its
+Magpie gateway step and `magpie-apply` action, and records that plan in
+`plan.json`. The default selection includes DSH and DSH TUI; `--agents` accepts
+the seven-agent selection shown below to verify the current deferred-DSH scope.
+CodeGraph remains independently selected in both cases. The bootstrap it
+actually executes then uses `--no-magpie`, so the synthetic
 home never probes, starts, or uses a gateway and never touches real provider
 accounts, credentials, or model traffic. A default-port `magpie status` from
 that home could reach the real account's gateway, so the gate never calls it.
-The report labels the live gateway and the default end-to-end Magpie path as
+The report labels the live gateway and end-to-end Magpie path as
 **excluded**, not verified.
 
 The pinned native Magpie CLI is checked separately: the gate runs the public
@@ -187,17 +190,19 @@ The report also records the installed DSH TUI automation adapter's own
 capability verdict for the pinned DSH runtime as `validated`, `unvalidated`, or
 `unknown`. This verdict is separate from the installation result and does not
 establish headless profile wiring, a model request, or Magpie routing. An
-unvalidated or unknown adapter is not headless automation acceptance.
+unvalidated or unknown adapter is not headless automation acceptance. When DSH
+is excluded, the report records `not-selected` and performs no adapter probe.
 
 ```sh
 python3 tests/native_linux.py --home /tmp/dotfiles-linux-home \
   --artifacts /tmp/dotfiles-linux-artifacts \
-  --ubuntu-release 24.04 --execution native
+  --ubuntu-release 24.04 --execution native \
+  --agents kimi,pi,opencode,claude,codex,minimax,qoder
 ```
 
 `--home` must be absent, outside the checkout, and distinct from the account
 home; `--artifacts` must be absent or empty. The report records the runtime,
-the default plan, the executed `--no-magpie` commands, the Magpie exclusions,
+the agent selection and plan, the executed `--no-magpie` commands, the Magpie exclusions,
 and the CLI evidence. Its result is native Linux evidence only; see
 [Magpie deployment](MAGPIE.md) for the separately authorized device check that
 wires a live gateway and provider accounts.

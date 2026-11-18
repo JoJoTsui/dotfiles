@@ -19,13 +19,16 @@ import native_linux
 class LinuxDefaultAgentSelectionTests(unittest.TestCase):
     """The native verifier checks the public all-agent selection, DSH agents included."""
 
-    def public_plan(self):
+    def public_plan(self, agents=None):
         with tempfile.TemporaryDirectory(prefix="dotfiles-linux-plan-") as temporary:
             home = Path(temporary) / "not-created"
-            result = subprocess.run([
+            command = [
                 "/bin/bash", str(native_linux.SOURCE / "bootstrap.sh"), "--home", str(home),
                 "--plan", "--platform", "linux", "--arch", "x86_64",
-            ], check=False, env={"HOME": temporary, "PATH": "/usr/bin:/bin"},
+            ]
+            if agents is not None:
+                command += ["--agents", ",".join(agents)]
+            result = subprocess.run(command, check=False, env={"HOME": temporary, "PATH": "/usr/bin:/bin"},
                 capture_output=True, text=True, timeout=60)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse(home.exists())
@@ -40,6 +43,55 @@ class LinuxDefaultAgentSelectionTests(unittest.TestCase):
         self.assertEqual({package["name"] for package in plan["agentPackages"]},
                          native_linux.DEFAULT_AGENTS | {"codegraph"})
 
+    def test_scoped_plan_and_install_select_the_requested_seven_agents(self):
+        selected = ("kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder")
+        plan = self.public_plan(selected)
+        native_linux.require_selected_agents(plan, selected)
+        native_linux.require_public_magpie_enabled(plan)
+        command = native_linux.bootstrap_execution_command(["bootstrap"], "linux-remote-compute", selected)
+        self.assertEqual(command, ["bootstrap", "--profile", "linux-remote-compute",
+                                   "--agents", ",".join(selected), "--no-magpie"])
+        self.assertNotIn("dsh", plan["agents"])
+        self.assertNotIn("dsh-tui", plan["agents"])
+        for broken in (
+            {**plan, "agents": plan["agents"][:-1]},
+            {**plan, "agents": plan["agents"] + [plan["agents"][0]]},
+            {**plan, "agentPackages": [item for item in plan["agentPackages"] if item["name"] != "codegraph"]},
+        ):
+            with self.subTest(broken=broken), self.assertRaisesRegex(RuntimeError, "requested agent selection"):
+                native_linux.require_selected_agents(broken, selected)
+
+    def test_scoped_cli_records_selection_before_runtime_preflight(self):
+        selected = ("kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder")
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            artifacts = root / "artifacts"
+            arguments = ["native_linux.py", "--home", str(root / "home"), "--artifacts", str(artifacts),
+                         "--ubuntu-release", "24.04", "--execution", "native", "--agents", ",".join(selected)]
+            with mock.patch.object(sys, "argv", arguments), mock.patch.object(sys, "platform", "darwin"), \
+                 mock.patch("sys.stdout", new_callable=io.StringIO), mock.patch("sys.stderr", new_callable=io.StringIO):
+                result = native_linux.main()
+            self.assertEqual(result, 1)
+            report = json.loads((artifacts / "report.json").read_text())
+            self.assertEqual(report["agents"], list(selected))
+            self.assertIn("selected public plan", report["magpie"]["public_plan"])
+            self.assertIn("Linux x86_64 execution is required", report["reason"])
+
+    def test_invalid_scoped_selection_fails_before_creating_artifacts(self):
+        for agents in ("kimi,pi", "kimi,pi,opencode,claude,codex,minimax,qoder,dsh",
+                       "kimi,kimi,opencode,claude,codex,minimax,qoder", ""):
+            with self.subTest(agents=agents), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary).resolve()
+                artifacts = root / "artifacts"
+                result = subprocess.run([
+                    sys.executable, str(native_linux.SOURCE / "tests/native_linux.py"),
+                    "--home", str(root / "home"), "--artifacts", str(artifacts),
+                    "--ubuntu-release", "24.04", "--execution", "native", "--agents", agents,
+                ], capture_output=True, text=True, timeout=30)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("--agents must name", result.stderr)
+                self.assertFalse(artifacts.exists())
+
     def test_a_plan_without_a_dsh_agent_is_rejected(self):
         plan = self.public_plan()
         native_linux.require_default_agents(plan)
@@ -51,6 +103,12 @@ class LinuxDefaultAgentSelectionTests(unittest.TestCase):
 
 
 class LinuxDshAdapterProbeTests(unittest.TestCase):
+    def test_omitted_dsh_does_not_probe_an_adapter(self):
+        command = mock.Mock()
+        result = native_linux.probe_dsh_adapter(Path("/synthetic-home"), None, command)
+        self.assertEqual(result, {"status": "not-selected"})
+        command.assert_not_called()
+
     def test_the_gate_reports_an_unvalidated_installed_adapter(self):
         with tempfile.TemporaryDirectory(prefix="dotfiles-linux-dsh-") as temporary:
             home = Path(temporary)

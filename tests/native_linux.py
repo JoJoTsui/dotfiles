@@ -1,10 +1,11 @@
 """Linux remote-compute acceptance in a fresh, unprivileged validation home.
 
 The caller owns the Linux runtime, image, resource limits, and network route.
-This gate installs only the default selection; it never claims T9K kernel,
-network-filesystem, legacy-home migration, or native Windows evidence.
+This gate installs the default selection or the specified seven-agent selection;
+it never claims T9K kernel, network-filesystem, legacy-home migration, or
+native Windows evidence.
 
-The default public plan is validated with Magpie enabled, but the synthetic
+The selected public plan is validated with Magpie enabled, but the synthetic
 home bootstraps with --no-magpie: no gateway is probed, started, or used and
 no real provider accounts are touched. The pinned native Magpie CLI is
 installed and checked separately, without starting a gateway, because a
@@ -39,6 +40,7 @@ REQUIRED_SUITES = (
     "test_history_behavior.py", "test_local_history_behavior.py", "test_portable_history_import.py",
 )
 DEFAULT_AGENTS = {"kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder", "dsh", "dsh-tui"}
+SCOPED_AGENTS = ("kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder")
 LOG_LIMIT = 2 * 1024 * 1024
 TASK_CPUS = 4
 TASK_MEMORY_BYTES = 8 * 1024 ** 3
@@ -58,27 +60,38 @@ def require_default_agents(plan):
             f"plan does not include all {len(DEFAULT_AGENTS)} default agents and CodeGraph")
 
 
+def require_selected_agents(plan, selection):
+    """The requested agent selection, with CodeGraph as the independent default."""
+    require(set(plan["agents"]) == set(selection) and len(plan["agents"]) == len(selection)
+            and {item["name"] for item in plan["agentPackages"]} == set(selection) | {"codegraph"},
+            "plan does not match the requested agent selection and CodeGraph")
+
+
 def require_public_magpie_enabled(plan):
-    """The default public plan must still declare the Magpie gateway step.
+    """The selected public plan must still declare the Magpie gateway step.
 
     The synthetic home runs with --no-magpie, so checking the public plan keeps
     the gate honest: a plan that silently dropped Magpie would otherwise pass.
     """
     require(plan.get("magpie") is True,
-            "default public plan does not enable the Magpie gateway")
+            "public plan does not enable the Magpie gateway")
     require("magpie-apply" in plan.get("actions", []),
-            "default public plan does not include the magpie-apply action")
+            "public plan does not include the magpie-apply action")
 
 
-def bootstrap_execution_command(base, profile):
-    """Full default bootstrap for the synthetic home, without gateway wiring."""
-    return [*base, "--profile", profile, "--no-magpie"]
+def bootstrap_execution_command(base, profile, selection=None):
+    """Full bootstrap for the synthetic home, without gateway wiring."""
+    command = [*base, "--profile", profile]
+    if selection:
+        command += ["--agents", ",".join(selection)]
+    return [*command, "--no-magpie"]
 
 
-def magpie_report_scope():
+def magpie_report_scope(selection=None):
     """Report fields that label what the Magpie step does and does not prove."""
+    plan_scope = "selected" if selection else "default"
     return {
-        "public_plan": "enabled: the default public plan includes Magpie and magpie-apply",
+        "public_plan": f"enabled: the {plan_scope} public plan includes Magpie and magpie-apply",
         "gateway": "excluded: --no-magpie; no live gateway is probed, started, or used",
         "provider_accounts": "excluded: no real credentials, accounts, or model traffic in the synthetic home",
         "cli_installation": "pending: pinned native CLI verified separately without a gateway",
@@ -87,6 +100,8 @@ def magpie_report_scope():
 
 def probe_dsh_adapter(home, installed_version, command):
     """Record adapter self-validation, not headless execution or routing."""
+    if installed_version is None:
+        return {"status": "not-selected"}
     try:
         output = command([home / ".local/bin/dst", "cli", "capabilities", "--json"])
     except (RuntimeError, OSError, subprocess.SubprocessError):
@@ -531,7 +546,11 @@ def main():
                         help="runtime origin supplied by the outer runner; x86_64 uname cannot detect emulation")
     parser.add_argument("--install-timeout", type=int, default=3600)
     parser.add_argument("--suite-timeout", type=int, default=1800)
+    parser.add_argument("--agents", help="seven-agent selection to verify instead of the defaults")
     args = parser.parse_args()
+    selection = args.agents.split(",") if args.agents is not None else None
+    if selection is not None and (len(selection) != len(SCOPED_AGENTS) or set(selection) != set(SCOPED_AGENTS)):
+        parser.error("--agents must name " + ",".join(SCOPED_AGENTS))
     if args.install_timeout <= 0 or args.suite_timeout <= 0:
         parser.error("installation and suite timeouts must be positive")
     try:
@@ -545,7 +564,8 @@ def main():
     report = {"schema_version": 1, "status": "running", "profile": "linux-remote-compute",
               "execution": args.execution, "native_t9k_pass": False, "installation_cache": "empty",
               "home": str(args.home), "checks": [], "commands": [], "suites": [],
-              "magpie": magpie_report_scope(),
+              "agents": selection if selection is not None else "default",
+              "magpie": magpie_report_scope(selection),
               "limits": "Linux userspace evidence; no T9K kernel/netfs/legacy migration, Windows claim, "
                         "live Magpie gateway, provider accounts, or end-to-end model path"}
     report["resources_before"] = resource_snapshot()
@@ -604,22 +624,26 @@ def main():
         bootstrap = ["/bin/bash", SOURCE / "bootstrap.sh", "--source", SOURCE, "--home", args.home]
 
         def planning():
-            plan = json.loads(command("remote-plan", [*bootstrap, "--profile", "linux-remote-compute", "--plan"]))
-            legacy = json.loads(command("legacy-plan", [*bootstrap, "--class", "t9k", "--plan"]))
+            selection_args = ["--agents", ",".join(selection)] if selection is not None else []
+            plan = json.loads(command("remote-plan", [*bootstrap, "--profile", "linux-remote-compute", *selection_args, "--plan"]))
+            legacy = json.loads(command("legacy-plan", [*bootstrap, "--class", "t9k", *selection_args, "--plan"]))
             require(plan == legacy, "legacy T9K and canonical remote-compute plans differ")
             require(not args.home.exists(), "planning created the validation home")
             require(plan["platform"] == "linux" and plan["arch"] == "x86_64" and plan["role"] == "remote-compute",
                     "plan does not target Linux x86_64 remote compute")
-            require_default_agents(plan)
+            if selection is None:
+                require_default_agents(plan)
+            else:
+                require_selected_agents(plan, selection)
             require_public_magpie_enabled(plan)
             require(not plan["bundles"] and not plan["settings"]["systemChanges"]
                     and not plan["settings"]["loginShellChanges"] and plan["settings"]["mode"] == "copy",
                     "plan expands beyond default copy-mode user deployment")
             write_json(args.artifacts / "plan.json", plan)
             return plan
-        check("canonical and legacy default plans", planning)
+        check("canonical and legacy plans", planning)
         plan = json.loads((args.artifacts / "plan.json").read_text())
-        full = bootstrap_execution_command(bootstrap, "linux-remote-compute")
+        full = bootstrap_execution_command(bootstrap, "linux-remote-compute", selection)
         check("bootstrap without gateway wiring from empty home and caches",
               lambda: command("bootstrap-first", full, timeout=args.install_timeout) and "completed")
         require(not (args.home / ".codex/auth.json").exists(), "fresh bootstrap created authentication")
@@ -671,9 +695,10 @@ def main():
                             f"command differs from its catalog version: {exposed}")
                 versions[exposed] = output.strip().splitlines()[0]
             report["versions"] = versions
-            dsh = next(package for package in plan["agentPackages"] if package["name"] == "dsh")
+            dsh = next((package for package in plan["agentPackages"] if package["name"] == "dsh"), None)
+            dsh_version = dsh["version"] if dsh is not None and "dst" in versions else None
             report["dsh_adapter"] = probe_dsh_adapter(
-                args.home, dsh["version"],
+                args.home, dsh_version,
                 lambda arguments: command("dsh-adapter-capabilities", arguments,
                                           env=managed, cwd=args.home, timeout=60))
             report.setdefault("managed_snapshot", snapshot(args.home, plan))
@@ -736,7 +761,7 @@ def main():
         check("actual fetched default skill discovery after reapplication", lambda: installed_skills("reapplied"))
 
         def magpie_cli():
-            # The default public plan was validated with Magpie enabled, but the
+            # The public plan was validated with Magpie enabled, but the
             # install above ran with --no-magpie. Install only the pinned native
             # CLI through its public command: it verifies the digest and never
             # probes, starts, or uses a gateway, nor reads provider accounts.
