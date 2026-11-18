@@ -2197,8 +2197,7 @@ magpie_apply() {
     DEPLOY_STEP=magpie-apply.proxy
     MAGPIE_PROXY=$(magpie_proxy_resolve || true)
     MAGPIE_PROXY_TEMPORARY=no
-    if magpie_native_platform && [ -n "$MAGPIE_PROXY" ] &&
-       magpie_deployment_proxy_url "$MAGPIE_PROXY" >/dev/null; then
+    if [ -n "$MAGPIE_PROXY" ] && magpie_deployment_proxy_url "$MAGPIE_PROXY" >/dev/null; then
         MAGPIE_PROXY_TEMPORARY=yes
     fi
     if [ -z "$MAGPIE_PROXY" ] && ! magpie_native_platform; then

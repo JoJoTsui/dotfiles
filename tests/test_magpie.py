@@ -1071,6 +1071,18 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertNotIn("settings set proxy", self.commands())
         self.assertIn("the deployment proxy is temporary", result.stdout)
 
+    def test_macos_app_does_not_persist_the_temporary_proxy(self):
+        url = "http://127.0.0.1:7890"
+        result = self.apply(credentials=False, environment={
+            "MAGPIE_PROXY_URL": url,
+            "DEPLOY_PROXY_URL": url,
+            "DEPLOY_PROXY_PID": "4242",
+        }, setup=lambda: self.provision(
+            ["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse(any(command.startswith("settings set proxy") for command in self.commands()))
+        self.assertIn("deployment proxy is temporary", result.stdout)
+
     def test_a_device_proxy_on_a_deployment_port_is_written_into_the_gateway(self):
         # Same port, no ownership: the deployment reuses a proxy already on
         # 7890, so DEPLOY_PROXY_URL names it but no PID is recorded. It belongs
