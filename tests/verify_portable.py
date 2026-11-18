@@ -31,7 +31,7 @@ MATRIX = (
     ("windows", "x86_64"),
 )
 ROLES = ("workstation", "remote-compute")
-AGENTS = ("kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder")
+AGENTS = ("kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder", "dsh", "dsh-tui")
 COMMON_TOOLS = {
     "pixi", "uv", "uvx", "bun", "bunx", "node", "nu", "rtk", "atuin",
     "zoxide", "tspin", "less", "python", "pip", "codegraph",
