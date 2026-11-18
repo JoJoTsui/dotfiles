@@ -60,10 +60,12 @@ SHA-256 digest that verifies each asset:
 name|version|target|url|sha256
 ```
 
-The catalog carries the Linux and Windows targets, so the version and digests
-of one release live in one place. The deployment never resolves a release at
-run time: the URL and the digest are the pin. Downloaded bytes are verified
-before installation, and a failed download never touches a working CLI.
+The catalog carries Linux, macOS, and Windows targets, so the version and
+digests of one release live in one place. The macOS CLI rows record upstream
+release metadata only: the deployment does not yet install or run those assets
+when the app is absent. The deployment never resolves a release at run time:
+the URL and the digest are the pin. Downloaded bytes are verified before
+installation, and a failed download never touches a working CLI.
 
 The CLI lives at `~/.local/share/dotfiles/magpie/bin/magpie`, beside the
 engine, so the managed command and the deployment step run one binary. The

@@ -1136,7 +1136,7 @@ function Get-MagpieRelease {
         $name = $fields[0]; $version = $fields[1]; $target = $fields[2]; $url = $fields[3]; $sha256 = $fields[4]
         if ($name -ne 'magpie') { Stop-Deployment "unknown Magpie release: $name" }
         if ($version -notmatch '^[0-9]+(\.[0-9]+)*$') { Stop-Deployment "invalid Magpie release version: $version" }
-        if ($target -notin @('linux-amd64', 'linux-arm64', 'windows-amd64', 'windows-arm64')) {
+        if ($target -notin @('linux-amd64', 'linux-arm64', 'macos-amd64', 'macos-arm64', 'windows-amd64', 'windows-arm64')) {
             Stop-Deployment "invalid Magpie release target: $target"
         }
         if ($seen.ContainsKey($target)) { Stop-Deployment "duplicate Magpie release target: $target" }

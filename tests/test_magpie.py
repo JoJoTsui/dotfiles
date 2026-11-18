@@ -963,6 +963,14 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertIn("magpie|0.1.4404|linux-arm64|https://github.com/yetone/magpie/releases/download/"
                       "v0.1.4404/magpie-cli-linux-arm64|"
                       "0ff5d9a9baedde4b8038a8ab8b08cfe3ad859afc721186da17b45386f94f763c", rows)
+        # The catalog also carries the published macOS CLI assets, although the
+        # macOS deployment does not yet install them.
+        self.assertIn("magpie|0.1.4404|macos-amd64|https://github.com/yetone/magpie/releases/download/"
+                      "v0.1.4404/magpie-cli-darwin-amd64|"
+                      "d939a17e93956a50bc433d1a5356a3da0d7fc960c1988c7fa2890416ba11bfaa", rows)
+        self.assertIn("magpie|0.1.4404|macos-arm64|https://github.com/yetone/magpie/releases/download/"
+                      "v0.1.4404/magpie-cli-darwin-arm64|"
+                      "2d43868faee771f4c92d8e9d9fd13a79e83bdc3752fe34271304b6da8dd5e132", rows)
         # The catalog carries the Windows targets too, so the version and the
         # digests of the release live in one place for the later adapter.
         self.assertTrue(any(row.startswith("magpie|0.1.4404|windows-amd64|") for row in rows))
@@ -978,6 +986,16 @@ class MagpieApplyTests(unittest.TestCase):
         result = subprocess.run(["/bin/bash", str(script)], capture_output=True, text=True, timeout=60)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stderr.strip(), "")
+
+    def test_release_target_resolves_both_macos_architectures(self):
+        for arch, expected in (("x86_64", "macos-amd64"), ("aarch64", "macos-arm64")):
+            with self.subTest(arch=arch):
+                result = subprocess.run(
+                    ["/bin/bash", "-c", 'source "$1"; magpie_release_target', "fixture", str(ENGINE)],
+                    env={"HOME": str(self.root), "PATH": "/usr/bin:/bin", "DEPLOY_PLATFORM": "macos",
+                         "DEPLOY_ARCH": arch}, capture_output=True, text=True, timeout=60)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, expected)
 
     def test_a_release_row_without_a_digest_is_rejected(self):
         catalog = self.root / "releases.tsv"

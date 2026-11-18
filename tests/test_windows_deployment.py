@@ -1926,7 +1926,8 @@ class WindowsMagpieCatalogTests(unittest.TestCase):
 
     def test_the_shared_catalog_pins_one_version_for_every_target(self):
         rows = magpie_releases()
-        self.assertEqual(set(rows), {"linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64"})
+        self.assertEqual(set(rows), {"linux-amd64", "linux-arm64", "macos-amd64", "macos-arm64",
+                                     "windows-amd64", "windows-arm64"})
         self.assertEqual(len({row["version"] for row in rows.values()}), 1)
         for target, row in rows.items():
             with self.subTest(target=target):
@@ -1940,6 +1941,9 @@ class WindowsMagpieCatalogTests(unittest.TestCase):
         # The adapter reads the shared catalog and the one Windows target.
         self.assertIn("deployment/magpie/releases.tsv", windows)
         self.assertIn("windows-amd64", windows)
+        target_list = re.search(r"\$target -notin @\(([^)]*)\)", windows)
+        self.assertIsNotNone(target_list)
+        self.assertEqual(set(re.findall(r"'([^']+)'", target_list.group(1))), set(magpie_releases()))
         # The entry point asks the adapter for the pin instead of naming a
         # release URL or a digest of its own.
         self.assertIn("Get-MagpiePin", bootstrap)

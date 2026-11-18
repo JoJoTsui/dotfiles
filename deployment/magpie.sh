@@ -263,6 +263,7 @@ magpie_release_target() {
     esac
     case "$(magpie_platform)" in
         linux|wsl) printf 'linux-%s' "$arch" ;;
+        macos) printf 'macos-%s' "$arch" ;;
         *) return 1 ;;
     esac
 }
@@ -296,7 +297,7 @@ magpie_release_validate() {
             ''|*[!0-9.]*) magpie_fail "invalid Magpie release version: $version"; return 1 ;;
         esac
         case "$target" in
-            linux-amd64|linux-arm64|windows-amd64|windows-arm64) ;;
+            linux-amd64|linux-arm64|macos-amd64|macos-arm64|windows-amd64|windows-arm64) ;;
             *) magpie_fail "invalid Magpie release target: $target"; return 1 ;;
         esac
         case " $seen " in
