@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -16,6 +17,12 @@ try:
     from . import codex_resume_runtime
 except ImportError:  # pragma: no cover - direct module execution
     import codex_resume_runtime
+
+try:
+    import tomllib
+    HAS_TOMLLIB = True
+except ModuleNotFoundError:  # pragma: no cover - the command needs 3.11 or newer
+    HAS_TOMLLIB = False
 
 SOURCE = Path(__file__).resolve().parents[1]
 COMMAND = SOURCE / "dot_local/bin/executable_dotfiles-codex-resume"
@@ -60,6 +67,11 @@ http_headers = {{ "x-openai-actor-authorization" = "magpie" }}
 """
 
 
+@unittest.skipUnless(
+    HAS_TOMLLIB,
+    "the command needs a python3 with the standard-library tomllib module "
+    "(Python 3.11 or newer)",
+)
 class CodexResumeCommandTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-codex-resume-")
@@ -74,6 +86,11 @@ class CodexResumeCommandTests(unittest.TestCase):
         fake = self.bin / "codex"
         fake.write_text(FAKE_CODEX)
         fake.chmod(0o755)
+        # The command resolves its interpreter the way the deployment does:
+        # the first python3 on PATH. The interpreter of this run stands in
+        # for the managed one, so the resolution is exercised the way a
+        # device exercises it.
+        (self.bin / "python3").symlink_to(sys.executable)
         self.env = {
             "HOME": str(self.home),
             "PATH": f"{self.bin}:/usr/bin:/bin",
@@ -403,6 +420,33 @@ class CodexResumeCommandTests(unittest.TestCase):
             any(name.endswith("AUTHORIZATION") for name in payload["env"]),
             "the credential header did not reach the environment",
         )
+
+    def test_a_python_without_tomllib_is_refused(self):
+        # The provider definition is parsed with the standard library or not
+        # at all: a guessed TOML would reroute the resumed thread through a
+        # provider nobody verified, so the command refuses instead.
+        bad = self.root / "bad-bin"
+        bad.mkdir()
+        python3 = bad / "python3"
+        python3.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        python3.chmod(0o755)
+        codex = bad / "codex"
+        codex.write_text(FAKE_CODEX)
+        codex.chmod(0o755)
+        environment = dict(self.env)
+        environment["PATH"] = f"{bad}:/usr/bin:/bin"
+        # No other candidate may carry a tomllib: the command resolves
+        # $MAGPIE_PYTHON, $DOTFILES_COMMON_BIN/python3, $PIXI_HOME/bin/python3,
+        # and then python3 on PATH.
+        environment["MAGPIE_PYTHON"] = str(bad / "python3")
+        environment["DOTFILES_COMMON_BIN"] = str(self.root / "no-common")
+        environment["PIXI_HOME"] = str(self.root / "no-pixi")
+
+        result = subprocess.run([str(COMMAND)], env=environment,
+                                capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("tomllib", result.stderr)
+        self.assertFalse(self.record.exists(), "the refused run reached codex")
 
     def test_the_command_is_a_managed_executable_script(self):
         self.assertTrue(COMMAND.exists(), "the managed command is missing")

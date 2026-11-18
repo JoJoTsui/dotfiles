@@ -412,6 +412,14 @@ saved provider of a thread to equal the provider of the current configuration,
 so a neutral layer alone was not enough to resume a thread of another
 provider. A newer Codex has to be checked again before it is claimed.
 
+The command needs a `python3` with the standard-library `tomllib` module
+(Python 3.11 or newer), because it reads Magpie's provider definition with
+it. It resolves the interpreter the way the deployment resolves one
+(`$MAGPIE_PYTHON`, `$DOTFILES_COMMON_BIN/python3`, `$PIXI_HOME/bin/python3`,
+then `python3` on `PATH`) and refuses to start when no candidate has the
+module: a guessed provider definition would reroute the thread through a
+provider nobody verified.
+
 **Verification boundary:** restoring a saved provider also requires its
 definition in the effective configuration, and a selection layer would replace
 the saved settings instead of restoring them. The synthetic runtime check

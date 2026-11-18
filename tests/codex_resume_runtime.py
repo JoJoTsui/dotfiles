@@ -445,9 +445,13 @@ class Device:
         )
 
     def env(self, extra=None, use_shim=True):
-        path = "%s:/usr/bin:/bin" % self.bin if use_shim else "%s:/usr/bin:/bin" % os.path.dirname(
-            self.codex_bin
-        )
+        # The command under test resolves its python the way the deployment
+        # does: the first python3 on PATH. The interpreter of this run
+        # stands in for the managed one, so the harness puts its directory
+        # on the PATH the way a device has it.
+        python_dir = os.path.dirname(sys.executable)
+        path = "%s:%s:/usr/bin:/bin" % (self.bin, python_dir) if use_shim else "%s:%s:/usr/bin:/bin" % (
+            os.path.dirname(self.codex_bin), python_dir)
         env = {
             "HOME": str(self.home),
             "CODEX_HOME": str(self.codex_home),

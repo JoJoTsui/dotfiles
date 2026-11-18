@@ -62,6 +62,12 @@ carries definitions only:
   required the saved provider to equal the provider of the current
   configuration, so a neutral layer alone was not enough. An older Codex is
   refused with a message that names both versions.
+- The command needs a `python3` with the standard-library `tomllib` module
+  (Python 3.11 or newer) to read Magpie's provider definition, and it refuses
+  to start without one. A hand-written subset parser was considered and
+  dropped: the deployment's own rule is to fail closed on a getter it cannot
+  parse rather than guessing, and a guessed provider definition reroutes the
+  resumed thread through a provider nobody verified.
 
 ## Consequences
 

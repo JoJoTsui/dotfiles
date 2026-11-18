@@ -36,6 +36,11 @@ model, and the saved reasoning effort.
 The command needs Codex 0.169.0 or newer: the preservation depends on the
 selection rule of that release, and an older Codex refuses a resume whose
 thread saved another provider.
+
+The command needs a python3 with the standard-library `tomllib` module
+(Python 3.11 or newer): it reads Magpie's provider definition with it. A
+python3 without `tomllib` is refused, because a guessed provider definition
+is not a provider definition.
 EOF
 }
 
@@ -52,9 +57,25 @@ command -v codex >/dev/null 2>&1 || {
     printf 'dotfiles-codex-resume: codex is not installed\n' >&2
     exit 127
 }
-command -v python3 >/dev/null 2>&1 || {
-    printf 'dotfiles-codex-resume: python3 is not installed\n' >&2
-    exit 127
+
+# The interpreter the command runs its Python steps with. The deployment
+# resolves the same way (magpie_python): $MAGPIE_PYTHON, then
+# $DOTFILES_COMMON_BIN/python3, then $PIXI_HOME/bin/python3, then python3 on
+# PATH. A candidate that cannot import tomllib is not a candidate: the
+# provider definition is read with the standard library or not at all, and a
+# guessed TOML is a rerouted thread.
+resolve_python() {
+    local candidate
+    for candidate in "${MAGPIE_PYTHON:-}" "${DOTFILES_COMMON_BIN:-}/python3" \
+                     "${PIXI_HOME:-}/bin/python3" \
+                     "$(command -v python3 2>/dev/null || true)"; do
+        [ -n "$candidate" ] || continue
+        [ -x "$candidate" ] || continue
+        "$candidate" -c 'import tomllib' >/dev/null 2>&1 || continue
+        printf '%s' "$candidate"
+        return 0
+    done
+    return 1
 }
 
 session=''
@@ -152,7 +173,12 @@ fi
 # Codex trims the key of a configuration override before it applies it
 # (parse_overrides: `k.trim()`), so a spaced key would slip past a plain
 # comparison. The refusal trims the key the same way.
-refusal=$(python3 - ${user_overrides[@]+"${user_overrides[@]}"} <<'PY'
+python=$(resolve_python) || {
+    printf 'dotfiles-codex-resume: refusing to resume: no python3 with the standard-library tomllib module (Python 3.11 or newer) was found, and the Magpie provider definition cannot be read without it.\n' >&2
+    exit 3
+}
+
+refusal=$("$python" - ${user_overrides[@]+"${user_overrides[@]}"} <<'PY'
 import sys
 
 PRESERVED = (
@@ -200,7 +226,7 @@ fi
 # configuration, so a neutral layer alone is not enough there.
 minimum_codex_version=0.169.0
 codex_version=$(codex --version 2>&1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-version_refusal=$(python3 - "$minimum_codex_version" "$codex_version" <<'PY'
+version_refusal=$("$python" - "$minimum_codex_version" "$codex_version" <<'PY'
 import sys
 
 floor = sys.argv[1]
@@ -232,14 +258,11 @@ fi
 
 # The provider layer comes from Magpie's own profile. It carries definitions
 # only; the credential travels in the environment, never in an override.
-layer=$(python3 - <<'PY'
+layer=$("$python" - <<'PY'
 import os
 import sys
 
-try:
-    import tomllib
-except ModuleNotFoundError:
-    tomllib = None
+import tomllib
 
 CREDENTIAL_ENV = "DOTFILES_CODEX_RESUME_MAGPIE_TOKEN"
 PROVIDER = "magpie"
@@ -309,98 +332,11 @@ def load(path):
     if not os.path.isfile(path):
         return None
     try:
-        if tomllib is not None:
-            with open(path, "rb") as handle:
-                return tomllib.load(handle)
-        with open(path, encoding="utf-8") as handle:
-            return parse_toml_subset(handle.read())
+        with open(path, "rb") as handle:
+            return tomllib.load(handle)
     except Exception as error:
         note("cannot read %s: %s" % (path, error))
         return None
-
-
-def unescape(text):
-    result = []
-    index = 0
-    while index < len(text):
-        character = text[index]
-        if character == "\\" and index + 1 < len(text):
-            index += 1
-            following = text[index]
-            result.append({"n": "\n", "t": "\t", "r": "\r"}.get(following, following))
-        else:
-            result.append(character)
-        index += 1
-    return "".join(result)
-
-
-def split_inline(text):
-    parts = []
-    current = []
-    quoted = False
-    for character in text:
-        if character == '"':
-            quoted = not quoted
-        if character == "," and not quoted:
-            parts.append("".join(current))
-            current = []
-            continue
-        current.append(character)
-    if "".join(current).strip():
-        parts.append("".join(current))
-    return parts
-
-
-def parse_value(text):
-    text = text.strip()
-    if text.startswith("{") and text.endswith("}"):
-        table = {}
-        for part in split_inline(text[1:-1]):
-            key, _, value = part.partition("=")
-            if not _:
-                continue
-            table[key.strip().strip('"')] = parse_value(value)
-        return table
-    if text.startswith('"') and text.endswith('"') and len(text) >= 2:
-        return unescape(text[1:-1])
-    if text.startswith("'") and text.endswith("'") and len(text) >= 2:
-        return text[1:-1]
-    if text in ("true", "false"):
-        return text == "true"
-    try:
-        return int(text)
-    except ValueError:
-        pass
-    try:
-        return float(text)
-    except ValueError:
-        pass
-    return text
-
-
-def parse_toml_subset(text):
-    """Read the plain tables, keys, and inline tables a provider holds.
-
-    This is the reader for a python3 without tomllib. It is deliberately
-    small: a value it cannot read stays a string and the profile is then
-    reported as unusable rather than half applied.
-    """
-    document = {}
-    table = document
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if line.startswith("[") and line.endswith("]"):
-            table = document
-            for part in line[1:-1].split("."):
-                table = table.setdefault(part.strip().strip('"'), {})
-            continue
-        key, separator, value = line.partition("=")
-        if not separator:
-            continue
-        table[key.strip().strip('"')] = parse_value(value)
-    return document
 
 
 def slug(name):
