@@ -81,6 +81,16 @@ DEVICE_SETTINGS = {
 }
 
 
+def load_helper():
+    """The rehearsal helper as a module, so that its seams can be driven."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("rehearse_settings", HELPER)
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    return helper
+
+
 class RehearsalTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-rehearsal-")
@@ -878,6 +888,106 @@ class RehearsalTests(unittest.TestCase):
         self.assertEqual(state["trusted_hash"], SYNTHETIC_DIGEST)
         self.assertEqual(state["trusted_content_hash"], SYNTHETIC_CONTENT_DIGEST)
         self.assertEqual(state["state"], "trusted")
+
+    def test_an_oauth_table_key_leaf_is_redacted_by_the_name_of_its_table(self):
+        # A credential leaf under an `oauth` table carries a name that says
+        # nothing on its own: only the table says that the leaf holds a
+        # credential, and a client may store the credential itself there.
+        self.write_device_file(".kimi-code/config.toml", (
+            'oauth_provider = "managed:kimi-code"\n'
+            '\n'
+            '[providers."managed:kimi-code".oauth]\n'
+            'key = "synthetic-oauth-reference"\n'
+            'storage = "file"\n'
+            'host = "https://oauth.example.invalid"\n'
+        ))
+        self.write_manifest([".kimi-code/config.toml\ttoml\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = tomllib.loads((self.projection / ".kimi-code/config.toml").read_text())
+        oauth = projected["providers"]["managed:kimi-code"]["oauth"]
+        self.assertEqual(oauth["key"], "<redacted>")
+        # The other names under the table are not credentials: an enum, a
+        # URL, and a provider name keep their values.
+        self.assertEqual(oauth["storage"], "file")
+        self.assertEqual(oauth["host"], "https://oauth.example.invalid")
+        # A provider name outside an `oauth` table is not a credential.
+        self.assertEqual(projected["oauth_provider"], "managed:kimi-code")
+
+        report = json.loads(self.report.read_text())
+        entry = report["files"][0]
+        self.assertEqual(entry["redacted_fields"], 1)
+        self.assertEqual(report["totals"]["redacted_fields"], 1)
+        # Redaction replaces a value in place, so the record count is kept.
+        self.assertEqual(entry["projected"]["records"], entry["source"]["records"])
+        self.assertNotIn("synthetic-oauth-reference", self.report.read_text())
+
+    def test_an_oauth_object_key_leaf_is_redacted_in_a_json_document(self):
+        self.write_device_file(".kimi-code/settings.json", json.dumps({
+            "provider": "managed:kimi-code",
+            "oauth": {"key": "synthetic-oauth-reference", "storage": "file"},
+        }))
+        self.write_manifest([".kimi-code/settings.json\tjson\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        projected = json.loads((self.projection / ".kimi-code/settings.json").read_text())
+        self.assertEqual(projected["oauth"]["key"], "<redacted>")
+        self.assertEqual(projected["oauth"]["storage"], "file")
+        self.assertEqual(projected["provider"], "managed:kimi-code")
+
+        report = json.loads(self.report.read_text())
+        entry = report["files"][0]
+        self.assertEqual(entry["redacted_fields"], 1)
+        self.assertEqual(entry["projected"]["records"], entry["source"]["records"])
+        self.assertNotIn("synthetic-oauth-reference", self.report.read_text())
+
+    def test_the_end_of_run_fingerprints_are_reported_next_to_the_read_ones(self):
+        self.write_manifest([".pi/agent/settings.json\tjson\trequired"])
+
+        result = self.project()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        report = json.loads(self.report.read_text())
+        self.assertTrue(report["source_unchanged"])
+        entry = report["files"][0]
+        for key in ("sha256", "mode", "mtime_ns"):
+            self.assertEqual(entry["source_final"][key], entry["source"][key])
+
+    def test_a_source_that_changes_after_the_read_is_reported_as_changed(self):
+        # The change is driven through the helper's own end-of-run pass, so
+        # the verdict does not depend on a race.
+        helper = load_helper()
+        self.write_manifest([".pi/agent/settings.json\tjson\trequired"])
+        original = helper.final_fingerprints
+        changed = []
+
+        def mutate_then_fingerprint(source_home, relatives):
+            if not changed:
+                changed.append(True)
+                path = Path(source_home) / ".pi/agent/settings.json"
+                path.write_text(path.read_text() + "\n")
+            return original(source_home, relatives)
+
+        helper.final_fingerprints = mutate_then_fingerprint
+        try:
+            status = helper.main([
+                "--source-home", str(self.home),
+                "--manifest", str(self.manifest),
+                "--projection", str(self.projection),
+                "--report", str(self.report),
+            ])
+        finally:
+            helper.final_fingerprints = original
+        self.assertEqual(status, 0)
+
+        report = json.loads(self.report.read_text())
+        self.assertFalse(report["source_unchanged"])
+        entry = report["files"][0]
+        self.assertNotEqual(entry["source_final"]["sha256"], entry["source"]["sha256"])
 
 
 if __name__ == "__main__":

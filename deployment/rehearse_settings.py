@@ -24,7 +24,7 @@ import tomllib
 
 REDACTED = "<redacted>"
 SCHEMA = "dotfiles.existing-settings-rehearsal/1"
-HELPER_VERSION = "4"
+HELPER_VERSION = "6"
 
 EXIT_OK = 0
 EXIT_USAGE = 2
@@ -54,6 +54,15 @@ CREDENTIAL_NAME_SEGMENTS = {
     "password", "passwd", "passphrase", "privatekey", "secret", "secrets",
     "token", "tokens",
 }
+
+# A table whose own name says that it holds an OAuth credential. The
+# credential leaf of such a table is named `key` or `value`: a client may
+# store the credential itself under that leaf, so the leaf is redacted by
+# the name of its table. Every other name under such a table keeps its
+# value: `storage` is an enum, `host` is a URL, and a provider name or a
+# host name is not a credential.
+OAUTH_TABLE_NAMES = {"oauth", "oauth2"}
+OAUTH_CREDENTIAL_NAMES = {"key", "value"}
 
 # A field whose name says that it holds an integrity value is not a
 # credential: a trust digest carries no secret, and it is exactly the
@@ -176,6 +185,24 @@ def is_credential_key(name):
     return name_is_credential(name)
 
 
+def is_credential_field(name, parent=None):
+    """True when a field is credential-named by its own name or by its table.
+
+    A field is credential-named when its own name says so, and also when it
+    is a direct child of an `oauth` or `oauth2` table and its own name is
+    `key` or `value`. The parent is the name of the table that holds the
+    field, so a name that only means something under such a table is
+    judged there and nowhere else.
+    """
+    if is_credential_key(name):
+        return True
+    if not isinstance(parent, str) or not isinstance(name, str):
+        return False
+    if parent.lower() not in OAUTH_TABLE_NAMES:
+        return False
+    return name.lower() in OAUTH_CREDENTIAL_NAMES
+
+
 def looks_like_credential(value):
     """True when a value carries a credential shape or a credential name."""
     if not isinstance(value, str):
@@ -235,6 +262,32 @@ def file_fingerprint(path):
     with open(str(path), "rb") as handle:
         content = handle.read()
     return fingerprint_of(status, content)
+
+
+def final_fingerprints(source_home, relatives):
+    """Re-read every source file at the end of the run and fingerprint it.
+
+    The pass runs after the projection and the report are written, so the
+    verdict covers the whole run and not only the read window. A file that
+    cannot be read any more has no fingerprint: that is a change, never an
+    unchanged file.
+    """
+    fingerprints = {}
+    for relative in relatives:
+        path = os.path.join(str(source_home), relative)
+        try:
+            fingerprints[relative] = file_fingerprint(path)
+        except OSError:
+            fingerprints[relative] = None
+    return fingerprints
+
+
+def fingerprints_match(before, after):
+    """True when two fingerprints of one file agree."""
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return False
+    return all(before.get(key) == after.get(key)
+               for key in ("sha256", "mode", "mtime_ns"))
 
 
 def strip_jsonc(text):
@@ -324,12 +377,16 @@ def refuse_excluded_input(relative):
         fail(EXIT_USAGE, "the manifest names an excluded input: %s" % relative)
 
 
-def redact_structure(value, relative, policy, counts):
-    """Return the redacted document; counts carry the field statistics."""
+def redact_structure(value, relative, policy, counts, parent=None):
+    """Return the redacted document; counts carry the field statistics.
+
+    The parent is the name of the table that holds the value: a field is
+    judged by its own name and by the name of that table.
+    """
     if isinstance(value, dict):
         result = {}
         for key, item in value.items():
-            if is_credential_key(key):
+            if is_credential_field(key, parent):
                 counts["redacted"] += 1
                 result[key] = blank_container(item, counts)
                 continue
@@ -344,7 +401,7 @@ def redact_structure(value, relative, policy, counts):
                 unknown(relative, policy, counts)
                 counts["omitted"] += 1
                 continue
-            result[key] = redact_structure(item, relative, policy, counts)
+            result[key] = redact_structure(item, relative, policy, counts, key)
         return result
     if isinstance(value, list):
         result = []
@@ -353,7 +410,7 @@ def redact_structure(value, relative, policy, counts):
                 unknown(relative, policy, counts)
                 counts["omitted"] += 1
                 continue
-            result.append(redact_structure(item, relative, policy, counts))
+            result.append(redact_structure(item, relative, policy, counts, parent))
         return result
     return value
 
@@ -502,11 +559,15 @@ def container_is_redacted(value):
     return value == REDACTED
 
 
-def check_redacted(value, relative):
-    """Fail when a projected document still carries a credential."""
+def check_redacted(value, relative, parent=None):
+    """Fail when a projected document still carries a credential.
+
+    The parent is the name of the table that holds the value, so the
+    verification pass judges a field exactly as the redaction pass did.
+    """
     if isinstance(value, dict):
         for key, item in value.items():
-            if is_credential_key(key):
+            if is_credential_field(key, parent):
                 if not container_is_redacted(item):
                     fail(EXIT_REDACTION,
                          "the projection for %s still holds a credential-named field"
@@ -516,10 +577,10 @@ def check_redacted(value, relative):
                 # An integrity-named field carries an integrity value, not a
                 # credential: it is projected as it is.
                 continue
-            check_redacted(item, relative)
+            check_redacted(item, relative, key)
     elif isinstance(value, list):
         for item in value:
-            check_redacted(item, relative)
+            check_redacted(item, relative, parent)
     elif isinstance(value, str):
         if looks_like_credential(value):
             fail(EXIT_REDACTION,
@@ -615,13 +676,14 @@ def validate_report_path(report_path, projection, source_home):
     return report_path
 
 
-def write_private(path, text):
+def write_private(path, text, replace=False):
     parent = os.path.dirname(str(path))
     if parent and not os.path.isdir(parent):
         os.makedirs(parent, mode=0o700, exist_ok=True)
         os.chmod(parent, 0o700)
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if replace else os.O_EXCL)
     try:
-        handle = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        handle = os.open(str(path), flags, 0o600)
     except OSError:
         fail(EXIT_CONFINEMENT, "cannot write the private artifact: %s" % path)
     with os.fdopen(handle, "w", encoding="utf-8") as stream:
@@ -781,6 +843,17 @@ def main(argv=None):
             "integrity_fields": item["integrity_fields"],
         })
 
+    # The end-of-run pass: every projected and omitted source file is read
+    # again after the projection has been written. The report's verdict
+    # compares these fingerprints with the ones taken before the read, so
+    # the claim covers the whole run and not only the read window.
+    relatives = [entry["path"] for entry in files
+                 if entry["status"] in ("projected", "omitted")]
+    final = final_fingerprints(source_home, relatives)
+    for entry in files:
+        if entry["status"] in ("projected", "omitted"):
+            entry["source_final"] = final.get(entry["path"])
+
     report = {
         "schema": SCHEMA,
         "helper_version": HELPER_VERSION,
@@ -789,14 +862,20 @@ def main(argv=None):
         "projection": projection,
         "unknown_credential_policy": arguments.unknown_credential_policy,
         "policy_notes": {
-            "credential_names": "a credential-named field is redacted by name",
+            "credential_names": "a credential-named field is redacted by name; "
+                               "an `oauth` or `oauth2` table's `key` or `value` "
+                               "leaf is redacted by the name of its table",
             "integrity_names": "an integrity-named field is not a credential; "
                                "its value is projected as it is",
             "unknown_credential_shaped_values": arguments.unknown_credential_policy,
+            "source_unchanged": "the verdict of the end-of-run pass: every "
+                                "projected and omitted source file is read "
+                                "again after the projection is written, and "
+                                "the fingerprint is compared with the one "
+                                "taken before the read",
         },
         "source_unchanged": all(
-            all(entry["source"][key] == entry["source_after"][key]
-                for key in ("sha256", "mode", "mtime_ns"))
+            fingerprints_match(entry["source"], entry.get("source_final"))
             for entry in files if entry["status"] in ("projected", "omitted")),
         "environment": {
             "python": platform.python_version(),
@@ -817,6 +896,20 @@ def main(argv=None):
         },
     }
     write_private(report_path, json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+
+    # The source is read once more after the report is written: a change
+    # between the report's fingerprints and the end of the run is a change
+    # of the run, so the report is corrected and the run fails closed
+    # instead of leaving a report that claims an unchanged source.
+    verified = final_fingerprints(source_home, relatives)
+    if verified != final:
+        for entry in files:
+            if entry["status"] in ("projected", "omitted"):
+                entry["source_final"] = verified.get(entry["path"])
+        report["source_unchanged"] = False
+        write_private(report_path, json.dumps(report, indent=2, ensure_ascii=False) + "\n",
+                      replace=True)
+        fail(EXIT_CONFINEMENT, "the source changed during the run")
     return EXIT_OK
 
 
