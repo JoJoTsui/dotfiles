@@ -50,7 +50,7 @@ elif argv[:1] == ["status"]:
         sys.exit(1)
     print(json.dumps({"running": True, "gateway": os.environ["FAKE_MAGPIE_GATEWAY"]}))
 elif argv[:2] == ["accounts", "codex"]:
-    print(json.dumps([{"id": "chatgpt-account"}]))
+    print(json.dumps([] if os.environ.get("FAKE_MAGPIE_NO_ACCOUNT") == "1" else [{"id": "chatgpt-account"}]))
 elif argv[:2] == ["provider", "add"]:
     if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX") == "1":
         codex = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
@@ -991,6 +991,16 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         groups = json.loads((self.state / "groups.json").read_text())
         self.assertEqual(groups["conductor"], "codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,kimi-code-cn/k3.1-pro:max")
+
+    def test_missing_required_chatgpt_account_stops_before_gateway_mutation(self):
+        result = self.apply(environment={"FAKE_MAGPIE_NO_ACCOUNT": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("required credential is missing: chatgpt", result.stderr)
+        self.assertFalse(any(command.startswith(("provider add ", "plugin add ", "plugin on ",
+                                                  "group add ", "group set ", "settings set ",
+                                                  "visible claude ", "visible pi ", "pi ", "dsh "))
+                             for command in self.commands()))
+        self.assertFalse(self.state_file().exists())
 
     def test_a_required_model_without_a_live_match_fails_with_the_model_list(self):
         self.seed_home()

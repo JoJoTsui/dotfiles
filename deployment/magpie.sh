@@ -2335,6 +2335,15 @@ $role (source: $source; variable: $variable)"
         done <<< "$missing"
     fi
 
+    if [ -n "$fatal" ]; then
+        while IFS= read -r entry; do
+            [ -n "$entry" ] || continue
+            printf 'dotfiles: magpie: the required credential is missing: %s\n' "$entry" >&2
+        done <<< "$fatal"
+        magpie_fail 'a required model provider has no credential'
+        return 1
+    fi
+
     DEPLOY_STEP=magpie-apply.models
     output=$(magpie_models_fetch "$MAGPIE_GATEWAY" || true)
     if [ -z "$output" ]; then
@@ -2684,14 +2693,6 @@ client-settings"
         printf 'dotfiles: magpie: the state was recorded in %s\n' "$(magpie_state_dir)/state.tsv"
     fi
 
-    if [ -n "$fatal" ]; then
-        while IFS= read -r entry; do
-            [ -n "$entry" ] || continue
-            printf 'dotfiles: magpie: the required credential is missing: %s\n' "$entry" >&2
-        done <<< "$fatal"
-        magpie_fail 'a required model provider has no credential'
-        return 1
-    fi
     magpie_apply_summary
     return 0
 }
