@@ -1775,8 +1775,7 @@ magpie_role_servable() {
     printf '%s' "${servable%,}"
 }
 
-# The live models that satisfy one model role, in candidate order. A
-# candidate is served only when the gateway knows its provider.
+# The first live candidate for one role whose provider the gateway knows.
 magpie_role_models() {
     local role=$1 candidates=$2 live=$3 ready=$4 candidate id bare provider matched=''
     local -a candidate_list
@@ -1791,6 +1790,7 @@ magpie_role_models() {
         magpie_list_contains "$ready" "$provider" || continue
         if magpie_list_contains "$live" "$id" || magpie_list_contains "$live" "$bare"; then
             matched="$matched$id,"
+            break
         fi
     done
     printf '%s' "${matched%,}"

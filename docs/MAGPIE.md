@@ -163,7 +163,7 @@ models the group names from `/v1/models`; the deployment therefore keeps
 
 A model role may pin a reasoning effort as `role:<effort>`, where the effort
 is one of `none|minimal|low|medium|high|xhigh|max`. The deployment strips it
-for the role lookup and appends it to every model id the role resolves to, so
+for the role lookup and appends it to the model id the role resolves to, so
 `conductor.kimi:max` becomes `kimi-code-cn/k3.1-pro:max`. A group reference
 carries no effort, because a group keeps its own routing. A group without a
 suffixed member keeps Magpie's `effort=agent` default.
@@ -330,7 +330,8 @@ the apply writes it into the gateway like any other device proxy.
 ## Group semantics
 
 `group/conductor` is the Claude Code group: `codex/gpt-6.2-sol` at medium,
-then `openai/gpt-6.2-sol` at medium, then `kimi-code-cn/k3.1-pro` at max. It
+then `openai/gpt-6.2-sol` at medium, then `kimi-code-cn/k3.1-pro` at max. Each
+Sol provider falls back to its 6.1 Sol when 6.2 is not served. It
 does not contain GPT-6.1 Terra. Claude Code's auto-mode classifier is configured
 separately as `codex/gpt-6.1-terra`. An isolated auto-mode check on this Mac
 reached that model through Magpie; verify the route on each device before
@@ -348,7 +349,8 @@ The group IDs remain stable when a provider moves to a newer model:
 - `auto/gpt-6.1-sol`: codex → openai → zed, all medium
 - `auto/gpt-6.1-terra`: codex → openai, both high (the Zed Student plan refuses Terra)
 - `auto/gpt-6-luna`: codex → openai → zed → opencode go, agent effort
-- `auto/gpt-6-astra`: Codex 6.2 Astra → OpenAI 6.2 Astra, agent effort
+- `auto/gpt-6-astra`: Codex 6.2 Astra → OpenAI 6.2 Astra, agent effort; each
+  provider falls back to its older GPT-6 Astra when it is available
 
 The Luna router retains its catalog members, but Codex, OpenAI, and OpenCode Go
 currently do not expose their Luna models in the GUI selections. An apply
@@ -359,16 +361,19 @@ the groups, so a failed route can be replaced by an exact provider/model on
 the spot. A group member's `:effort` fixes the reasoning for that route; a
 directly picked model uses the agent's own thinking level.
 
-The template sets `model: opus` and points every tier and subagent model at
-`group/conductor`. Claude Code accepts the `opus` alias and resolves it
-through `ANTHROPIC_DEFAULT_OPUS_MODEL`, so the gateway receives the group.
+The template sets `model: opus` and maps the Fable, Opus, and Sonnet tiers to
+`group/conductor`. The Haiku tier, legacy small-model alias, and auto-mode
+classifier use `codex/gpt-6.1-terra`; subagents inherit their parent model
+unless the device sets its own override. Claude Code accepts the `opus` alias
+and resolves it through `ANTHROPIC_DEFAULT_OPUS_MODEL`, so the gateway receives
+the group.
 Do not pick a bare `group/<id>` in `/model`: Claude Code rewrites an
 unrecognized main model to a bare alias. A bare alias without the tier
 mapping names an Anthropic model the gateway does not serve. Claude Code may
 save its own alias (`sonnet[1m]`) after a run and append `[1m]` to a tier; the
 sonnet tier still maps to `group/conductor`, and Magpie strips the marker.
 
-A model role contributes the models its candidates resolve to. `group/<id>`
+A model role contributes the first candidate the gateway serves. `group/<id>`
 stays a reference: the apply validates the referenced group's members but
 passes `group/<id>` to Magpie, so that group keeps its own routing and listed
 setting. A group with an unresolved member is left alone rather than created

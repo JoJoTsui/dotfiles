@@ -475,7 +475,7 @@ class MagpieApplyTests(unittest.TestCase):
 
             def do_GET(self):
                 self.reply(200, {"object": "list",
-                                 "data": [{"id": model} for model in MODELS]})
+                                 "data": [{"id": model} for model in self.server.models]})
 
             def do_POST(self):
                 length = int(self.headers.get("Content-Length") or 0)
@@ -492,6 +492,7 @@ class MagpieApplyTests(unittest.TestCase):
 
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         server.completions = []
+        server.models = list(MODELS)
         server.reject_completions = False
         threading.Thread(target=server.serve_forever, daemon=True).start()
         return server
@@ -967,6 +968,29 @@ class MagpieApplyTests(unittest.TestCase):
                 # The apply proceeds through the available providers and groups.
                 self.assertIn("provider add codex", self.commands())
                 self.assertTrue(self.state_file().is_file())
+
+    def test_astra_uses_older_model_only_when_newer_is_unavailable(self):
+        self.server.models.append("codex/gpt-6-astra")
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        groups = json.loads((self.state / "groups.json").read_text())
+        self.assertEqual(groups["auto-gpt-6-astra"], "codex/gpt-6.2-astra,openai/gpt-6.2-astra")
+        self.server.models.remove("codex/gpt-6.2-astra")
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        groups = json.loads((self.state / "groups.json").read_text())
+        self.assertEqual(groups["auto-gpt-6-astra"], "codex/gpt-6-astra,openai/gpt-6.2-astra")
+
+    def test_conductor_uses_older_sol_only_when_newer_is_unavailable(self):
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        groups = json.loads((self.state / "groups.json").read_text())
+        self.assertEqual(groups["conductor"], "codex/gpt-6.2-sol:medium,openai/gpt-6.2-sol:medium,kimi-code-cn/k3.1-pro:max")
+        self.server.models = [model for model in MODELS if "gpt-6.2-sol" not in model]
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        groups = json.loads((self.state / "groups.json").read_text())
+        self.assertEqual(groups["conductor"], "codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,kimi-code-cn/k3.1-pro:max")
 
     def test_a_required_model_without_a_live_match_fails_with_the_model_list(self):
         self.seed_home()
