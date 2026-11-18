@@ -138,10 +138,11 @@ deployment makes into Magpie's store; the app's **Agents** page edits the same
 key when the operator ticks a model. `status` prints
 `picked|agent|<n> entries`.
 
-The shipped list gives all three agents the four routers and the preferred
-provider-prefixed models: the GPT 6.1 Sol, Terra and 6 Luna ids from Codex and
-the OpenAI API, and Sol/Luna from Zed; Kimi K3.1 Pro; DeepSeek V4.1 Flash and GPT-6 Luna from
-OpenCode Go; and MiniMax M3.1 Flash.
+The shipped agent picks follow this Mac's provider selections: Codex and OpenAI
+6.2 Sol/Astra and 6.1 Sol/Terra; Zed 6.1 Sol and 6 Luna; Kimi Code K3.1 Pro
+and Kimi for Coding; OpenCode Go DeepSeek V4.1 Flash; and MiniMax M3.1 Flash.
+The older GPT-6 Astra is not exposed by the currently selected providers, so
+the agent picks use GPT-6.2 Astra.
 
 ### `plugins.tsv` — `name|source|version|enabled`
 
@@ -253,9 +254,12 @@ magpie settings set proxy http://127.0.0.1:7897
 
 ## Group semantics
 
-`group/conductor` is the Claude Code group: `codex/gpt-6.1-sol` at medium,
-then `openai/gpt-6.1-sol` at medium, then `kimi-code-cn/k3.1-pro` at max. It
-does not contain GPT-6.1 Terra.
+`group/conductor` is the Claude Code group: `codex/gpt-6.2-sol` at medium,
+then `openai/gpt-6.2-sol` at medium, then `kimi-code-cn/k3.1-pro` at max. It
+does not contain GPT-6.1 Terra. Claude Code's auto-mode classifier is configured
+separately as `codex/gpt-6.1-terra`. An isolated auto-mode check on this Mac
+reached that model through Magpie; verify the route on each device before
+applying, because an unavailable classifier causes checked actions to be denied.
 
 `group/openai-stack` is the manual OpenAI stack that keeps Terra:
 `group/chatgpt` (Codex Sol medium, Terra high), `openai/gpt-6.1-sol` medium,
@@ -263,14 +267,18 @@ does not contain GPT-6.1 Terra.
 `dsh` group: MiniMax M3.1 Flash at max, then DeepSeek V4.1 Flash at max.
 `group/chatgpt` holds the ChatGPT plan models at Sol medium and Terra high.
 
-The four GPT auto groups route one model across providers, Codex first:
+The four GPT auto groups route each model family across providers, Codex first.
+The group IDs remain stable when a provider moves to a newer model:
 
 - `auto/gpt-6.1-sol`: codex → openai → zed, all medium
 - `auto/gpt-6.1-terra`: codex → openai, both high (the Zed Student plan refuses Terra)
 - `auto/gpt-6-luna`: codex → openai → zed → opencode go, agent effort
-- `auto/gpt-6-astra`: codex → openai, agent effort
+- `auto/gpt-6-astra`: Codex 6.2 Astra → OpenAI 6.2 Astra, agent effort
 
-All eight groups are available to all three agents; only the default
+The Luna router retains its catalog members, but Codex, OpenAI, and OpenCode Go
+currently do not expose their Luna models in the GUI selections. An apply
+therefore reports that router as incomplete until those models are picked.
+The remaining groups are available to all three agents; only the default
 differs. The picked list puts the preferred provider-prefixed models beside
 the groups, so a failed route can be replaced by an exact provider/model on
 the spot. A group member's `:effort` fixes the reasoning for that route; a

@@ -57,6 +57,10 @@
     ],
     [
       "env",
+      "CLAUDE_CODE_AUTO_MODE_MODEL"
+    ],
+    [
+      "env",
       "DISABLE_AUTOUPDATER"
     ],
     [

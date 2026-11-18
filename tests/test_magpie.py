@@ -121,8 +121,8 @@ else:
     print("ok")
 '''
 
-MODELS = ["codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "codex/gpt-6-luna", "codex/gpt-6-astra",
-          "openai/gpt-6.1-sol", "openai/gpt-6.1-terra", "openai/gpt-6-luna", "openai/gpt-6-astra",
+MODELS = ["codex/gpt-6.2-sol", "codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "codex/gpt-6-luna", "codex/gpt-6.2-astra",
+          "openai/gpt-6.2-sol", "openai/gpt-6.1-sol", "openai/gpt-6.1-terra", "openai/gpt-6-luna", "openai/gpt-6.2-astra",
           "zed/gpt-6.1-sol", "zed/gpt-6-luna",
           "kimi-code-cn/k3.1-pro", "opencode-go/deepseek-v4.1-flash", "opencode-go/gpt-6-luna",
           "minimax-cn/MiniMax-M3.1-Flash"]
@@ -232,7 +232,7 @@ class MagpieCatalogTests(unittest.TestCase):
         self.assertEqual(groups[1].split("|")[1],
                          "group/chatgpt,openai.sol:medium,openai.terra:high,conductor.kimi:max")
         self.assertEqual(groups[2].split("|")[1],
-                         "chatgpt.sol:medium,openai.sol:medium,conductor.kimi:max")
+                         "conductor.codex-sol:medium,conductor.openai-sol:medium,conductor.kimi:max")
         self.assertEqual(groups[3].split("|")[1],
                          "workhorse.minimax:max,conductor.deepseek:max")
 
@@ -737,7 +737,7 @@ class MagpieApplyTests(unittest.TestCase):
             "kimi-code-cn/k3.1-pro:max routing=drain stays=auto listed=yes"], commands)
         conductor = [command for command in commands if command.startswith("group add conductor")]
         self.assertEqual(conductor, [
-            "group add conductor models=codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,"
+            "group add conductor models=codex/gpt-6.2-sol:medium,openai/gpt-6.2-sol:medium,"
             "kimi-code-cn/k3.1-pro:max routing=drain stays=auto listed=yes"], commands)
         self.assertNotIn("gpt-6.1-terra", conductor[0])
 
@@ -1114,12 +1114,12 @@ class MagpieCommandTests(MagpieApplyTests):
         (self.state / "groups.json").write_text(json.dumps({
             "chatgpt": "codex/gpt-6.1-sol:medium,codex/gpt-6.1-terra:high",
             "openai-stack": "group/chatgpt,openai/gpt-6.1-sol:medium,openai/gpt-6.1-terra:high,kimi-code-cn/k3.1-pro:max",
-            "conductor": "codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,kimi-code-cn/k3.1-pro:max",
+            "conductor": "codex/gpt-6.2-sol:medium,openai/gpt-6.2-sol:medium,kimi-code-cn/k3.1-pro:max",
             "workhorse": "minimax-cn/MiniMax-M3.1-Flash:max,opencode-go/deepseek-v4.1-flash:max",
             "auto-gpt-6-1-sol": "codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,zed/gpt-6.1-sol:medium",
             "auto-gpt-6-1-terra": "codex/gpt-6.1-terra:high,openai/gpt-6.1-terra:high",
             "auto-gpt-6-luna": "codex/gpt-6-luna,openai/gpt-6-luna,zed/gpt-6-luna,opencode-go/gpt-6-luna",
-            "auto-gpt-6-astra": "codex/gpt-6-astra,openai/gpt-6-astra",
+            "auto-gpt-6-astra": "codex/gpt-6.2-astra,openai/gpt-6.2-astra",
         }), encoding="utf-8")
         (self.state / "visible.json").write_text(
             json.dumps(self.catalog_column("visible.tsv", 1)), encoding="utf-8")
@@ -1348,6 +1348,7 @@ class MagpieClientSettingsTests(unittest.TestCase):
                      "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
                      "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL"):
             self.assertIn(f'"{tier}": "group/conductor"', template)
+        self.assertIn('"CLAUDE_CODE_AUTO_MODE_MODEL": "codex/gpt-6.1-terra"', template)
         self.assertNotIn("glm", template)
         # The wiring renders only for the magpie step's migration merge; an
         # ordinary client-settings merge never carries it.
@@ -1365,6 +1366,7 @@ class MagpieClientSettingsTests(unittest.TestCase):
             ["env", "ANTHROPIC_DEFAULT_SONNET_MODEL"],
             ["env", "ANTHROPIC_SMALL_FAST_MODEL"],
             ["env", "CLAUDE_CODE_SUBAGENT_MODEL"],
+            ["env", "CLAUDE_CODE_AUTO_MODE_MODEL"],
             ["env", "DISABLE_AUTOUPDATER"],
             ["enabledPlugins", "serena@claude-plugins-official"],
         ])

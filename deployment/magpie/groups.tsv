@@ -16,9 +16,9 @@
 # purpose   what the group is for.
 chatgpt|chatgpt.sol:medium,chatgpt.terra:high|drain|auto|yes|weekly ChatGPT quota
 openai-stack|group/chatgpt,openai.sol:medium,openai.terra:high,conductor.kimi:max|drain|auto|yes|manual OpenAI stack with Terra
-conductor|chatgpt.sol:medium,openai.sol:medium,conductor.kimi:max|drain|auto|yes|Claude Code, Sol only
+conductor|conductor.codex-sol:medium,conductor.openai-sol:medium,conductor.kimi:max|drain|auto|yes|Claude Code, Sol only
 workhorse|workhorse.minimax:max,conductor.deepseek:max|drain|auto|yes|Pi and dsh, both at max
-auto-gpt-6-1-sol|chatgpt.sol:medium,openai.sol:medium,zed.sol:medium|drain|auto|yes|GPT-6.1 Sol: codex, openai, zed
+auto-gpt-6-1-sol|chatgpt.sol:medium,openai.sol:medium,zed.sol:medium|drain|auto|yes|GPT Sol: codex, openai, zed
 auto-gpt-6-1-terra|chatgpt.terra:high,openai.terra:high|drain|auto|yes|GPT-6.1 Terra: codex, openai
 auto-gpt-6-luna|chatgpt.luna,openai.luna,zed.luna,opencode.luna|drain|auto|yes|GPT-6 Luna: codex, openai, zed, opencode go
 auto-gpt-6-astra|chatgpt.astra,openai.astra|drain|auto|yes|GPT-6 Astra: codex, openai
