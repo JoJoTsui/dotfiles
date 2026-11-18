@@ -31,12 +31,20 @@ prepended directory simply holds no `dsh`, leaving other PATH entries available
 for discovery. No other agent launcher changes, and the Windows `.cmd`
 launchers already point directly at JavaScript.
 
-This fixes discovery only. It does not make headless runs work: the pinned
-`dsh-tui` 0.20.1 adapter validates only DSH `0.2.0-rc.2`, `0.2.1-rc.2` through
+This fixes discovery only. It does not make the headless automation adapter
+work: the pinned `dsh-tui` 0.20.1 adapter validates only DSH `0.2.0-rc.2`,
+`0.2.1-rc.2` through
 `0.2.1-rc.5`, so it reports the pinned DSH `0.2.2-rc.1` as unvalidated and
 `dsh-tui run` exits with `ADAPTER_UNAVAILABLE`. The deployment does not bypass
 that upstream gate, change either pin, or claim the pair works headlessly;
 acceptance requires an adapter that validates the pinned DSH release.
+
+`dst dsh <args...>` is a separate, documented native DSH passthrough. It does
+not use the automation adapter's version gate or provide its JSON automation
+contract. An isolated `dst dsh --profile headless --help` probe confirms that
+the pinned DSH command starts; it does not establish profile initialization,
+Magpie routing, or a successful headless model request. See the upstream
+[CLI guide](https://github.com/ccch1mneyyy/dsh-TUI/blob/v0.20.1/guide/dsh-tui-guide/cli.en.md).
 
 CodeGraph is always selected, including with `--agents none`. Installation
 never indexes a repository. Selection does not gate configuration, shared
