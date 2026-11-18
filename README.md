@@ -339,7 +339,9 @@ The step runs on macOS by default and is turned off with `--no-magpie` or
 it and never installs it. Claude Code runs on `group/conductor`: Codex
 GPT-6.1 Sol at medium, then the paid OpenAI API's GPT-6.1 Sol, then Kimi
 K3.1 Pro at max. `group/openai-stack` keeps GPT-6.1 Terra for manual use. Pi
-and `dsh` run on `group/workhorse` (MiniMax and DeepSeek, both at max). Codex stays on its own
+and `dsh` run on `group/workhorse` (MiniMax and DeepSeek, both at max). The
+deployment writes the separate Magpie profile `~/.codex/magpie.config.toml`
+(mode 0600), which only `codex -p magpie` uses; plain `codex` keeps its own
 ChatGPT Pro configuration, which the deployment never writes. Provider
 credentials are read from the stores that already hold them; the Kimi Code
 China plan key lives in `~/.config/dotfiles/magpie.env` as
