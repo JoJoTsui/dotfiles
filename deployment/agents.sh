@@ -997,9 +997,11 @@ agent_global_copy_warning() {
 # available to older shell PATHs.
 agent_install_launchers() {
     local name=$1 version=$2 commands=$3 entrypoint_dir=$4 entrypoint_file=$5
-    local comment=$6 node=$7 bun=$8 template=$9 policy=${10:-exact}
-    local command launcher diagnostic entrypoint exposed_commands=()
+    local comment=$6 node=$7 bun=$8 template=$9 policy=${10:-exact} prepend_path=${11:-}
+    local command launcher diagnostic entrypoint path_prefix exposed_commands=()
     mkdir -p "$BUN_INSTALL/bin" "$HOME/.local/bin"
+    path_prefix="$(dirname "$node"):$(dirname "$bun")"
+    [ -z "$prepend_path" ] || path_prefix="$prepend_path:$path_prefix"
     IFS=, read -r -a exposed_commands <<< "$commands"
     for command in "${exposed_commands[@]}"; do
         launcher="$BUN_INSTALL/bin/$command"
@@ -1012,7 +1014,7 @@ agent_install_launchers() {
         [ ! -L "$launcher" ] || rm "$launcher"
         {
             printf '#!/bin/sh\n# Managed by dotfiles; %s.\n' "$comment"
-            printf 'PATH='; agent_shell_quote "$(dirname "$node"):$(dirname "$bun")"; printf ':"$PATH"\nexport PATH\n'
+            printf 'PATH='; agent_shell_quote "$path_prefix"; printf ':"$PATH"\nexport PATH\n'
             printf 'exec '; agent_shell_quote "$entrypoint"; printf ' "$@"\n'
         } > "$launcher"
         chmod 755 "$launcher"
@@ -1033,10 +1035,20 @@ agent_install_launchers() {
 install_bun_agent() {
     local name=$1 version=$2 catalog_version=$3 minimum=$4 package=$5 commands=$6
     local bun=$7 node=$8 node_version=$9
-    local project command exposed_commands=()
+    local project command prepend_path='' exposed_commands=()
     agent_version_at_least "${node_version#v}" "$minimum" ||
         fail "Node $node_version does not satisfy $name >=$minimum"
     project="$BUN_INSTALL/managed/$name"
+    # The headless dsh-tui adapter locates DSH by resolving the first `dsh` on
+    # PATH to a JavaScript entry. The managed ~/.local/bin/dsh launcher is a
+    # shell script that execs a shim, so the adapter rejects it. Point only the
+    # dsh-tui/dst launchers at the managed DSH project's bin first, where the
+    # genuine `dsh` JS entry lives. Node/Bun stay after it for tool resolution,
+    # an explicit DSH_TUI_CLI_DSH_BIN is left untouched, and an absent DSH
+    # project simply leaves other PATH entries available for discovery.
+    if [ "$name" = dsh-tui ]; then
+        prepend_path="$BUN_INSTALL/managed/dsh/node_modules/.bin"
+    fi
     for command in "$project" "$project/node_modules" "$project/package.json" "$project/bun.lock"; do
         [ ! -L "$command" ] || fail "managed Bun project is a symlink: $command"
     done
@@ -1058,7 +1070,7 @@ install_bun_agent() {
     agent_retry env npm_config_global=false pnpm_config_global=false \
         npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
     agent_install_launchers "$name" "$version" "$commands" "$project/node_modules/.bin" '' \
-        "Bun installs the frozen project" "$node" "$bun" "-" exact
+        "Bun installs the frozen project" "$node" "$bun" "-" exact "$prepend_path"
     IFS=, read -r -a exposed_commands <<< "$commands"
     agent_global_copy_warning "$package" "$node" "${exposed_commands[0]}"
 }

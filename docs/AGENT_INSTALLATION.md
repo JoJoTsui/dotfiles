@@ -19,6 +19,25 @@ trusts a lifecycle script. The TUI bootstraps its own profile on the first
 run, so `pnpm` is a pinned common tool (`pnpm==12.21.0`) and the launcher
 finds it without a Homebrew dependency.
 
+On Unix, only the `dsh-tui` and `dst` launchers prepend the managed DSH
+project's `~/.bun/managed/dsh/node_modules/.bin` to PATH, ahead of the managed
+Node/Bun directories. The headless adapter resolves DSH by following the first
+`dsh` on PATH to a JavaScript entry; the managed `~/.local/bin/dsh` launcher is
+a shell script that execs that shim, so the adapter rejects it as the first
+candidate. Prepending the DSH project's bin puts the genuine `dsh` JS entry
+first while Node/Bun tools stay resolvable. An explicit `DSH_TUI_CLI_DSH_BIN`
+is left untouched and still takes precedence, and when DSH is not installed the
+prepended directory simply holds no `dsh`, leaving other PATH entries available
+for discovery. No other agent launcher changes, and the Windows `.cmd`
+launchers already point directly at JavaScript.
+
+This fixes discovery only. It does not make headless runs work: the pinned
+`dsh-tui` 0.20.1 adapter validates only DSH `0.2.0-rc.2`, `0.2.1-rc.2` through
+`0.2.1-rc.5`, so it reports the pinned DSH `0.2.2-rc.1` as unvalidated and
+`dsh-tui run` exits with `ADAPTER_UNAVAILABLE`. The deployment does not bypass
+that upstream gate, change either pin, or claim the pair works headlessly;
+acceptance requires an adapter that validates the pinned DSH release.
+
 CodeGraph is always selected, including with `--agents none`. Installation
 never indexes a repository. Selection does not gate configuration, shared
 instructions, or portable skills, and does not uninstall omitted clients.

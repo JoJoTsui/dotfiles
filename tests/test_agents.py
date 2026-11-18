@@ -94,6 +94,112 @@ class AgentTests(unittest.TestCase):
             self.assertIn(f"/.bun/managed/{owner}/node_modules/.bin/{command}",
                           launcher.read_text(encoding="utf-8"))
 
+    # A fake Bun/Node pair whose installed shims report the PATH and the first
+    # dsh they discover at runtime. This exercises observable discovery through
+    # the generated launchers instead of matching their literal text. The probe
+    # body lives in its own file so the fake Bun only has to copy a path into
+    # each shim, keeping shell quoting simple.
+    def _deploy_probe_launchers(self, agents):
+        self.home = self.root / "device with spaces"
+        pins = agent_pins()
+        tools = self.root / "tools with spaces"
+        tools.mkdir()
+        probe = tools / "probe.sh"
+        probe.write_text(
+            "#!/bin/sh\n"
+            "printf 'PATH=%s\\n' \"$PATH\"\n"
+            "printf 'FIRST_DSH=%s\\n' \"$(command -v dsh || true)\"\n"
+            "printf 'DSH_BIN=%s\\n' \"${DSH_TUI_CLI_DSH_BIN-<unset>}\"\n",
+            encoding="utf-8")
+        probe.chmod(0o755)
+        bun = tools / "bun"
+        bun_source = (
+            "#!/usr/bin/env python3\n"
+            "import pathlib, sys\n"
+            "pins = __PINS__\n"
+            "if sys.argv[1:2] == ['--version']:\n"
+            "    print(__BUNPIN__); raise SystemExit\n"
+            "project = pathlib.Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
+            "pin = pins[project.name]\n"
+            "for command in pin['commands'].split(','):\n"
+            "    target = project / 'node_modules/.bin' / command\n"
+            "    target.parent.mkdir(parents=True, exist_ok=True)\n"
+            "    target.write_text('#!/bin/sh\\necho ' + pin['version'] + '\\n\"__TOOLS__/probe.sh\"\\n')\n"
+            "    target.chmod(0o755)\n")
+        bun_source = (bun_source.replace("__PINS__", repr(pins))
+                                .replace("__BUNPIN__", repr(common_pin("bun")))
+                                .replace("__TOOLS__", str(tools)))
+        bun.write_text(bun_source, encoding="utf-8")
+        bun.chmod(0o755)
+        node = tools / "node"
+        node.write_text("#!/bin/sh\necho v" + common_pin("nodejs") + "\n", encoding="utf-8")
+        node.chmod(0o755)
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("the source application requires chezmoi")
+        environment = dict(self.env, DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node),
+                           DOTFILES_CHEZMOI_BIN=chezmoi)
+        result = self.deploy("--agents-only", "--agents", agents, env=environment)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return tools
+
+    def _run_probe(self, command, path="/usr/bin:/bin", extra=None):
+        run_env = {"HOME": str(self.home), "PATH": path}
+        if extra:
+            run_env.update(extra)
+        result = subprocess.run([str(self.home / ".local/bin" / command)], cwd=self.home,
+                                env=run_env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        fields = {}
+        for line in result.stdout.splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                fields[key] = value
+        return fields
+
+    def test_unix_dsh_tui_launchers_prepend_managed_dsh_bin(self):
+        """dsh-tui/dst resolve the managed DSH JS entry, not the shell launcher."""
+        tools = self._deploy_probe_launchers("dsh,dsh-tui")
+        dsh_bin = self.home / ".bun/managed/dsh/node_modules/.bin"
+        for command in ("dsh-tui", "dst"):
+            with self.subTest(command=command):
+                fields = self._run_probe(command)
+                effective = fields["PATH"]
+                self.assertTrue(effective.startswith(str(dsh_bin) + os.pathsep), effective)
+                self.assertIn(str(tools), effective)  # Node/Bun tools remain resolvable
+                self.assertEqual(fields["FIRST_DSH"], str(dsh_bin / "dsh"))
+
+    def test_unix_dsh_tui_launchers_respect_explicit_dsh_bin(self):
+        """An explicit DSH_TUI_CLI_DSH_BIN is never rewritten by the launcher."""
+        self._deploy_probe_launchers("dsh,dsh-tui")
+        explicit = "/opt/dsh/lib/bin.js"
+        for command in ("dsh-tui", "dst"):
+            with self.subTest(command=command):
+                fields = self._run_probe(command, extra={"DSH_TUI_CLI_DSH_BIN": explicit})
+                self.assertEqual(fields["DSH_BIN"], explicit)
+
+    def test_unix_dsh_tui_launchers_keep_other_path_discovery_without_dsh(self):
+        """With DSH omitted, a device-provided dsh elsewhere on PATH still wins."""
+        self._deploy_probe_launchers("dsh-tui")
+        device_dir = self.root / "device-bin"
+        device_dir.mkdir()
+        device_dsh = device_dir / "dsh"
+        device_dsh.write_text("#!/bin/sh\necho device-dsh\n", encoding="utf-8")
+        device_dsh.chmod(0o755)
+        for command in ("dsh-tui", "dst"):
+            with self.subTest(command=command):
+                fields = self._run_probe(command, path=f"{device_dir}:/usr/bin:/bin")
+                self.assertEqual(fields["FIRST_DSH"], str(device_dsh))
+
+    def test_unix_dsh_launcher_does_not_prepend_managed_dsh_bin(self):
+        """Only dsh-tui/dst change; the dsh launcher keeps the shared PATH."""
+        tools = self._deploy_probe_launchers("dsh,dsh-tui")
+        dsh_bin = self.home / ".bun/managed/dsh/node_modules/.bin"
+        fields = self._run_probe("dsh")
+        effective = fields["PATH"]
+        self.assertFalse(effective.startswith(str(dsh_bin) + os.pathsep), effective)
+        self.assertTrue(effective.startswith(str(tools) + os.pathsep), effective)
+
     def test_none_and_named_agents_keep_codegraph_and_reject_unknown_names(self):
         for selector, expected in (("none", []), ("codex,kimi-code,codex", ["kimi", "codex"]),
                                    ("claude-code,pi", ["pi", "claude"]),
