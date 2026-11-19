@@ -10,6 +10,11 @@ import tempfile
 import threading
 import unittest
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python before 3.11 has no TOML reader.
+    tomllib = None
+
 if __package__:
     from .fixtures.magpie_engine import install_engine_shim
 else:
@@ -2981,6 +2986,148 @@ class ClaudeSubagentInheritanceTests(unittest.TestCase):
         self.assert_merged(self.merge(gateway=True))
         self.assertEqual(self.settings.read_bytes(), gateway)
         self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", self.live())
+
+
+class CodexTomlBytesTests(unittest.TestCase):
+    """An unchanged Codex configuration keeps its file and its mtime.
+
+    These exercise the public `deploy_client_settings` seam against the
+    working tree, the same entry point `bootstrap.sh` and the gateway step
+    call, for the TOML target the Codex policy owns. The device file is
+    device-owned: a merge that adds no value must not rewrite it.
+    """
+
+    # The device's own layout: a comment header, the tables in another order
+    # than the defaults use, and a different indentation. The values are the
+    # ones the deployment's defaults would fill in.
+    SEED = '''# The device owns this file: the deployment only fills in what it owns.
+model = "gpt-6-luna"
+model_provider = "openai"
+model_reasoning_effort = "medium"
+forced_login_method = "chatgpt"
+approvals_reviewer = "auto_review"
+check_for_update_on_startup = false
+
+[model_providers.omniroute]
+name = "OmniRoute"
+base_url = "http://localhost:20128/api/v1"
+wire_api = "responses"
+env_key = "OMNIROUTE_API_KEY"
+
+[model_providers.deepseek]
+name = "deepseek"
+base_url = "https://api.deepseek.com/"
+wire_api = "responses"
+env_key = "DEEPSEEK_API_KEY"
+
+[model_providers.custom]
+name = "custom"
+wire_api = "responses"
+requires_openai_auth = true
+base_url = "https://opencode.ai/zen/go/v1"
+
+[features]
+hooks = true
+context_management = { experimental_mode = true }
+
+[mcp_servers.codegraph]
+command = "codegraph"
+args = ["serve", "--mcp"]
+
+[tui]
+status_line = [
+    "model-with-reasoning",
+    "current-dir",
+    "git-branch",
+    "branch-changes",
+    "run-state",
+    "context-used",
+    "context-window-size",
+    "weekly-limit",
+]
+status_line_use_colors = true
+'''
+
+    # A modification time the merge cannot produce by accident.
+    MTIME = 1600000000
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-codex-toml-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.state = self.home / ".local/state"
+        self.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith(("DOTFILES_", "XDG_", "PIXI_", "BUN_", "CARGO_", "RUSTUP_", "UV_",
+                                           "NPM_", "ATUIN_", "KIMI_", "PI_", "OPENCODE_", "CODEX_", "CLAUDE_"))
+                    and key not in ("GLM_API_TOKEN", "KIMI_API_KEY", "GLM_BASE_URL", "HTTP_PROXY_URL",
+                                    "NODE_OPTIONS", "ENV", "BASH_ENV", "ANTHROPIC_AUTH_TOKEN", "CONTEXT7_TOKEN")}
+        self.config = self.home / ".codex/config.toml"
+
+    def write_chezmoi_config(self):
+        config = self.home / ".config/chezmoi/chezmoi.toml"
+        config.parent.mkdir(parents=True, exist_ok=True)
+        config.write_text('[data]\n    platform = "macos"\n    role = "workstation"\n'
+                          '    arch = "aarch64"\n    kimiApiKey = "REPLACE_ME"\n', encoding="utf-8")
+        (self.home / ".cache/tmp").mkdir(parents=True, exist_ok=True)
+
+    def write_config(self, text):
+        """Seed the device's Codex configuration and give it a known mtime."""
+        self.config.parent.mkdir(parents=True, exist_ok=True)
+        self.config.write_text(text, encoding="utf-8")
+        os.utime(self.config, (self.MTIME, self.MTIME))
+
+    def merge(self):
+        """Run `deploy_client_settings` for the Codex policy in a simulated home."""
+        if not self.chezmoi:
+            self.skipTest("client settings merge requires chezmoi")
+        self.write_chezmoi_config()
+        script = self.root / "codex-merge.sh"
+        script.write_text("\n".join([
+            "export HOME=" + repr(str(self.home)),
+            "export DEPLOY_SOURCE=" + repr(str(SOURCE)),
+            "export DEPLOY_HOME=$HOME",
+            "export DEPLOY_CHEZMOI=" + repr(str(self.chezmoi)),
+            "export XDG_CONFIG_HOME=" + repr(str(self.home / ".config")),
+            "export XDG_STATE_HOME=" + repr(str(self.state)),
+            "export TMPDIR=" + repr(str(self.home / ".cache/tmp")),
+            "fail() { printf 'dotfiles: %s\\n' \"$*\" >&2; exit 1; }",
+            'source "$DEPLOY_SOURCE/deployment/payload.sh"',
+            'source "$DEPLOY_SOURCE/deployment/client-settings.sh"',
+            "deploy_client_settings 0 0 codex",
+        ]) + "\n", encoding="utf-8")
+        environ = dict(self.env, HOME=str(self.home), PATH="/usr/bin:/bin",
+                       XDG_CONFIG_HOME=str(self.home / ".config"),
+                       XDG_STATE_HOME=str(self.state))
+        return subprocess.run(["/bin/bash", str(script)], env=environ,
+                              capture_output=True, text=True, timeout=120)
+
+    def assert_merged(self, result):
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_an_unchanged_codex_configuration_keeps_its_bytes_and_mtime(self):
+        self.write_config(self.SEED)
+        before = self.config.read_bytes()
+        self.assert_merged(self.merge())
+        # The merge changed nothing, so the device's file and its modification
+        # time stay: the file must not look changed to the services that read it.
+        self.assertEqual(self.config.read_bytes(), before)
+        self.assertEqual(int(self.config.stat().st_mtime), self.MTIME)
+
+    def test_a_changed_codex_configuration_is_written_with_the_managed_value(self):
+        self.write_config(self.SEED.replace("check_for_update_on_startup = false\n", ""))
+        before = self.config.read_bytes()
+        self.assert_merged(self.merge())
+        # The policy owns that value, so the file is written in the canonical
+        # layout and carries the value the deployment manages.
+        self.assertNotEqual(self.config.read_bytes(), before)
+        self.assertNotEqual(int(self.config.stat().st_mtime), self.MTIME)
+        text = self.config.read_text()
+        self.assertIn("check_for_update_on_startup = false", text)
+        if tomllib is not None:
+            self.assertIs(tomllib.loads(text)["check_for_update_on_startup"], False)
 
 
 class MagpiePiSettingsTests(unittest.TestCase):
