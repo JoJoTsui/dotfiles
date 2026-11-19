@@ -34,15 +34,17 @@ thinking levels) that would drift from Magpie's catalog.
 - `dotfiles-magpie status` is the only supported way to see drift; opening the
   app is not part of verification.
 - Codex's base `config.toml` and `auth.json` remain protected by before/after
-  hash guards and private backups. The selected separate-profile exception
+  content guards and private backups. The selected separate-profile exception
   permits only `magpie codex scope profile` followed by a profile model
   selection. The scope selection is read with the read-only getter and made
   before the gateway changes, because the pinned CLI refuses it while the
   ordinary Codex integration is connected; the deployment disconnects and
   retags nothing. The getter has to succeed: an answer printed by a command
-  that failed is not a scope. The base configuration and authentication
-  hashes are compared after the selection whether the command succeeded or
-  failed, so the run never claims a preservation it did not observe.
+  that failed is not a scope. The base configuration and authentication are
+  compared by content after the selection whether the command succeeded or
+  failed, so the run never claims a preservation it did not observe. The
+  comparison is by content because a client re-serializes its own file
+  without changing it; a real change still aborts the run.
   Magpie generates `magpie.config.toml` and `magpie-models.json`;
   the credential-bearing profile stays 0600, and a device without a Codex home
   gets a private one. Collision checks preserve unrecorded device files, a

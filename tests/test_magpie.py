@@ -6,9 +6,16 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
+
+try:
+    import tomllib
+    HAS_TOMLLIB = True
+except ModuleNotFoundError:  # pragma: no cover - the content digest needs 3.11 or newer
+    HAS_TOMLLIB = False
 
 if __package__:
     from .fixtures.magpie_engine import install_engine_shim
@@ -42,6 +49,62 @@ def save(name, value):
     (state / name).write_text(json.dumps(value))
 
 
+def write_toml_value(value):
+    """One TOML value, or None for a shape this fixture cannot write."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return repr(value)
+    if isinstance(value, str):
+        return json.dumps(value)
+    if isinstance(value, list) and all(isinstance(item, (str, int, float, bool)) for item in value):
+        return "[" + ", ".join(write_toml_value(item) for item in value) + "]"
+    return None
+
+
+def write_toml_table(prefix, table, indent, lines):
+    """The entries of one table, in another order and another indentation."""
+    for key, value in reversed(list(table.items())):
+        if isinstance(value, dict):
+            continue
+        written = write_toml_value(value)
+        if written is None:
+            return False
+        lines.append("%s%s = %s" % (indent, key, written))
+    for key, value in reversed(list(table.items())):
+        if not isinstance(value, dict):
+            continue
+        name = "%s.%s" % (prefix, key) if prefix else key
+        lines.append("")
+        lines.append("%s[%s]" % (indent, name))
+        if not write_toml_table(name, value, indent + "  ", lines):
+            return False
+    return True
+
+
+def rewrite_codex_config():
+    """Rewrite the base configuration in another layout, with the same content.
+
+    Codex rewrote its own marketplace entry into its own layout: the same keys
+    with the same values, in another order and another indentation. The parsed
+    configuration is the same configuration.
+    """
+    config = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
+    if not config.exists():
+        return
+    try:
+        import tomllib
+        value = tomllib.loads(config.read_text())
+    except Exception:
+        return
+    lines = []
+    if not write_toml_table("", value, "", lines):
+        return
+    config.write_text("\\n".join(lines) + "\\n")
+
+
 argv = sys.argv[1:]
 if argv[:1] == ["--version"]:
     print("magpie 0.1.4404")
@@ -54,7 +117,9 @@ elif argv[:2] == ["accounts", "codex"]:
 elif argv[:2] == ["provider", "add"]:
     if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX") == "1":
         codex = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
-        codex.write_text(codex.read_text() + "\\n# changed\\n")
+        # A real change: a new top-level key. A comment is not a change the
+        # guard has to report.
+        codex.write_text('guard_probe = "changed"\\n' + codex.read_text())
     if os.environ.get("FAKE_MAGPIE_FAIL_PROVIDER_ADD") == "1":
         sys.exit(1)
     providers = load("providers.json", [])
@@ -127,7 +192,8 @@ elif argv[:2] == ["dsh", "compact_model"]:
     else:
         if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX_ON_COMPACT") == "1":
             codex = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
-            codex.write_text(codex.read_text() + "\\n# changed\\n")
+            # A real change: a new top-level key.
+            codex.write_text('guard_probe = "changed"\\n' + codex.read_text())
         value = argv[2]
         if value.startswith("magpie/"):
             value = value[len("magpie/"):]
@@ -167,8 +233,9 @@ elif argv[:2] == ["codex", "scope"] and len(argv) == 3:
     if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX_ON_SCOPE_SET") == "1":
         # A setter that changes the base configuration and then fails: the
         # deployment must notice the change instead of assuming the ordinary
-        # integration was left alone.
-        config.write_text(config.read_text() + "\\n# changed\\n")
+        # integration was left alone. The change is a new top-level key: a
+        # comment is not a change the guard has to report.
+        config.write_text('guard_probe = "changed"\\n' + config.read_text())
     if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX_AUTH_ON_SCOPE_SET") == "1":
         auth = pathlib.Path(os.environ["HOME"]) / ".codex/auth.json"
         auth.write_text('{"changed":true}\\n')
@@ -190,6 +257,10 @@ elif argv[:1] == ["codex"] and len(argv) == 2:
     if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX_AUTH") == "1":
         auth = pathlib.Path(os.environ["HOME"]) / ".codex/auth.json"
         auth.write_text('{"changed":true}\\n')
+    if os.environ.get("FAKE_MAGPIE_RESERIALIZE_CODEX") == "1":
+        # The device rewrote its own configuration into another layout, with
+        # the same content: the guard compares the content, not the bytes.
+        rewrite_codex_config()
     profile = pathlib.Path(os.environ["HOME"]) / ".codex/magpie.config.toml"
     catalog = pathlib.Path(os.environ["HOME"]) / ".codex/magpie-models.json"
     # The mode the writer was handed: the deployment has to make the profile
@@ -493,6 +564,13 @@ class MagpieApplyTests(unittest.TestCase):
         self.fake = self.tools / "magpie"
         self.fake.write_text(FAKE_MAGPIE, encoding="utf-8")
         self.fake.chmod(0o755)
+        # The guard compares the parsed content of the device's Codex
+        # configuration, and it needs a python3 with the standard library's
+        # tomllib module to parse it. The system python3 of this host is
+        # older than 3.11, so the interpreter of this run stands in for the
+        # managed one and the comparison is exercised the way a device
+        # exercises it.
+        (self.tools / "python3").symlink_to(sys.executable)
         curl = self.tools / "curl"
         curl.write_text(
             "#!/bin/sh\nallowed=0\n"
@@ -1067,6 +1145,29 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual((backups[0] / ".codex/auth.json").read_text(encoding="utf-8"),
                          '{"tokens":{"access_token":"fixture-original"}}\n')
         self.assertFalse(self.state_file().exists())
+
+    def test_a_codex_configuration_rewritten_in_another_layout_is_not_a_change(self):
+        # The shape of the incident: Codex rewrote its own marketplace entry
+        # into its own layout. The parsed configuration is the same
+        # configuration, so the apply succeeds and the guard reports no
+        # change.
+        if not HAS_TOMLLIB:
+            self.skipTest("the content digest needs a python3 with the standard library's tomllib")
+        config = self.home / ".codex/config.toml"
+        seeded = ('[marketplaces.openai-bundled]\nsource_type = "local"\n'
+                  'source = "/tmp/openai-bundled"\n'
+                  '[marketplaces.openai-primary-runtime]\nsource_type = "local"\n'
+                  'source = "/tmp/openai-primary-runtime"\n')
+
+        def setup():
+            config.write_text(seeded, encoding="utf-8")
+
+        result = self.apply(setup=setup, environment={"FAKE_MAGPIE_RESERIALIZE_CODEX": "1"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the Codex configuration and authentication are unchanged", result.stdout)
+        final = config.read_text(encoding="utf-8")
+        self.assertNotEqual(final, seeded)
+        self.assertEqual(tomllib.loads(final), tomllib.loads(seeded))
 
     def test_an_interrupted_codex_profile_write_retries_without_adopting_drift(self):
         result = self.apply(environment={"FAKE_MAGPIE_FAIL_CODEX_PROFILE": "1"})
@@ -3033,3 +3134,83 @@ class MagpiePiSettingsTests(unittest.TestCase):
         self.assertIn('{{- if and (has .platform (list "macos" "linux" "wsl")) '
                       '(eq (env "DOTFILES_SETTINGS_MAGPIE") "true") }}', template)
         self.assertNotIn("{{- if eq .platform \"macos\" }}", template)
+
+
+class CodexContentDigestTests(unittest.TestCase):
+    """The guard compares the content of a configuration, not its bytes.
+
+    These exercise the digest helper in a shell of its own, so the
+    interpreter resolution and the fallback are visible without a deployment
+    around them.
+    """
+
+    # The shape of the incident: the same configuration in another layout.
+    LAYOUT_A = ('[marketplaces.openai-bundled]\nsource_type = "local"\n'
+                'source = "/tmp/openai-bundled"\n'
+                '[marketplaces.openai-primary-runtime]\nsource_type = "local"\n'
+                'source = "/tmp/openai-primary-runtime"\n')
+
+    LAYOUT_B = ('  [marketplaces.openai-primary-runtime]\n'
+                '    source = "/tmp/openai-primary-runtime"\n'
+                '    source_type = "local"\n'
+                '\n'
+                '  [marketplaces.openai-bundled]\n'
+                '    source = "/tmp/openai-bundled"\n'
+                '    source_type = "local"\n')
+
+    # A real change: the same configuration with one other value.
+    CHANGED = ('[marketplaces.openai-bundled]\nsource_type = "local"\n'
+               'source = "/tmp/openai-bundled"\n'
+               '[marketplaces.openai-primary-runtime]\nsource_type = "local"\n'
+               'source = "/tmp/openai-primary-runtime-elsewhere"\n')
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-content-digest-")
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        # A PATH with the digest's own tools and no python3, so the resolver
+        # cannot find an interpreter and the fallback is exercised.
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        for tool in ("shasum", "sha256sum", "awk"):
+            found = shutil.which(tool)
+            if found:
+                (self.bin / tool).symlink_to(found)
+        self.script = self.root / "digest.sh"
+        self.script.write_text(
+            'source "$DEPLOY_SOURCE/deployment/magpie.sh"\n'
+            'magpie_content_digest "$1" toml\n', encoding="utf-8")
+
+    def digest(self, name, text, environment=None):
+        """The digest of one file, computed in a shell of its own."""
+        path = self.root / name
+        path.write_text(text, encoding="utf-8")
+        env = {
+            "HOME": str(self.root),
+            "PATH": str(self.bin),
+            "DOTFILES_COMMON_BIN": str(self.root / "empty"),
+            "PIXI_HOME": str(self.root / "empty"),
+            "DEPLOY_SOURCE": str(SOURCE),
+        }
+        env.update(environment or {})
+        return subprocess.run(["/bin/bash", str(self.script), str(path)],
+                              env=env, capture_output=True, text=True, timeout=60)
+
+    def test_the_same_configuration_in_another_layout_has_the_same_digest(self):
+        if not HAS_TOMLLIB:
+            self.skipTest("the content digest needs a python3 with the standard library's tomllib")
+        first = self.digest("a.toml", self.LAYOUT_A,
+                             environment={"MAGPIE_PYTHON": sys.executable})
+        second = self.digest("b.toml", self.LAYOUT_B,
+                              environment={"MAGPIE_PYTHON": sys.executable})
+        changed = self.digest("c.toml", self.CHANGED,
+                               environment={"MAGPIE_PYTHON": sys.executable})
+        self.assertTrue(first.stdout.startswith("c:"), first.stdout + first.stderr)
+        self.assertEqual(first.stdout, second.stdout)
+        self.assertNotEqual(first.stdout, changed.stdout)
+
+    def test_without_a_parser_the_digest_is_the_bytes(self):
+        result = self.digest("a.toml", self.LAYOUT_A)
+        self.assertTrue(result.stdout.startswith("b:"), result.stdout + result.stderr)
+        self.assertEqual(result.stdout, "b:" + hashlib.sha256(
+            self.LAYOUT_A.encode("utf-8")).hexdigest())
