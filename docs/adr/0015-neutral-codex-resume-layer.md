@@ -20,7 +20,8 @@ sessions.
   carries a gateway credential into the device's Codex home and needs a
   collision, permission, and cleanup policy of its own.
 - **Injecting the definitions into the base `config.toml`**: one file to read,
-  but the base configuration is device-owned and hash-guarded; the deployment
+  but the base configuration is device-owned and guarded by a content
+  comparison around every apply; the deployment
   would write into a file it does not own and would change what plain `codex`
   does.
 - **Weakening Magpie's profile so it stops selecting**: the profile selects on

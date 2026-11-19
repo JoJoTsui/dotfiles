@@ -248,6 +248,85 @@ magpie_sha256() {
     fi
 }
 
+# The Python that parses a configuration with the standard library. The
+# candidates are the ones magpie_python resolves, in the same order, and a
+# candidate that cannot import tomllib is not a candidate: a configuration is
+# read with the standard library or not at all, and a guessed TOML is a
+# rerouted thread.
+magpie_content_python() {
+    local candidate
+    for candidate in "${MAGPIE_PYTHON:-}" "${DOTFILES_COMMON_BIN:-}/python3" \
+                     "${PIXI_HOME:-}/bin/python3" \
+                     "$(command -v python3 2>/dev/null || true)"; do
+        [ -n "$candidate" ] || continue
+        [ -x "$candidate" ] || continue
+        "$candidate" -c 'import tomllib' >/dev/null 2>&1 || continue
+        printf '%s' "$candidate"
+        return 0
+    done
+    return 1
+}
+
+# The interpreter the content digest uses, resolved once per run. The run
+# says once, here, that it fell back to the byte comparison: the byte
+# comparison is stricter than the content comparison, so the fallback reports
+# every real change and some changes that are not real. A guard that reports
+# too much is safe; a guard that reports too little is not.
+magpie_content_digest_prepare() {
+    [ -n "${MAGPIE_CONTENT_DIGEST_READY:-}" ] && return 0
+    MAGPIE_CONTENT_DIGEST_READY=1
+    MAGPIE_CONTENT_PYTHON=$(magpie_content_python || true)
+    if [ -z "$MAGPIE_CONTENT_PYTHON" ]; then
+        printf "dotfiles: magpie: the Codex configuration and the authentication are compared by their bytes; no python3 with the standard library's tomllib module was found\n"
+    fi
+    return 0
+}
+
+# The digest of one file's parsed content, not of its bytes. A device that
+# rewrote its own configuration into another layout left the same
+# configuration, and the guard must not report that as a change. The digest
+# carries its kind: a file that parses at one point and stops parsing at
+# another never compares as equal, and a byte digest never equals a content
+# digest. Nothing of the file leaves this function but its digest: the
+# authentication holds a credential, and its digest is compared in memory.
+magpie_content_digest() {
+    local file=$1 format=$2 python digest
+    [ -f "$file" ] || { printf ''; return 0; }
+    case "$format" in
+        toml|json) python=${MAGPIE_CONTENT_PYTHON:-} ;;
+        *) return 1 ;;
+    esac
+    # The prepared interpreter is the one the run resolved. A call without
+    # that preparation resolves its own, so the digest is never a byte digest
+    # by accident.
+    [ -n "$python" ] || python=$(magpie_content_python || true)
+    if [ -n "$python" ]; then
+        digest=$("$python" - "$file" "$format" <<'PYTHON'
+import hashlib
+import json
+import sys
+
+path, format = sys.argv[1], sys.argv[2]
+try:
+    with open(path, "rb") as handle:
+        raw = handle.read()
+    if format == "toml":
+        import tomllib
+        value = tomllib.loads(raw.decode("utf-8"))
+    else:
+        value = json.loads(raw.decode("utf-8"))
+except Exception:
+    raise SystemExit(1)
+canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+sys.stdout.write("c:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest())
+PYTHON
+) || digest=''
+        if [ -n "$digest" ]; then printf '%s' "$digest"; return 0; fi
+    fi
+    digest=$(magpie_sha256 "$file") || digest=''
+    printf 'b:%s' "$digest"
+}
+
 # The release catalog that owns the Magpie CLI version and the digests that
 # verify each asset. The deployment reads the working tree; the managed
 # command reads the copy the source application leaves in the home.
@@ -2457,6 +2536,9 @@ magpie_codex_ordinary_connected() {
 # alone, disconnecting and retagging nothing.
 magpie_codex_scope_preflight() {
     local before=$1 auth_before=$2 after auth_after scope status=0
+    # The digests are the parsed content of the files, so the interpreter is
+    # resolved in the shell that owns the comparison, not in a subshell.
+    magpie_content_digest_prepare || true
     magpie_codex_profile_enabled || return 0
     scope=$(magpie_codex_scope_read) || {
         magpie_fail 'cannot read the Codex scope; the installed Magpie CLI must report the separate profile scope'
@@ -2473,8 +2555,8 @@ magpie_codex_scope_preflight() {
     if magpie_run codex scope profile >/dev/null 2>&1; then status=0; else status=$?; fi
     # The guards run whether the setter succeeded or not: a failed command
     # can still have changed the files the deployment promised to preserve.
-    after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
-    auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+    after=$(magpie_content_digest "$HOME/.codex/config.toml" toml || true)
+    auth_after=$(magpie_content_digest "$HOME/.codex/auth.json" json || true)
     [ "$before" = "$after" ] ||
         { magpie_fail 'the Codex configuration changed while selecting its profile'; return 1; }
     [ "$auth_before" = "$auth_after" ] ||
@@ -2506,8 +2588,12 @@ magpie_apply() {
     dir=$(magpie_catalog_dir)
     DEPLOY_STEP=magpie-apply.catalog
     magpie_catalog_validate "$dir" || return 1
-    codex_before=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
-    codex_auth_before=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+    # The guard compares the parsed content of the device's Codex
+    # configuration and authentication, so the interpreter that parses them
+    # is resolved here, in the shell that owns the comparison.
+    magpie_content_digest_prepare || true
+    codex_before=$(magpie_content_digest "$HOME/.codex/config.toml" toml || true)
+    codex_auth_before=$(magpie_content_digest "$HOME/.codex/auth.json" json || true)
     magpie_codex_profile_preflight || return 1
     printf 'dotfiles: magpie: %s provider(s), %s model role(s), %s group(s), %s agent(s) declared\n' \
         "${#MAGPIE_PROVIDER_ROLE[@]}" "${#MAGPIE_MODEL_ROLE[@]}" \
@@ -2703,8 +2789,8 @@ $role (source: $source; variable: $variable)"
             else
                 status=$?
             fi
-            codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
-            codex_auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+            codex_after=$(magpie_content_digest "$HOME/.codex/config.toml" toml || true)
+            codex_auth_after=$(magpie_content_digest "$HOME/.codex/auth.json" json || true)
             if [ "$codex_before" != "$codex_after" ]; then
                 magpie_fail 'the Codex configuration changed during the apply; the backup is kept'
                 return 1
@@ -3030,8 +3116,8 @@ client-settings"
                 magpie_codex_profile_pending_write \
                     "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
                     "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
-                codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
-                codex_auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+                codex_after=$(magpie_content_digest "$HOME/.codex/config.toml" toml || true)
+                codex_auth_after=$(magpie_content_digest "$HOME/.codex/auth.json" json || true)
                 [ "$codex_before" = "$codex_after" ] ||
                     { magpie_fail 'the Codex configuration changed during profile wiring'; return 1; }
                 [ "$codex_auth_before" = "$codex_auth_after" ] ||
@@ -3088,8 +3174,8 @@ client-settings"
     fi
 
     DEPLOY_STEP=magpie-apply.codex-guard
-    codex_after=$(magpie_sha256 "$HOME/.codex/config.toml" || true)
-    codex_auth_after=$(magpie_sha256 "$HOME/.codex/auth.json" || true)
+    codex_after=$(magpie_content_digest "$HOME/.codex/config.toml" toml || true)
+    codex_auth_after=$(magpie_content_digest "$HOME/.codex/auth.json" json || true)
     if [ "$codex_before" != "$codex_after" ]; then
         guard='changed'
         magpie_fail 'the Codex configuration changed during the apply; the backup is kept'

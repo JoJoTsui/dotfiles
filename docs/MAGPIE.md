@@ -16,7 +16,7 @@ remain device-owned; the deployment guards both files against changes.
 
 | Owner | Owns | Never owns |
 | --- | --- | --- |
-| The repository | the seven catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex hash guard | any credential, any generated agent file |
+| The repository | the seven catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex content guard | any credential, any generated agent file |
 | Magpie | provider keys and accounts, the usage store, Pi's `~/.pi/agent/models.json`, DSH's Magpie route, Codex's `~/.codex/magpie.config.toml` and `magpie-models.json` | the intent: which models a group holds, Codex's base config and authentication |
 | Neither | `~/.codex/config.toml` and `~/.codex/auth.json`, the official OpenCode, Kimi Code, and MiniMax Code configurations | — |
 
@@ -231,9 +231,10 @@ installed. For the Zed plugin that is `magpie plugin login zed`, or the
 `magpie-apply` runs after `install-agents` and before `prepare-shell`, so the
 app, the agents, and the client settings exist before the gateway is wired.
 
-1. Validate the catalogs, capture the hashes of Codex's base configuration and
-   authentication, and preflight separate-profile collisions before installing
-   a CLI or changing the gateway. The preflight refuses a linked or
+1. Validate the catalogs, capture the content digests of Codex's base
+   configuration and authentication, and preflight separate-profile collisions
+   before installing a CLI or changing the gateway. The preflight refuses a
+   linked or
    non-directory Codex home, a linked or non-regular profile or catalog path,
    a generated file with another name, a profile path whose link count cannot
    be read, and an unrecorded profile or catalog.
@@ -252,9 +253,9 @@ app, the agents, and the client settings exist before the gateway is wired.
    stops the run even when it printed an answer. The pinned CLI refuses that
    change while the ordinary Codex integration is connected, so the run stops
    there; the deployment disconnects and retags nothing. The base
-   configuration and authentication hashes are compared after the selection
-   whether the command succeeded or failed, and the run reports a change
-   rather than claiming the ordinary integration was preserved.
+   configuration and authentication content digests are compared after the
+   selection whether the command succeeded or failed, and the run reports a
+   change rather than claiming the ordinary integration was preserved.
 5. Back up client files and register a missing credential-free ChatGPT account
    provider, then check that Codex's configuration is unchanged.
 6. Resolve the model roles against `GET /v1/models`. If this fails after the
@@ -281,7 +282,7 @@ app, the agents, and the client settings exist before the gateway is wired.
     originals and a current device keeps its files and their modification
     times. The merge runs only after the gateway changes succeed.
 13. Verify that DSH's official `llm-deepseek` row is unchanged and that both
-    Codex's base configuration and authentication still hash the same.
+    Codex's base configuration and authentication still hold the same content.
 14. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
 
 A run with nothing to change writes no files and keeps every modification
@@ -333,12 +334,12 @@ run stops before the gateway changes. The pinned CLI refuses the selection
 while the ordinary Codex integration is connected (`magpie: disconnect Codex
 from magpie first, then change what it applies to`), so the run stops there
 and leaves the ordinary integration as it is: nothing is disconnected,
-retagged, or rewritten. The base configuration and authentication hashes are
-compared after the selection whether the command succeeded or failed, so a
-failed selection that still changed a file is reported as a change, and the
-run only says the configuration and authentication are unchanged when the
-comparison shows it. The deployment never writes the ordinary configuration
-itself.
+retagged, or rewritten. The base configuration and authentication content
+digests are compared after the selection whether the command succeeded or
+failed, so a failed selection that still changed a file is reported as a
+change, and the run only says the configuration and authentication are
+unchanged when the comparison shows it. The deployment never writes the
+ordinary configuration itself.
 
 An interrupted write leaves `codex-profile.pending` under the Magpie state
 root. Its fingerprints permit retry only while the generated files match
@@ -506,8 +507,8 @@ refusal while the ordinary integration is connected (`magpie: disconnect
 Codex from magpie first, then change what it applies to`) with the base
 configuration unchanged, the preserved mode of a private placeholder, the
 writer's in-place write over a file with another name, the refusal over a
-profile it cannot parse, the unchanged base configuration and
-authentication hashes around the profile write, the address the profile
+profile it cannot parse, the unchanged content of the base configuration and
+authentication around the profile write, the address the profile
 names, and the number of requests the fake gateway received. The live port
 appeared in no output and in no generated file. It did not establish live
 gateway resume, and it is not application acceptance.
@@ -710,9 +711,14 @@ codex scope default` then returns the ordinary integration. Removing the
 Magpie provider definition makes its threads unavailable until that definition
 returns; it does not convert them to subscription threads.
 The deployment never intentionally writes the base Codex configuration or
-authentication. Every apply hashes both before and after the changes; a change
-aborts the run and keeps the backup. `~/.local/state/dotfiles/magpie/state.tsv` records what
-the last apply did: the providers, the groups with their model order, the
+authentication. Every apply compares the parsed content of both before and
+after the changes, so a configuration the device rewrote into another layout
+is the same configuration and is not reported as a change; a real change
+aborts the run and keeps the backup. The comparison needs a `python3` with
+the standard library's `tomllib` module; without one the run falls back to
+the byte digest, which is stricter, and says so once.
+`~/.local/state/dotfiles/magpie/state.tsv` records what the last apply did:
+the providers, the groups with their model order, the
 wiring, the proxy, the DSH compaction group, and the Codex guard verdict.
 
 A refused collision is not a rollback: the deployment leaves the file it found

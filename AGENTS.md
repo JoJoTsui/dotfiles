@@ -303,7 +303,7 @@ explains every changed pair.
   (providers, models, groups, wiring, visible, picked, plugins), the release
   catalog `deployment/magpie/releases.tsv` that pins the native CLI version
   and its SHA-256 digests, Claude Code's hand-written settings, Pi's default
-  provider and model, the bootstrap switch, and the Codex hash guard. The
+  provider and model, the bootstrap switch, and the Codex content guard. The
   macOS application is adopted when present; otherwise macOS, Linux, and WSL
   install the pinned native CLI the release catalog names. CLI lifecycle is
   explicit: the deployment
@@ -324,11 +324,12 @@ explains every changed pair.
   or unavailable routes fall back to the original request; runtime routing is
   not verified, only the field and its preservation.
   Codex's `~/.codex/config.toml` and `~/.codex/auth.json` stay device-owned:
-  every apply guards both hashes. When Codex is selected, the deployment may
-  select `magpie codex scope profile` and wire only its separate
-  `~/.codex/magpie.config.toml` and `magpie-models.json`. The credential-bearing
-  profile is private before it is written and stays 0600; unrecorded files and
-  symlink targets are preserved, not
+  every apply guards both by their parsed content, so a configuration the
+  device rewrote into another layout is the same configuration. When Codex is
+  selected, the deployment may select `magpie codex scope profile` and wire
+  only its separate `~/.codex/magpie.config.toml` and `magpie-models.json`. The
+  credential-bearing profile is private before it is written and stays 0600;
+  unrecorded files and symlink targets are preserved, not
   adopted. Plain `codex` retains its subscription configuration; `codex -p
   magpie` starts Magpie sessions. The managed `dotfiles-codex-resume` command
   is the way to resume a thread: it adds provider definitions only and keeps
