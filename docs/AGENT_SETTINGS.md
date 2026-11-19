@@ -36,14 +36,18 @@ API-key, password, authorization, and secret fields; authentication is never
 used as a replacement baseline.
 
 The adapter parses JSON/JSONC/TOML/YAML and writes normalized files with mode
-0600; values are preserved, while comments and formatting are not. It validates
-destination parents, rejects symlinks/type conflicts, and stages the whole
-batch before replacing client settings. Invalid input fails at
+0600; a written file keeps its values, while its comments and formatting are
+not. It validates destination parents, rejects symlinks/type conflicts, and
+stages the whole batch before replacing client settings. Invalid input fails at
 `apply-source.client-settings` and names the path/format. Parser diagnostics
 stay private and are removed, so malformed secret values are not printed.
 Separate credential, trust, session, plugin, and cache files stay client-owned.
 A target whose merged content is unchanged keeps its file and its modification
-time, so services that read those files are not restarted for nothing.
+time, so services that read those files are not restarted for nothing. Every
+format behaves that way, the TOML targets included: when the merged table and
+the device's table are equal, the device's file is kept byte for byte, with
+its comments and its layout. A file the merge does change is written in the
+normalized layout instead.
 
 The gateway migration points Claude Code and pi at Magpie after readiness
 checks. Claude's endpoint is `http://127.0.0.1:3425`. The managed Haiku alias

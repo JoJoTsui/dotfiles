@@ -61,10 +61,13 @@
 {{- $desiredText := includeTemplate $source . -}}
 {{- $desired := dict -}}
 {{- $host := dict -}}
+{{- $device := dict -}}
 {{- $previous := dict -}}
 {{- if eq $format "toml" -}}
 {{- $desired = fromToml $desiredText -}}
-{{- if lstat $target -}}{{- $host = include $target | fromToml -}}{{- end -}}
+{{- /* Keep the device's parsed table: the merge mutates $host in place, and
+       the unchanged check compares against what the device holds. */ -}}
+{{- if lstat $target -}}{{- $host = include $target | fromToml -}}{{- $device = deepCopy $host -}}{{- end -}}
 {{- else if eq $format "yaml" -}}
 {{- $desired = fromYaml $desiredText -}}
 {{- if lstat $target -}}{{- $host = include $target | fromYaml -}}{{- end -}}
@@ -167,7 +170,13 @@
 {{- end -}}
 {{- template "disabled-agent-integrations" $host -}}
 {{- if eq $format "toml" -}}
+{{- /* Preserve device bytes and mtime when no settings changed: the gateway
+       publishes configuration changes by restarting after a newer file. */ -}}
+{{- if and (lstat $target) (deepEqual $host $device) -}}
+{{ include $target }}
+{{- else -}}
 {{ $host | toToml }}
+{{- end -}}
 {{- else if eq $format "yaml" -}}
 {{- /* Preserve device bytes and mtime when no settings changed: the gateway
        publishes configuration changes by restarting after a newer file. */ -}}
