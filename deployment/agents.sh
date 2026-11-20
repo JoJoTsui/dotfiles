@@ -564,9 +564,12 @@ install_native_release() {
         manifest_json=$(cat "$manifest")
         [ "$(manifest_string "$manifest_json" latest)" = "$version" ] ||
             fail "$name manifest does not advertise the pinned version $version"
+        # The lookup ends in a filter that reports nothing when the manifest
+        # carries no entry for the platform. The explicit check below names
+        # the missing build, so the lookup must not fail the run first.
         entry=$(printf '%s' "$manifest_json" | tr -d '\n\r\t ' |
             sed 's/},{/}\n{/g' | grep -F "\"os\":\"$os\"" |
-            grep -F "\"arch\":\"$arch\"" | head -n1)
+            grep -F "\"arch\":\"$arch\"" | head -n1 || true)
         [ -n "$entry" ] || fail "$name $version has no native binary for $os/$arch"
         url=$(manifest_string "$entry" url)
         checksum=$(manifest_string "$entry" sha256)

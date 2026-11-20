@@ -704,6 +704,18 @@ def native_metadata(manifest_base: str, version: str) -> dict[str, Any]:
     return manifest
 
 
+def native_has_baseline(manifest: dict[str, Any]) -> bool:
+    """Whether a native manifest still ships the baseline Linux build.
+
+    The installer falls back to that build on a host without AVX and AVX2,
+    so a release that drops it cannot be installed on such a host.
+    """
+    for item in manifest.get("files", []):
+        if isinstance(item, dict) and item.get("os") == "linux" and item.get("arch") == "amd64-baseline":
+            return True
+    return False
+
+
 def native_latest(manifest_base: str) -> str:
     manifest = _fetch_json(f"{manifest_base}/manifest.json", "native agent latest")
     version = manifest.get("latest")
@@ -877,7 +889,17 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
             metadata = npm_metadata(package, version)
             validate_node_engine(metadata, candidate_node, name, version)
         for name, version in changed_native.items():
-            native_metadata(original_native[name]["manifest"], version)
+            previous = original_native[name]["version"]
+            manifest = native_metadata(original_native[name]["manifest"], version)
+            # A native bump may not drop the baseline Linux build the
+            # installer's fallback needs: the release would be uninstallable
+            # on a host without AVX and AVX2.
+            if previous != version and native_has_baseline(
+                    native_metadata(original_native[name]["manifest"], previous)) \
+                    and not native_has_baseline(manifest):
+                raise VersionError(
+                    "native manifest for %s %s dropped the linux amd64-baseline build the "
+                    "installer fallback needs; keep the pin at %s" % (name, version, previous))
 
         _regenerate_bun_locks(stage, changed_agents, bun, current_bun_pin)
         check(stage)

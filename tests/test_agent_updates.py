@@ -153,6 +153,46 @@ class AgentUpdateTests(unittest.TestCase):
         self.assertEqual(self.pins.read_text(), "refreshed pins\n")
         self.assert_reinstalled("qoder")
 
+    def test_a_native_bump_that_drops_the_baseline_build_is_refused(self):
+        # The installer falls back to the baseline Linux build on a host
+        # without AVX and AVX2, so a release that drops it cannot be pinned.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "dotfiles_update_versions", SOURCE / "deployment/update_versions.py")
+        updater = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(updater)
+
+        def manifest(version, baseline):
+            files = [
+                {"os": "darwin", "arch": "arm64",
+                 "url": "https://example.invalid/qodercli-darwin-arm64.tar.gz",
+                 "sha256": "a" * 64},
+                {"os": "linux", "arch": "amd64",
+                 "url": "https://example.invalid/qodercli-linux-x64.tar.gz",
+                 "sha256": "b" * 64},
+            ]
+            if baseline:
+                files.append({"os": "linux", "arch": "amd64-baseline",
+                              "url": "https://example.invalid/qodercli-linux-x64-baseline.tar.gz",
+                              "sha256": "c" * 64})
+            return {"latest": version, "files": files}
+
+        def fake_fetch(url, label):
+            parts = [part for part in url.split("/") if part]
+            version = parts[-2] if parts[-1] == "manifest.json" else parts[-1]
+            return manifest(version, baseline=version == "1.1.82")
+
+        updater._fetch_json = fake_fetch
+        root = self.root / "refresh-root"
+        shutil.copytree(SOURCE / "deployment", root / "deployment",
+                        ignore=shutil.ignore_patterns("agent-payload", "__pycache__"))
+        proposal = self.root / "native-proposal.json"
+        proposal.write_text(json.dumps({"agents": {"qoder": "1.1.94"}}))
+        with self.assertRaises(Exception) as raised:
+            updater.refresh(root, proposal, self.selected_bun)
+        self.assertIn("dropped the linux amd64-baseline build", str(raised.exception))
+
     def test_status_reports_a_shadowed_bun_global_copy(self):
         registry = self.home / ".bun/install/global/node_modules/@earendil-works/pi-coding-agent"
         registry.mkdir(parents=True)
