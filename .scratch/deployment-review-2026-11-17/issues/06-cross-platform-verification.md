@@ -117,15 +117,17 @@ owns any file or whether a given installation path will replace it.
   one. The check now reads the file that carries the placeholder (the Kimi
   client settings) and asserts that the Claude Code settings carry no
   credential while the gateway is absent. Committed as `e6ff25e`.
-- 2026-11-20: The second run got further on both releases: the bootstrap, the
-  managed files and installed pins, and the fetched skill discovery all passed,
-  and the reapplication check reported one changed managed file,
-  `.config/git/ignore`, on 20.04 and on 24.04 alike. The deployment's own
-  state does not show it: on the retained homes, a further reapplication
-  leaves the file's content and mode unchanged and leaves `chezmoi managed`
-  listing the same seventy files, and the gate's own snapshot function around
-  a reapplication reports no change at all. The verdict therefore comes from
-  something in the gate's own run that a replay on an already-reapplied home
-  does not reproduce; a replay on a fresh home did not finish inside the
-  session's time budget. The run is recorded as a failure, not a pass, and
-  the native Windows gate stays unavailable here.
+- 2026-11-20: The reapplication check now names the fingerprints, and both
+  releases report the same change: `.config/git/ignore` held
+  `1b42e6b24ff8` (mode 0600) before the reapplication and `2381f9a533a2`
+  (mode 0600) after it. `2381f9a533a2` is the repository file's own digest,
+  so the reapplication restores the managed content, and the content that was
+  there is a different document: it is no prefix, suffix or single-line
+  variant of the managed file.
+- 2026-11-20: The writer is not the deployment's own file writers: the
+  content is present right after the first apply and is gone only when the
+  next apply's chezmoi step rewrites the file. The gate's own steps do not
+  write it. A fresh apply therefore ends with the managed content, and the
+  gap is a rewrite between two applies, not a managed file the deployment
+  loses. The writer is still unidentified; the run is recorded as a failure,
+  not a pass.
