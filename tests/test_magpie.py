@@ -713,11 +713,11 @@ class MagpieApplyTests(unittest.TestCase):
                 "ANTHROPIC_AUTH_TOKEN": "magpie",
                 "ANTHROPIC_BASE_URL": "http://127.0.0.1:3425",
                 "ANTHROPIC_DEFAULT_FABLE_MODEL": "group/conductor",
-                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "auto/gpt-6.1-terra",
+                "ANTHROPIC_DEFAULT_HAIKU_MODEL": "group/workhorse",
                 "ANTHROPIC_DEFAULT_OPUS_MODEL": "group/conductor",
                 "ANTHROPIC_DEFAULT_SONNET_MODEL": "group/conductor",
-                "ANTHROPIC_SMALL_FAST_MODEL": "auto/gpt-6.1-terra",
-                "CLAUDE_CODE_AUTO_MODE_MODEL": "auto/gpt-6.1-terra",
+                "ANTHROPIC_SMALL_FAST_MODEL": "group/workhorse",
+                "CLAUDE_CODE_AUTO_MODE_MODEL": "group/workhorse",
             },
             "model": "opus",
         }, indent=2) + "\n", encoding="utf-8")
@@ -2537,7 +2537,7 @@ class MagpieCommandTests(MagpieApplyTests):
             self.assertEqual(env[key], "group/conductor", key)
         for key in ("ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
                     "CLAUDE_CODE_AUTO_MODE_MODEL"):
-            self.assertEqual(env[key], "auto/gpt-6.1-terra", key)
+            self.assertEqual(env[key], "group/workhorse", key)
         self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", env)
         result = self.run_command("status")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -2852,7 +2852,7 @@ class MagpieClientSettingsTests(unittest.TestCase):
             self.assertIn(f'"{tier}": "group/conductor"', template)
         for tier in ("ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_SMALL_FAST_MODEL",
                      "CLAUDE_CODE_AUTO_MODE_MODEL"):
-            self.assertIn(f'"{tier}": "auto/gpt-6.1-terra"', template)
+            self.assertIn(f'"{tier}": "group/workhorse"', template)
         # Subagents inherit their parent's model natively; the deployment must
         # not pin a separate (potentially stronger) subagent model.
         self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", template)

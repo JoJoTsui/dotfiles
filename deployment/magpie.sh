@@ -43,13 +43,15 @@ MAGPIE_START_ATTEMPTS="${MAGPIE_START_ATTEMPTS:-30}"
 # How many seconds the deployment waits for a gateway it signalled to exit.
 MAGPIE_STOP_ATTEMPTS="${MAGPIE_STOP_ATTEMPTS:-10}"
 # The Claude Code auxiliary route the template pins: the cheap background
-# aliases and the auto-mode classifier stay on Terra while the work tiers
-# follow the wired group. The route is the gateway's own Terra family, which
-# routes Codex first and then OpenAI, so a spent ChatGPT account no longer
-# takes the tool-safety path with it. A route pinned to one provider's model
-# denies every checked action when that account is exhausted.
+# aliases and the auto-mode classifier stay on the cheap group while the work
+# tiers follow the wired group. A route pinned to one provider's model denies
+# every checked action when that account is exhausted, so the route is a
+# group: it carries two providers and drains to the next one. It is the
+# workhorse group, because a classifier that cannot answer denies every
+# checked action, and the Terra family it replaced holds two accounts that
+# are both spent.
 # Mirrors deployment/client-settings/claude-settings.json.tmpl.
-MAGPIE_CLAUDE_AUX_MODEL="auto/gpt-6.1-terra"
+MAGPIE_CLAUDE_AUX_MODEL="group/workhorse"
 # DSH's compaction override is a fixed lightweight route. It is deliberately
 # not derived from the group the dsh wiring row starts its sessions on: moving
 # the session to the conductor tier must not drag background summarisation up

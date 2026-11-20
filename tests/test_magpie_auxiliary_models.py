@@ -18,11 +18,11 @@ SOURCE = Path(__file__).resolve().parents[1]
 HAIKU = "ANTHROPIC_DEFAULT_HAIKU_MODEL"
 SMALL_FAST = "ANTHROPIC_SMALL_FAST_MODEL"
 AUXILIARY = frozenset((HAIKU, SMALL_FAST))
-AUXILIARY_ROUTE = "auto/gpt-6.1-terra"
+AUXILIARY_ROUTE = "group/workhorse"
 CONDUCTOR = "group/conductor"
 # Aliases this slice deliberately leaves alone: the three tier aliases keep the
-# conductor group and the permission classifier keeps the Terra route, which is
-# the gateway's own cross-provider family rather than one provider's model.
+# conductor group and the permission classifier keeps the cheap group, which
+# carries two providers rather than one provider's model.
 UNCHANGED = {
     "ANTHROPIC_DEFAULT_FABLE_MODEL": CONDUCTOR,
     "ANTHROPIC_DEFAULT_OPUS_MODEL": CONDUCTOR,
@@ -87,7 +87,7 @@ class AuxiliaryModelRouteTests(unittest.TestCase):
     def assert_merged(self, result):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_gateway_merge_routes_both_auxiliary_aliases_to_terra(self):
+    def test_gateway_merge_routes_both_auxiliary_aliases_to_the_cheap_group(self):
         self.assert_merged(self.merge())
         env = self.live_env()
         for key in sorted(AUXILIARY):

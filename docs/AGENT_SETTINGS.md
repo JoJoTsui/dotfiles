@@ -52,15 +52,16 @@ normalized layout instead.
 The gateway migration points Claude Code and pi at Magpie after readiness
 checks. Claude's endpoint is `http://127.0.0.1:3425`. The managed Haiku alias
 `ANTHROPIC_DEFAULT_HAIKU_MODEL` and its deprecated predecessor
-`ANTHROPIC_SMALL_FAST_MODEL` both select `auto/gpt-6.1-terra`, the
-classifier-level route: the gateway's own Terra family, which routes Codex
-first and then OpenAI. A route pinned to one provider's model denies every
-checked action when that account is exhausted, so the family is the route.
-Claude Code's documented environment variables
+`ANTHROPIC_SMALL_FAST_MODEL` both select `group/workhorse`, the
+classifier-level route: the gateway's cheap group over two providers
+(MiniMax M3.1 Flash, then DeepSeek V4.1 Flash). A route pinned to one
+provider's model denies every checked action when that account is exhausted,
+so the route is a group that drains to its next member. Claude Code's
+documented environment variables
 (<https://code.claude.com/docs/en/env-vars>) name the Haiku variable as the
 Haiku alias and the background-functionality model, and the small-fast variable
 as its predecessor. The Fable, Opus and Sonnet aliases keep `group/conductor`,
-and `CLAUDE_CODE_AUTO_MODE_MODEL` keeps `auto/gpt-6.1-terra` for the permission
+and `CLAUDE_CODE_AUTO_MODE_MODEL` keeps `group/workhorse` for the permission
 classifier. Pi selects the provider `magpie` and model `group/workhorse`.
 Pi's `~/.pi/agent/models.json` is
 Magpie-owned: the repository never templates it, and the gateway generates the
