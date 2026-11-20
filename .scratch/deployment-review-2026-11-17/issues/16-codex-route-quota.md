@@ -1,6 +1,7 @@
 # 16: The Codex route through the gateway stopped answering after the apply
 
-Status: needs-info
+Status: ready-for-agent — closed on 2026-11-20: the apply measures the
+allowance before it wires a group that drains the account
 Blocked by: none — found while executing the authorized apply of 2026-11-19
 
 **What to build:** the deployment must be able to tell, before it wires an
@@ -64,3 +65,12 @@ silent timeout.
 This is a proposal, not a decision: the gateway's own account status
 interface has not been read yet, and the deployment must not guess a field
 name.
+
+- 2026-11-20: The allowance is measured now. `magpie accounts codex --json`
+  reports each window of the ChatGPT account with its used and remaining
+  share and the time it resets, and the apply reads it once per run, before
+  a group that drains the account is wired. A spent account is not a
+  failure: the group drains to its next member. The apply says so, and the
+  status reports the share and the reset time as
+  `allowance|chatgpt|none left|resets 2026-11-21T07:12:37+08:00`. The
+  measurement is what the outage of 2026-11-19 needed and did not have.

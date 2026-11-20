@@ -1,7 +1,8 @@
 # 21: Three routing groups exist in the gateway but are not published as models
 
-Status: ready-for-agent — the cause is identified on 2026-11-20 and the fix
-is named in the comments below
+Status: ready-for-agent — closed on 2026-11-20: the ids the pickers offer
+are served ids, the apply re-asserts the routing, and the status reports an
+unpublished group as a finding
 Blocked by: none — found while reading the live gateway's model list on
 2026-11-19
 Related: 22 — a name collision with the gateway's own family ids, which
@@ -13,9 +14,9 @@ serves.
 - [x] The reason `group/auto-gpt-6-1-sol`, `group/auto-gpt-6-1-terra`, and
       `group/auto-gpt-6-luna` are absent from `/v1/models` while the gateway
       holds them is identified.
-- [ ] The apply re-asserts a group's `routing`, `stays`, and `listed` when
+- [x] The apply re-asserts a group's `routing`, `stays`, and `listed` when
       they differ in the gateway, not only when its member list differs.
-- [ ] The status reports a group that the gateway does not publish as a
+- [x] The status reports a group that the gateway does not publish as a
       finding.
 
 ## What was measured
@@ -263,3 +264,14 @@ comment go.
      finding, so a name the gateway does not serve can never pass silently
      again.
 
+- 2026-11-20: Closed, all three parts. The pickers now offer ids the
+  gateway serves: the three routes the deployment had declared as its own
+  groups are offered under the ids the gateway publishes
+  (`auto/gpt-6.1-sol`, `auto/gpt-6.1-terra`, `auto/gpt-6-luna`), and the
+  device's picked list carries those ids instead of the `group/auto-gpt-6-1-*`
+  ids the gateway never served. The apply compares a group's routing and
+  stays as well as its member order, so a drifted group is repaired. The
+  status reports a group the gateway does not publish, a group that holds an
+  unserved member, and a route the deployment offers under an unpublished id
+  as findings, and fails on them. On this device the status is green: five
+  groups published, three routes published, no finding.

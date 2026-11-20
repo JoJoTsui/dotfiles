@@ -618,3 +618,23 @@ resumed with `claude --resume 03a0f81b-8524-49b8-84e0-f654d579e647`.
   Two global copies remain and are reported, not removed: the claude-code
   copy at 2.1.326 and the minimax code copy at 0.6.12, the latter being the
   only provider of `mcode-tools`.
+
+## 15. The routing ownership, the findings, and the allowance (2026-11-20)
+
+Committed as `a1a0873`. The suite is green (309 tests in the Magpie
+modules, 52 in the isolation modules). The authorized apply exited 0, and the
+device's status is green.
+
+- The three groups the gateway owns are retired from the catalog and offered
+  under the ids it publishes. The device's picked list now carries
+  `auto/gpt-6.1-sol`, `auto/gpt-6.1-terra` and `auto/gpt-6-luna` instead of
+  the `group/auto-gpt-6-1-*` ids the gateway never served.
+- The apply compares a group's routing and stays as well as its member order,
+  so a drifted group is repaired instead of reported as healthy.
+- The status reports a group the gateway does not publish, a group that holds
+  an unserved member, and a route the deployment offers under an unpublished
+  id as findings, and fails on them. On this device: five groups published,
+  three routes published, no finding.
+- The apply measures the ChatGPT allowance before it wires a group that
+  drains the account, and the status reports it:
+  `allowance|chatgpt|none left|resets 2026-11-21T07:12:37+08:00`.

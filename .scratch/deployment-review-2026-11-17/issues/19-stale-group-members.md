@@ -1,15 +1,16 @@
 # 19: The gateway keeps a group whose members it no longer serves
 
-Status: needs-diagnosis
+Status: ready-for-agent — closed on 2026-11-20: the status reports an
+unserved member as a finding, and the group that had them is retired
 Blocked by: 15 — the catalog decision comes first
 
 **What to build:** a group the gateway holds must not name models the
 gateway does not serve, and the status must say so when it does.
 
-- [ ] `deployment/magpie.sh`: a group the gateway holds is reconciled with
+- [x] `deployment/magpie.sh`: a group the gateway holds is reconciled with
       the models the gateway serves, so a stale membership is not left
       routing requests to models that cannot answer.
-- [ ] The status reports a group that holds an unserved member as a finding,
+- [x] The status reports a group that holds an unserved member as a finding,
       not as a normal group line.
 
 ## What the live verification found
@@ -144,3 +145,10 @@ or the parameter and the comment go.
 
 The gateway's model list is the input, and it is already read by the apply
 and by `magpie_test`. The comparison needs no new interface.
+
+- 2026-11-20: Closed on both sides. The status now reads the gateway's
+  published model list and reports every member of a group it does not
+  serve as a finding, and the status fails on it: a group that holds an
+  unserved member routes requests to models that cannot answer, and reading
+  it as a healthy group is what hid this. The group that had them, the Luna
+  route, is the gateway's own and is retired from the catalog (ticket 15).

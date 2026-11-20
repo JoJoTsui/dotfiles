@@ -1,18 +1,19 @@
 # 15: The model catalog names three models the gateway no longer serves
 
-Status: needs-info
+Status: ready-for-agent — closed on 2026-11-20: the Luna group and its
+four roles are retired
 Blocked by: none — found while executing the authorized apply of 2026-11-19
 
 **What to build:** the repository's model catalog must name models the
 gateway serves. The `luna` rows name three ids the live gateway retired, and
 the group that holds them is dropped as incomplete.
 
-- [ ] `deployment/magpie/models.tsv`: the `chatgpt.luna`, `openai.luna`, and
+- [x] `deployment/magpie/models.tsv`: the `chatgpt.luna`, `openai.luna`, and
       `opencode.luna` rows name candidates the gateway does not serve.
-- [ ] `deployment/magpie/groups.tsv`: the group `auto-gpt-6-luna` holds
+- [x] `deployment/magpie/groups.tsv`: the group `auto-gpt-6-luna` holds
       `chatgpt.luna,openai.luna,zed.luna,opencode.luna`, and one unresolved
       member makes the whole group incomplete, so the group is empty.
-- [ ] The catalog names the current ids, or the group is retired, so that the
+- [x] The catalog names the current ids, or the group is retired, so that the
       picker shows no empty group.
 
 ## What the authorized apply measured
@@ -117,3 +118,10 @@ The consequence is worse than an empty group: the picker lists the group,
 the gateway routes to it, and three of its four members are models the
 gateway does not serve. An agent that picks it waits on a route that cannot
 answer. See ticket 19.
+
+- 2026-11-20: Closed by retiring the group rather than by naming new ids.
+  The Luna route is the gateway's own: it holds four members, three of them
+  not served, and the deployment cannot repair a route it does not own. The
+  row in `groups.tsv` and the four Luna roles in `models.tsv` are gone; the
+  route is offered under the id the gateway publishes (`auto/gpt-6-luna`), so
+  the picker shows a working route instead of an empty group.

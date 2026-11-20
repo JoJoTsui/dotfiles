@@ -1,15 +1,16 @@
 # 22: The docs and the catalog spell the same four routing sets two ways
 
-Status: ready-for-agent — the discriminator decided Reading B on 2026-11-20
+Status: ready-for-agent — closed on 2026-11-20: one spelling per routing
+set, and the catalog offers the gateway's routes under the ids it publishes
 Blocked by: none — found while reading `docs/MAGPIE.md` against
 `deployment/magpie/groups.tsv` on 2026-11-20
 
 **What to build:** one spelling per routing set, in the docs and in the
 catalog, and every id the picker offers must be an id the gateway serves.
 
-- [ ] `docs/MAGPIE.md`: the four GPT auto groups are named with ids that
+- [x] `docs/MAGPIE.md`: the four GPT auto groups are named with ids that
       exist in no catalog row and in no group the gateway holds.
-- [ ] `deployment/magpie/groups.tsv`: the four auto rows either keep the ids
+- [x] `deployment/magpie/groups.tsv`: the four auto rows either keep the ids
       the documentation names, or the documentation names the ids the catalog
       uses. One of the two must give.
 - [x] The relationship between the four deployment groups and the gateway's
@@ -289,3 +290,13 @@ The fix depends on which answer comes back, and the operator decides:
   operator's: the repository would stop owning the routing of these three
   families and would own only the astra group.
 
+- 2026-11-20: Closed with Reading B. Each of the four routing sets is named
+  once: `docs/MAGPIE.md` names the ids the gateway publishes
+  (`auto/gpt-6.1-sol`, `auto/gpt-6.1-terra`, `auto/gpt-6-luna`) and the
+  deployment's own group (`group/auto-gpt-6-astra`), the catalog no longer
+  declares the three routes the gateway owns, and the new catalog
+  `deployment/magpie/families.tsv` declares the routes the deployment offers
+  by the name the gateway reports and the id it publishes. The document's
+  fourth spelling, `auto/gpt-6-astra`, was wrong: the gateway's astra family
+  is version-stamped, and the served astra route is the group
+  `group/auto-gpt-6-astra`.
