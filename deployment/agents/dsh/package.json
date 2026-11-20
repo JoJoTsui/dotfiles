@@ -2,7 +2,7 @@
   "name": "dotfiles-managed-dsh",
   "private": true,
   "dependencies": {
-    "@deepseek-ai/dsh": "0.2.2-rc.1"
+    "@deepseek-ai/dsh": "0.2.2-rc.5"
   },
   "trustedDependencies": []
 }

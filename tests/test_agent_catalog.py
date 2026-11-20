@@ -76,8 +76,8 @@ class ProviderCatalogTests(unittest.TestCase):
     def test_the_dsh_agents_are_pinned_bun_projects_without_a_herdr_kind(self):
         records = {record[0]: record for record in self.catalog_records()}
         for name, package, version, commands, minimum in (
-                ("dsh", "@deepseek-ai/dsh", "0.2.2-rc.1", "dsh", "24.9.0"),
-                ("dsh-tui", "@deepseek-harness-tui/dsh-tui", "0.20.1", "dsh-tui,dst", "22.19.0")):
+                ("dsh", "@deepseek-ai/dsh", "0.2.2-rc.5", "dsh", "24.9.0"),
+                ("dsh-tui", "@deepseek-harness-tui/dsh-tui", "0.20.2", "dsh-tui,dst", "22.19.0")):
             with self.subTest(agent=name):
                 record = records[name]
                 self.assertEqual(record[1], "bun")
