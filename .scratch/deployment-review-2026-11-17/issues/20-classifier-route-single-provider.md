@@ -286,3 +286,16 @@ it through the authorized apply and not through a hand edit.
   provider.
 
 
+- 2026-11-20: The operator switched the route to `group/workhorse`. The Terra
+  family holds the ChatGPT-plan account and the OpenAI API key, and on this
+  device both are spent, so the family could not answer and the classifier
+  denied every checked action. The workhorse group carries two providers
+  (MiniMax M3.1 Flash, then DeepSeek V4.1 Flash) and answers. Committed as
+  `4246c6a`; the authorized apply exited 0 and the device's Claude Code
+  settings now carry `group/workhorse` for the three auxiliary and classifier
+  keys.
+- 2026-11-20: The route is verified end to end. A fresh Claude Code session
+  on the device ran a Bash command (`echo classifier-ok` → `classifier-ok`),
+  and the review tab's agent, restarted onto the new settings, ran one too
+  (`echo review-tab-ok` → `review-tab-ok`). The classifier answers, so a
+  checked action is no longer denied.

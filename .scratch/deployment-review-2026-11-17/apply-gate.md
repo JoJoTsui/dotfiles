@@ -574,3 +574,23 @@ because it is pinned to one provider.
 
 The routes that answer right now are `group/conductor`, `group/workhorse`,
 `kimi-code-cn/k3.1-pro` and `minimax-cn/MiniMax-M3.1-Flash`.
+
+## 13. The classifier route moved to the workhorse group (2026-11-20)
+
+The Terra family behind the route could not answer: the ChatGPT-plan account
+is spent until 2026-11-21 07:12 UTC+8 and OpenAI has no credits, so both
+members of `auto/gpt-6.1-terra` were exhausted. The operator moved the
+classifier and the two background aliases to `group/workhorse`, the cheap
+group over two providers that answers today.
+
+Committed as `4246c6a`; the suite is green (299 tests, 0 failures). The
+authorized apply exited 0, and the device's Claude Code settings carry
+`group/workhorse` for `ANTHROPIC_DEFAULT_HAIKU_MODEL`,
+`ANTHROPIC_SMALL_FAST_MODEL` and `CLAUDE_CODE_AUTO_MODE_MODEL`, with
+`magpie ls` reporting the same three values.
+
+The route is verified end to end: a fresh Claude Code session ran a Bash
+command and got its output (`classifier-ok`), and the review tab's agent,
+restarted onto the new settings, ran one too (`review-tab-ok`). The outage
+is over for new sessions. The old session's transcript is intact and can be
+resumed with `claude --resume 03a0f81b-8524-49b8-84e0-f654d579e647`.
