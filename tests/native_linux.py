@@ -647,8 +647,14 @@ def main():
         check("bootstrap without gateway wiring from empty home and caches",
               lambda: command("bootstrap-first", full, timeout=args.install_timeout) and "completed")
         require(not (args.home / ".codex/auth.json").exists(), "fresh bootstrap created authentication")
-        require("REPLACE_ME" in (args.home / ".claude/settings.json").read_text(),
+        # The client credentials moved to the gateway's own store when the
+        # deployment migrated to Magpie, so the fresh home carries a
+        # placeholder where the deployment still holds a key and no client
+        # file carries a credential of its own.
+        require("REPLACE_ME" in (args.home / ".kimi-code/config.toml").read_text(),
                 "fresh configuration did not retain placeholder credentials")
+        require("ANTHROPIC_AUTH_TOKEN" not in (args.home / ".claude/settings.json").read_text(),
+                "fresh configuration carried a client credential without the gateway")
         require(not any((args.home / name).exists() for name in
                         ("docs", "deployment", "tests", "bootstrap.sh", "README.md", ".github")),
                 "source bookkeeping was deployed into the validation home")
