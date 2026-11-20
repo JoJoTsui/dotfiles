@@ -748,7 +748,15 @@ def main():
                                       if metadata_before.get(path) != metadata_after.get(path))
             report["trampoline_metadata"].update(after=metadata_after, changed=metadata_changed)
             changed = sorted(path for path in before.keys() | after.keys() if before.get(path) != after.get(path))
-            require(not changed, "managed reapplication changed files: " + ", ".join(changed[:20]))
+            # The failure names what changed, so a red reapplication is
+            # diagnosable from the record alone.
+            def describe(value):
+                value = value or {}
+                return "%s mode %s" % (str(value.get("sha256", "absent"))[:12],
+                                       oct(value.get("mode", 0)))
+            require(not changed, "managed reapplication changed files: " + ", ".join(
+                "%s (%s -> %s)" % (path, describe(before.get(path)), describe(after.get(path)))
+                for path in changed[:20]))
             require("synthetic-linux-preserved-history" in command("history-preserved", [args.home / ".pixi/bin/atuin", "search", "--cmd-only", "synthetic-linux-preserved-history"], env=history_env),
                     "reapplication lost synthetic command history")
             command("device-package", [args.home / ".pixi/bin/device-zoxide", "--version"], env=managed)
