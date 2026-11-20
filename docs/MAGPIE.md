@@ -16,7 +16,7 @@ remain device-owned; the deployment guards both files against changes.
 
 | Owner | Owns | Never owns |
 | --- | --- | --- |
-| The repository | the seven catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex content guard | any credential, any generated agent file |
+| The repository | the eight catalogs, Claude Code's settings, Pi's default provider and model, the bootstrap switch, the Codex content guard | any credential, any generated agent file |
 | Magpie | provider keys and accounts, the usage store, Pi's `~/.pi/agent/models.json`, DSH's Magpie route, Codex's `~/.codex/magpie.config.toml` and `magpie-models.json` | the intent: which models a group holds, Codex's base config and authentication |
 | Neither | `~/.codex/config.toml` and `~/.codex/auth.json`, the official OpenCode, Kimi Code, and MiniMax Code configurations | — |
 
@@ -169,6 +169,20 @@ for the role lookup and appends it to the model id the role resolves to, so
 carries no effort, because a group keeps its own routing. A group without a
 suffixed member keeps Magpie's `effort=agent` default.
 
+A row names a group the deployment owns: the apply creates it and keeps its
+members, routing and stays current. A gateway route the deployment only offers
+is not a group and is declared in `families.tsv`.
+
+### `families.tsv` — `name|id|purpose`
+
+A gateway route the deployment offers in the pickers without owning it. The
+gateway holds the route, its routing and its members; the deployment names it
+and never writes it. `name` is the name `magpie visible` reports and accepts
+for the route, and `id` is the model id the gateway publishes for it, the form
+a client and the picker use. A visible row names the route by `name`, a picked
+row by `id`, and the status reports the route under its `name` with the `id` it
+must be published under.
+
 ### `wiring.tsv` — `agent|group|owner|enabled`
 
 `owner` is `repo` when the deployment writes the agent's configuration by
@@ -181,8 +195,9 @@ catalog rows.
 
 ### `visible.tsv` — `agent|names`
 
-`names` is a comma-separated list of declared group ids and Magpie provider
-ids. The apply runs `magpie visible <agent> <names>` after the groups and
+`names` is a comma-separated list of declared group ids, Magpie provider
+ids, and the names of the gateway routes in `families.tsv`. The apply runs
+`magpie visible <agent> <names>` after the groups and
 before the agent wiring, and only when the narrowing differs from what
 `magpie visible <agent>` reports. It never passes `--only-picked`: that
 freezes the current list and would hide a model starred later. A provider id
@@ -192,7 +207,8 @@ in a row lets that provider's picked models through; the exact set is
 ### `picked.tsv` — `agent|entries`
 
 `entries` is the per-agent "only models I pick" list: a group entry is
-`group/<id>` and a model entry is `provider/model`. Every entry must be inside
+`group/<id>`, a model entry is `provider/model`, and a gateway route is the
+model id the gateway publishes for it. Every entry must be inside
 the agent's `visible.tsv` row; the catalog validation rejects one that is not.
 The apply writes the list into Magpie's own settings
 (`~/.config/magpie/settings.json`, key `pickedModels`) with a Python merge
@@ -264,26 +280,34 @@ app, the agents, and the client settings exist before the gateway is wired.
 7. Write the proxy when it differs and ensure the pinned plugins. `magpie
    plugin list --json` reports `.loaded[].spec`, so an absent package is
    installed and a loaded-but-off one is turned on.
-8. Ensure the groups: `magpie group add`, or `magpie group set` when the
-   member order differs.
-9. Write the per-agent picked list into Magpie's settings, only when it
-   differs.
-10. Narrow each agent: `magpie visible <agent> <names>`, only when it differs,
+8. Measure the ChatGPT account's allowance, before a group that drains the
+   account is wired. `magpie accounts codex --json` reports each allowance
+   window, its used and remaining share, and when it resets. A spent account
+   is not a failure: the group drains to its next member. The run says so,
+   because a group that looks healthy and serves a different member than the
+   operator expects is the failure this avoids.
+9. Ensure the groups: `magpie group add`, or `magpie group set` when the
+   member order, the routing mode or the stay mode differs. The gateway's
+   answer is compared on all three, so a group whose routing drifted is
+   repaired instead of left as it is.
+10. Write the per-agent picked list into Magpie's settings, only when it
+    differs.
+11. Narrow each agent: `magpie visible <agent> <names>`, only when it differs,
     and again for every agent whose picked list changed so the gateway serves
     the new list.
-11. Wire selected Magpie-owned agents. For Codex, create a private profile
+12. Wire selected Magpie-owned agents. For Codex, create a private profile
     placeholder before Magpie writes it, and verify the resulting profile and
     unchanged base config/authentication. Pi uses `magpie pi group/workhorse`;
     DSH uses `magpie dsh group/workhorse` only when selected.
-12. Migrate the repo-owned client settings through the client-settings
+13. Migrate the repo-owned client settings through the client-settings
     merger: Claude Code's gateway environment and `opus` alias, Pi's default
     provider and model. The step asks the merger whether the wiring would
     change a file before it backs up anything, so the backup holds the
     originals and a current device keeps its files and their modification
     times. The merge runs only after the gateway changes succeed.
-13. Verify that DSH's official `llm-deepseek` row is unchanged and that both
+14. Verify that DSH's official `llm-deepseek` row is unchanged and that both
     Codex's base configuration and authentication still hold the same content.
-14. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
+15. Write `~/.local/state/dotfiles/magpie/state.tsv` through a temporary file.
 
 A run with nothing to change writes no files and keeps every modification
 time.
@@ -603,19 +627,32 @@ denied.
 `dsh` group: MiniMax M3.1 Flash at max, then DeepSeek V4.1 Flash at max.
 `group/chatgpt` holds the ChatGPT plan models at Sol medium and Terra high.
 
-The four GPT auto groups route each model family across providers, Codex first.
-The group IDs remain stable when a provider moves to a newer model:
+The four GPT routes are each named once. Three belong to the gateway and the
+deployment only offers them; the fourth is a group the deployment owns. The
+gateway's routes keep the ids it publishes, and the deployment names them in
+the pickers under those ids, so a picker entry is always an id the gateway
+serves:
 
 - `auto/gpt-6.1-sol`: codex → openai → zed, all medium
 - `auto/gpt-6.1-terra`: codex → openai, both high (the Zed Student plan refuses Terra)
 - `auto/gpt-6-luna`: codex → openai → zed → opencode go, agent effort
-- `auto/gpt-6-astra`: Codex 6.2 Astra → OpenAI 6.2 Astra, agent effort; each
+- `group/auto-gpt-6-astra`: Codex 6.2 Astra → OpenAI 6.2 Astra, agent effort; each
   provider falls back to its older GPT-6 Astra when it is available
 
-The Luna router retains its catalog members, but Codex, OpenAI, and OpenCode Go
-currently do not expose their Luna models in the GUI selections. An apply
-therefore reports that router as incomplete until those models are picked.
-The remaining groups are available to the catalog's four agents; only the default
+`deployment/magpie/families.tsv` declares the three gateway routes: the name
+`magpie visible` reports for each, the model id the gateway publishes for it,
+and what the route is. The deployment offers them in the pickers and never
+writes their routing, because the gateway owns it. The Sol, Terra and Luna
+routes are the gateway's own, and the ids the deployment used for them
+(`group/auto-gpt-6-1-sol` and its two siblings) are not model ids the gateway
+serves: the gateway resolves those names to its routes and publishes them
+under the ids above.
+
+The Luna route holds members Codex, OpenAI and OpenCode Go do not currently
+expose. The deployment does not own that route, so it neither repairs nor
+reports its membership; the status reports the route itself, and reports a
+group that holds an unserved member when the deployment owns that group. The
+remaining groups are available to the catalog's four agents; only the default
 differs. The picked list puts the preferred provider-prefixed models beside
 the groups, so a failed route can be replaced by an exact provider/model on
 the spot. A group member's `:effort` fixes the reasoning for that route; a
@@ -753,6 +790,12 @@ dotfiles-magpie install     # install the pinned native CLI release
 ```
 
 `status` is read-only and exits non-zero when a required piece is missing.
+It reports the ChatGPT allowance as `allowance|chatgpt|<share> left|resets
+<time>`, and reports a routing defect as a finding: a group the gateway does
+not publish as `group/<id>`, a group that holds a member the gateway does not
+serve, and a gateway route the deployment offers under an id the gateway does
+not publish. Each finding fails the status, because a picker that offers a
+route the gateway cannot serve is a silent failure.
 `providers` prints the catalog with the state of each credential source and
 never a value.
 

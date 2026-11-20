@@ -299,11 +299,18 @@ explains every changed pair.
   Read `docs/AGENT_SETTINGS.md` when changing client settings, MCP registration,
   ownership, or preservation. Index creation stays an explicit project action.
 - **The Magpie model gateway owns the credentials and the generated agent
-  files**: the deployment owns the seven catalogs under `deployment/magpie/`
-  (providers, models, groups, wiring, visible, picked, plugins), the release
+  files**: the deployment owns the eight catalogs under `deployment/magpie/`
+  (providers, models, groups, families, wiring, visible, picked, plugins), the release
   catalog `deployment/magpie/releases.tsv` that pins the native CLI version
   and its SHA-256 digests, Claude Code's hand-written settings, Pi's default
-  provider and model, the bootstrap switch, and the Codex content guard. The
+  provider and model, the bootstrap switch, and the Codex content guard. A
+  group the deployment owns is written by the apply; a gateway route the
+  deployment only offers is declared in `families.tsv` and named in the
+  pickers under the id the gateway publishes, so a picker entry is always an
+  id the gateway serves. The status reports a group the gateway does not
+  publish, a group that holds a member the gateway does not serve, and a
+  route the gateway does not publish as findings, and the apply measures the
+  ChatGPT account's allowance before a group that drains it is wired. The
   macOS application is adopted when present; otherwise macOS, Linux, and WSL
   install the pinned native CLI the release catalog names. CLI lifecycle is
   explicit: the deployment

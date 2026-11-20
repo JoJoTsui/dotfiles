@@ -1,0 +1,14 @@
+# Gateway routes the deployment offers. The gateway owns these routes: their
+# routing, their members and their published id. The deployment names them in
+# the pickers and never writes them, so every picker entry is an id the
+# gateway serves.
+#
+# name|id|purpose
+#
+# name    the name `magpie visible` reports and accepts for the route.
+# id      the model id the gateway publishes for the route, the form a client
+#         and the picker use.
+# purpose what the route is.
+auto-gpt-6-1-sol|auto/gpt-6.1-sol|GPT-6.1 Sol: codex, openai, zed
+auto-gpt-6-1-terra|auto/gpt-6.1-terra|GPT-6.1 Terra: codex, openai
+auto-gpt-6-luna|auto/gpt-6-luna|GPT-6 Luna: codex, openai, zed, opencode go

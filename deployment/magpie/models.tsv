@@ -15,17 +15,13 @@
 # declared in providers.tsv. A group member appends its own :<effort>.
 chatgpt.sol|codex/gpt-6.1-sol|yes
 chatgpt.terra|codex/gpt-6.1-terra|yes
-chatgpt.luna|codex/gpt-6-luna|no
 chatgpt.astra|codex/gpt-6.2-astra,codex/gpt-6-astra?|yes
 openai.sol|openai/gpt-6.1-sol|yes
 conductor.codex-sol|codex/gpt-6.2-sol,codex/gpt-6.1-sol|yes
 conductor.openai-sol|openai/gpt-6.2-sol,openai/gpt-6.1-sol|yes
 openai.terra|openai/gpt-6.1-terra|yes
-openai.luna|openai/gpt-6-luna|no
 openai.astra|openai/gpt-6.2-astra,openai/gpt-6-astra?|yes
 zed.sol|zed/gpt-6.1-sol|yes
-zed.luna|zed/gpt-6-luna|yes
 conductor.kimi|kimi-code-cn/k3.1-pro|yes
 conductor.deepseek|opencode-go/deepseek-v4.1-flash|yes
-opencode.luna|opencode-go/gpt-6-luna|no
 workhorse.minimax|minimax-cn/MiniMax-M3.1-Flash|yes

@@ -25,7 +25,7 @@ else:
 
 SOURCE = Path(__file__).resolve().parents[1]
 CATALOG = SOURCE / "deployment" / "magpie"
-CATALOGS = ("providers.tsv", "models.tsv", "groups.tsv", "wiring.tsv", "visible.tsv", "plugins.tsv", "picked.tsv")
+CATALOGS = ("providers.tsv", "models.tsv", "groups.tsv", "families.tsv", "wiring.tsv", "visible.tsv", "plugins.tsv", "picked.tsv")
 ENGINE = SOURCE / "deployment" / "magpie.sh"
 
 FAKE_MAGPIE = '''#!/usr/bin/env python3
@@ -114,7 +114,19 @@ elif argv[:1] == ["status"]:
         sys.exit(1)
     print(json.dumps({"running": True, "gateway": os.environ["FAKE_MAGPIE_GATEWAY"]}))
 elif argv[:2] == ["accounts", "codex"]:
-    print(json.dumps([] if os.environ.get("FAKE_MAGPIE_NO_ACCOUNT") == "1" else [{"id": "chatgpt-account"}]))
+    if os.environ.get("FAKE_MAGPIE_NO_ACCOUNT") == "1":
+        print(json.dumps([]))
+    else:
+        print(json.dumps([{
+            "agent": "codex",
+            "plan": "prolite",
+            "windows": [{
+                "name": "7 days",
+                "used": 100,
+                "remaining": int(os.environ.get("FAKE_MAGPIE_ALLOWANCE", "100")),
+                "resetsAt": "2026-11-21T07:12:37+08:00",
+            }],
+        }]))
 elif argv[:2] == ["provider", "add"]:
     if os.environ.get("FAKE_MAGPIE_TOUCH_CODEX") == "1":
         codex = pathlib.Path(os.environ["HOME"]) / ".codex/config.toml"
@@ -295,7 +307,8 @@ elif argv[:1] == ["group"]:
     if argv[1] not in groups:
         sys.exit(1)
     print("  " + argv[1] + "  group/" + argv[1])
-    print("  routing   drain")
+    print("  routing   " + load("routing.json", {}).get(argv[1], "drain"))
+    print("  stays     " + load("stays.json", {}).get(argv[1], "auto"))
     print("  models")
     for index, model in enumerate(groups[argv[1]].split(","), 1):
         print("            " + str(index) + " " + model + "  name")
@@ -307,7 +320,12 @@ MODELS = ["codex/gpt-6.2-sol", "codex/gpt-6.1-sol", "codex/gpt-6.1-terra", "code
           "openai/gpt-6.2-sol", "openai/gpt-6.1-sol", "openai/gpt-6.1-terra", "openai/gpt-6-luna", "openai/gpt-6.2-astra",
           "zed/gpt-6.1-sol", "zed/gpt-6-luna",
           "kimi-code-cn/k3.1-pro", "opencode-go/deepseek-v4.1-flash", "opencode-go/gpt-6-luna",
-          "minimax-cn/MiniMax-M3.1-Flash"]
+          "minimax-cn/MiniMax-M3.1-Flash",
+          # The gateway's own routes, published under their model id.
+          "auto/gpt-6.1-sol", "auto/gpt-6.1-terra", "auto/gpt-6-luna",
+          # The groups the deployment owns, published under their group id.
+          "group/chatgpt", "group/openai-stack", "group/conductor", "group/workhorse",
+          "group/auto-gpt-6-astra"]
 
 
 class MagpieCatalogTests(unittest.TestCase):
@@ -409,8 +427,15 @@ class MagpieCatalogTests(unittest.TestCase):
         groups = [line for line in (CATALOG / "groups.tsv").read_text(encoding="utf-8").splitlines()
                   if line and not line.startswith("#")]
         self.assertEqual([line.split("|")[0] for line in groups],
-                         ["chatgpt", "openai-stack", "conductor", "workhorse",
-                          "auto-gpt-6-1-sol", "auto-gpt-6-1-terra", "auto-gpt-6-luna", "auto-gpt-6-astra"])
+                         ["chatgpt", "openai-stack", "conductor", "workhorse", "auto-gpt-6-astra"])
+        # The gateway's own routes are offered, not declared: the deployment
+        # names them and never writes their routing.
+        families = [line for line in (CATALOG / "families.tsv").read_text(encoding="utf-8").splitlines()
+                    if line and not line.startswith("#")]
+        self.assertEqual([line.split("|")[0] for line in families],
+                         ["auto-gpt-6-1-sol", "auto-gpt-6-1-terra", "auto-gpt-6-luna"])
+        self.assertEqual([line.split("|")[1] for line in families],
+                         ["auto/gpt-6.1-sol", "auto/gpt-6.1-terra", "auto/gpt-6-luna"])
         self.assertEqual(groups[1].split("|")[1],
                          "group/chatgpt,openai.sol:medium,openai.terra:high,conductor.kimi:max")
         self.assertEqual(groups[2].split("|")[1],
@@ -481,7 +506,33 @@ class MagpieCatalogTests(unittest.TestCase):
         self.write_catalog("visible.tsv", text)
         result = self.validate()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("visible agent pi names an unknown group or provider: workhors", result.stderr)
+        self.assertIn("visible agent pi names an unknown group, provider or route: workhors", result.stderr)
+
+    def test_a_picked_route_that_is_not_declared_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("picked.tsv").replace("auto/gpt-6.1-sol", "auto/gpt-9-nova")
+        self.write_catalog("picked.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("picked model names an undeclared provider: auto", result.stderr)
+
+    def test_a_picked_route_that_is_not_visible_to_the_agent_is_rejected(self):
+        self.catalog_copy()
+        visible = self.read_catalog("visible.tsv").replace(
+            "pi|chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-sol,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,",
+            "pi|chatgpt,openai-stack,conductor,workhorse,auto-gpt-6-1-terra,auto-gpt-6-luna,auto-gpt-6-astra,codex,openai,zed,")
+        self.write_catalog("visible.tsv", visible)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("picked route is not visible to pi: auto/gpt-6.1-sol", result.stderr)
+
+    def test_a_route_the_catalog_does_not_declare_is_rejected(self):
+        self.catalog_copy()
+        text = self.read_catalog("families.tsv").replace("auto/gpt-6.1-sol", "auto/gpt-9-nova")
+        self.write_catalog("families.tsv", text)
+        result = self.validate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("picked model names an undeclared provider: auto", result.stderr)
 
     def test_a_picked_model_with_an_undeclared_provider_is_rejected(self):
         self.catalog_copy()
@@ -2464,9 +2515,6 @@ class MagpieCommandTests(MagpieApplyTests):
             "openai-stack": "group/chatgpt,openai/gpt-6.1-sol:medium,openai/gpt-6.1-terra:high,kimi-code-cn/k3.1-pro:max",
             "conductor": "codex/gpt-6.2-sol:medium,openai/gpt-6.2-sol:medium,kimi-code-cn/k3.1-pro:max",
             "workhorse": "minimax-cn/MiniMax-M3.1-Flash:max,opencode-go/deepseek-v4.1-flash:max",
-            "auto-gpt-6-1-sol": "codex/gpt-6.1-sol:medium,openai/gpt-6.1-sol:medium,zed/gpt-6.1-sol:medium",
-            "auto-gpt-6-1-terra": "codex/gpt-6.1-terra:high,openai/gpt-6.1-terra:high",
-            "auto-gpt-6-luna": "codex/gpt-6-luna,openai/gpt-6-luna,zed/gpt-6-luna,opencode-go/gpt-6-luna",
             "auto-gpt-6-astra": "codex/gpt-6.2-astra,openai/gpt-6.2-astra",
         }), encoding="utf-8")
         (self.state / "visible.json").write_text(
@@ -2742,6 +2790,72 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("missing:", result.stderr)
         self.assertIn("kimi-code-cn", result.stderr)
+
+    def test_the_status_reports_a_group_the_gateway_does_not_publish(self):
+        self.seed_home()
+        self.healthy_gateway()
+        self.server.models = [model for model in self.server.models if model != "group/conductor"]
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("finding|group|conductor|not published as a model id", result.stdout)
+        self.assertIn("published group conductor", result.stderr)
+
+    def test_the_status_reports_a_group_that_holds_an_unserved_member(self):
+        self.seed_home()
+        self.healthy_gateway()
+        groups = json.loads((self.state / "groups.json").read_text(encoding="utf-8"))
+        groups["workhorse"] = groups["workhorse"] + ",zed/gpt-9-nova:max"
+        (self.state / "groups.json").write_text(json.dumps(groups), encoding="utf-8")
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("finding|group|workhorse|holds unserved members: zed/gpt-9-nova", result.stdout)
+        self.assertIn("unserved members of group workhorse", result.stderr)
+
+    def test_the_status_reports_a_route_the_gateway_does_not_publish(self):
+        self.seed_home()
+        self.healthy_gateway()
+        self.server.models = [model for model in self.server.models if model != "auto/gpt-6.1-sol"]
+        result = self.run_command("status")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("route|auto-gpt-6-1-sol|not published as auto/gpt-6.1-sol", result.stdout)
+        self.assertIn("published route auto-gpt-6-1-sol", result.stderr)
+
+    def test_the_status_reports_the_chatgpt_allowance(self):
+        self.seed_home()
+        self.healthy_gateway()
+        result = self.run_command("status", environment={"FAKE_MAGPIE_ALLOWANCE": "0"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("allowance|chatgpt|none left|resets 2026-11-21T07:12:37+08:00", result.stdout)
+
+    def test_the_status_reports_a_readable_allowance(self):
+        self.seed_home()
+        self.healthy_gateway()
+        result = self.run_command("status", environment={"FAKE_MAGPIE_ALLOWANCE": "42"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("allowance|chatgpt|42% left|resets 2026-11-21T07:12:37+08:00", result.stdout)
+
+    def test_the_apply_re_asserts_a_group_routing_and_stays(self):
+        self.assertEqual(self.apply().returncode, 0)
+        # The gateway's routing drifts after the group was created.
+        (self.state / "routing.json").write_text(json.dumps({"conductor": "rotate"}), encoding="utf-8")
+        (self.state / "stays.json").write_text(json.dumps({"conductor": "session"}), encoding="utf-8")
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the group conductor routing is rotate and stays is session", result.stdout)
+        recorded = " ".join(self.commands())
+        self.assertIn("group set conductor", recorded)
+        self.assertIn("routing=drain", recorded)
+        self.assertIn("stays=auto", recorded)
+
+    def test_the_apply_reports_the_chatgpt_allowance_before_it_wires(self):
+        result = self.apply(environment={"FAKE_MAGPIE_ALLOWANCE": "0"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("the ChatGPT account has no allowance left; it resets at 2026-11-21T07:12:37+08:00",
+                      result.stdout)
+        self.assertIn("a group that drains the ChatGPT account will serve its next member", result.stdout)
+        allowance = result.stdout.index("the ChatGPT account has no allowance left")
+        wiring = result.stdout.index("the agent codex is wired to")
+        self.assertLess(allowance, wiring)
 
     def test_no_subcommand_prints_a_credential(self):
         self.seed_home()

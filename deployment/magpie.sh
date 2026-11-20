@@ -982,6 +982,44 @@ magpie_catalog_groups() {
     return 0
 }
 
+# The gateway routes the deployment offers. The gateway owns these routes:
+# their routing, their members and their published id. The deployment names
+# them in the pickers and never writes them, so every picker entry is an id
+# the gateway serves.
+magpie_catalog_families() {
+    local file=$1 line name id purpose
+    MAGPIE_FAMILY_NAME=(); MAGPIE_FAMILY_ID=()
+    MAGPIE_FAMILY_NAMES=''
+    MAGPIE_FAMILY_IDS=''
+    MAGPIE_FAMILY_ID_NAMES=''
+    while IFS= read -r line || [ -n "$line" ]; do
+        line=${line%$'\r'}
+        case "$line" in ''|\#*) continue ;; esac
+        magpie_row_fields "$line" 3 family || return 1
+        name=${MAGPIE_ROW_FIELDS[0]}; id=${MAGPIE_ROW_FIELDS[1]}
+        purpose=${MAGPIE_ROW_FIELDS[2]}
+        magpie_name_ok "$name" || { magpie_fail "invalid family name: $name"; return 1; }
+        case "$id" in
+            */*) ;;
+            *) magpie_fail "invalid family id: $id"; return 1 ;;
+        esac
+        if magpie_list_contains "$MAGPIE_FAMILY_NAMES" "$name"; then
+            magpie_fail "duplicate family name: $name"
+            return 1
+        fi
+        if magpie_list_contains "$MAGPIE_FAMILY_IDS" "$id"; then
+            magpie_fail "duplicate family id: $id"
+            return 1
+        fi
+        [ -n "$purpose" ] || { magpie_fail "family has no purpose: $name"; return 1; }
+        MAGPIE_FAMILY_NAME+=("$name"); MAGPIE_FAMILY_ID+=("$id")
+        MAGPIE_FAMILY_NAMES="$MAGPIE_FAMILY_NAMES|$name|"
+        MAGPIE_FAMILY_IDS="$MAGPIE_FAMILY_IDS|$id|"
+        MAGPIE_FAMILY_ID_NAMES="$MAGPIE_FAMILY_ID_NAMES|$id=$name|"
+    done < "$file"
+    return 0
+}
+
 # The plugin catalog: name, npm package, pinned version, enabled.
 magpie_catalog_plugins() {
     local file=$1 line name source version enabled
@@ -1131,16 +1169,17 @@ magpie_catalog_validate() {
     local providers="$dir/providers.tsv" models="$dir/models.tsv"
     local groups="$dir/groups.tsv" wiring="$dir/wiring.tsv" visible="$dir/visible.tsv"
     local plugins="$dir/plugins.tsv" picked="$dir/picked.tsv"
-    local file line member role candidates candidate id provider agent names name
+    local families="$dir/families.tsv"
+    local file line member role candidates candidate id provider agent names name family
     local member_list_text entry
     local -a candidate_list member_list name_list entry_list
-    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins" "$picked"; do
+    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins" "$picked" "$families"; do
         [ -f "$file" ] || { magpie_fail "catalog is missing: ${file##*/}"; return 1; }
         [ ! -L "$file" ] || { magpie_fail "catalog is a symlink: ${file##*/}"; return 1; }
     done
     # No catalog value carries a credential. The scan runs before the shape
     # checks, so a pasted key is reported as a credential.
-    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins" "$picked"; do
+    for file in "$providers" "$models" "$groups" "$wiring" "$visible" "$plugins" "$picked" "$families"; do
         while IFS= read -r line || [ -n "$line" ]; do
             line=${line%$'\r'}
             case "$line" in ''|\#*) continue ;; esac
@@ -1156,6 +1195,7 @@ magpie_catalog_validate() {
     magpie_catalog_providers "$providers" || return 1
     magpie_catalog_models "$models" || return 1
     magpie_catalog_groups "$groups" || return 1
+    magpie_catalog_families "$families" || return 1
     magpie_catalog_wiring "$wiring" || return 1
     magpie_catalog_visible "$visible" || return 1
     magpie_catalog_picked "$picked" || return 1
@@ -1228,7 +1268,7 @@ magpie_catalog_validate() {
         fi
     done < "$wiring"
     # Every narrowed agent is a declared agent, and every name it is shown is a
-    # declared group or Magpie provider.
+    # declared group, Magpie provider, or gateway route the deployment offers.
     while IFS= read -r line || [ -n "$line" ]; do
         line=${line%$'\r'}
         case "$line" in ''|\#*) continue ;; esac
@@ -1242,7 +1282,8 @@ magpie_catalog_validate() {
         for name in "${name_list[@]}"; do
             if magpie_list_contains "$MAGPIE_GROUP_IDS" "$name"; then continue; fi
             if magpie_list_contains "$MAGPIE_PROVIDER_PRESET_IDS" "$name"; then continue; fi
-            magpie_fail "visible agent $agent names an unknown group or provider: $name"
+            if magpie_list_contains "$MAGPIE_FAMILY_NAMES" "$name"; then continue; fi
+            magpie_fail "visible agent $agent names an unknown group, provider or route: $name"
             return 1
         done
     done < "$visible"
@@ -1269,6 +1310,17 @@ magpie_catalog_validate() {
                         return 1
                     fi ;;
                 *)
+                    # A gateway route is picked by the id the gateway
+                    # publishes, and it must be visible to the agent by the
+                    # name the gateway reports.
+                    if magpie_list_contains "$MAGPIE_FAMILY_IDS" "$entry"; then
+                        family=$(magpie_list_value "$MAGPIE_FAMILY_ID_NAMES" "$entry")
+                        if ! magpie_csv_contains "$names" "$family"; then
+                            magpie_fail "picked route is not visible to $agent: $entry"
+                            return 1
+                        fi
+                        continue
+                    fi
                     provider=${entry%%/*}
                     if ! magpie_list_contains "$MAGPIE_PROVIDER_PRESET_IDS" "$provider"; then
                         magpie_fail "picked model names an undeclared provider: $entry"
@@ -1717,15 +1769,57 @@ magpie_provider_present() {
     magpie_run provider "$1" >/dev/null 2>&1
 }
 
+# The ChatGPT account the gateway reports, read once per run: the presence
+# check and the allowance measure ask the same question. The read happens in
+# the shell that owns the answer, so a later question reuses it.
+magpie_account_read() {
+    [ "${MAGPIE_ACCOUNT_READ:-}" = yes ] && return 0
+    MAGPIE_ACCOUNT_READ=yes
+    MAGPIE_ACCOUNT_JSON=$(magpie_run accounts codex --json 2>/dev/null || true)
+    return 0
+}
+
 # Whether Magpie knows a ChatGPT account for the Codex provider.
 magpie_account_present() {
     local accounts
-    accounts=$(magpie_run accounts codex --json 2>/dev/null) || return 1
+    magpie_account_read
+    accounts=$MAGPIE_ACCOUNT_JSON
     [ -n "$accounts" ] || return 1
     case "$accounts" in
         '[]'|'{}'|'') return 1 ;;
     esac
     return 0
+}
+
+# The ChatGPT account's allowance, as the gateway reports it: the share left in
+# the account's first window and when that window resets. An account the
+# gateway cannot read leaves the state empty.
+magpie_account_allowance() {
+    local accounts python
+    magpie_account_read
+    accounts=$MAGPIE_ACCOUNT_JSON
+    [ -n "$accounts" ] || return 1
+    python=$(magpie_python) || return 1
+    "$python" - "$accounts" <<'PYTHON'
+import json
+import sys
+
+try:
+    data = json.loads(sys.argv[1])
+except Exception:
+    raise SystemExit(1)
+if not isinstance(data, list) or not data:
+    raise SystemExit(1)
+windows = data[0].get("windows")
+if not isinstance(windows, list) or not windows:
+    raise SystemExit(1)
+window = windows[0]
+remaining = window.get("remaining")
+if remaining is None:
+    raise SystemExit(1)
+resets = window.get("resetsAt") or "unknown"
+sys.stdout.write("%s|%s" % (remaining, resets))
+PYTHON
 }
 
 # The package a plugin spec names: "pkg@1.2.3" and "@scope/pkg@1.2.3" both
@@ -1797,6 +1891,11 @@ magpie_model_ids() {
         sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
 }
 
+# The published model ids, in the delimited form the deployment compares.
+magpie_published_ids() {
+    printf '|%s|' "$(magpie_model_ids "$1" | paste -sd'|' -)"
+}
+
 # Whether Magpie knows one group.
 magpie_group_present() {
     magpie_run group "$1" >/dev/null 2>&1
@@ -1830,8 +1929,7 @@ magpie_visible_names() {
 }
 
 # The models a group holds, in the order the gateway reports them. The
-# catalog knows every model id, so the report is read by looking for them.
-# The member ids of a group as `magpie group <id>` lists them: the token after
+# member ids of a group as `magpie group <id>` lists them: the token after
 # the first bare number on each member line. Magpie puts the first member on
 # the `models` line and the rest on continuation lines. A nested group stays
 # group/<id>.
@@ -1842,6 +1940,14 @@ magpie_group_models() {
                 if ($i ~ /^[0-9]+$/) { print $(i + 1); break }
             }
         }' | paste -sd, -
+}
+
+# One field of a group's answer, as `magpie group <id>` reports it: the
+# routing mode, the stay mode. A field the gateway does not report is empty.
+magpie_group_field() {
+    printf '%s\n' "$1" | awk -v field="$2" '
+        $1 == field { print $2; exit }
+    '
 }
 
 # The candidates of one model role whose provider the gateway knows.
@@ -2858,6 +2964,22 @@ $role (source: $source; variable: $variable)"
         MAGPIE_ROLE_STATUS="$MAGPIE_ROLE_STATUS|$role=resolved|"
     done
 
+    # The ChatGPT allowance, measured before a group that drains the account
+    # is wired. A spent account is not a failure: the group drains to its next
+    # member. The operator must know which member will serve.
+    DEPLOY_STEP=magpie-apply.allowance
+    allowance=$(magpie_account_allowance || true)
+    if [ -n "$allowance" ]; then
+        remaining=${allowance%%|*}
+        resets=${allowance#*|}
+        if [ "$remaining" = 0 ]; then
+            printf 'dotfiles: magpie: the ChatGPT account has no allowance left; it resets at %s\n' "$resets"
+            printf 'dotfiles: magpie: a group that drains the ChatGPT account will serve its next member until then\n'
+        else
+            printf 'dotfiles: magpie: the ChatGPT account has %s%% of its allowance left; it resets at %s\n' "$remaining" "$resets"
+        fi
+    fi
+
     DEPLOY_STEP=magpie-apply.groups
     MAGPIE_GROUP_MODELS=''
     for (( index=0; index<${#MAGPIE_GROUP_ID[@]}; index++ )); do
@@ -2869,13 +2991,22 @@ $role (source: $source; variable: $variable)"
             continue
         fi
         MAGPIE_GROUP_MODELS="$MAGPIE_GROUP_MODELS|$group=$desired|"
+        routing=$(magpie_list_value "$MAGPIE_GROUP_ROUTING_ROWS" "$group")
+        stays=$(magpie_list_value "$MAGPIE_GROUP_STAYS_ROWS" "$group")
         if magpie_group_present "$group"; then
             output=$(magpie_run group "$group" 2>/dev/null || true)
-            current=$(magpie_group_models "$output" "$known")
-            if [ "$current" != "$desired" ]; then
+            current=$(magpie_group_models "$output")
+            current_routing=$(magpie_group_field "$output" routing)
+            current_stays=$(magpie_group_field "$output" stays)
+            if [ "$current" != "$desired" ] || [ "$current_routing" != "$routing" ] ||
+               [ "$current_stays" != "$stays" ]; then
                 change="$change
 group-set:$group"
                 printf 'dotfiles: magpie: the group %s will be set to %s\n' "$group" "$desired"
+                if [ "$current_routing" != "$routing" ] || [ "$current_stays" != "$stays" ]; then
+                    printf 'dotfiles: magpie: the group %s routing is %s and stays is %s; the catalog says %s and %s\n' \
+                        "$group" "${current_routing:-unset}" "${current_stays:-unset}" "$routing" "$stays"
+                fi
             else
                 printf 'dotfiles: magpie: the group %s holds %s\n' "$group" "$desired"
             fi
@@ -3586,7 +3717,23 @@ magpie_status() {
         fi
     done
     known=$(magpie_catalog_model_ids)
+    published=$(magpie_models_fetch "$MAGPIE_GATEWAY" 2>/dev/null || true)
+    published_ids=$(magpie_published_ids "$published")
     plugin_state=$(magpie_plugin_state || true)
+    # The ChatGPT allowance, so a spent account is visible before a group
+    # that drains it is read as healthy.
+    allowance=$(magpie_account_allowance || true)
+    if [ -n "$allowance" ]; then
+        remaining=${allowance%%|*}
+        resets=${allowance#*|}
+        if [ "$remaining" = 0 ]; then
+            printf 'allowance|chatgpt|none left|resets %s\n' "$resets"
+        else
+            printf 'allowance|chatgpt|%s%% left|resets %s\n' "$remaining" "$resets"
+        fi
+    else
+        printf 'allowance|chatgpt|unknown\n'
+    fi
     for (( index=0; index<${#MAGPIE_PLUGIN_NAME[@]}; index++ )); do
         name=${MAGPIE_PLUGIN_NAME[index]}
         state=$(magpie_plugin_state_of "$plugin_state" "${MAGPIE_PLUGIN_SOURCE[index]}")
@@ -3603,11 +3750,44 @@ magpie_status() {
     for (( index=0; index<${#MAGPIE_GROUP_ID[@]}; index++ )); do
         group=${MAGPIE_GROUP_ID[index]}
         if output=$(magpie_run group "$group" 2>/dev/null); then
-            models=$(magpie_group_models "$output" "$known")
+            models=$(magpie_group_models "$output")
             printf 'group|%s|%s\n' "$group" "$models"
+            # A group the gateway does not publish is a route the picker
+            # offers and the gateway cannot serve.
+            if ! magpie_list_contains "$published_ids" "group/$group"; then
+                printf 'finding|group|%s|not published as a model id\n' "$group"
+                missing="$missing published group $group"
+            fi
+            # A member the gateway does not serve is a route that cannot
+            # answer, however healthy the group looks.
+            unserved=''
+            for member in ${models//,/ }; do
+                case "$member" in
+                    group/*) continue ;;
+                    *:*) member=${member%%:*} ;;
+                esac
+                if ! magpie_list_contains "$published_ids" "$member"; then
+                    unserved="$unserved $member"
+                fi
+            done
+            if [ -n "$unserved" ]; then
+                printf 'finding|group|%s|holds unserved members:%s\n' "$group" "$unserved"
+                missing="$missing unserved members of group $group"
+            fi
         else
             printf 'group|%s|missing\n' "$group"
             missing="$missing group $group"
+        fi
+    done
+    # A gateway route the deployment offers must be published under the id the
+    # deployment names, or the picker offers a route the gateway cannot serve.
+    for (( index=0; index<${#MAGPIE_FAMILY_NAME[@]}; index++ )); do
+        name=${MAGPIE_FAMILY_NAME[index]}; id=${MAGPIE_FAMILY_ID[index]}
+        if magpie_list_contains "$published_ids" "$id"; then
+            printf 'route|%s|%s\n' "$name" "$id"
+        else
+            printf 'route|%s|not published as %s\n' "$name" "$id"
+            missing="$missing published route $name"
         fi
     done
     for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do

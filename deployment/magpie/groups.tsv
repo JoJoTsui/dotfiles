@@ -2,7 +2,10 @@
 #
 # id|members|routing|stays|listed|purpose
 #
-# id        the group name an agent selects as "group/<id>".
+# id        the group name an agent selects as "group/<id>". A row names a
+#           group the deployment owns: the apply creates it and keeps its
+#           members, routing and stays current. A gateway route the deployment
+#           only offers is declared in families.tsv.
 # members   comma-separated model roles, or "group/<id>" for another group, in
 #           the order the gateway tries them. A role may end in :<effort>
 #           (none|minimal|low|medium|high|xhigh|max) to fix that member's
@@ -18,7 +21,4 @@ chatgpt|chatgpt.sol:medium,chatgpt.terra:high|drain|auto|yes|weekly ChatGPT quot
 openai-stack|group/chatgpt,openai.sol:medium,openai.terra:high,conductor.kimi:max|drain|auto|yes|manual OpenAI stack with Terra
 conductor|conductor.codex-sol:medium,conductor.openai-sol:medium,conductor.kimi:max|drain|auto|yes|Claude Code, Sol only
 workhorse|workhorse.minimax:max,conductor.deepseek:max|drain|auto|yes|Pi and dsh, both at max
-auto-gpt-6-1-sol|chatgpt.sol:medium,openai.sol:medium,zed.sol:medium|drain|auto|yes|GPT Sol: codex, openai, zed
-auto-gpt-6-1-terra|chatgpt.terra:high,openai.terra:high|drain|auto|yes|GPT-6.1 Terra: codex, openai
-auto-gpt-6-luna|chatgpt.luna,openai.luna,zed.luna,opencode.luna|drain|auto|yes|GPT-6 Luna: codex, openai, zed, opencode go
 auto-gpt-6-astra|chatgpt.astra,openai.astra|drain|auto|yes|GPT-6 Astra: codex, openai
