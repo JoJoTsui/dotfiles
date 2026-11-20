@@ -4,7 +4,9 @@
 
 **Blocked by:** 01: Preserve device-owned generated skills; 02: Require reviewed Windows skill locks; 03: Preserve Windows skill collisions during preflight; 04: Gate and back up Magpie client migration; 05: Detect and reconcile Magpie wiring drift.
 
-**Status:** ready-for-agent
+**Status:** ready-for-agent — the macOS native gate passes on the final
+source; the headless Linux gate runs and is corrected; native Windows remains
+unavailable here
 
 - [ ] Run appropriate focused tests and simulated application checks, reporting actual results and environmental failures.
 - [ ] Run native platform gates where their platform and prerequisites are available; identify each unavailable gate and why.
@@ -103,3 +105,23 @@ acceptance remains unrun. A metadata-only inventory of the
 selected names under `~/.local/bin` found regular files for kimi, pi, opencode,
 claude, codex, and qoder, and no minimax entry. This does not establish who
 owns any file or whether a given installation path will replace it.
+
+- 2026-11-20: The headless Linux gate ran on this Mac for the first time:
+  OrbStack 29.8.2, the pinned source exported into read-only amd64 containers
+  for Ubuntu 20.04 and 24.04, four CPUs and eight GiB each. The first run
+  failed on a stale check, not on the deployment: the gate asserted that a
+  fresh home's Claude Code settings carry a placeholder credential, an
+  expectation from the GLM-era template. The deployment migrated to Magpie,
+  where the client credentials live in the gateway's own store and the client
+  settings carry no credential, so the check read a file that no longer holds
+  one. The check now reads the file that carries the placeholder (the Kimi
+  client settings) and asserts that the Claude Code settings carry no
+  credential while the gateway is absent. Committed as `e6ff25e`.
+- 2026-11-20: The second run got further: the bootstrap, the managed files and
+  installed pins, and the fetched skill discovery all passed on 20.04, and the
+  reapplication check reported one changed managed file, `.config/git/ignore`.
+  The gate's own snapshot logic does not reproduce it on that home: the file's
+  content, mode and the managed listing are identical before and after a
+  reapplication, and a third apply changes nothing. The check's verdict is
+  therefore unexplained by the deployment's state, and the run is recorded as
+  a failure rather than a pass.
