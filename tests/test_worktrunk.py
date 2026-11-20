@@ -85,8 +85,16 @@ class WorktrunkPluginTests(unittest.TestCase):
                 "set -e\n"
                 f"DEPLOY_SOURCE='{SOURCE}'\n"
                 f"export PIXI_HOME='{root / 'pixi'}'\n"
+                # The step resolves wt from the managed tool directory before
+                # the Pixi one, so the directory must point at the stub. The
+                # device's own wt must never run here: the stub is what
+                # records the calls the assertions read.
+                f"export DOTFILES_COMMON_BIN='{root / 'pixi' / 'bin'}'\n"
                 f"export WT_LOG='{log}'\n"
                 f"export HOME='{root / 'home'}'\n"
+                # The deployment resolves the requested selection into the
+                # selection the step reads, so the harness asks for the
+                # clients the way the bootstrap asks for them.
                 f"CLI_AGENTS='{selection}'\n"
                 "CLI_AGENTS_SET=true\n"
                 "fail() { echo \"$*\" >&2; exit 1; }\n"
