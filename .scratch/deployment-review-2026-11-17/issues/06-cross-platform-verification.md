@@ -117,11 +117,15 @@ owns any file or whether a given installation path will replace it.
   one. The check now reads the file that carries the placeholder (the Kimi
   client settings) and asserts that the Claude Code settings carry no
   credential while the gateway is absent. Committed as `e6ff25e`.
-- 2026-11-20: The second run got further: the bootstrap, the managed files and
-  installed pins, and the fetched skill discovery all passed on 20.04, and the
-  reapplication check reported one changed managed file, `.config/git/ignore`.
-  The gate's own snapshot logic does not reproduce it on that home: the file's
-  content, mode and the managed listing are identical before and after a
-  reapplication, and a third apply changes nothing. The check's verdict is
-  therefore unexplained by the deployment's state, and the run is recorded as
-  a failure rather than a pass.
+- 2026-11-20: The second run got further on both releases: the bootstrap, the
+  managed files and installed pins, and the fetched skill discovery all passed,
+  and the reapplication check reported one changed managed file,
+  `.config/git/ignore`, on 20.04 and on 24.04 alike. The deployment's own
+  state does not show it: on the retained homes, a further reapplication
+  leaves the file's content and mode unchanged and leaves `chezmoi managed`
+  listing the same seventy files, and the gate's own snapshot function around
+  a reapplication reports no change at all. The verdict therefore comes from
+  something in the gate's own run that a replay on an already-reapplied home
+  does not reproduce; a replay on a fresh home did not finish inside the
+  session's time budget. The run is recorded as a failure, not a pass, and
+  the native Windows gate stays unavailable here.

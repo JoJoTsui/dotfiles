@@ -638,3 +638,27 @@ device's status is green.
 - The apply measures the ChatGPT allowance before it wires a group that
   drains the account, and the status reports it:
   `allowance|chatgpt|none left|resets 2026-11-21T07:12:37+08:00`.
+
+## 16. The headless Linux gate (2026-11-20)
+
+OrbStack 29.8.2 runs the pinned source in read-only amd64 containers for
+Ubuntu 20.04 and 24.04, four CPUs and eight GiB each. The gate's artifacts
+are under `/private/tmp/dotfiles-linux-gate-2026-11-20*`.
+
+- The first run failed on a stale check: the gate asserted that a fresh
+  home's Claude Code settings carry a placeholder credential, an expectation
+  from the GLM-era template. The deployment migrated to Magpie, where the
+  client credentials live in the gateway's own store, so the check read a
+  file that no longer holds one. It now reads the file that carries the
+  placeholder and asserts that the Claude Code settings carry no credential
+  while the gateway is absent (`e6ff25e`).
+- The second run passed the bootstrap, the managed files and installed pins,
+  and the fetched skill discovery on both releases, and failed the
+  reapplication check on both: it reports one changed managed file,
+  `.config/git/ignore`. The deployment's state does not show the change: on
+  the retained homes a further reapplication leaves the file's content and
+  mode unchanged and leaves `chezmoi managed` listing the same seventy files,
+  and the gate's own snapshot function around a reapplication reports no
+  change. The cause is not established; the run is recorded as a failure.
+- The native Windows gate stays unavailable on this host: there is no
+  Windows runtime and no PowerShell.
