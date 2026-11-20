@@ -18,10 +18,11 @@ SOURCE = Path(__file__).resolve().parents[1]
 HAIKU = "ANTHROPIC_DEFAULT_HAIKU_MODEL"
 SMALL_FAST = "ANTHROPIC_SMALL_FAST_MODEL"
 AUXILIARY = frozenset((HAIKU, SMALL_FAST))
-AUXILIARY_ROUTE = "codex/gpt-6.1-terra"
+AUXILIARY_ROUTE = "auto/gpt-6.1-terra"
 CONDUCTOR = "group/conductor"
 # Aliases this slice deliberately leaves alone: the three tier aliases keep the
-# conductor group and the permission classifier keeps the terra route.
+# conductor group and the permission classifier keeps the Terra route, which is
+# the gateway's own cross-provider family rather than one provider's model.
 UNCHANGED = {
     "ANTHROPIC_DEFAULT_FABLE_MODEL": CONDUCTOR,
     "ANTHROPIC_DEFAULT_OPUS_MODEL": CONDUCTOR,

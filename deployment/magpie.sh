@@ -44,8 +44,12 @@ MAGPIE_START_ATTEMPTS="${MAGPIE_START_ATTEMPTS:-30}"
 MAGPIE_STOP_ATTEMPTS="${MAGPIE_STOP_ATTEMPTS:-10}"
 # The Claude Code auxiliary route the template pins: the cheap background
 # aliases and the auto-mode classifier stay on Terra while the work tiers
-# follow the wired group. Mirrors deployment/client-settings/claude-settings.json.tmpl.
-MAGPIE_CLAUDE_AUX_MODEL="codex/gpt-6.1-terra"
+# follow the wired group. The route is the gateway's own Terra family, which
+# routes Codex first and then OpenAI, so a spent ChatGPT account no longer
+# takes the tool-safety path with it. A route pinned to one provider's model
+# denies every checked action when that account is exhausted.
+# Mirrors deployment/client-settings/claude-settings.json.tmpl.
+MAGPIE_CLAUDE_AUX_MODEL="auto/gpt-6.1-terra"
 # DSH's compaction override is a fixed lightweight route. It is deliberately
 # not derived from the group the dsh wiring row starts its sessions on: moving
 # the session to the conductor tier must not drag background summarisation up
@@ -3425,7 +3429,8 @@ magpie_client_settings_file() {
 # The required client wiring of one agent, read from the live settings file.
 # The client-settings templates are the writer and this is the same contract:
 # Claude's gateway endpoint, its work tiers on the wired group, and its cheap
-# aliases and classifier on the pinned Terra route; Pi's default provider,
+# aliases and classifier on the pinned Terra route, the gateway's Terra family;
+# Pi's default provider,
 # model, and thinking level. Three fields are deliberately never read: the
 # credential ANTHROPIC_AUTH_TOKEN, Claude's own model alias, which the client
 # may rewrite after a run, and CLAUDE_CODE_SUBAGENT_MODEL, which the device

@@ -588,9 +588,13 @@ the apply writes it into the gateway like any other device proxy.
 then `openai/gpt-6.2-sol` at medium, then `kimi-code-cn/k3.1-pro` at max. Each
 Sol provider falls back to its 6.1 Sol when 6.2 is not served. It
 does not contain GPT-6.1 Terra. Claude Code's auto-mode classifier is configured
-separately as `codex/gpt-6.1-terra`. An isolated auto-mode check on this Mac
-reached that model through Magpie; verify the route on each device before
-applying, because an unavailable classifier causes checked actions to be denied.
+separately as `auto/gpt-6.1-terra`, the gateway's own Terra family, which routes
+Codex first and then OpenAI. A classifier pinned to one provider's model denies
+every checked action when that account is exhausted, which is what happened on
+this Mac while the ChatGPT-plan quota was spent. An isolated auto-mode check on
+this Mac reached that model through Magpie; verify the route on each device
+before applying, because an unavailable classifier causes checked actions to be
+denied.
 
 `group/openai-stack` is the manual OpenAI stack that keeps Terra:
 `group/chatgpt` (Codex Sol medium, Terra high), `openai/gpt-6.1-sol` medium,
@@ -618,7 +622,7 @@ directly picked model uses the agent's own thinking level.
 
 The template sets `model: opus` and maps the Fable, Opus, and Sonnet tiers to
 `group/conductor`. The Haiku tier, legacy small-model alias, and auto-mode
-classifier use `codex/gpt-6.1-terra`; subagents inherit their parent model
+classifier use `auto/gpt-6.1-terra`; subagents inherit their parent model
 unless the device sets its own override. Claude Code accepts the `opus` alias
 and resolves it through `ANTHROPIC_DEFAULT_OPUS_MODEL`, so the gateway receives
 the group.
