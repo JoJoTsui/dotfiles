@@ -594,3 +594,27 @@ command and got its output (`classifier-ok`), and the review tab's agent,
 restarted onto the new settings, ran one too (`review-tab-ok`). The outage
 is over for new sessions. The old session's transcript is intact and can be
 resumed with `claude --resume 03a0f81b-8524-49b8-84e0-f654d579e647`.
+
+## 14. The macOS gates re-run against the final source (2026-11-20)
+
+- The fresh native installation gate passed at commit `162327d`: seven checks
+  (native runtime and architecture, profile detection, default installation 1,
+  default installation 2, pinned commands and pending history, ordinary native
+  configuration discovery, native shell, instruction, CodeGraph and
+  encrypted-history behavior), 1230 s, an empty cache, a clean working tree,
+  and the four behavior suites at 13, 18, 9 and 9 tests with no skips. The
+  report is `/private/tmp/dotfiles-native-macos-2026-11-20.json`.
+- Both simulated applies passed against the same source: `--class t9k`
+  (linux-remote-compute) and `--class linux` (linux-workstation), each with
+  `DOTFILES_CHEZMOI_BIN` set to the host's chezmoi. Without it the legacy
+  profile installs its Linux binary, which cannot execute on this Mac — a
+  host-scope mismatch in the invocation, not a deployment defect. Both
+  simulated homes rendered the shell files as regular files and passed the
+  standalone Nushell check (`nu --config … -c 'print "ok"'` → `ok`), and both
+  were removed afterwards.
+- The Bun global copy of the pi package, left by an unsuccessful
+  `bun add -g`, is gone: `bun remove -g @earendil-works/pi-coding-agent`.
+  The managed launcher still resolves `pi` to the frozen project's 1.5.2.
+  Two global copies remain and are reported, not removed: the claude-code
+  copy at 2.1.326 and the minimax code copy at 0.6.12, the latter being the
+  only provider of `mcode-tools`.
