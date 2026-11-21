@@ -7,12 +7,12 @@
 # command is the one that runs the managed hook script of this home in one
 # complete invocation, and only that command is removed or replaced. A command
 # that names another home's copy, that only mentions the script, that runs a
-# file beside it, or that passes the script an extra argument, is a device
-# command and stays. A group that carries a device command beside the managed
-# one keeps its own commands, its own metadata, and its place in the list;
-# only a group that held nothing but the managed command disappears. Herdr
-# owns its own entries, and the managed entry is placed last so its resume
-# argv wins.
+# file beside it, that passes the script an extra argument, or that spells the
+# path with a placeholder the shell does not expand, is a device command and
+# stays. A group that carries a device command beside the managed one keeps
+# its own commands, its own metadata, and its place in the list; only a group
+# that held nothing but the managed command disappears. Herdr owns its own
+# entries, and the managed entry is placed last so its resume argv wins.
 set -uo pipefail
 
 hooks=${DOTFILES_CODEX_HOOKS:-$HOME/.codex/hooks.json}
@@ -64,10 +64,17 @@ path = sys.argv[2]
 # name, a command that runs a file beside the script
 # (herdr-codex-resume.sh.backup), and a command that passes the script an
 # extra argument are device commands, and they stay.
+#
+# The spelling decides what the shell runs, so the owned commands are whole
+# commands that are matched as they are written. A placeholder counts only
+# where the shell expands it: $HOME inside double quotes or unquoted, and a
+# leading ~ unquoted. A single-quoted placeholder, an escaped placeholder,
+# and a quoted tilde are literal, so they name a script of the working
+# directory, and a command that carries one is a device command.
 SCRIPT_DIRECTORY = ".codex"
 SCRIPT_NAME = "herdr-codex-resume.sh"
 SCRIPT_RELATIVE = SCRIPT_DIRECTORY + "/" + SCRIPT_NAME
-SHELLS = ("bash", "sh")
+INTERPRETERS = ("bash", "sh")
 HOME = os.path.expanduser("~")
 MANAGED = {
     "hooks": [
@@ -108,44 +115,69 @@ def session_groups(data):
     return session
 
 
-def managed_paths():
-    """The stored forms of the deployed script location of this home.
+def absolute_spellings():
+    """The spellings of the absolute path of this home.
 
-    The literal "$HOME" form is the one the deployment writes. A device may
-    store the same location as a tilde or as the expanded path of its own
-    home; those three forms are the managed location, and no other path is.
+    An absolute path needs no expansion, so the quoting does not change the
+    file it names. A spelling is only owned when the path holds no
+    character that its own quoting would let the shell interpret.
     """
-    forms = ["$HOME/" + SCRIPT_RELATIVE, "~/" + SCRIPT_RELATIVE]
-    if os.path.isabs(HOME):
-        forms.append(os.path.join(HOME, SCRIPT_DIRECTORY, SCRIPT_NAME))
-    return {os.path.normpath(form) for form in forms}
+    path = os.path.join(HOME, SCRIPT_DIRECTORY, SCRIPT_NAME)
+    if not os.path.isabs(path):
+        return []
+    spellings = []
+    if shlex.quote(path) == path:
+        spellings.append(path)
+    if not set(path) & set('"$`\\'):
+        spellings.append('"%s"' % path)
+    if "'" not in path:
+        spellings.append("'%s'" % path)
+    return spellings
 
 
-MANAGED_PATHS = managed_paths()
+def owned_locations():
+    """Every spelling of the deployed script location this deployment owns.
+
+    The deployment writes bash "$HOME/.codex/herdr-codex-resume.sh", and a
+    device may store the same script as a tilde or as the expanded path of
+    its own home. A placeholder counts only where the shell expands it, and
+    an absolute path needs no expansion, so every quoting of it names the
+    managed script.
+    """
+    locations = {
+        # The generated spelling, and the historical ones in the quoting that
+        # lets the shell expand the placeholder.
+        '"$HOME/%s"' % SCRIPT_RELATIVE,
+        "~/%s" % SCRIPT_RELATIVE,
+    }
+    if not any(character.isspace() for character in HOME):
+        # An unquoted $HOME is split on the spaces of the home path, so it
+        # runs another file once the home path holds one.
+        locations.add("$HOME/%s" % SCRIPT_RELATIVE)
+    locations.update(absolute_spellings())
+    return locations
 
 
-def is_managed_script(candidate):
-    """Whether a path is the deployed hook script of this home."""
-    return os.path.normpath(candidate) in MANAGED_PATHS
+OWNED_LOCATIONS = owned_locations()
 
 
 def runs_managed_script(command):
     """Whether a stored command runs the deployed hook script of this home.
 
-    The invocation has to be complete and simple: the script alone, or the
-    script under bash or sh. An extra argument, an operator, or a path that
-    names another home is a device command.
+    The command has to be one whole invocation of the managed script, with
+    nothing after it. The location is matched as it is written, because the
+    spelling decides what the shell runs: a literal placeholder names a
+    script of the working directory. The interpreter is the shell by name,
+    and the script is executable, so it may also be the command itself.
     """
-    try:
-        words = shlex.split(command)
-    except ValueError:
+    if not isinstance(command, str):
         return False
-    if not words:
+    if command in OWNED_LOCATIONS:
+        return True
+    interpreter, separator, location = command.partition(" ")
+    if not separator or not location:
         return False
-    if os.path.basename(words[0]) in SHELLS:
-        return len(words) == 2 and is_managed_script(words[1])
-    # The script is executable, so it may also be the command itself.
-    return len(words) == 1 and is_managed_script(words[0])
+    return os.path.basename(interpreter) in INTERPRETERS and location in OWNED_LOCATIONS
 
 
 def owned(hook):

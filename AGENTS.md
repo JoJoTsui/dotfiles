@@ -193,10 +193,13 @@ explains every changed pair.
   home — the script alone, or the script under `bash` or `sh`, with no extra
   argument and no operator — so a device command that names another home's
   copy, that only mentions the script, or that runs a file beside it, is a
-  device command; a device command beside the owned one in a mixed
-  SessionStart group keeps its own commands and its own metadata, Herdr's
-  entries are never written, and `dotfiles-codex-herdr remove` takes the owned
-  command out again. A Herdr restore reaches the thread through
+  device command; the spelling decides what the shell runs, so a placeholder
+  counts only where the shell expands it (`$HOME` inside double quotes or
+  unquoted, a leading `~` unquoted), and a literal placeholder names a script
+  of the working directory and stays; a device command beside the owned one in
+  a mixed SessionStart group keeps its own commands and its own metadata,
+  Herdr's entries are never written, and `dotfiles-codex-herdr remove` takes
+  the owned command out again. A Herdr restore reaches the thread through
   `dotfiles-codex-resume`, so a restored thread keeps its saved provider,
   model, and reasoning effort, while a fresh launch keeps the plain route. The
   launcher and that command are refreshed together, because the launcher

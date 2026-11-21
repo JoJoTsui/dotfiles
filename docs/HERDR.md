@@ -192,8 +192,16 @@ under `bash` or `sh`, with no extra argument and no operator — so
 `bash "$HOME/.codex/herdr-codex-resume.sh" --resume-all` is a device command
 too. A device may store the location of that same script with the path
 spelled another way — `$HOME/.codex/…`, `~/.codex/…`, or the expanded path
-of its own home — and those are the managed command. For reference, the entry
-is:
+of its own home — and those are the managed command.
+
+The spelling decides what the shell runs, so a placeholder counts only where
+the shell expands it: `$HOME` inside double quotes or unquoted, and a leading
+`~` unquoted. A single-quoted placeholder, an escaped placeholder, and a
+quoted `~` are literal, so they name a script of the working directory
+instead of the managed one, and a command that carries one is a device
+command and stays. An absolute path of this home needs no expansion, so every
+quoting of it — bare, double-quoted, or single-quoted — is the managed
+command. For reference, the entry is:
 
 ```json
 {"hooks":[{"type":"command","command":"bash \"$HOME/.codex/herdr-codex-resume.sh\"","timeout":5}]}

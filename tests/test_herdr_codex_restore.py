@@ -355,6 +355,69 @@ class HerdrHookCommandTests(unittest.TestCase):
         self.assertIn('bash "$HOME/.codex/herdr-codex-resume.sh" --resume-all', commands)
         self.assertEqual(commands[-1], MANAGED_COMMAND)
 
+    def test_a_literal_placeholder_is_a_device_command(self):
+        # A placeholder that the shell does not expand names another file:
+        # the single-quoted and the escaped $HOME, and the quoted tilde, all
+        # name a script of the working directory. They are device commands,
+        # and they stay.
+        literals = [
+            "bash '$HOME/.codex/herdr-codex-resume.sh'",
+            "bash \\$HOME/.codex/herdr-codex-resume.sh",
+            "bash '~/.codex/herdr-codex-resume.sh'",
+            'bash "~/.codex/herdr-codex-resume.sh"',
+        ]
+        data = json.loads(self.hooks.read_text(encoding="utf-8"))
+        group = data["hooks"]["SessionStart"][0]
+        for literal in literals:
+            group["hooks"].append({"type": "command", "command": literal, "timeout": 30})
+        self.hooks.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        removed = self.command("remove")
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        commands = self.commands(self.session()[0])
+        for literal in literals:
+            self.assertIn(literal, commands)
+        self.assertNotIn(MANAGED_COMMAND, commands)
+        # An install keeps them beside the managed command.
+        installed = self.command("install")
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        session, _ = self.session()
+        commands = self.commands(session)
+        for literal in literals:
+            self.assertIn(literal, commands)
+        self.assertEqual(commands[-1], MANAGED_COMMAND)
+
+    def test_a_literal_placeholder_runs_a_script_of_the_working_directory(self):
+        # The near miss is a real difference, not a spelling detail: the
+        # single-quoted path runs a script of the working directory, and the
+        # expanding path runs the managed script of the home.
+        work = self.root / "work"
+        local = work / "$HOME/.codex"
+        local.mkdir(parents=True)
+        local_marker = self.root / "local-marker"
+        local_script = local / "herdr-codex-resume.sh"
+        local_script.write_text("#!/bin/sh\ntouch '%s'\n" % local_marker, encoding="utf-8")
+        local_script.chmod(0o755)
+        managed_marker = self.root / "managed-marker"
+        managed_script = self.home / ".codex/herdr-codex-resume.sh"
+        managed_script.write_text("#!/bin/sh\ntouch '%s'\n" % managed_marker, encoding="utf-8")
+        managed_script.chmod(0o755)
+        literal = subprocess.run(
+            ["/bin/bash", "-c", "bash '$HOME/.codex/herdr-codex-resume.sh'"],
+            cwd=str(work), env=dict(os.environ, HOME=str(self.home)),
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(literal.returncode, 0, literal.stderr)
+        self.assertTrue(local_marker.exists(),
+                        "the literal path did not run the script of the working directory")
+        self.assertFalse(managed_marker.exists(),
+                         "the literal path ran the managed script")
+        expanding = subprocess.run(
+            ["/bin/bash", "-c", 'bash "$HOME/.codex/herdr-codex-resume.sh"'],
+            cwd=str(work), env=dict(os.environ, HOME=str(self.home)),
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(expanding.returncode, 0, expanding.stderr)
+        self.assertTrue(managed_marker.exists(),
+                        "the expanding path did not run the managed script")
+
     def test_a_stored_path_of_the_managed_script_is_the_managed_command(self):
         # The device may store the same script of this home as a tilde or as
         # the expanded path of its own home. Those are the managed command,
