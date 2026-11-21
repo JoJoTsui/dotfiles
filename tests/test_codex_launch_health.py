@@ -8,6 +8,10 @@ check therefore skips exactly that readiness and keeps everything else:
 the Herdr server, the Codex binary, and the strict default and
 `--before-restore` checks that host bring-up runs.
 
+A launcher that does not know the option always proxies, so the narrow set
+keeps the proxy readiness for it. The legacy tree keeps its own `with-proxy`,
+and the launch gate answers for the launcher the host actually has.
+
 Everything here runs against stubs; no test opens a network connection.
 """
 import os
@@ -73,6 +77,16 @@ class CodexLaunchHealthTests(unittest.TestCase):
             ["/bin/bash", str(HEALTH), "--quiet", *arguments],
             env=self.env, cwd=self.home, capture_output=True, text=True, timeout=60)
 
+    def install_legacy_launcher(self):
+        """A launcher without the option: it fails on an unknown option."""
+        legacy = self.bin / "with-proxy"
+        legacy.write_text(
+            '#!/bin/sh\n'
+            'if [ "$1" = "--if-available" ]; then exit 127; fi\n'
+            'exec "$@"\n', encoding="utf-8")
+        legacy.chmod(0o755)
+        return legacy
+
     def test_codex_launch_check_skips_the_legacy_proxy_readiness(self):
         result = self.run_health("--codex")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -121,6 +135,30 @@ class CodexLaunchHealthTests(unittest.TestCase):
         # The fallback drops the inherited proxy instead of pointing Codex at a
         # port nothing serves.
         self.assertIn("proxy none", result.stdout)
+
+    def test_narrow_check_keeps_the_proxy_readiness_for_a_legacy_launcher(self):
+        # The launcher always proxies, so the launch depends on the proxy
+        # stack and the narrow set must not report it healthy without it.
+        self.install_legacy_launcher()
+        result = self.run_health("--codex")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mihomo", result.stderr)
+
+    def test_wrapper_uses_the_plain_route_for_a_legacy_launcher(self):
+        legacy = self.install_legacy_launcher()
+        health = self.bin / "dotfiles-agent-health"
+        health.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        health.chmod(0o755)
+        self.env["DOTFILES_AGENT_HEALTH"] = str(health)
+        self.env["DOTFILES_WITH_PROXY"] = str(legacy)
+        result = subprocess.run(
+            ["/bin/bash", str(LAUNCHER), "--version"],
+            env=self.env, cwd=self.home, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("codex --no-daemon --version", result.stdout)
+        # The legacy launcher has no endpoint question to answer, so the
+        # launch keeps the proxied route.
+        self.assertNotIn("--if-available", result.stdout)
 
 
 if __name__ == "__main__":

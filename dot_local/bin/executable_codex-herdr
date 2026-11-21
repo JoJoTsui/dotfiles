@@ -44,6 +44,23 @@ fi
 # and otherwise drops inherited proxy variables before starting. Inheriting a
 # stale http_proxy is what made a pane report "connection failed" while a shell
 # without those variables reached the same endpoint.
+#
+# The managed launcher answers --if-available: with no reachable endpoint it
+# starts the command direct. A launcher that does not know the option would
+# exec it as a command and fail, so the launcher is asked once with a harmless
+# command. A launcher that cannot answer keeps the proxied route it had
+# before the flag existed, which is what a legacy tree's own with-proxy does.
+launcher_accepts_if_available() {
+    "$with_proxy" --if-available true >/dev/null 2>&1
+}
+
+run_with_proxy() {
+    if launcher_accepts_if_available; then
+        exec "$with_proxy" --if-available "$@"
+    fi
+    exec "$with_proxy" "$@"
+}
+
 if [ "${1:-}" = resume ]; then
     shift
     if [ ! -x "$resume_command" ]; then
@@ -53,7 +70,7 @@ if [ "${1:-}" = resume ]; then
     # The managed command adds the provider definitions and never a selection,
     # so the resumed thread keeps the provider, the model, and the reasoning
     # effort it saved. --no-daemon keeps the app server in the pane.
-    exec "$with_proxy" --if-available "$resume_command" --no-daemon "$@"
+    run_with_proxy "$resume_command" --no-daemon "$@"
 fi
 
-exec "$with_proxy" --if-available codex --no-daemon "$@"
+run_with_proxy codex --no-daemon "$@"

@@ -142,6 +142,21 @@ class AgentHerdrTests(unittest.TestCase):
         self.assertEqual(self.args.read_text(encoding="utf-8").splitlines(),
                          ["--if-available", "codex", "--no-daemon", "--version"])
 
+    def test_wrapper_keeps_the_plain_route_for_a_launcher_without_the_option(self):
+        # A legacy tree keeps its own with-proxy, which knows no option and
+        # would exec it as a command. The launcher then routes the plain way,
+        # which is the proxied route it had before the flag existed.
+        self.with_proxy.write_text(
+            '#!/bin/sh\n'
+            'printf "%s\\n" "$@" > "$ARGS_FILE"\n'
+            'if [ "$1" = "--if-available" ]; then exit 127; fi\n'
+            'exit 0\n', encoding="utf-8")
+        self.with_proxy.chmod(0o755)
+        result = self.run_wrapper()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.args.read_text(encoding="utf-8").splitlines(),
+                         ["codex", "--no-daemon", "--version"])
+
     def test_wrapper_refuses_when_health_fails(self):
         self.env["HEALTH_EXIT"] = "1"
         result = self.run_wrapper()

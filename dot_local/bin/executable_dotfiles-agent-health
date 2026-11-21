@@ -5,8 +5,8 @@
 # U.S. egress, the Codex app-server daemon, the Herdr
 # server, and (in the full check) the CodeGraph and Graphify binaries. The Codex launcher runs
 # the narrow `--codex` set, which skips the legacy proxy readiness because the
-# launch route falls back to a direct connection; `--probe` adds one real model
-# round trip.
+# launch route falls back to a direct connection; a launcher that always
+# proxies keeps the readiness; `--probe` adds one real model round trip.
 set -u
 
 quiet=false
@@ -27,8 +27,9 @@ usage: dotfiles-agent-health [--quiet] [--codex] [--clients] [--before-restore] 
 
   --quiet    print failures only
   --codex    check only what a Herdr Codex launch needs (skip graph tools and
-             the legacy proxy readiness; combined with --before-restore the
-             strict readiness stays)
+             the legacy proxy readiness when the proxy launcher starts the
+             command direct; combined with --before-restore the strict
+             readiness stays)
   --clients  report client binaries and config paths (diagnostic)
   --before-restore  check dependencies before starting Herdr (skip Herdr only)
   --probe    also run one Codex model round trip (uses the active provider)
@@ -90,6 +91,15 @@ esac
 with_proxy=$(command -v with-proxy 2>/dev/null || true)
 [ -n "$with_proxy" ] || with_proxy=$HOME/.local/bin/with-proxy
 
+# The managed launcher starts the command direct when no endpoint answers, so
+# the narrow launch set does not need the legacy proxy stack. A launcher that
+# does not know the option always proxies, so the narrow set keeps the proxy
+# readiness there. The launcher is asked once with a harmless command, because
+# a launcher without the option would exec it as a command and fail.
+launcher_accepts_if_available() {
+    "$with_proxy" --if-available true >/dev/null 2>&1
+}
+
 # The launcher-only mode is the narrow --codex set on its own. Combined with
 # --before-restore it is the host bring-up check, which keeps the strict
 # readiness; both flags were supported together before the narrow set existed.
@@ -98,14 +108,18 @@ if [ "$codex_only" = true ] && [ "$before_restore" = false ]; then
 else
     launcher_only=false
 fi
+if [ "$launcher_only" = true ] && ! launcher_accepts_if_available; then
+    launcher_needs_proxy=true
+else
+    launcher_needs_proxy=false
+fi
 
-if [ "$daemon_stack" = true ] && [ "$launcher_only" = false ]; then
+if [ "$daemon_stack" = true ] && { [ "$launcher_only" = false ] || [ "$launcher_needs_proxy" = true ]; }; then
     # The legacy proxy readiness belongs to the default and the
     # --before-restore checks, where the host is expected to serve its own
-    # traffic through Mihomo. The narrow --codex launch check skips it: the
-    # launcher runs with-proxy --if-available, which starts Codex direct when
-    # no endpoint answers, so a host without the legacy proxy can still launch
-    # Codex in a pane.
+    # traffic through Mihomo. The narrow --codex launch check skips it only
+    # when the launcher starts Codex direct without an endpoint: a launcher
+    # that always proxies needs the stack the launch depends on.
     # Mihomo controller.
     code=$(http_code http://127.0.0.1:9090/version)
     if [ "$code" = 200 ]; then
@@ -127,9 +141,9 @@ if [ "$daemon_stack" = true ] && [ "$launcher_only" = false ]; then
         fail "with-proxy not found"
     fi
 elif [ "$launcher_only" = true ]; then
-    # The launcher runs with-proxy --if-available, so a reachable endpoint is
-    # not required, but the executable itself is: codex-herdr refuses to launch
-    # without it, and the check answers the same question.
+    # The launcher starts Codex direct when no endpoint answers, so a reachable
+    # endpoint is not required, but the executable itself is: codex-herdr
+    # refuses to launch without it, and the check answers the same question.
     if [ -x "$with_proxy" ]; then
         ok "with-proxy"
     else

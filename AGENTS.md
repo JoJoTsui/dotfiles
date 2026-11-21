@@ -313,7 +313,10 @@ explains every changed pair.
   variable names and the overrides are single-line values: an override that
   carries a line separator is refused before any binding is emitted, and the
   POSIX helper reads the answer before it evaluates it, so a refusal reaches
-  the caller. Read `docs/PROXY.md` before changing a launcher, and
+  the caller. A caller that wants the direct fallback asks the launcher
+  whether it answers `--if-available` first, because a launcher that does not
+  know the option would exec it as a command; such a launcher keeps the plain
+  proxied route. Read `docs/PROXY.md` before changing a launcher, and
   `docs/adr/0016-shared-proxy-launcher-interface.md` before changing the
   decision itself.
 - **The deployment proxy is a process, not a service**:

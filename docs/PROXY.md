@@ -164,6 +164,11 @@ Nushell adapter (`~/.config/nushell/proxy.nu`) and the POSIX helper
 (`~/.env_core`) both ask the same launcher, so a session in Nushell and a
 session in Bash route the same way.
 
+A caller asks the launcher whether it answers `--if-available` before it uses
+the option, because a launcher that does not know the option would exec it as
+a command. The Codex launch wrapper does exactly that, so a legacy tree that
+keeps its own `with-proxy` keeps the plain proxied route instead of failing.
+
 | Command | Answers |
 | --- | --- |
 | `with-proxy cmd ...` | runs the child through the resolved endpoint |

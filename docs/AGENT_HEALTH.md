@@ -39,7 +39,10 @@ weaken it.
 The `--codex` set skips exactly one thing: the legacy proxy readiness (the
 Mihomo controller and its U.S. egress). The launcher runs `with-proxy
 --if-available`, which starts Codex direct when no endpoint answers, so a host
-without the legacy proxy can still launch Codex in a pane. Everything else
+without the legacy proxy can still launch Codex in a pane. The set skips that
+readiness only when the proxy launcher answers the option: a launcher that
+always proxies — a legacy tree keeps its own `with-proxy` — depends on the
+proxy stack, so the readiness stays. Everything else
 stays: the Herdr server, the Codex binary, the `with-proxy` executable the
 launcher itself needs, and the strict default and `--before-restore` checks
 that host bring-up runs. `--before-restore` combined with `--codex` stays the

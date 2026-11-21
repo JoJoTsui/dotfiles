@@ -133,6 +133,14 @@ nothing serves. The narrow health check behind that gate skips the legacy
 proxy readiness (the Mihomo controller and its U.S. egress) for the same
 reason, and keeps the Herdr and Codex checks; the strict default and
 `--before-restore` checks still require the proxy stack.
+
+The launcher owns the endpoint decision, so the wrapper asks it whether it
+answers `--if-available` before it uses the option: a launcher that does not
+know the option would exec it as a command and fail. A launcher that cannot
+answer keeps the plain proxied route it had before the flag existed, which is
+the case on a legacy tree that keeps its own `with-proxy`. The narrow health
+set keeps the proxy readiness for such a launcher, because its launch always
+proxies and therefore depends on the proxy stack.
 Non-interactive `with-proxy codex exec` bypasses the shell wrapper and keeps
 the shared daemon; it has no pane identity to preserve. Outside Herdr, `codex`
 keeps the shared daemon.
@@ -148,6 +156,10 @@ only and selects nothing:
 ```text
 codex-herdr resume <id>  ->  with-proxy --if-available dotfiles-codex-resume --no-daemon <id>
 ```
+
+A launcher that cannot answer `--if-available` receives the plain form of
+both routes, `with-proxy codex --no-daemon` and
+`with-proxy dotfiles-codex-resume --no-daemon <id>`.
 
 Both routes keep the health gate, the proxy gate, and the in-process app
 server, so the hooks of a restored session still report to the pane that
