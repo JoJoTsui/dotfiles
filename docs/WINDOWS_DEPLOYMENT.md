@@ -43,10 +43,38 @@ download is SHA-256 verified before extraction or execution. Rustup installs its
 manager with no default compiler toolchain. Windows build SDKs and graphical
 session prerequisites remain explicit, on-use dependencies.
 
-PortableGit ships internal filesystem links. A repeat apply preserves those
-vendor files and checks the installation root and launchers for reparse points.
-Before extracting the pinned installer over an existing tree, the adapter
-checks the entire destination tree and refuses links there.
+PortableGit ships internal filesystem links. The installation has its own
+lifecycle. A repeat apply of the same pin reuses the verified installation
+and leaves its tree untouched. The reuse requires every launcher
+(`bin/git.exe`, `bin/bash.exe` and `git-bash.exe`) to be a regular file and
+git to report the pinned version: an incomplete runtime is replaced instead
+of reused, and the recovery backup beside it is not discarded on that
+decision. A different pin is extracted into a confined staging location and
+must expose the same three launchers as regular files and report the pinned
+version before it replaces the active runtime, so an incomplete extraction
+never takes the device's Git Bash away.
+The replaced tree is removed one entry at a time: a vendor link is removed as
+a link and never entered, so the device file behind it survives. The
+installation root and the launcher paths are checked for reparse points, and a
+substituted destination or parent path is refused.
+
+The previous runtime moves aside into `.git-bash.previous` beside the
+installation before the new one is published, and a failed publication
+restores it, so the device keeps a usable Git Bash and a retry starts from a
+known state. That recovery directory carries a marker, which is the
+deployment's evidence that it owns it. The marker is read without following a
+link, and a device file that carries the marker's name is neither removed nor
+overwritten: an upgrade stops with a diagnostic while such an entry occupies
+the marker path. A sibling entry at the recovery path without the marker
+belongs to the device: it is never deleted and never restored as a runtime.
+An upgrade that must move the active runtime aside stops with a diagnostic
+while such an entry occupies the recovery path, so the entry stays untouched
+until it is moved aside by hand. An interrupted publication leaves a marked
+recovery directory, which the next run recovers before it stages the new
+runtime: the last verified runtime becomes the active runtime again, the
+unverified candidate at the installation path is discarded, and the
+known-good tree stays the rollback source until the new publication is
+verified. A failed publication restores that tree instead of the candidate.
 
 The eight Bun-managed agents and CodeGraph use the same manifests and frozen Bun
 locks as Unix. Qoder uses its pinned native Windows release manifest with the

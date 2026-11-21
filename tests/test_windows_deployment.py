@@ -286,31 +286,70 @@ $checks | ConvertTo-Json -Compress
         self.assertIn('live: installed | provider: bun | version: 8.8.8', result.stdout)
         self.assertIn(f'path: {managed}', result.stdout)
 
-    def asset_version_fixture(self, name, *, cached=None, downloaded=None, vendor_link=False):
+    def asset_version_fixture(self, name, *, cached=None, downloaded=None, vendor_link=False,
+                              staged=None, published=None, prepare_cached=True,
+                              missing_launcher=None, missing_cached_launcher=None, recovery=None):
+        """Install one pinned asset through the public Windows installation path.
+
+        The fixture replaces the two process boundaries of the installation:
+        the download and the command execution. The deployment's own staging,
+        verification, publication, and recovery run unchanged.
+
+        ``missing_launcher`` leaves one launcher out of the staged tree, and
+        ``missing_cached_launcher`` leaves one launcher out of the installed
+        runtime. ``recovery`` marks a recovery directory the deployment owns,
+        the way an interrupted publication leaves it.
+        """
         asset = windows_assets()[name]
         target = self.home / asset['target']
         diagnostic = target / 'bin/git.exe' if name == 'git-bash' else target / 'hx.exe' if name == 'helix' else target
-        diagnostic.parent.mkdir(parents=True, exist_ok=True)
-        if vendor_link:
-            files = target / 'ucrt64/bin'
-            files.mkdir(parents=True)
-            payload = files / 'Bitbucket.dll'
-            payload.write_bytes(b'fixture DLL')
-            try:
-                (files / 'Atlassian.Bitbucket.dll').symlink_to(payload.name)
-            except OSError:
-                self.skipTest('OS policy prohibits creating the test symlink')
+        if prepare_cached:
+            diagnostic.parent.mkdir(parents=True, exist_ok=True)
+            if vendor_link:
+                files = target / 'ucrt64/bin'
+                files.mkdir(parents=True)
+                # The vendor link points outside the managed tree, so the
+                # replacement removes the link without touching its target.
+                payload = self.home / 'vendor/Atlassian.Bitbucket.dll'
+                payload.parent.mkdir(parents=True, exist_ok=True)
+                payload.write_bytes(b'fixture DLL')
+                try:
+                    (files / 'Atlassian.Bitbucket.dll').symlink_to(payload)
+                except OSError:
+                    self.skipTest('OS policy prohibits creating the test symlink')
 
         def payload(output):
             return (f'import sys\nassert sys.argv[1:] == ["--version"]\nprint({output!r})\n').encode()
 
-        if cached is None:
-            if diagnostic.exists():
-                diagnostic.unlink()
-        else:
-            diagnostic.write_bytes(payload(cached))
+        def staged_payload(staged_version, published_version):
+            # The staged runtime reports the pinned version while it is
+            # staged; the published runtime reports what the publication
+            # produced.
+            return ('import os, sys\n'
+                    'assert sys.argv[1:] == ["--version"]\n'
+                    'segments = os.path.abspath(sys.argv[0]).split(os.sep)\n'
+                    f'print({staged_version!r} if "staging" in segments else {published_version!r})\n').encode()
+
+        if prepare_cached:
+            if cached is None:
+                if diagnostic.exists():
+                    diagnostic.unlink()
+            elif name == 'git-bash':
+                # A usable runtime exposes every launcher as a regular file.
+                for launcher in ('bin/git.exe', 'bin/bash.exe', 'git-bash.exe'):
+                    if launcher == missing_cached_launcher:
+                        continue
+                    path = target / launcher
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(payload(cached))
+            else:
+                diagnostic.write_bytes(payload(cached))
         archive = self.root / 'asset-payload.py'
         archive.write_bytes(payload(downloaded or 'unexpected download'))
+        staged_version = staged if staged is not None else (downloaded or 'unexpected download')
+        published_version = published if published is not None else staged_version
+        staged = self.root / 'staged-payload.py'
+        staged.write_bytes(staged_payload(staged_version, published_version))
         temporary = self.home / '.cache/tmp'
         temporary.mkdir(parents=True, exist_ok=True)
         script = self.root / 'asset-version.ps1'
@@ -319,6 +358,7 @@ Set-StrictMode -Version 2.0
 function Stop-Deployment([string]$Message) { throw $Message }
 $Source = $env:DOTFILES_TEST_SOURCE
 $TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$script:FailureCode = 1
 . (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
 $exceptions = @([IO.File]::ReadAllText((Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows-assets.json')) | ConvertFrom-Json)
 $script:FixtureDownloads = 0
@@ -333,13 +373,32 @@ $script:FixtureInvokeTool = ${function:Invoke-Tool}
 function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet) {
     & $script:FixtureInvokeTool $env:DOTFILES_TEST_PYTHON (@($Executable) + $Arguments) -Quiet:$Quiet
 }
+# The 7-Zip self-extractor is a process boundary: the fixture replaces it
+# with a synthetic staged tree, so the deployment's staging, verification,
+# publication, and recovery run unchanged. A launcher the fixture names stays
+# out of the staged tree, so the deployment's own check decides whether the
+# runtime may replace the active one.
+function Expand-PortableGitArchive([string]$Archive, [string]$Destination) {
+    [IO.Directory]::CreateDirectory((Join-Path $Destination 'bin')) | Out-Null
+    foreach ($launcher in @('bin/git.exe', 'bin/bash.exe', 'git-bash.exe')) {
+        if ($launcher -eq $env:DOTFILES_TEST_MISSING_LAUNCHER) { continue }
+        [IO.File]::Copy($env:DOTFILES_TEST_STAGED, (Join-Path $Destination $launcher))
+    }
+}
+# An interrupted publication leaves a recovery directory beside the
+# installation path. The fixture marks it through the deployment's own
+# recovery protocol, so the deployment can prove it owns that state.
+if ($env:DOTFILES_TEST_RECOVERY) { Set-PortableGitRecovery $env:DOTFILES_TEST_RECOVERY }
 Install-Asset $env:DOTFILES_TEST_ASSET
 @{ downloads = $script:FixtureDownloads } | ConvertTo-Json -Compress
 ''')
         environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(self.home),
                            DOTFILES_TEST_PYTHON=sys.executable, DOTFILES_TEST_ASSET=name,
                            DOTFILES_TEST_ALLOW_DOWNLOAD='1' if downloaded is not None else '0',
-                           DOTFILES_TEST_PAYLOAD=str(archive), TEMP=str(temporary))
+                           DOTFILES_TEST_PAYLOAD=str(archive), DOTFILES_TEST_STAGED=str(staged),
+                           DOTFILES_TEST_MISSING_LAUNCHER=missing_launcher or '',
+                           DOTFILES_TEST_RECOVERY=str(recovery) if recovery else '',
+                           TEMP=str(temporary))
         result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
                                 env=environment, capture_output=True, text=True, timeout=30)
         return result, diagnostic, archive.read_bytes()
@@ -373,20 +432,313 @@ Install-Asset $env:DOTFILES_TEST_ASSET
                 self.assertEqual(json.loads(result.stdout)['downloads'], 1)
                 self.assertEqual(target.read_bytes(), replacement)
 
-    def test_portablegit_reuses_vendor_links_but_will_not_extract_over_them(self):
+    def portablegit_paths(self):
+        """The managed installation, its launcher, its vendor link, and the device file behind it."""
+        target = self.home / windows_assets()['git-bash']['target']
+        return (target, target / 'bin/git.exe', target / 'ucrt64/bin/Atlassian.Bitbucket.dll',
+                self.home / 'vendor/Atlassian.Bitbucket.dll')
+
+    def portablegit_recovery_path(self):
+        """The recovery directory the deployment keeps beside the installation."""
+        target = self.home / windows_assets()['git-bash']['target']
+        return target.parent / '.git-bash.previous'
+
+    def portablegit_marker_protocol(self):
+        """The recovery marker name and token the deployment owns."""
+        script = self.root / 'recovery-marker.ps1'
+        script.write_text(r'''function Stop-Deployment([string]$Message) { throw $Message }
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+@{ marker = $script:PortableGitRecoveryMarker; token = $script:PortableGitRecoveryToken } | ConvertTo-Json -Compress
+''', encoding='utf-8')
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                cwd=SOURCE, env=dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE),
+                                                     DOTFILES_TEST_TARGET_HOME=str(self.home)),
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def write_portablegit_runtime(self, root, version):
+        """Write a runtime tree whose launchers report the given version."""
+        for launcher in ('bin/git.exe', 'bin/bash.exe', 'git-bash.exe'):
+            path = root / launcher
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(
+                f'import sys\nassert sys.argv[1:] == ["--version"]\nprint({version!r})\n'.encode())
+
+    def test_portablegit_reuses_the_same_pin_without_touching_the_vendor_tree(self):
         pin = windows_assets()['git-bash']['version']
-        result, git, _ = self.asset_version_fixture('git-bash', cached=f'git version {pin}', vendor_link=True)
+        _, git, link, payload = self.portablegit_paths()
+        result, _, _ = self.asset_version_fixture('git-bash', cached=f'git version {pin}', vendor_link=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)['downloads'], 0)
-        link = git.parents[1] / 'ucrt64/bin/Atlassian.Bitbucket.dll'
+        # The verified installation and the vendor files it owns are untouched.
+        self.assertIn(f'git version {pin}', git.read_text())
         self.assertTrue(link.is_symlink())
-        previous = git.parents[1] / 'ucrt64/bin/Bitbucket.dll'
-        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 0.0.0',
-                                                   downloaded=f'git version {pin}')
+        self.assertEqual(payload.read_bytes(), b'fixture DLL')
+
+    def test_portablegit_does_not_reuse_a_runtime_that_is_missing_a_launcher(self):
+        asset = windows_assets()['git-bash']
+        pin = asset['version']
+        target = self.home / asset['target']
+        result, _, _ = self.asset_version_fixture('git-bash', cached=f'git version {pin}',
+                                                  downloaded=f'git version {pin}',
+                                                  missing_cached_launcher='git-bash.exe')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # The runtime is not usable, so the same pin is installed again
+        # instead of reusing it.
+        self.assertEqual(json.loads(result.stdout)['downloads'], 1)
+        self.assertTrue((target / 'git-bash.exe').is_file())
+
+    def test_portablegit_keeps_the_recovery_backup_when_the_active_runtime_is_incomplete(self):
+        asset = windows_assets()['git-bash']
+        pin = asset['version']
+        previous = self.portablegit_recovery_path()
+        self.write_portablegit_runtime(previous, 'git version 2.0.0')
+        (previous / 'known-good.txt').write_text('the runtime the deployment verified')
+        result, _, _ = self.asset_version_fixture('git-bash', cached=f'git version {pin}',
+                                                  downloaded=f'git version {pin}', published='git version 0.0.0',
+                                                  missing_cached_launcher='git-bash.exe', recovery=previous)
+        self.assertNotEqual(result.returncode, 0)
+        # The incomplete runtime is not a verified installation, so the
+        # backup is recovered instead of discarded, and the failed
+        # publication restores it.
+        active = self.home / asset['target']
+        self.assertIn('git version 2.0.0', (active / 'bin/git.exe').read_text())
+        self.assertEqual((active / 'known-good.txt').read_text(), 'the runtime the deployment verified')
+
+    def test_portablegit_upgrades_over_vendor_links_through_a_staged_runtime(self):
+        pin = windows_assets()['git-bash']['version']
+        _, git, link, payload = self.portablegit_paths()
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 2.0.0',
+                                                  downloaded=f'git version {pin}', vendor_link=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['downloads'], 1)
+        # The new runtime is published and the replaced tree is gone.
+        self.assertIn(f'git version {pin}', git.read_text())
+        self.assertFalse(link.is_symlink())
+        # The vendor link was removed as a link; its target belongs to the device.
+        self.assertEqual(payload.read_bytes(), b'fixture DLL')
+
+    def test_portablegit_refuses_a_substituted_installation_path(self):
+        asset = windows_assets()['git-bash']
+        device = self.home / 'device-git-bash'
+        (device / 'bin').mkdir(parents=True)
+        target = self.home / asset['target']
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            target.symlink_to(device, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        result, _, _ = self.asset_version_fixture('git-bash', prepare_cached=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('symlink or reparse point', result.stderr)
+        # The device's own directory is never written through.
+        self.assertTrue((device / 'bin').is_dir())
+        self.assertEqual(json.loads(result.stdout or '{}').get('downloads', 0), 0)
+
+    def test_portablegit_refuses_a_substituted_parent_path(self):
+        asset = windows_assets()['git-bash']
+        device = self.home / 'device-dotfiles'
+        device.mkdir(parents=True)
+        parent = self.home / '.local/share/dotfiles'
+        parent.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            parent.symlink_to(device, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        result, _, _ = self.asset_version_fixture('git-bash', prepare_cached=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('symlink or reparse point', result.stderr)
+        self.assertFalse((device / asset['target'].split('/')[-1]).exists())
+
+    def test_portablegit_keeps_the_previous_runtime_when_the_publication_fails(self):
+        pin = windows_assets()['git-bash']['version']
+        _, git, link, payload = self.portablegit_paths()
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 2.0.0',
+                                                  downloaded=f'git version {pin}', published='git version 0.0.0',
+                                                  vendor_link=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('did not report its pinned version', result.stderr)
+        # The previous runtime is restored, so the device keeps a usable Git Bash.
+        self.assertIn('git version 2.0.0', git.read_text())
         self.assertTrue(link.is_symlink())
-        self.assertEqual(previous.read_bytes(), b'fixture DLL')
+        self.assertEqual(payload.read_bytes(), b'fixture DLL')
+
+    def test_portablegit_keeps_the_active_runtime_when_the_staged_runtime_is_rejected(self):
+        _, git, link, payload = self.portablegit_paths()
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 2.0.0',
+                                                  downloaded='git version 0.0.0', vendor_link=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('did not report its pinned version', result.stderr)
+        # The active runtime is untouched: the staged one never replaced it.
+        self.assertIn('git version 2.0.0', git.read_text())
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(payload.read_bytes(), b'fixture DLL')
+
+    def test_portablegit_restores_the_previous_runtime_after_an_interrupted_publication(self):
+        asset = windows_assets()['git-bash']
+        previous = self.portablegit_recovery_path()
+        (previous / 'bin').mkdir(parents=True)
+        (previous / 'bin/git.exe').write_bytes(
+            b'import sys\nassert sys.argv[1:] == ["--version"]\nprint("git version 2.0.0")\n')
+        result, _, _ = self.asset_version_fixture('git-bash', prepare_cached=False,
+                                                  downloaded='git version 0.0.0', recovery=previous)
+        self.assertNotEqual(result.returncode, 0)
+        # The retained previous runtime is usable again after the interruption.
+        restored = self.home / asset['target'] / 'bin/git.exe'
+        self.assertTrue(restored.exists())
+        self.assertIn('git version 2.0.0', restored.read_text())
+
+    def test_portablegit_keeps_the_known_good_runtime_when_a_failed_retry_follows_an_interruption(self):
+        asset = windows_assets()['git-bash']
+        pin = asset['version']
+        previous = self.portablegit_recovery_path()
+        # The interrupted publication left an unverified candidate at the
+        # installation path and the last verified runtime beside it.
+        self.write_portablegit_runtime(previous, 'git version 2.0.0')
+        (previous / 'known-good.txt').write_text('the runtime the deployment verified')
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 0.0.0',
+                                                  downloaded=f'git version {pin}', published='git version 0.0.0',
+                                                  recovery=previous)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('did not report its pinned version', result.stderr)
+        active = self.home / asset['target']
+        # The known-good runtime is the active one again: the unverified
+        # candidate is neither restored over it nor left in its place.
+        self.assertIn('git version 2.0.0', (active / 'bin/git.exe').read_text())
+        self.assertEqual((active / 'known-good.txt').read_text(), 'the runtime the deployment verified')
+
+    def test_portablegit_preserves_a_file_that_carries_the_marker_name(self):
+        asset = windows_assets()['git-bash']
+        pin = asset['version']
+        protocol = self.portablegit_marker_protocol()
+        target = self.home / asset['target']
+        unrelated = target / protocol['marker']
+        unrelated.parent.mkdir(parents=True, exist_ok=True)
+        unrelated.write_text('device data')
+        result, _, _ = self.asset_version_fixture('git-bash', cached=f'git version {pin}')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['downloads'], 0)
+        # The file is not the deployment's marker, so it is never removed.
+        self.assertEqual(unrelated.read_text(), 'device data')
+
+    def test_portablegit_refuses_to_overwrite_a_file_that_carries_the_marker_name(self):
+        asset = windows_assets()['git-bash']
+        pin = asset['version']
+        protocol = self.portablegit_marker_protocol()
+        target = self.home / asset['target']
+        unrelated = target / protocol['marker']
+        unrelated.parent.mkdir(parents=True, exist_ok=True)
+        unrelated.write_text('device data')
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 2.0.0',
+                                                  downloaded=f'git version {pin}')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('marker', result.stderr)
+        # The device's own file is never overwritten, so the upgrade stops.
+        self.assertEqual(unrelated.read_text(), 'device data')
+
+    def test_portablegit_does_not_follow_a_recovery_marker_that_is_a_link(self):
+        asset = windows_assets()['git-bash']
+        pin = asset['version']
+        protocol = self.portablegit_marker_protocol()
+        previous = self.portablegit_recovery_path()
+        previous.mkdir(parents=True)
+        # The marker points at a device file that holds the token: following
+        # it would claim a tree the deployment does not own.
+        device = self.home / 'device-marker.txt'
+        device.write_text(protocol['token'])
+        try:
+            (previous / protocol['marker']).symlink_to(device)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 2.0.0',
+                                                  downloaded=f'git version {pin}')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('does not own', result.stderr)
+        # The link is never followed and the entry stays untouched.
+        self.assertTrue((previous / protocol['marker']).is_symlink())
+        self.assertEqual(device.read_text(), protocol['token'])
+
+    def test_portablegit_preserves_an_unowned_recovery_directory(self):
+        pin = windows_assets()['git-bash']['version']
+        _, git, _, _ = self.portablegit_paths()
+        recovery = self.portablegit_recovery_path()
+        recovery.mkdir(parents=True)
+        (recovery / 'device.txt').write_text('device data')
+        result, _, _ = self.asset_version_fixture('git-bash', cached=f'git version {pin}')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['downloads'], 0)
+        # The device's own directory is preserved: the deployment never
+        # deletes a recovery directory it cannot prove it owns.
+        self.assertTrue(recovery.is_dir())
+        self.assertEqual((recovery / 'device.txt').read_text(), 'device data')
+        self.assertIn(f'git version {pin}', git.read_text())
+
+    def test_portablegit_preserves_an_unowned_recovery_reparse_point(self):
+        pin = windows_assets()['git-bash']['version']
+        _, git, _, _ = self.portablegit_paths()
+        device = self.home / 'device-recovery'
+        device.mkdir(parents=True)
+        (device / 'device.txt').write_text('device data')
+        recovery = self.portablegit_recovery_path()
+        recovery.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            recovery.symlink_to(device, target_is_directory=True)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 2.0.0',
+                                                  downloaded=f'git version {pin}')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('does not own', result.stderr)
+        # The link and the device directory behind it are preserved: the
+        # deployment never writes through or removes an entry it does not own.
+        self.assertTrue(recovery.is_symlink())
+        self.assertEqual((device / 'device.txt').read_text(), 'device data')
+        self.assertIn('git version 2.0.0', git.read_text())
+
+    def test_portablegit_does_not_adopt_an_unowned_recovery_directory(self):
+        asset = windows_assets()['git-bash']
+        pin = windows_assets()['git-bash']['version']
+        recovery = self.portablegit_recovery_path()
+        (recovery / 'bin').mkdir(parents=True)
+        (recovery / 'bin/git.exe').write_bytes(
+            b'import sys\nassert sys.argv[1:] == ["--version"]\nprint("git version 2.0.0")\n')
+        result, _, _ = self.asset_version_fixture('git-bash', prepare_cached=False,
+                                                  downloaded=f'git version {pin}')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # The unmarked directory is not adopted as the runtime; the pinned
+        # runtime is installed and the device's directory stays untouched.
+        installed = self.home / asset['target'] / 'bin/git.exe'
+        self.assertIn(f'git version {pin}', installed.read_text())
+        self.assertTrue((recovery / 'bin/git.exe').is_file())
+
+    def test_portablegit_refuses_an_upgrade_when_the_recovery_path_is_not_owned(self):
+        _, git, _, _ = self.portablegit_paths()
+        pin = windows_assets()['git-bash']['version']
+        recovery = self.portablegit_recovery_path()
+        recovery.mkdir(parents=True)
+        (recovery / 'device.txt').write_text('device data')
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 2.0.0',
+                                                  downloaded=f'git version {pin}')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('does not own', result.stderr)
+        # The device's directory is preserved and the active runtime stays.
+        self.assertEqual((recovery / 'device.txt').read_text(), 'device data')
+        self.assertIn('git version 2.0.0', git.read_text())
+
+    def test_portablegit_requires_every_launcher_before_replacing_the_runtime(self):
+        pin = windows_assets()['git-bash']['version']
+        _, git, link, payload = self.portablegit_paths()
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 2.0.0',
+                                                  downloaded=f'git version {pin}', vendor_link=True,
+                                                  missing_launcher='git-bash.exe')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('missing its launcher', result.stderr)
+        # The incomplete staged tree never replaced the active runtime.
+        self.assertIn('git version 2.0.0', git.read_text())
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(payload.read_bytes(), b'fixture DLL')
 
     def test_asset_rejects_downloaded_version_prefix_and_tool_name_collisions(self):
         pin = windows_assets()['jq']['version']
