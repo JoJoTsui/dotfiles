@@ -176,3 +176,33 @@ merge. Adding an empty device directory to a previously published generation
 does not change the file digest, so it was deleted. Reject empty directories in
 the retirement ownership walk because the publisher creates directories only
 for module files. Likewise reject unexpected non-.nu files before reading them.
+
+Pi closed the two ownership guards the coordinator reproduced.
+
+The retirement walk proved ownership by recomputing the digest of the regular
+module files a generation holds. An empty directory carries no bytes, so a
+device-created empty directory inside a published generation did not change
+the digest, and the cleanup removed the generation with that directory inside
+it. The publication writes only `.nu` module files and creates a directory
+only for the parents of those files, so the walk now rejects an empty
+directory and rejects a file that is not a `.nu` module before it reads any
+byte. A generation that carries either is not provably ours, so it stays with
+that entry inside it.
+
+The reproduction matches the coordinator's: a disposable generation whose name
+carries the digest of its own module files, plus one empty device-created
+directory inside it, was deleted by the previous behavior and is preserved
+now.
+
+The existing preservation test carries the regression: the published
+generation gains an empty device directory and a device directory gains a
+non-`.nu` file, both are refused a digest, and a changed selection publishes a
+second generation so the cleanup reaches for the first one. The generation and
+both device entries survive. The test fails against the previous behavior.
+
+Checks on this Mac (Python 3.15.2, nu 0.117.0):
+`PYTHONPATH=tests python3 -m unittest test_nu_completions` (33 tests, OK) and
+`git diff --check` (clean). The full unittest discovery loop, the native
+deployment gate, the Windows acceptance (this host has no PowerShell), and
+the package downloads stay with the coordinator. The ticket stays open for
+the Codex review.

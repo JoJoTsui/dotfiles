@@ -19,6 +19,12 @@ publication may have written; the publication takes it over only when the file
 on disk carries the managed marker. A device file of the same name is
 preserved, and an existing native directory is no reason to create a loader
 in it. The generation a preserved loader names stays published.
+
+A generation is retired only when its bytes prove this deployment published
+it. The publication writes only ``.nu`` module files and creates a directory
+only for the parents of those files, so a generation that carries a
+device-created empty directory or a file of another kind is not provably ours
+and stays with that entry inside it.
 """
 from __future__ import annotations
 
@@ -448,9 +454,11 @@ def published_modules(directory: Path) -> list[tuple[str, Path]] | None:
     """The regular module files a published directory holds.
 
     The names are the module paths relative to the directory, which is how
-    the publication named them. A symlink or another irregular entry makes
-    the directory something other than a publication, so the walk stops
-    there.
+    the publication named them. The publication writes only ``.nu`` module
+    files and creates a directory only for the parents of those files, so an
+    empty directory and a file of another kind are not part of a publication.
+    A symlink or another irregular entry makes the directory something other
+    than a publication, so the walk stops there.
     """
     modules: list[tuple[str, Path]] = []
     pending = [(directory, "")]
@@ -460,6 +468,10 @@ def published_modules(directory: Path) -> list[tuple[str, Path]] | None:
             entries = sorted(current.iterdir())
         except OSError:
             return None
+        if not entries:
+            # The publisher creates a directory only for the parents of the
+            # module files it writes, so an empty one is a device entry.
+            return None
         for entry in entries:
             name = prefix + entry.name
             if entry.is_symlink():
@@ -467,6 +479,10 @@ def published_modules(directory: Path) -> list[tuple[str, Path]] | None:
             if entry.is_dir():
                 pending.append((entry, name + "/"))
             elif entry.is_file():
+                if not entry.name.endswith(".nu"):
+                    # Only the module files belong to a publication, so the
+                    # bytes of another file are never read.
+                    return None
                 modules.append((name, entry))
             else:
                 return None
@@ -480,7 +496,9 @@ def published_digest(directory: Path) -> str | None:
     directory that recomputes to the digest in its name was published by
     this deployment. The recomputation reads the exact regular module files
     the directory holds, so a directory that carries an added or a foreign
-    entry recomputes to a different digest and is never ours to remove.
+    entry recomputes to a different digest and is never ours to remove. A
+    directory that holds an entry the publisher never writes is not a
+    publication at all, and no byte of it is read.
 
     ``None`` reports a directory this deployment cannot prove it published.
     """
@@ -517,7 +535,9 @@ def retire_published(root: Path, imported: set[Path]) -> None:
     every managed loader stopped importing it and no preserved device loader
     names it. A device-created entry, a symlink, and a directory whose bytes
     do not match the digest in its name never match, so none of them is ever
-    touched.
+    touched. A published generation that carries a device-created empty
+    directory or a file of another kind is not provably ours, so it stays
+    with that entry inside it.
     """
     if not root.is_dir() or root.is_symlink():
         return

@@ -127,9 +127,13 @@ explains every changed pair.
   native copy) and retires a generation only after no loader imports it and
   its bytes prove the deployment published it: the published name carries the
   digest of its module files, so the cleanup recomputes that digest and a
-  device directory with the same shape stays. A startup path is inside the home
-  when it is spelled under the home or under its canonical spelling, so an
-  alias outside the home that resolves into it is refused. A
+  device directory with the same shape stays. The publication writes only
+  `.nu` module files and creates a directory only for their parents, so a
+  generation that carries a device-created empty directory or a file of
+  another kind is not provably ours and stays with that entry inside it. A
+  startup path is inside the home when it is spelled under the home or under
+  its canonical spelling, so an alias outside the home that resolves into it
+  is refused. A
   legacy loader path — one an earlier publication may have written, such as the
   macOS vendor autoload directory — is taken over only when the file carries
   the managed marker: a device file of the same name is preserved, an existing

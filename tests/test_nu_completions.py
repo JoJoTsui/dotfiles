@@ -190,17 +190,42 @@ class NuCompletionTests(unittest.TestCase):
 
         The cleanup removes a generation only when its bytes prove that this
         deployment published it. A directory whose name only looks like a
-        generation carries other bytes, so it stays where it is.
+        generation carries other bytes, so it stays where it is. A published
+        generation that carries an entry the publisher never writes is not
+        provably ours either, so it stays with that entry inside it.
         """
         self.install("git")
         self.assertEqual(self.prepare(), 1)
         modules = self.home / ".local/share/nushell/completions/nu-scripts"
+        published = modules / self.published_generations()[0]
         foreign = modules / ("b" * 40 + "-" + "c" * 16)
         (foreign / "custom-completions/git").mkdir(parents=True)
         (foreign / "custom-completions/git/git-completions.nu").write_text("# device bytes\n")
         self.assertEqual(self.prepare(), 1)
         self.assertTrue(foreign.is_dir())
         self.assertEqual((foreign / "custom-completions/git/git-completions.nu").read_text(), "# device bytes\n")
+        # The publication writes only .nu module files, and it creates a
+        # directory only for the parents of those files. An empty directory
+        # inside a published generation is a device entry, so the generation
+        # is not provably ours and its bytes are not read.
+        (published / "device-created").mkdir()
+        self.assertIsNone(self.module.published_digest(published))
+        # A file of another kind is not a module either, so the directory
+        # that holds it is not a publication.
+        unrelated = modules / ("d" * 40 + "-" + "e" * 16)
+        (unrelated / "custom-completions/git").mkdir(parents=True)
+        (unrelated / "custom-completions/git/git-completions.nu").write_text("# device bytes\n")
+        (unrelated / "notes.txt").write_text("# device notes\n")
+        self.assertIsNone(self.module.published_digest(unrelated))
+        # A changed selection publishes a second generation, and the first
+        # one is no longer imported, so the cleanup reaches for it.
+        self.install("just")
+        self.write_desired(common=("git",), bundles=("just",))
+        self.assertEqual(self.prepare(), 2)
+        self.assertTrue(published.is_dir())
+        self.assertTrue((published / "device-created").is_dir())
+        self.assertTrue(unrelated.is_dir())
+        self.assertEqual((unrelated / "notes.txt").read_text(), "# device notes\n")
 
     def test_every_managed_loader_imports_the_published_generation(self):
         """The canonical loader and a native copy both import the new generation."""

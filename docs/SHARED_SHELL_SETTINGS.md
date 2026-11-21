@@ -138,7 +138,11 @@ bytes prove this deployment published it: the published name carries the digest
 of the module files, so the cleanup recomputes that digest from the exact
 regular files the directory holds. A device-created directory that carries the
 published shape, a directory with an added or a foreign entry, and a symlink
-are left alone.
+are left alone. The publication writes only `.nu` module files and creates a
+directory only for the parents of those files, so a generation that carries a
+device-created empty directory or a file of another kind is not provably ours:
+it stays, with that entry inside it, and the bytes of that file are never
+read.
 
 Ownership decides which loader a publication may write. A canonical loader is
 owned by declaration: the XDG loader the deployment writes, plus the native

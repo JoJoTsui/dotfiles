@@ -169,10 +169,13 @@ required shell preparation. That command validates new Nu prompt/completion
 resources before replacing working files and rejects symlinked startup state.
 The completion module publishes the pinned loader to every canonical loader
 path, takes a legacy loader over only when the file is demonstrably managed,
-and retires a published generation only after no loader imports it. The macOS
-catalog does not copy the pinned loader, and the preparation falls back to the
-documented macOS directories when the Nu discovery command fails, so a
-canonical loader path is never omitted.
+and retires a published generation only after no loader imports it and its
+bytes prove the deployment published it: the publication writes only `.nu`
+module files and creates a directory only for their parents, so a generation
+that carries a device-created empty directory or a file of another kind stays
+with that entry inside it. The macOS catalog does not copy the pinned loader,
+and the preparation falls back to the documented macOS directories when the
+Nu discovery command fails, so a canonical loader path is never omitted.
 The shared shell model and actual interactive/non-interactive Nu distinction
 are documented in [shared shell settings](SHARED_SHELL_SETTINGS.md).
 
