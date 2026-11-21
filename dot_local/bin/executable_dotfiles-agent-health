@@ -4,7 +4,9 @@
 # Checks the dependency chain that fails silently after a reboot: Mihomo, its
 # U.S. egress, the Codex app-server daemon, the Herdr
 # server, and (in the full check) the CodeGraph and Graphify binaries. The Codex launcher runs
-# the narrow `--codex` set; `--probe` adds one real model round trip.
+# the narrow `--codex` set, which skips the legacy proxy readiness because the
+# launch route falls back to a direct connection; `--probe` adds one real model
+# round trip.
 set -u
 
 quiet=false
@@ -24,7 +26,9 @@ for argument in "$@"; do
 usage: dotfiles-agent-health [--quiet] [--codex] [--clients] [--before-restore] [--probe]
 
   --quiet    print failures only
-  --codex    check only what a Herdr Codex launch needs (skip graph tools)
+  --codex    check only what a Herdr Codex launch needs (skip graph tools and
+             the legacy proxy readiness; combined with --before-restore the
+             strict readiness stays)
   --clients  report client binaries and config paths (diagnostic)
   --before-restore  check dependencies before starting Herdr (skip Herdr only)
   --probe    also run one Codex model round trip (uses the active provider)
@@ -86,7 +90,22 @@ esac
 with_proxy=$(command -v with-proxy 2>/dev/null || true)
 [ -n "$with_proxy" ] || with_proxy=$HOME/.local/bin/with-proxy
 
-if [ "$daemon_stack" = true ]; then
+# The launcher-only mode is the narrow --codex set on its own. Combined with
+# --before-restore it is the host bring-up check, which keeps the strict
+# readiness; both flags were supported together before the narrow set existed.
+if [ "$codex_only" = true ] && [ "$before_restore" = false ]; then
+    launcher_only=true
+else
+    launcher_only=false
+fi
+
+if [ "$daemon_stack" = true ] && [ "$launcher_only" = false ]; then
+    # The legacy proxy readiness belongs to the default and the
+    # --before-restore checks, where the host is expected to serve its own
+    # traffic through Mihomo. The narrow --codex launch check skips it: the
+    # launcher runs with-proxy --if-available, which starts Codex direct when
+    # no endpoint answers, so a host without the legacy proxy can still launch
+    # Codex in a pane.
     # Mihomo controller.
     code=$(http_code http://127.0.0.1:9090/version)
     if [ "$code" = 200 ]; then
@@ -104,6 +123,15 @@ if [ "$daemon_stack" = true ]; then
         else
             fail "proxy egress (country '${loc:-unknown}', want US)"
         fi
+    else
+        fail "with-proxy not found"
+    fi
+elif [ "$launcher_only" = true ]; then
+    # The launcher runs with-proxy --if-available, so a reachable endpoint is
+    # not required, but the executable itself is: codex-herdr refuses to launch
+    # without it, and the check answers the same question.
+    if [ -x "$with_proxy" ]; then
+        ok "with-proxy"
     else
         fail "with-proxy not found"
     fi
@@ -139,7 +167,7 @@ if [ "$daemon_stack" = true ]; then
 fi
 
 # CodeGraph is a client MCP, not a Codex-launch dependency.
-if [ "$codex_only" = false ]; then
+if [ "$launcher_only" = false ]; then
     if command -v codegraph >/dev/null 2>&1; then
         if version=$(run_with_limit 10 codegraph --version 2>/dev/null); then
             ok "codegraph $version"

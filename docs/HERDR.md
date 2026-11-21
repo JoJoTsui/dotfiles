@@ -129,7 +129,10 @@ cannot be resumed with the right command. Inside interactive Herdr shells,
 then runs `with-proxy --if-available codex --no-daemon`, so hooks stay in the
 pane process. `--if-available` is what makes this safe on a host with no proxy:
 the launcher then drops inherited variables instead of pointing Codex at a port
-nothing serves.
+nothing serves. The narrow health check behind that gate skips the legacy
+proxy readiness (the Mihomo controller and its U.S. egress) for the same
+reason, and keeps the Herdr and Codex checks; the strict default and
+`--before-restore` checks still require the proxy stack.
 Non-interactive `with-proxy codex exec` bypasses the shell wrapper and keeps
 the shared daemon; it has no pane identity to preserve. Outside Herdr, `codex`
 keeps the shared daemon.
