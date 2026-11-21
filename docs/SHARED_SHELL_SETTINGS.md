@@ -133,6 +133,18 @@ publication leaves every loader usable and a failed publication leaves the
 working loader and its generation alone. A device-created entry and a symlink
 never match the published name and are left alone.
 
+Ownership decides which loader a publication may write. A canonical loader is
+owned by declaration: the XDG loader the deployment writes, plus the native
+copy the platform's catalog names, such as the macOS user autoload directory
+`~/Library/Application Support/nushell/autoload`. A legacy loader is a path an
+earlier publication may have written, such as the macOS vendor autoload
+directory `~/Library/Application Support/nushell/vendor/autoload`, which an
+earlier preparation mirrored into. The publication takes a legacy loader over
+only when the file on disk carries the managed marker. A device file of the
+same name is preserved, and an existing native directory is no reason to
+create a duplicate loader in it. A preserved loader keeps the generation it
+names, so the cleanup never removes a generation under a live loader.
+
 For an air-gapped preparation, supply `DOTFILES_NU_SCRIPTS_ARCHIVE` with a local
 copy of the pinned archive; checksum verification still applies. Updating the
 revision or allowlist requires reviewing the upstream changes, updating the
@@ -155,9 +167,10 @@ macOS is `~/Library/Application Support/nushell/vendor/autoload`, so a launch
 from outside the managed environment never reads an older startup. That mirror
 writes only existing entries, keeps a device file, and refuses a symlinked
 target. The pinned loader is not mirrored: the completion module publishes it
-to every active native loader path, so the deployment's own discovery copy and
-a native copy written outside a deployment never outlive the generation they
-import. Generated resources and device state are not imported into git. See
+to the canonical native loader path and takes over a mirrored copy only when
+that file is demonstrably managed, so the deployment's own discovery copy
+never outlives the generation it imports and a device loader of the same name
+is preserved. Generated resources and device state are not imported into git. See
 [Nu configuration](https://www.nushell.sh/book/configuration.html).
 
 History preparation follows shell preparation. `dotfiles-history-prepare`

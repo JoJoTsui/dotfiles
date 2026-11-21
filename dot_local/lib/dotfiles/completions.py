@@ -11,6 +11,14 @@ it, and retires a generation only after no managed loader imports it. A
 publication that reaches only some loaders therefore leaves every loader with
 a complete generation. A loader stores each import as a JSON string, so the
 retirement check decodes that reference instead of matching raw text.
+
+Ownership decides which loader a publication may write. A canonical loader is
+owned by declaration: the XDG loader the deployment writes, and the native
+copy the platform's catalog names. A legacy loader is a path an earlier
+publication may have written; the publication takes it over only when the file
+on disk carries the managed marker. A device file of the same name is
+preserved, and an existing native directory is no reason to create a loader
+in it. The generation a preserved loader names stays published.
 """
 from __future__ import annotations
 
@@ -30,10 +38,14 @@ import urllib.parse
 import urllib.request
 from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
+from typing import NamedTuple
 
 WINDOWS = os.name == "nt"
 # A published module directory: the pinned revision and a digest of its bytes.
 PUBLISHED_DIRECTORY = re.compile(r"[0-9a-f]{40}-[0-9a-f]{16}")
+# A published loader starts with this marker, so a file that carries it was
+# written by an earlier publication.
+LOADER_MARKER = "# Managed pinned Nu completions; prepared after tool installation."
 NATIVE_GENERATORS = {
     "uv": ("generate-shell-completion", "nushell"),
     "just": ("--completions", "nushell"),
@@ -222,7 +234,7 @@ def read_modules(source: Path, catalog: dict, selected: list[dict]) -> dict[str,
 
 
 def loader_text(directory: Path, selected: list[dict]) -> str:
-    return "# Managed pinned Nu completions; prepared after tool installation.\n" + "".join(
+    return LOADER_MARKER + "\n" + "".join(
         ("source " if module["command"] in NATIVE_GENERATORS else "use ")
         + json.dumps(str(directory / module["path"]), ensure_ascii=False)
         + ("\n" if module["command"] in NATIVE_GENERATORS else " *\n")
@@ -243,21 +255,61 @@ def validate(nu: Path, loader: Path) -> None:
               "deprecated; review the pinned nu_scripts revision", file=sys.stderr)
 
 
-def managed_loaders(data_root: Path, home: Path, extra: Sequence[Path]) -> list[Path]:
-    """The loader files this publication owns, in switch order.
+def managed_loader(path: Path) -> bool:
+    """Whether the loader file on disk belongs to this deployment.
+
+    A published loader starts with the managed marker, so a file that carries
+    it was written by an earlier publication and the publication may take it
+    over. A device file of the same name does not carry the marker and is
+    never taken over.
+    """
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+    return text.startswith(LOADER_MARKER)
+
+
+class Loaders(NamedTuple):
+    """The loaders a publication writes and the ones it only observes."""
+
+    managed: list[Path]
+    observed: list[Path]
+
+
+def loader_paths(data_root: Path, home: Path, canonical: Sequence[Path],
+                 legacy: Sequence[Path]) -> Loaders:
+    """The loader files this publication owns, and the ones it only observes.
 
     The canonical loader under the XDG data home is always managed, so a
     publication can never retire a generation the live loader still imports.
-    A platform adds its native discovery copy as an extra loader.
+    A platform adds its native discovery copy as a canonical loader.
+
+    A legacy loader is a path an earlier publication may have written. The
+    publication takes it over only when the file on disk is demonstrably
+    managed; a device file of the same name is preserved and observed, and a
+    path without a file stays absent, because an existing native directory is
+    no reason to create a duplicate loader.
     """
     managed = [safe_destination(data_root / "nushell/vendor/autoload/nu-scripts.nu", home)]
-    for path in extra:
+    for path in canonical:
         managed.append(safe_destination(path, home))
     ordered: list[Path] = []
     for path in managed:
         if path not in ordered:
             ordered.append(path)
-    return ordered
+    observed: list[Path] = []
+    for path in legacy:
+        destination = safe_destination(path, home)
+        if destination in ordered:
+            continue
+        if managed_loader(destination):
+            ordered.append(destination)
+        elif destination.exists():
+            observed.append(destination)
+    return Loaders(ordered, observed)
 
 
 def write_loader(path: Path, text: str) -> None:
@@ -364,12 +416,38 @@ def imported_generations(loaders: Sequence[Path], modules_root: Path) -> set[Pat
     return imported
 
 
+def mentioned_generations(loaders: Sequence[Path], modules_root: Path) -> set[Path]:
+    """The published generations a preserved loader names.
+
+    A device loader is not parsed as a managed import, so its text is
+    searched for the generation name. The name is a plain token, so it
+    survives every path encoding, and a generation a device loader names
+    stays published under it.
+    """
+    if not modules_root.is_dir() or modules_root.is_symlink():
+        return set()
+    published = {entry.name: entry for entry in modules_root.iterdir()
+                 if PUBLISHED_DIRECTORY.fullmatch(entry.name)}
+    mentioned: set[Path] = set()
+    for loader in loaders:
+        try:
+            text = loader.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            # A loader that cannot be read may name any generation.
+            return set(published.values())
+        for name, entry in published.items():
+            if name in text:
+                mentioned.add(entry)
+    return mentioned
+
+
 def retire_published(root: Path, imported: set[Path]) -> None:
-    """Remove the module directories no managed loader imports any more.
+    """Remove the module directories no loader imports any more.
 
     Only a regular directory carrying the published name is removed, and only
-    after every managed loader stopped importing it. A device-created entry or
-    a symlink never matches, so neither is ever touched.
+    after every managed loader stopped importing it and no preserved device
+    loader names it. A device-created entry or a symlink never matches, so
+    neither is ever touched.
     """
     if not root.is_dir() or root.is_symlink():
         return
@@ -393,11 +471,13 @@ def validate_loader(nu: Path, text: str, directory: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def prepare(config: Path, nu: Path, loaders: Sequence[Path] = ()) -> int:
+def prepare(config: Path, nu: Path, loaders: Sequence[Path] = (),
+            legacy: Sequence[Path] = ()) -> int:
     """Publish the pinned completions to every managed loader.
 
     The canonical loader and the given extra loaders are switched to the
-    published generation. A generation is retired only after no managed loader
+    published generation. A legacy loader is switched only when it is
+    demonstrably managed. A generation is retired only after no loader
     imports it, so an interrupted publication leaves every loader usable.
     """
     home = Path(os.environ["HOME"]).absolute()
@@ -408,7 +488,8 @@ def prepare(config: Path, nu: Path, loaders: Sequence[Path] = ()) -> int:
     safe_destination(config, home)
     catalog = read_catalog(config)
     selected = selected_modules(catalog, config_root, pixi, home)
-    managed = managed_loaders(data_root, home, loaders)
+    publication = loader_paths(data_root, home, loaders, legacy)
+    managed = publication.managed
     modules_root = safe_destination(data_root / "nushell/completions/nu-scripts", home)
     modules_root.mkdir(parents=True, exist_ok=True)
     final_directory = modules_root
@@ -450,8 +531,9 @@ def prepare(config: Path, nu: Path, loaders: Sequence[Path] = ()) -> int:
     else:
         # The published directories carry a content digest, so a selection or
         # catalog change leaves the previous bytes behind. A generation is
-        # retired once no managed loader imports it any more.
-        retire_published(modules_root, imported)
+        # retired once no managed loader imports it any more, and a preserved
+        # device loader keeps the generation it names.
+        retire_published(modules_root, imported | mentioned_generations(publication.observed, modules_root))
     if failures:
         raise CompletionError("managed Nu completion loader switch failed: " + "; ".join(failures))
     return len(selected)
@@ -464,9 +546,12 @@ def main() -> int:
     parser.add_argument("--nu", type=Path, required=True)
     parser.add_argument("--loader", type=Path, action="append", default=[],
                         help="an additional managed loader file; repeat it for every active path")
+    parser.add_argument("--legacy-loader", type=Path, action="append", default=[],
+                        help="a loader path an earlier publication may own; it is taken over "
+                             "only when the file on disk is demonstrably managed")
     arguments = parser.parse_args()
     try:
-        count = prepare(arguments.config, arguments.nu, arguments.loader)
+        count = prepare(arguments.config, arguments.nu, arguments.loader, arguments.legacy_loader)
     except (OSError, ValueError, KeyError, TypeError, tarfile.TarError, subprocess.SubprocessError) as error:
         print(f"dotfiles Nu completions: {error}", file=sys.stderr)
         return 1

@@ -1601,7 +1601,10 @@ function Prepare-Shell {
         Invoke-Tool $nu @('--config', (Join-Path $roots.config 'nushell/config.nu'), '--env-config', (Join-Path $roots.config 'nushell/env.nu'), '-c', 'null') -Quiet | Out-Null
         # The completion module owns the pinned loader: it publishes the
         # generation to every active loader and retires a generation only after
-        # no loader imports it. Both paths are checked before it writes.
+        # no loader imports it. Both paths are checked before it writes. The
+        # native directory belongs to this deployment, which copies its own
+        # prepared startup resources into it, so the loader there is owned by
+        # declaration and the module always publishes it.
         $nativeAutoload = Join-Path $roots.appData 'nushell/vendor/autoload'
         Assert-SafePath (Join-Path $autoload 'nu-scripts.nu')
         Assert-SafePath (Join-Path $nativeAutoload 'nu-scripts.nu')

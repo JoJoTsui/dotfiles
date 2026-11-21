@@ -47,3 +47,60 @@ Checks on this Mac: `python3 -m unittest tests.test_nu_completions` (24
 tests, OK) and `git diff --check` (clean). The full unittest discovery loop,
 the native deployment gate, the Windows acceptance, and the package downloads
 stay with the coordinator. The ticket stays open for the Codex review.
+
+The spec review found a second publisher after shell preparation. The macOS
+catalog still lists nu-scripts.nu, and deploy_macos_config uses cp -p over the
+active native loader after generation retirement. Remove that secondary writer
+and make the publication module create the catalog's canonical user-autoload
+path even in a fresh synthetic macOS home. Exercise the normal bootstrap
+ordering as well as standalone refresh.
+
+Also preserve the destination guard when extending it to native paths.
+A lexical path outside HOME using an alias symlink that resolves into HOME
+currently passes safe_destination and the write uses the alias. Require the
+original destination relative to HOME (or its legitimate platform canonical
+spelling) and check the actual path components written through. Add the alias
+regression.
+
+Pi fixed the loader ownership finding on `20c7823`.
+
+The macOS preparation selected the native vendor autoload loader because that
+directory existed. The directory is not the deployment's own: the macOS
+catalog names the user autoload directory (`~/Library/Application Support/nushell/autoload`)
+as the canonical native copy, and the vendor autoload directory only holds the
+loader an earlier preparation mirrored into it. The selection therefore
+overwrote a device `nu-scripts.nu` of the same name and created a duplicate
+loader in a directory the catalog never declared.
+
+Ownership now decides which loader a publication may write. A canonical loader
+is owned by declaration: the XDG loader the deployment writes, plus the native
+copy the platform's catalog names. A legacy loader path is taken over only when
+the file on disk carries the managed marker; a device file of the same name is
+preserved, an existing native directory is no reason to create a loader in it,
+and a preserved loader keeps the generation it names, so the cleanup never
+removes a generation under a live loader. The macOS preparation passes the
+vendor autoload path as a legacy loader and the catalog user-autoload path as
+a canonical one.
+
+The other publication paths were reviewed. The Windows native appdata autoload
+directory belongs to that deployment, which copies its own prepared startup
+resources into it, so its loader stays canonical and is still published.
+
+Regressions, all in `tests/test_nu_completions.py`: the module seam covers a
+legacy loader that is taken over only when it is demonstrably managed, and a
+preserved device loader that keeps the generation it names; the command seam
+runs the real preparation and covers the canonical publication, a preserved
+device loader of the same name, and a previously managed native loader that
+follows the live generation. Each regression fails against the previous
+behavior.
+
+Checks on this Mac (Python 3.15.2, nu 0.117.0):
+`python3 -m unittest tests.test_nu_completions` (28 tests, OK),
+`git diff --check` (clean), and `sh -n dot_local/bin/executable_dotfiles-shell-prepare`
+(ok). The full unittest discovery loop, the native deployment gate, the
+Windows acceptance (this host has no PowerShell), and the package downloads
+stay with the coordinator.
+
+The second publisher and the alias destination guard reported above are not
+addressed by this fix and stay open for the Codex review. The ticket stays
+open.

@@ -200,6 +200,54 @@ class NuCompletionTests(unittest.TestCase):
         self.assert_loader_starts(self.loader)
         self.assert_loader_starts(native)
 
+    def test_a_legacy_loader_is_taken_over_only_when_it_is_managed(self):
+        """A legacy loader belongs to the deployment only when it says so.
+
+        Every launch resolves a native autoload directory, so the directory
+        proves nothing about the file inside it. The publication takes a
+        legacy loader over only when the file carries the managed marker,
+        preserves a device file of the same name, and never creates one.
+        """
+        self.install("git")
+        legacy = self.home / "Library/Application Support/nushell/vendor/autoload/nu-scripts.nu"
+        self.assertEqual(self.prepare(legacy=[legacy]), 1)
+        # An existing native directory is no reason to create a loader.
+        legacy.parent.mkdir(parents=True)
+        self.assertEqual(self.prepare(legacy=[legacy]), 1)
+        self.assertFalse(legacy.exists())
+        # A device loader of the same name is preserved.
+        legacy.write_text("# device completions\n")
+        self.assertEqual(self.prepare(legacy=[legacy]), 1)
+        self.assertEqual(legacy.read_text(), "# device completions\n")
+        # A loader an earlier publication wrote is taken over.
+        legacy.write_text(self.module.LOADER_MARKER + '\nuse "/stale/generation.nu" *\n')
+        self.assertEqual(self.prepare(legacy=[legacy]), 1)
+        self.assertEqual(legacy.read_text(), self.loader.read_text())
+
+    def test_a_preserved_device_loader_keeps_the_generation_it_names(self):
+        """A generation a preserved device loader names is not retired.
+
+        The publication does not own the device's loader, so it never writes
+        it. The generation that loader imports is still in use, so the
+        cleanup must leave it published.
+        """
+        self.install("git")
+        self.assertEqual(self.prepare(), 1)
+        modules = self.home / ".local/share/nushell/completions/nu-scripts"
+        generation = modules / self.published_generations()[0]
+        legacy = self.home / "Library/Application Support/nushell/vendor/autoload/nu-scripts.nu"
+        legacy.parent.mkdir(parents=True)
+        legacy.write_text("# device completions\nuse "
+                          + json.dumps(str(generation / "custom-completions/git/git-completions.nu"))
+                          + " *\n")
+        # A changed selection publishes a second generation.
+        self.install("just")
+        self.write_desired(common=("git",), bundles=("just",))
+        self.assertEqual(self.prepare(legacy=[legacy]), 2)
+        self.assertEqual(legacy.read_text().splitlines()[0], "# device completions")
+        self.assertTrue(generation.is_dir())
+        self.assertEqual(len(self.published_generations()), 2)
+
     def test_a_refused_loader_switch_leaves_every_loader_usable(self):
         """A loader the filesystem refuses keeps the generation it imports."""
         self.install("git")
@@ -519,7 +567,9 @@ class ShellPreparationPublicationTests(unittest.TestCase):
     The command runs in a disposable home with the real Nu and Python. Every
     other managed command is a stub that emits a parseable Nu resource, so the
     check observes the publication the command performs and not the tools it
-    calls.
+    calls. The fixture keeps its XDG data root away from the directory Nu
+    resolves without an XDG override, so the native vendor and user autoload
+    directories are distinct on every host, as they are on macOS.
     """
 
     def setUp(self):
@@ -531,16 +581,10 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         self.bin.mkdir(parents=True)
         self.config = self.home / ".config/dotfiles"
         self.config.mkdir(parents=True)
-        self.autoload = self.home / ".local/share/nushell/vendor/autoload"
+        self.data = self.home / "xdg/data"
+        self.autoload = self.data / "nushell/vendor/autoload"
         self.loader = self.autoload / "nu-scripts.nu"
-        self.generations = self.home / ".local/share/nushell/completions/nu-scripts"
-        # A native discovery copy exists, so the command publishes to it.
-        self.native_autoload = self.home / "Library/Application Support/nushell/vendor/autoload"
-        self.native_autoload.mkdir(parents=True)
-        # The user autoload directory is the second path a launch without an
-        # XDG override reads.
-        self.native_user_autoload = self.home / "Library/Application Support/nushell/autoload"
-        self.native_user_autoload.mkdir(parents=True)
+        self.generations = self.data / "nushell/completions/nu-scripts"
         self.revision = "b" * 40
         self.modules = [{"command": "git", "path": "custom-completions/git/git-completions.nu"}]
         self.archive = self.root / "upstream.tgz"
@@ -552,6 +596,20 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         }
         self.install_tools()
         self.install_configuration()
+        # The fixture keeps its XDG data root away from the directory a launch
+        # without an XDG override resolves, so the native vendor directory is
+        # distinct on every host, as it is on macOS.
+        native_data = self.native_directory("nu.data-dir", "XDG_DATA_HOME")
+        native_config = self.native_directory("nu.default-config-dir", "XDG_CONFIG_HOME")
+        self.assertIsNotNone(native_data, "the fixture needs a resolvable Nu data directory")
+        self.assertIsNotNone(native_config, "the fixture needs a resolvable Nu config directory")
+        # A native vendor directory exists, so a launch without an XDG
+        # override reads it. It is not the deployment's own directory.
+        self.native_autoload = native_data / "vendor/autoload"
+        self.native_autoload.mkdir(parents=True, exist_ok=True)
+        # The user autoload directory is the canonical native copy.
+        self.native_user_autoload = native_config / "autoload"
+        self.native_user_autoload.mkdir(parents=True, exist_ok=True)
         self.write_archive()
         self.write_desired(("git",), ())
 
@@ -593,7 +651,7 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         (nushell / "env.nu").write_text("# managed environment\n")
         (self.home / ".env_core").write_text(
             'export XDG_CONFIG_HOME="$HOME/.config"\n'
-            'export XDG_DATA_HOME="$HOME/.local/share"\n'
+            'export XDG_DATA_HOME="$HOME/xdg/data"\n'
             'export XDG_CACHE_HOME="$HOME/.cache"\n'
             'export XDG_STATE_HOME="$HOME/.local/state"\n'
             'export PIXI_HOME="$HOME/.pixi"\n'
@@ -645,35 +703,61 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         return Path(result.stdout.strip())
 
     def native_loader(self):
-        """The loader a launch without an XDG override reads, when it differs."""
-        data = self.native_directory("nu.data-dir", "XDG_DATA_HOME")
-        if data is None:
-            return None
-        loader = data / "vendor/autoload/nu-scripts.nu"
+        """The loader in the native vendor directory, when it differs."""
+        loader = self.native_autoload / "nu-scripts.nu"
         return None if loader == self.loader else loader
 
     def native_user_loader(self):
         """The loader a launch without a config override reads, when it differs."""
-        config = self.native_directory("nu.default-config-dir", "XDG_CONFIG_HOME")
-        if config is None or not (config / "autoload").is_dir():
-            return None
-        loader = config / "autoload/nu-scripts.nu"
+        loader = self.native_user_autoload / "nu-scripts.nu"
         return None if loader == self.loader else loader
 
     def published_generations(self):
         return sorted(entry.name for entry in self.generations.iterdir())
 
-    def test_the_preparation_publishes_to_every_active_loader(self):
+    def test_the_preparation_publishes_to_every_canonical_loader(self):
         result = self.prepare()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(self.loader.is_file())
         self.assertEqual(self.loader_commands(self.loader), {"git"})
-        for loader in (self.native_loader(), self.native_user_loader()):
-            if loader is None:
-                continue
-            self.assertTrue(loader.is_file(), str(loader))
-            self.assertEqual(loader.read_bytes(), self.loader.read_bytes())
-            self.assertEqual(self.loader_commands(loader), {"git"})
+        native_user = self.native_user_loader()
+        if native_user is not None:
+            self.assertTrue(native_user.is_file(), str(native_user))
+            self.assertEqual(native_user.read_bytes(), self.loader.read_bytes())
+            self.assertEqual(self.loader_commands(native_user), {"git"})
+        # The native vendor directory is not the deployment's own directory,
+        # so an existing one is no reason to create a loader in it.
+        native_vendor = self.native_loader()
+        if native_vendor is not None:
+            self.assertFalse(native_vendor.exists(), str(native_vendor))
+
+    def test_the_preparation_preserves_a_device_loader_of_the_same_name(self):
+        """A device loader in the native vendor directory is never taken over."""
+        legacy = self.native_loader()
+        if legacy is None:
+            self.skipTest("this host resolves no native vendor directory")
+        legacy.write_text("# device completions\n")
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(legacy.read_text(), "# device completions\n")
+        # The canonical loaders still carry the published generation.
+        self.assertEqual(self.loader_commands(self.loader), {"git"})
+
+    def test_the_preparation_takes_over_a_previously_managed_native_loader(self):
+        """A loader an earlier publication wrote follows the live generation."""
+        legacy = self.native_loader()
+        if legacy is None:
+            self.skipTest("this host resolves no native vendor directory")
+        first = self.prepare()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        shutil.copy2(self.loader, legacy)
+        # A changed selection publishes a second generation.
+        self.write_desired(("git",), ("just",))
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(legacy.read_bytes(), self.loader.read_bytes())
+        self.assertEqual(self.loader_commands(legacy), {"git", "just"})
+        self.assertEqual(len(self.published_generations()), 1)
 
     def test_a_failed_second_publication_leaves_the_loader_usable(self):
         first = self.prepare()

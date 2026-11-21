@@ -123,13 +123,18 @@ explains every changed pair.
   keep equivalent managed-tool hooks (Zsh adds its required `compinit`).
 - **The completion module owns the Nu loader publication**:
   `dot_local/lib/dotfiles/completions.py` publishes one validated generation to
-  every managed loader (the canonical XDG loader plus the platform's native
-  copies) and retires a generation only after no managed loader imports it. A
-  loader stores each import as a JSON string, so the retirement check decodes
-  that reference instead of matching raw text. `dotfiles-shell-prepare` and
-  the native Windows preparation select the loaders and call the module; they
-  never write the loader themselves. Read `docs/SHARED_SHELL_SETTINGS.md`
-  before changing the loader, the generation lifecycle, or the native copies.
+  every canonical loader (the canonical XDG loader plus the platform's catalog
+  native copy) and retires a generation only after no loader imports it. A
+  legacy loader path — one an earlier publication may have written, such as the
+  macOS vendor autoload directory — is taken over only when the file carries
+  the managed marker: a device file of the same name is preserved, an existing
+  native directory is no reason to create a duplicate loader, and a preserved
+  loader keeps the generation it names. A loader stores each import as a JSON
+  string, so the retirement check decodes that reference instead of matching
+  raw text. `dotfiles-shell-prepare` and the native Windows preparation select
+  the loaders and call the module; they never write the loader themselves.
+  Read `docs/SHARED_SHELL_SETTINGS.md` before changing the loader, the
+  generation lifecycle, or the native copies.
 - **macOS runs Zsh, not Bash**: macOS applies no Bash startup file and installs
   no managed Bash runtime. `dot_zprofile` is the Zsh login file and shares
   `~/.profile` with Bash's, because Zsh never reads `~/.profile` itself.

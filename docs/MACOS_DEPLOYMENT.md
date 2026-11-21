@@ -52,8 +52,12 @@ Shell and history preparation mirror the artifacts they generated into an
 existing native autoload directory, so a preparation run outside a deployment
 cannot leave that launch reading an older startup; the catalog copy above
 remains the deployment's own write. The pinned completion loader is published
-by the completion module to every active native loader path, so a native copy
-never imports a generation the module already retired.
+by the completion module to the canonical native copy above. The native vendor
+autoload directory is not the deployment's own, so the module takes a mirrored
+loader there over only when the file is demonstrably managed, preserves a
+device loader of the same name, and never creates a loader in an existing
+directory. A preserved loader keeps the generation it names, so no native copy
+imports a generation the module already retired.
 See [Nu startup paths](https://www.nushell.sh/book/configuration.html),
 [uv storage](https://docs.astral.sh/uv/reference/storage/), and
 [pip configuration](https://pip.pypa.io/en/stable/topics/configuration/).
