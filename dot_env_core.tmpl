@@ -102,7 +102,12 @@ noproxy() {
         printf '%s\n' 'noproxy: with-proxy is not installed' >&2
         return 1
     fi
-    eval "$(with-proxy --print)"
+    # The answer is read before it is evaluated, and a launcher that refuses
+    # an override is the caller's failure: the session keeps the environment
+    # it had instead of a half-applied one.
+    _dotfiles_proxy_exports=$(with-proxy --print) || return $?
+    eval "$_dotfiles_proxy_exports"
+    unset _dotfiles_proxy_exports
 }
 # unproxy clears the supported inherited proxy variables, the same list the
 # direct launcher and the direct fallback clear for their child.

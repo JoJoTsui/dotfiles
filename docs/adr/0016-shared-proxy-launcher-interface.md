@@ -41,3 +41,14 @@ is why the adapter runs the child through the shared launcher instead.
 Consequence: the launchers cannot drift apart without a change to
 `with-proxy` itself, and the checks compare what a child actually receives
 rather than what a helper intends.
+
+The answer is line-delimited, so the interface also constrains what may cross
+it. The bindings carry fixed variable names: the launcher owns the names and
+the value each name carries, so a value never introduces a variable of its
+own. The supported overrides are single-line values, and an override that
+carries a line separator is refused before any binding is emitted, because a
+second line inside a value would be read as another variable name — in the
+child's environment and in the export lines the POSIX helper evaluates. The
+POSIX helper reads the answer before it evaluates it and propagates a refusal,
+so a session is never left with half an environment, and the Nushell adapter
+fails the same way instead of applying a partial answer.

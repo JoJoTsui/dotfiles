@@ -238,9 +238,13 @@ explains every changed pair.
   and the Nushell adapter in `dot_config/nushell/proxy.nu` both read it, so the
   shell a session runs in never changes the route. A direct launch clears the
   supported inherited variables for its child only, and a proxied launch
-  applies its environment to the child only. Read `docs/PROXY.md` before
-  changing a launcher, and `docs/adr/0016-shared-proxy-launcher-interface.md`
-  before changing the decision itself.
+  applies its environment to the child only. The bindings carry fixed
+  variable names and the overrides are single-line values: an override that
+  carries a line separator is refused before any binding is emitted, and the
+  POSIX helper reads the answer before it evaluates it, so a refusal reaches
+  the caller. Read `docs/PROXY.md` before changing a launcher, and
+  `docs/adr/0016-shared-proxy-launcher-interface.md` before changing the
+  decision itself.
 - **The deployment proxy is a process, not a service**:
   `deployment/proxy-policy.tsv` says which sections need a proxy and which do
   not, and the bootstrap validates that every step has a rule. The instance

@@ -27,9 +27,10 @@ const direct_proxy_variables = [
 # shared launcher applies them in a POSIX environment.
 const session_variables = [http_proxy https_proxy ALL_PROXY NO_PROXY PROXY]
 
-# Parse the KEY=VALUE lines the shared launcher prints into a record. Only the
-# variables the launchers own are accepted, so a value that carries a newline
-# cannot add a variable of its own.
+# Parse the KEY=VALUE lines the shared launcher prints into a record. The
+# launcher refuses an override that carries a line separator, and only the
+# variables the launchers own are accepted here, so a value cannot add a
+# variable of its own.
 def parse-proxy-environment [lines: list<string>] {
     $lines | where {|line| ($line | str trim) != "" } | reduce --fold {} {|line, environment|
         let parts = ($line | split row "=")
@@ -43,7 +44,9 @@ def parse-proxy-environment [lines: list<string>] {
 }
 
 # The environment the shared launcher resolved. The launcher answers with the
-# variables it owns, so this adapter reads them instead of rebuilding them.
+# variables it owns, so this adapter reads them instead of rebuilding them. A
+# launcher that refuses an override fails here, rather than leaving the
+# session with half an environment.
 def proxy-environment [] {
     let resolved = (^with-proxy --print-env | complete)
     if $resolved.exit_code != 0 {

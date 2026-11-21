@@ -44,6 +44,12 @@
 # --print-env answers the same question in a form a non-shell adapter can
 # parse, so the Nushell session helper applies exactly the variables this
 # launcher applies.
+#
+# The bindings carry fixed variable names and single-line values. The names
+# live in this file and the value each name carries is fixed, so a value never
+# chooses the name it is bound to. The overrides are single-line values, and
+# an override that carries a line separator is refused before any binding is
+# emitted: a second line in a value would be read as another variable name.
 
 set -euo pipefail
 
@@ -58,6 +64,20 @@ case ${1:-} in
     --print-env) mode=env; shift ;;
     --if-available) if_available=1; shift ;;
 esac
+
+# The supported overrides are single-line values. A line separator inside one
+# would split a binding into another line, and that line would be read as
+# another variable name, so the override is refused before any binding is
+# emitted and before the child runs.
+refuse_line_separator() {
+    if [[ $2 == *$'\n'* || $2 == *$'\r'* ]]; then
+        printf 'with-proxy: %s must not contain a line separator\n' "$1" >&2
+        exit 64
+    fi
+}
+refuse_line_separator PROXY_HTTP "${PROXY_HTTP:-}"
+refuse_line_separator PROXY_SOCKS "${PROXY_SOCKS:-}"
+refuse_line_separator PROXY_NO "$PROXY_NO"
 
 # The decision, in one place: an explicit endpoint wins, otherwise the ports a
 # proxy client may serve are probed in order, and a caller that asked for an
@@ -82,16 +102,35 @@ PROXY_SOCKS=${PROXY_SOCKS:-socks5h://${PROXY_HTTP#http://}}
 
 # The variables the launchers own, in export order. The POSIX launcher and the
 # Nushell adapter both read this list, so a change to it reaches both.
-proxy_environment() {
-    printf 'HTTP_PROXY=%s\n' "$PROXY_HTTP"
-    printf 'HTTPS_PROXY=%s\n' "$PROXY_HTTP"
-    printf 'http_proxy=%s\n' "$PROXY_HTTP"
-    printf 'https_proxy=%s\n' "$PROXY_HTTP"
-    printf 'ALL_PROXY=%s\n' "$PROXY_SOCKS"
-    printf 'all_proxy=%s\n' "$PROXY_SOCKS"
-    printf 'NO_PROXY=%s\n' "$PROXY_NO"
-    printf 'no_proxy=%s\n' "$PROXY_NO"
-    printf 'PROXY=%s\n' "$PROXY_HTTP"
+proxy_names() {
+    printf '%s\n' HTTP_PROXY HTTPS_PROXY http_proxy https_proxy \
+        ALL_PROXY all_proxy NO_PROXY no_proxy PROXY
+}
+
+# The value a name carries. The mapping is fixed as well: a value never
+# chooses the name it is bound to.
+proxy_value() {
+    case $1 in
+        ALL_PROXY|all_proxy) printf '%s' "$PROXY_SOCKS" ;;
+        NO_PROXY|no_proxy) printf '%s' "$PROXY_NO" ;;
+        *) printf '%s' "$PROXY_HTTP" ;;
+    esac
+}
+
+# Emit or apply the owned variables.
+#   env     KEY=VALUE lines, for an adapter that reads them
+#   export  export lines, for a POSIX session that evaluates them
+#   apply   the variables of this process, for the child
+proxy_bindings() {
+    local form=$1 name value
+    while IFS= read -r name; do
+        value=$(proxy_value "$name")
+        case $form in
+            env) printf '%s=%s\n' "$name" "$value" ;;
+            export) printf 'export %s=%q\n' "$name" "$value" ;;
+            apply) export "$name=$value" ;;
+        esac
+    done < <(proxy_names)
 }
 
 case $mode in
@@ -100,13 +139,11 @@ case $mode in
         exit 0
         ;;
     env)
-        proxy_environment
+        proxy_bindings env
         exit 0
         ;;
     print)
-        while IFS='=' read -r _key _value; do
-            printf 'export %s=%q\n' "$_key" "$_value"
-        done < <(proxy_environment)
+        proxy_bindings export
         exit 0
         ;;
 esac
@@ -126,8 +163,6 @@ if [[ $if_available == 1 && $available == 0 ]]; then
     exec -- "$@"
 fi
 
-while IFS='=' read -r _key _value; do
-    export "$_key=$_value"
-done < <(proxy_environment)
+proxy_bindings apply
 
 exec -- "$@"

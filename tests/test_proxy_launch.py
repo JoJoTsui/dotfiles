@@ -4,6 +4,10 @@ The POSIX launcher owns the endpoint precedence, the health check, and the
 fallback. The Nushell adapter reads the same answer, so a session in either
 shell routes the same way. These checks drive the public commands with a local
 endpoint and compare what a child actually receives.
+
+The bindings the launcher emits carry fixed variable names and single-line
+values, so a value never introduces a variable of its own. The POSIX session
+helper reads the same answer and refuses what the launcher refuses.
 """
 import os
 import shutil
@@ -17,6 +21,8 @@ SOURCE = Path(__file__).resolve().parents[1]
 LAUNCHER = SOURCE / "dot_local/bin/executable_with-proxy"
 DIRECT = SOURCE / "dot_local/bin/executable_direct"
 ADAPTER = SOURCE / "dot_config/nushell/proxy.nu"
+CONFIG_TEMPLATE = SOURCE / ".chezmoi.toml.tmpl"
+ENV_CORE_TEMPLATE = SOURCE / "dot_env_core.tmpl"
 NU = os.environ.get("DOTFILES_TEST_NU") or shutil.which("nu")
 
 # The variables the launchers own.
@@ -152,6 +158,53 @@ class ProxyLauncherTests(unittest.TestCase):
             env=self.fixture.env, capture_output=True, text=True, timeout=30)
         self.assertEqual(shell.stdout.strip(), "0")
 
+    def test_a_line_separator_in_an_override_is_refused(self):
+        for override in ("PROXY_HTTP", "PROXY_SOCKS", "PROXY_NO"):
+            for separator in ("\n", "\r"):
+                with self.subTest(override=override, separator=separator):
+                    value = f"http://proxy.example.invalid:8080{separator}INJECTED=1"
+                    result = self.fixture.run(["/bin/sh", "-c", "printf child-ran"],
+                                              {override: value})
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn("child-ran", result.stdout)
+                    self.assertIn("line separator", result.stderr)
+
+    def test_no_extra_name_reaches_the_child(self):
+        result = self.fixture.run(["/bin/sh", "-c", "env"],
+                                  {"PROXY_HTTP": "http://proxy.example.invalid:8080\nINJECTED=1"})
+        self.assertNotIn("INJECTED", result.stdout)
+
+    def test_the_child_environment_holds_only_the_owned_names(self):
+        result = self.fixture.run(["/bin/sh", "-c", "env"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = {line.split("=", 1)[0] for line in result.stdout.splitlines() if "=" in line}
+        self.assertEqual({name for name in names if "proxy" in name.lower()},
+                         set(PROXY_VARIABLES))
+
+    def test_the_export_output_carries_only_the_owned_names(self):
+        result = self.fixture.run(["--print"],
+                                  {"PROXY_HTTP": "http://proxy.example.invalid:8080"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = [line.split("=", 1)[0].removeprefix("export ")
+                 for line in result.stdout.splitlines() if line]
+        self.assertEqual(names, list(PROXY_VARIABLES))
+
+    def test_the_export_output_carries_no_extra_name(self):
+        result = self.fixture.run(["--print"],
+                                  {"PROXY_HTTP": "http://proxy.example.invalid:8080\nINJECTED=1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+        self.assertNotIn("INJECTED", result.stdout)
+
+    def test_the_export_output_evaluates_to_the_chosen_value(self):
+        endpoint = "http://user:pass@proxy.example.invalid:8080?token=a=b&x=1"
+        printed = self.fixture.run(["--print"], {"PROXY_HTTP": endpoint})
+        self.assertEqual(printed.returncode, 0, printed.stderr)
+        evaluated = subprocess.run(
+            ["/bin/sh", "-c", 'eval "$1"; printf "%s\\n" "$HTTP_PROXY"', "sh", printed.stdout],
+            env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, timeout=30)
+        self.assertEqual(evaluated.stdout.strip(), endpoint)
+
     def test_the_launcher_preserves_the_arguments_and_the_exit_status(self):
         result = self.fixture.run(["/bin/sh", "-c", 'printf "%s|" "$@"', "sh", "one", "two three"])
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -191,6 +244,72 @@ class ProxyLauncherTests(unittest.TestCase):
             self.assertEqual(result.stdout.strip(), "http://127.0.0.1:7897")
         finally:
             listener.close()
+
+
+class PosixSessionTests(unittest.TestCase):
+    """The POSIX session helper reads the shared answer and refuses what it refuses."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not cls.chezmoi:
+            raise unittest.SkipTest("rendering the shared settings requires chezmoi")
+        cls.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-proxy-session-")
+        cls.addClassCleanup(cls.temporary.cleanup)
+        cls.root = Path(cls.temporary.name)
+        cls.env_core = cls.render_env_core()
+
+    @classmethod
+    def render_env_core(cls):
+        """Render the shared POSIX settings once, outside any home."""
+        home = cls.root / "render"
+        config = cls.root / "chezmoi.toml"
+        environment = {"HOME": str(home), "PATH": "/usr/bin:/bin",
+                       "DOTFILES_PLATFORM": "linux", "DOTFILES_ROLE": "workstation"}
+        common = [cls.chezmoi, "--source", str(SOURCE), "--destination", str(home),
+                  "--cache", str(cls.root / "cache")]
+        rendered = subprocess.run(
+            common + ["--config", str(config), "execute-template", "--init"],
+            input=CONFIG_TEMPLATE.read_text(),
+            env=environment, capture_output=True, text=True, timeout=120)
+        if rendered.returncode != 0:
+            raise AssertionError(rendered.stderr)
+        config.write_text(rendered.stdout)
+        result = subprocess.run(
+            common + ["--config", str(config), "execute-template"],
+            input=ENV_CORE_TEMPLATE.read_text(),
+            env=environment, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            raise AssertionError(result.stderr)
+        return result.stdout
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="dotfiles-proxy-session-home-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.fixture = LauncherFixture(self.root)
+        (self.root / "home" / ".env_core").write_text(self.env_core)
+
+    def session(self, script, environment=None):
+        """Run a script in a session that sourced the rendered settings."""
+        return subprocess.run(["/bin/sh", "-c", f'. "$HOME/.env_core"; {script}'],
+                              env={**self.fixture.env, **(environment or {})},
+                              capture_output=True, text=True, timeout=30)
+
+    def test_the_session_helper_applies_the_shared_decision(self):
+        result = self.session('noproxy; printf "%s\\n" "$http_proxy"',
+                              {"PROXY_HTTP": "http://proxy.example.invalid:8080"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "http://proxy.example.invalid:8080")
+
+    def test_the_session_helper_refuses_a_rejected_override(self):
+        result = self.session(
+            'noproxy; status=$?; printf "status=%s injected=[%s]\\n" "$status" "${INJECTED-unset}"',
+            {"PROXY_HTTP": "http://proxy.example.invalid:8080\nINJECTED=1"})
+        status, injected = result.stdout.split()
+        self.assertNotEqual(status, "status=0")
+        self.assertEqual(injected, "injected=[unset]")
+        self.assertIn("line separator", result.stderr)
 
 
 @unittest.skipUnless(NU, "requires Nushell")
@@ -270,6 +389,12 @@ class NushellProxyLauncherTests(unittest.TestCase):
         # spelling per variable; the values are the shared ones.
         for name in ("http_proxy", "https_proxy", "ALL_PROXY", "NO_PROXY", "PROXY"):
             self.assertEqual(observed[name], expected[name])
+
+    def test_the_nushell_session_helper_refuses_a_rejected_override(self):
+        result = self.nu("noproxy",
+                         {"PROXY_HTTP": "http://proxy.example.invalid:8080\nINJECTED=1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn("INJECTED", result.stdout)
 
     def test_the_nushell_unproxy_clears_the_supported_variables(self):
         inherited = {name: "http://stale.example.invalid:1" for name in INHERITED_VARIABLES}

@@ -145,6 +145,16 @@ value cannot route a child through an endpoint that is not there. A proxied
 launch applies its variables to the child only: the calling session keeps its
 own environment, and the child's arguments and exit status are unchanged.
 
+The answer is line-delimited, so the interface fixes two things. The bindings
+carry fixed variable names: the launcher owns the names and the value each
+name carries, so a value never chooses the name it is bound to. The supported
+overrides are single-line values, and an override that carries a line
+separator is refused before any binding is emitted — a second line inside a
+value would otherwise be read as another variable name, both in the child's
+environment and in the export lines a POSIX session evaluates. The POSIX
+`noproxy` reads the launcher's answer before it evaluates it, so a refusal is
+the caller's failure and the session keeps the environment it had.
+
 In Nushell, `with-proxy`, `direct`, `noproxy`, and `unproxy` are the same four
 commands. `noproxy` sets the session variables and `unproxy` clears them.
 Nushell's environment is case-insensitive, so a session keeps one spelling per
