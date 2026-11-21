@@ -1025,11 +1025,20 @@ def run_schema_tests(root: Path) -> None:
                 raise VersionError(f"version-dependent integration checks failed for {pattern}")
 
 
-def brew_installed(brew: str, package: str) -> bool:
-    """Whether Homebrew has the formula or cask installed."""
-    result = subprocess.run([brew, "list", "--versions", package],
-                            capture_output=True, text=True, timeout=180)
-    return result.returncode == 0 and bool(result.stdout.strip())
+def brew_installed_version(brew: str, package: str, kind: str) -> str:
+    """The installed version of a Homebrew formula or cask, empty when absent."""
+    command = [brew, "list", "--versions"]
+    if kind == "cask":
+        command.append("--cask")
+    command.append(package)
+    result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+    if result.returncode or not result.stdout.strip():
+        return ""
+    # "package 1.2.3_1" carries a revision the deployment's comparison does
+    # not use.
+    fields = result.stdout.split()
+    version = fields[-1] if len(fields) > 1 else ""
+    return version.split("_")[0]
 
 
 def homebrew_upgrade(root: Path, selection: str, brew: str) -> list[str]:
@@ -1052,11 +1061,17 @@ def homebrew_upgrade(root: Path, selection: str, brew: str) -> list[str]:
             kind = row["packageKind"]
             if kind not in ("formula", "cask"):
                 raise VersionError(f"unknown Homebrew package kind for {name}: {kind}")
-            action = "upgrade" if brew_installed(brew, package) else "install"
-            command = [brew, action] + (["--cask"] if kind == "cask" else []) + [package]
+            installed = brew_installed_version(brew, package, kind)
+            if not installed:
+                # The deployment adopts a Homebrew client and never installs
+                # one, so a client that is not installed is not upgraded
+                # either: the chain falls through to the deployment-owned
+                # provider.
+                continue
+            command = [brew, "upgrade"] + (["--cask"] if kind == "cask" else []) + [package]
             result = subprocess.run(command, capture_output=True, text=True, timeout=3600)
             if result.returncode:
-                raise VersionError(f"cannot {action} the Homebrew {kind} {package}: {tool_diagnostic(result)}")
+                raise VersionError(f"cannot upgrade the Homebrew {kind} {package}: {tool_diagnostic(result)}")
             upgraded.append(f"{name} ({package})")
     return upgraded
 

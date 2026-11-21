@@ -222,6 +222,31 @@ class AgentUpdateTests(unittest.TestCase):
         self.assertEqual(calls, [["brew", "list", "--versions", "opencode-v2"],
                                   ["brew", "upgrade", "opencode-v2"]])
 
+    def test_a_homebrew_client_that_is_not_installed_is_not_installed(self):
+        # The deployment adopts a Homebrew client and never installs one, so
+        # the update must not install it either.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "dotfiles_update_versions", SOURCE / "deployment/update_versions.py")
+        updater = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(updater)
+
+        calls = []
+        original = subprocess.run
+
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
+
+        updater.subprocess.run = fake_run
+        try:
+            upgraded = updater.homebrew_upgrade(SOURCE, "opencode", "brew")
+        finally:
+            updater.subprocess.run = original
+        self.assertEqual(upgraded, [])
+        self.assertEqual(calls, [["brew", "list", "--versions", "opencode-v2"]])
+
     def test_a_failing_homebrew_upgrade_is_reported(self):
         import importlib.util
 
