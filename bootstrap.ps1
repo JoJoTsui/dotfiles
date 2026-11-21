@@ -13,6 +13,7 @@ param(
     [switch]$Plan,
     [switch]$ApplyOnly,
     [switch]$AgentsOnly,
+    [switch]$AgentUpdate,
     [switch]$NoMagpie
 )
 Set-StrictMode -Version 2.0
@@ -285,6 +286,7 @@ function Get-BundlePackages {
 
 $script:EntryParameters = $PSBoundParameters
 try {
+    if ($AgentUpdate) { $AgentsOnly = $true }
     if ($ApplyOnly -and $AgentsOnly) { Stop-Deployment 'ApplyOnly and AgentsOnly are mutually exclusive' }
     $selection = Get-Selection
     if (-not $TargetHome) { $TargetHome = Get-Input 'USERPROFILE' (Get-Input 'HOME') }
@@ -310,6 +312,12 @@ try {
     $magpiePin = $null
     if ($magpie.enabled) { $magpiePin = Get-MagpiePin }
     $selectedAgents = @(Get-Agents)
+    if ($AgentUpdate -and $selectedAgents.Count -eq 1) {
+        $script:TargetedAgent = $selectedAgents[0]
+        $script:TargetedPolicies = @(Read-Catalog 'deployment/client-settings/agent-policies.tsv' |
+            Where-Object { $_.columns[0] -eq $script:TargetedAgent } |
+            ForEach-Object { $_.columns[1].Split(' ') })
+    }
     $selectedBundles = @(Get-Bundles)
     $packages = @(Get-Packages)
     $bundlePackages = @(Get-BundlePackages)
@@ -337,7 +345,7 @@ try {
     $agentCatalog = @(Get-AgentCatalog)
     foreach ($agent in @($agentCatalog | ForEach-Object { $_.agent } | Select-Object -Unique)) {
         $records = @($agentCatalog | Where-Object { $_.agent -eq $agent })
-        if ($records[0].selection -ne 'always' -and $agent -notin $selectedAgents) { continue }
+        if (-not (Test-AgentSelected $records[0])) { continue }
         $viable = @(Select-AgentRecords $agentCatalog $agent)
         if ($viable.Count -eq 0) { continue }
         $row = $viable[0]
@@ -362,8 +370,9 @@ try {
     }
     $steps = [ordered]@{
         'install-managers' = 'Install-Managers'
-        'apply-source' = 'Apply-Source'
     }
+    if ($script:TargetedAgent) { $steps['prepare-agent-update'] = 'Prepare-AgentUpdate' }
+    else { $steps['apply-source'] = 'Apply-Source' }
     if (-not $ApplyOnly -and -not $AgentsOnly) { $steps['install-common'] = 'Install-Common' }
     if (-not $ApplyOnly) { $steps['install-agents'] = 'Install-Agents' }
     if ($magpie.enabled) { $steps['install-magpie-cli'] = 'Install-MagpieCli' }
@@ -372,7 +381,7 @@ try {
     # even though the bootstrap still resolves Chezmoi there.
     $actions = @($steps.Keys)
     if ($ApplyOnly) { $actions = @('apply-source') }
-    if ($AgentsOnly) { $actions = @('apply-source', 'install-agents') }
+    if ($AgentsOnly -and -not $script:TargetedAgent) { $actions = @('apply-source', 'install-agents') }
     $result = [ordered]@{
         platform = $selection.platform; role = $selection.role; arch = $selection.arch; profile = $selection.profile
         mirror = $selection.mirror
@@ -408,8 +417,12 @@ try {
         if ($env:DOTFILES_STEP_TRACE -eq '1') { [Console]::Error.WriteLine("dotfiles: step $stepName started") }
         & ($steps[$stepName])
     }
-    if (-not $magpie.enabled) { [Console]::Out.WriteLine("dotfiles: magpie: skipped; $($magpie.reason)") }
-    [Console]::Out.WriteLine("dotfiles: applied $($selection.profile) to $TargetHome (copy mode)")
+    if ($script:TargetedAgent) {
+        [Console]::Out.WriteLine("dotfiles: reconciled $script:TargetedAgent and its deployment dependencies; skipped shared source, skills and unselected client settings")
+    } else {
+        if (-not $magpie.enabled) { [Console]::Out.WriteLine("dotfiles: magpie: skipped; $($magpie.reason)") }
+        [Console]::Out.WriteLine("dotfiles: applied $($selection.profile) to $TargetHome (copy mode)")
+    }
 } catch {
     [Console]::Error.WriteLine('dotfiles: ' + $_.Exception.Message)
     if ($_.InvocationInfo.ScriptLineNumber) {

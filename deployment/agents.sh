@@ -133,6 +133,10 @@ agent_owned_selection() {
 
 agent_selected() {
     local name=$1 selection selected
+    if [ -n "${DEPLOY_TARGET_AGENT:-}" ]; then
+        [ "$name" = "$DEPLOY_TARGET_AGENT" ] || { [ "$DEPLOY_TARGET_AGENT" = dsh-tui ] && [ "$name" = dsh ]; }
+        return
+    fi
     selection=$(agent_owned_selection "$name")
     [ "$selection" = always ] && return 0
     for selected in ${DEPLOY_AGENTS[@]+"${DEPLOY_AGENTS[@]}"}; do
@@ -332,6 +336,9 @@ resolve_agent_selection() {
             if [ "$item" = "$name" ]; then DEPLOY_AGENTS+=("$name"); break; fi
         done
     done
+    if "${DEPLOY_AGENT_UPDATE:-false}" && [ "${#DEPLOY_AGENTS[@]}" -eq 1 ]; then
+        DEPLOY_TARGET_AGENT=${DEPLOY_AGENTS[0]}
+    fi
     # The commands of every selected agent, taken from the provider the plan
     # selects on this platform.
     for name in "${DEPLOY_AGENT_ORDER[@]}"; do
@@ -726,13 +733,20 @@ herdr_state_record() {
 
 # The Herdr state of the selected agents, recorded for the drift report.
 herdr_state_write() {
-    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/herdr.tsv" staged row
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/herdr.tsv" staged row name
     [ ! -L "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles" ] || fail 'the agent state directory is a symlink'
     mkdir -p "$(dirname "$state")"
     [ ! -L "$state" ] || fail 'the Herdr state file is a symlink'
     staged=$(mktemp "$state.XXXXXX")
     {
         printf '# agent|kind|state\n'
+        if [ -n "${DEPLOY_TARGET_AGENT:-}" ] && [ -f "$state" ]; then
+            while IFS= read -r row || [ -n "$row" ]; do
+                name=${row%%|*}
+                case "$name" in ''|\#*|"$DEPLOY_TARGET_AGENT") continue ;; esac
+                printf '%s\n' "$row"
+            done < "$state"
+        fi
         for row in ${HERDR_STATE_ROWS[@]+"${HERDR_STATE_ROWS[@]}"}; do
             printf '%s\n' "$row"
         done
@@ -816,6 +830,13 @@ install_herdr_integrations() {
             codex_herdr_register
             ;;
     esac
+    if [ -n "${DEPLOY_TARGET_AGENT:-}" ]; then
+        if [ -n "$(agent_herdr_kind "$DEPLOY_TARGET_AGENT")" ]; then
+            DEPLOY_STEP=install-agents.herdr.state
+            herdr_state_write
+        fi
+        return 0
+    fi
     # The generated skill belongs to the shared tree, not to the catalog, so
     # it is recorded even when Herdr is no longer installed.
     DEPLOY_STEP=install-agents.herdr.skill
@@ -1053,7 +1074,7 @@ agent_install_launchers() {
 install_bun_agent() {
     local name=$1 version=$2 catalog_version=$3 minimum=$4 package=$5 commands=$6
     local bun=$7 node=$8 node_version=$9
-    local project command prepend_path='' exposed_commands=()
+    local project command prepend_path='' exposed_commands=() probe_path diagnostic
     agent_version_at_least "${node_version#v}" "$minimum" ||
         fail "Node $node_version does not satisfy $name >=$minimum"
     project="$BUN_INSTALL/managed/$name"
@@ -1087,9 +1108,24 @@ install_bun_agent() {
     # the result the same on every attempt.
     agent_retry env npm_config_global=false pnpm_config_global=false \
         npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile
+    IFS=, read -r -a exposed_commands <<< "$commands"
+    if [ -n "${DEPLOY_TARGET_AGENT:-}" ]; then
+        # A frozen install can report no changes when only its bin is broken.
+        # Force a reinstall of this project only when the live bin fails.
+        probe_path="${prepend_path:+$prepend_path:}$PATH"
+        for command in "${exposed_commands[@]}"; do
+            if [ ! -x "$project/node_modules/.bin/$command" ] ||
+                ! diagnostic=$(PATH="$probe_path" "$project/node_modules/.bin/$command" --version) ||
+                ! agent_diagnostic_matches "$version" "$diagnostic" -; then
+                printf 'dotfiles: repairing the installed %s package before rebuilding its launchers\n' "$name"
+                agent_retry env npm_config_global=false pnpm_config_global=false \
+                    npm_config_location=project "$bun" install --cwd "$project" --frozen-lockfile --force
+                break
+            fi
+        done
+    fi
     agent_install_launchers "$name" "$version" "$commands" "$project/node_modules/.bin" '' \
         "Bun installs the frozen project" "$node" "$bun" "-" exact "$prepend_path"
-    IFS=, read -r -a exposed_commands <<< "$commands"
     agent_global_copy_warning "$package" "$node" "${exposed_commands[0]}"
 }
 
@@ -1162,7 +1198,7 @@ install_agents() {
     fi
     # JS package shebangs and lifecycle scripts run with the compatible Node.
     export PATH="$(dirname "$node"):$(dirname "$bun"):$PATH"
-    if agent_selected claude; then
+    if agent_selected claude && { [ -z "${DEPLOY_TARGET_AGENT:-}" ] || [ -f "$HOME/.claude/settings.json" ]; }; then
         DEPLOY_STEP=install-agents.claude.model-snapshot
         if client_claude_uses_plain_opus; then claude_keep_plain_opus=1; fi
     fi
@@ -1220,7 +1256,9 @@ install_agents() {
     # Client installers can add plugin settings in their own formatting. Finish
     # through the existing merger so the first and later applies agree.
     DEPLOY_STEP=install-agents.client-settings
-    deploy_client_settings "$claude_keep_plain_opus"
+    if [ -z "${DEPLOY_TARGET_AGENT:-}" ] || [ -n "$DEPLOY_TARGET_POLICIES" ]; then
+        deploy_client_settings "$claude_keep_plain_opus" 0 "${DEPLOY_TARGET_POLICIES:-}"
+    fi
 }
 
 agent_catalog_load

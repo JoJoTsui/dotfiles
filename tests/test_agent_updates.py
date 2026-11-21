@@ -110,7 +110,7 @@ class AgentUpdateTests(unittest.TestCase):
 
     def assert_reinstalled(self, selection="pi"):
         self.assertEqual(json.loads(self.bootstrap_log.read_text()),
-                         ["--source", str(self.source), "--agents-only", "--agents", selection])
+                         ["--source", str(self.source), "--agent-update", "--agents", selection])
 
     def test_newer_device_bun_uses_the_exact_cached_runtime_for_normal_update(self):
         result = self.update()

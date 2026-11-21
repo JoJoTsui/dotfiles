@@ -31,6 +31,91 @@ class AgentTests(unittest.TestCase):
                               cwd=SOURCE, env=env or self.env, capture_output=True,
                               text=True, timeout=30)
 
+    def test_targeted_update_repairs_pi_and_preserves_unrelated_state(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent update requires Chezmoi")
+        tools = self.root / "tools"
+        tools.mkdir()
+        installed = self.root / "projects.log"
+        pins = agent_pins()
+        bun = tools / "bun"
+        bun.write_text(
+            f"#!{sys.executable}\n"
+            "import sys\nfrom pathlib import Path\n"
+            "if sys.argv[1:] == ['--version']:\n"
+            f"    print({common_pin('bun')!r}); raise SystemExit\n"
+            "if '--cwd' in sys.argv:\n"
+            "    project = Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
+            f"    with Path({str(installed)!r}).open('a') as log: log.write(project.name + (' force' if '--force' in sys.argv else '') + '\\n')\n"
+            f"    for command in { {name: row['commands'].split(',') for name, row in pins.items()}!r}[project.name]:\n"
+            f"        version = { {name: row['version'] for name, row in pins.items()}!r}[project.name]\n"
+            "        launcher = project / 'node_modules/.bin' / command\n"
+            "        if launcher.exists() and '--force' not in sys.argv: continue\n"
+            "        launcher.parent.mkdir(parents=True, exist_ok=True)\n"
+            "        launcher.write_text('#!/bin/sh\\necho ' + version + '\\n')\n"
+            "        launcher.chmod(0o755)\n"
+        )
+        bun.chmod(0o755)
+        node = tools / "node"
+        node.write_text(f"#!/bin/sh\necho v{common_pin('nodejs')}\n")
+        node.chmod(0o755)
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_BUN_BIN=str(bun),
+                           DOTFILES_NODE_BIN=str(node))
+        seeded = self.deploy("--agents-only", "--agents", "pi", env=environment)
+        self.assertEqual(seeded.returncode, 0, seeded.stderr)
+        installed.write_text("")
+
+        unrelated = {
+            ".codex/config.toml": b"invalid TOML left for a full apply",
+            ".config/git/ignore": b"device ignore drift\n",
+            ".agents/skills/herdr/SKILL.md": b"existing generated skill\n",
+            ".local/state/dotfiles/generated-skills.tsv": b"herdr|.agents/skills|fixture\n",
+            ".pi/agent/mcp.json": b'{"codegraph":"device drift"}\n',
+            ".local/bin/codegraph": b"preserve independent CodeGraph\n",
+        }
+        for relative, content in unrelated.items():
+            path = self.home / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        timestamps = {relative: (self.home / relative).stat().st_mtime_ns for relative in unrelated}
+        state = self.home / ".local/state/dotfiles/herdr.tsv"
+        state.write_text("# agent|kind|state\ncodex|codex|current\n")
+        launcher = self.home / ".local/bin/pi"
+        launcher.write_text("#!/bin/sh\n# Managed by dotfiles; older launcher.\nexit 99\n")
+        (self.home / ".bun/bin/pi").unlink()
+        # A broken selected package bin must be checked and repaired even
+        # when the catalog and lock still match.
+        package_entry = self.home / ".bun/managed/pi/node_modules/.bin/pi"
+        package_entry.write_text("#!/bin/sh\nexit 99\n")
+        settings = self.home / ".pi/agent/settings.json"
+        settings.unlink()
+        adjusted = tools / "replacement/node"
+        adjusted.parent.mkdir()
+        shutil.copy2(node, adjusted)
+        updated = self.deploy("--agent-update", "--agents", "pi", env=dict(environment, DOTFILES_NODE_BIN=str(adjusted)))
+        self.assertEqual(updated.returncode, 0, updated.stderr)
+        self.assertEqual(installed.read_text().splitlines(), ["pi", "pi force"])
+        self.assertIn("reconciled pi", updated.stdout)
+        self.assertIn("skipped shared source", updated.stdout)
+        self.assertIn("repairing the installed pi package", updated.stdout)
+        self.assertIn(str(adjusted.parent), launcher.read_text())
+        self.assertEqual(subprocess.check_output([str(launcher), "--version"], text=True).strip(),
+                         pins["pi"]["version"])
+        self.assertTrue(settings.exists())
+        self.assertIn("codex|codex|current", state.read_text())
+        for relative, content in unrelated.items():
+            path = self.home / relative
+            self.assertEqual(path.read_bytes(), content)
+            self.assertEqual(path.stat().st_mtime_ns, timestamps[relative])
+
+        claude_settings = self.home / ".claude/settings.json"
+        claude_settings.unlink()
+        claude = self.deploy("--agent-update", "--agents", "claude-code", env=environment)
+        self.assertEqual(claude.returncode, 0, claude.stderr)
+        self.assertTrue(claude_settings.is_file())
+        self.assertIn("reconciled claude", claude.stdout)
+
     def test_default_plan_names_bun_owned_agents_and_independent_codegraph(self):
         result = self.deploy("--plan")
         self.assertEqual(result.returncode, 0, result.stderr)

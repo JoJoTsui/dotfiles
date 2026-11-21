@@ -66,6 +66,20 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(plan["steps"][-3:], ["install-proxy", "magpie-apply", "prepare-shell"])
         self.assertFalse(self.home.exists())
 
+    def test_agent_update_plan_limits_package_and_stage_selection(self):
+        narrow = self.plan("--platform", "linux", "--agent-update", "--agents", "kimi-code")
+        self.assertEqual(narrow["agents"], ["kimi"])
+        self.assertEqual([agent["name"] for agent in narrow["agentPackages"]], ["kimi"])
+        self.assertEqual(narrow["steps"], ["install-managers", "prepare-agent-update", "install-agents"])
+        dependent = self.plan("--platform", "linux", "--agent-update", "--agents", "dsh-tui")
+        self.assertEqual([agent["name"] for agent in dependent["agentPackages"]], ["dsh", "dsh-tui"])
+        for selected in ("all", "none", "pi,codex"):
+            with self.subTest(selected=selected):
+                update = self.plan("--platform", "linux", "--agent-update", "--agents", selected)
+                old = self.plan("--platform", "linux", "--agents-only", "--agents", selected)
+                self.assertEqual(update, old)
+        self.assertFalse(self.home.exists())
+
     def test_ordered_plan_matches_dispatch_in_a_disposable_installer_fixture(self):
         source = self.root / "working-source"
         shutil.copytree(SOURCE, source, ignore=shutil.ignore_patterns(".git", "__pycache__"))
