@@ -69,6 +69,12 @@ function Assert-InstallerDirectory([string]$Path) {
         foreach ($item in (Get-ChildItem -LiteralPath $Path -Force)) { Assert-InstallerDirectory $item.FullName }
     }
 }
+function Assert-PortableGitLaunchers([string]$Path) {
+    Assert-SafePath $Path
+    foreach ($entry in @('bin/git.exe', 'bin/bash.exe', 'git-bash.exe')) {
+        Assert-SafePath (Join-Path $Path $entry)
+    }
+}
 function Assert-OwnedState {
     # A restricted or opted-out run never writes the Magpie CLI or its
     # launchers, so symlinks at those Magpie-only paths stay device-owned and
@@ -113,7 +119,13 @@ function Assert-OwnedState {
     foreach ($asset in $exceptions) {
         $assetTarget = [string]$asset.target
         Assert-Relative $assetTarget
-        Assert-InstallerDirectory (Join-Path -Path $TargetHome -ChildPath $assetTarget)
+        $assetPath = Join-Path -Path $TargetHome -ChildPath $assetTarget
+        if ($asset.name -eq 'git-bash') {
+            # Verified PortableGit installs internal vendor links. A reuse
+            # does not write that tree. Protect the root and launchers here;
+            # the extractor rejects every link before mutating an old tree.
+            Assert-PortableGitLaunchers $assetPath
+        } else { Assert-InstallerDirectory $assetPath }
     }
     foreach ($row in (Read-Catalog 'deployment/agent-payload/targets.tsv')) {
         Assert-Relative $row.columns[1]; Assert-Relative $row.columns[2]
@@ -862,6 +874,7 @@ function Prepare-AgentUpdate {
         Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('apply', $shellEnvironment)) -Quiet | Out-Null
     }
     $gitBash = Join-Path $roots.data 'dotfiles/git-bash/bin/bash.exe'
+    Assert-SafePath $gitBash
     if (-not [IO.File]::Exists($gitBash)) { Stop-Deployment 'managed Git Bash is missing; run full bootstrap before updating' }
     $rendered = Join-Path $script:TargetedRenderDirectory 'env_core.expected'
     Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('--output', $rendered, 'cat', $shellEnvironment)) -Quiet | Out-Null
@@ -982,7 +995,10 @@ function Install-Asset([string]$Name) {
     $target = Join-Path -Path $TargetHome -ChildPath $assetTarget
     Assert-SafePath $target
     $diagnostic = $target
-    if ($Name -eq 'git-bash') { $diagnostic = Join-Path $target 'bin/git.exe' }
+    if ($Name -eq 'git-bash') {
+        Assert-PortableGitLaunchers $target
+        $diagnostic = Join-Path $target 'bin/git.exe'
+    }
     if ($Name -eq 'helix') { $diagnostic = Join-Path $target 'hx.exe' }
     if ([IO.File]::Exists($diagnostic)) {
         $version = Invoke-Tool $diagnostic @('--version') -Quiet
@@ -1005,9 +1021,11 @@ function Install-Asset([string]$Name) {
             # PortableGit is a 7-Zip SFX archive. Extract it directly into the
             # managed directory and let the version check validate the result.
             $script:Step = "install-managers.$Name.extract"
+            Assert-InstallerDirectory $target
             $argumentLine = '-o"' + $target + '" -y'
             $process = Start-Process -FilePath $archive -ArgumentList $argumentLine -Wait -PassThru -WindowStyle Hidden
             if ($process.ExitCode) { $script:FailureCode = $process.ExitCode; Stop-Deployment 'required command failed' }
+            Assert-PortableGitLaunchers $target
         } elseif ($asset.kind -eq 'rustup') {
             Invoke-Tool $archive @('-y', '--no-modify-path', '--default-toolchain', 'none', '--profile', 'minimal') -Quiet | Out-Null
         } elseif ($asset.kind -eq 'exe') { Copy-RegularTree $archive $target }
