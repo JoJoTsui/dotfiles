@@ -24,6 +24,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 
@@ -108,6 +109,62 @@ def probe_dsh_adapter(home, installed_version, command):
     except (RuntimeError, OSError, subprocess.SubprocessError):
         return {"status": "unknown"}
     return capability_status(output, installed_version)
+
+
+def probe_minimax_sqlite(home, selected_agents, scratch, command):
+    """Observe MiniMax Code's local ACP initialization without an account."""
+    if "minimax" not in selected_agents:
+        return {"selected_clients": [], "clients": {}}
+    # MiniMax Code is the only selected project with this package in the
+    # current locks. A JavaScript package on disk does not prove its binding loads.
+    package = home / ".bun/managed/minimax/node_modules/better-sqlite3"
+    client = {
+        "operation": "acp.initialize",
+        "package_present": (package / "package.json").is_file(),
+        "native_binding_present": any(path.is_file() for path in package.rglob("better_sqlite3.node")),
+        "status": "unverified",
+    }
+    report = {"selected_clients": ["minimax"], "clients": {"minimax": client}}
+    with tempfile.TemporaryDirectory(prefix="minimax-acp-", dir=scratch) as temporary:
+        root = Path(temporary)
+        env = clean_environment(root, root)
+        env.update(PATH=f"{home}/.bun/bin:{home}/.local/bin:{home}/.pixi/bin:" + env["PATH"],
+                   XDG_CONFIG_HOME=str(root / "config"), XDG_CACHE_HOME=str(root / "cache"),
+                   XDG_STATE_HOME=str(root / "state"), XDG_DATA_HOME=str(root / "data"),
+                   MINIMAX_DATA_DIR=str(root / ".minimax"))
+        with tempfile.TemporaryFile(dir=root) as request:
+            request.write(b'{"jsonrpc":"2.0","id":1,"method":"initialize",'
+                          b'"params":{"protocolVersion":1,"clientCapabilities":{}}}\n')
+            request.seek(0)
+            try:
+                output = command([home / ".local/bin/mcode", "acp"], env=env, cwd=root, stdin=request)
+            except CommandFailed as error:
+                diagnostic = error.output.lower()
+                if ("sqlite:runtime-state:open:" in diagnostic
+                        and "could not locate the bindings file" in diagnostic):
+                    client.update(status="degraded", reason="local ACP startup could not load the SQLite native binding")
+                else:
+                    client["reason"] = "ACP command exited before successful initialization"
+                return report
+            except (OSError, subprocess.SubprocessError):
+                client["reason"] = "ACP command could not start or complete"
+                return report
+            except RuntimeError:
+                client["reason"] = "ACP probe exceeded its time limit"
+                return report
+    for line in output.splitlines():
+        try:
+            response = json.loads(line)
+        except ValueError:
+            continue
+        result = response.get("result") if isinstance(response, dict) else None
+        if (isinstance(result, dict) and response.get("id") == 1 and response.get("jsonrpc") == "2.0"
+                and "error" not in response and type(result.get("protocolVersion")) is int
+                and result["protocolVersion"] == 1):
+            client.update(status="healthy", reason="local ACP initialization answered with protocol version 1")
+            return report
+    client["reason"] = "no successful ACP initialize response"
+    return report
 
 
 def magpie_cli_pin(source=SOURCE):
@@ -271,14 +328,20 @@ def deterministic_environment(home, temporary, tools):
     return environment
 
 
-def run(command, *, env, cwd, timeout, log, records):
+class CommandFailed(RuntimeError):
+    def __init__(self, log, exit_code, output):
+        super().__init__(f"command exited {exit_code}; see {log.name}")
+        self.output = output
+
+
+def run(command, *, env, cwd, timeout, log, records, stdin=None):
     """Bound output and stop the entire subprocess group on timeout."""
     command = [str(part) for part in command]
     started = time.monotonic()
     output = bytearray()
     total = 0
     timed_out = False
-    with subprocess.Popen(command, env=env, cwd=cwd, stdout=subprocess.PIPE,
+    with subprocess.Popen(command, env=env, cwd=cwd, stdin=stdin, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, start_new_session=True) as process:
         try:
             with selectors.DefaultSelector() as selector:
@@ -327,8 +390,10 @@ def run(command, *, env, cwd, timeout, log, records):
                     "output_bytes": total, "log_truncated": total > LOG_LIMIT,
                     "log_sha256": hashlib.sha256(log.read_bytes()).hexdigest()})
     require(not timed_out, f"command timed out; see {log.name}")
-    require(process.returncode == 0, f"command exited {process.returncode}; see {log.name}")
-    return output.decode("utf-8", errors="replace")
+    decoded = output.decode("utf-8", errors="replace")
+    if process.returncode:
+        raise CommandFailed(log, process.returncode, decoded)
+    return decoded
 
 
 def classify_skip(identifier, reason):
@@ -593,9 +658,9 @@ def main():
     started = time.monotonic()
     environment = clean_environment(args.home, temporary)
 
-    def command(name, arguments, *, env=environment, cwd=SOURCE, timeout=60):
+    def command(name, arguments, *, env=environment, cwd=SOURCE, timeout=60, stdin=None):
         write_json(report_path, report)
-        return run(arguments, env=env, cwd=cwd, timeout=timeout,
+        return run(arguments, env=env, cwd=cwd, timeout=timeout, stdin=stdin,
                    log=args.artifacts / f"{len(report['commands']) + 1:03d}-{name}.log",
                    records=report["commands"])
 
@@ -738,6 +803,15 @@ def main():
             report.setdefault("managed_snapshot", snapshot(args.home, plan))
             return {"commands": len(versions), "installed_environments": len(installed)}
         check("regular managed files, installed pins, and executable commands", pinned_commands)
+        report["optional_capabilities"] = {
+            "better-sqlite3": probe_minimax_sqlite(
+                args.home, plan["agents"], temporary,
+                lambda arguments, **probe: command("minimax-acp-initialize", arguments, timeout=30, **probe),
+            )
+        }
+        minimax_sqlite = report["optional_capabilities"]["better-sqlite3"]["clients"].get("minimax")
+        if minimax_sqlite is not None:
+            print(f"linux acceptance: MiniMax ACP {minimax_sqlite['status']}: {minimax_sqlite['reason']}", flush=True)
 
         def installed_skills(stage):
             destination = args.artifacts / ("installed-skills-" + stage)
