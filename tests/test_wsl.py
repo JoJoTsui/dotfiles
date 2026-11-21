@@ -10,6 +10,66 @@ import unittest
 from fixtures.skills import STATIC_LIBRARY, assert_skill_copies
 
 SOURCE = Path(__file__).resolve().parents[1]
+CATALOG = "deployment/agents/providers.tsv"
+
+
+def catalog_records(source=SOURCE):
+    """The provider catalog rows the deployment reads, in catalog order."""
+    records = []
+    for line in (source / CATALOG).read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        records.append(line.split("|"))
+    return records
+
+
+def platform_serves(platforms, platform):
+    """Whether a catalog record can serve a platform.
+
+    It mirrors the platform match of the deployment, so the fixture names the
+    providers a platform resolves and no other.
+    """
+    fields = platforms.split(",")
+    if "all" in fields:
+        return True
+    if "unix" in fields and platform != "windows":
+        return True
+    return platform in fields
+
+
+def catalog_agents(platform, source=SOURCE):
+    """The catalog agents of a platform in dispatch order.
+
+    Every entry names the agent, its selection mode, and whether one of its
+    records can serve the platform. The deployment rejects a catalog whose
+    agent cannot serve the deployment platform, so a served agent is the one
+    the plan can install.
+    """
+    order = []
+    index = {}
+    for record in catalog_records(source):
+        name = record[0]
+        if name not in index:
+            order.append(name)
+            index[name] = {"mode": record[9], "serves": False}
+        if platform_serves(record[7], platform):
+            index[name]["serves"] = True
+    return [(name, index[name]["mode"], index[name]["serves"]) for name in order]
+
+
+def catalog_default_agents(platform, source=SOURCE):
+    """The ordered default agent selection of a platform.
+
+    The catalog order is the installation and the plan order. An agent the
+    deployment always installs is not part of the selectable default.
+    """
+    return [name for name, mode, serves in catalog_agents(platform, source)
+            if mode == "selectable" and serves]
+
+
+def catalog_dispatched_agents(platform, source=SOURCE):
+    """The ordered agent packages a platform dispatches, always-installed ones included."""
+    return [name for name, mode, serves in catalog_agents(platform, source) if serves]
 
 
 class WSLDeploymentTests(unittest.TestCase):
@@ -28,6 +88,21 @@ class WSLDeploymentTests(unittest.TestCase):
         return subprocess.run(["/bin/bash", str(source / "bootstrap.sh"), *arguments],
                               env=environment or self.environment, cwd=source,
                               capture_output=True, text=True, timeout=45)
+
+    def linux_uname_fixture(self, name="system-probe-fixture", machine="x86_64",
+                            release="generic"):
+        """A bounded uname fixture so the detection does not depend on the host.
+
+        The deployment reads the operating system and the architecture from
+        uname, so the fixture answers those three probes and nothing else.
+        """
+        directory = self.root / name
+        directory.mkdir(exist_ok=True)
+        uname = directory / "uname"
+        uname.write_text(f'#!/bin/sh\ncase "$1" in -s) echo Linux ;; -r) echo {release} ;; '
+                         f'-m) echo {machine} ;; esac\n')
+        uname.chmod(0o755)
+        return directory
 
     def test_wsl_application_keeps_ci_bookkeeping_out_of_linux_home(self):
         if not self.chezmoi:
@@ -70,31 +145,47 @@ class WSLDeploymentTests(unittest.TestCase):
                                  "Unix entry points and the raw library must survive a Windows checkout")
 
     def test_wsl_environment_selects_linux_defaults_and_explicit_choices_win(self):
-        environment = dict(self.environment, WSL_DISTRO_NAME="Ubuntu-24.04",
-                           WSL_INTEROP="/run/WSL/synthetic_interop", SSH_CONNECTION="synthetic ssh session")
+        guards = self.linux_uname_fixture("wsl-session-uname", machine="x86_64")
+        environment = dict(self.environment, PATH=f"{guards}:/usr/bin:/bin",
+                           WSL_DISTRO_NAME="Ubuntu-24.04",
+                           WSL_INTEROP="/run/WSL/synthetic_interop",
+                           SSH_CONNECTION="synthetic ssh session")
         result = self.deploy("--plan", environment=environment)
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
         self.assertEqual(plan["profile"], "wsl-workstation")
+        self.assertEqual(plan["platform"], "wsl")
+        self.assertEqual(plan["arch"], "x86_64")
         self.assertEqual(plan["home"], str(self.home))
         self.assertEqual(plan["roots"]["config"], str(self.home / ".config"))
         self.assertTrue({"nu", "bash", "zsh", "bun", "node", "atuin", "rtk", "zoxide",
                          "tspin", "codegraph"}.issubset(plan["tools"]))
-        self.assertEqual(plan["agents"], ["kimi", "pi", "opencode", "claude", "codex", "minimax", "qoder"])
+        # The default selection follows the catalog instead of a frozen list.
+        self.assertEqual(plan["agents"], catalog_default_agents("wsl"))
+        self.assertEqual([entry["name"] for entry in plan["agentPackages"]],
+                         catalog_dispatched_agents("wsl"))
+        # WSL has no installer-owned provider; Homebrew serves macOS alone.
+        for entry in plan["agentPackages"]:
+            self.assertNotEqual(entry["provider"], "homebrew")
         self.assertFalse(plan["settings"]["systemChanges"])
         self.assertFalse(plan["settings"]["loginShellChanges"])
         overridden = self.deploy("--plan", "--platform", "linux", "--role", "remote-compute",
                                  environment=dict(environment, DOTFILES_PLATFORM="windows"))
         self.assertEqual(overridden.returncode, 0, overridden.stderr)
-        self.assertEqual(json.loads(overridden.stdout)["profile"], "linux-remote-compute")
+        linux = json.loads(overridden.stdout)
+        self.assertEqual(linux["profile"], "linux-remote-compute")
+        self.assertEqual(linux["agents"], catalog_default_agents("linux"))
+        explicit = self.deploy("--plan", "--platform", "wsl", "--role", "workstation",
+                               environment=dict(environment, DOTFILES_PLATFORM="linux"))
+        self.assertEqual(explicit.returncode, 0, explicit.stderr)
+        wsl = json.loads(explicit.stdout)
+        self.assertEqual(wsl["profile"], "wsl-workstation")
+        self.assertEqual(wsl["agents"], catalog_default_agents("wsl"))
         self.assertFalse(self.home.exists())
 
     def test_wsl_kernel_detection_works_without_session_environment_markers(self):
-        guards = self.root / "system-probe-fixture"
-        guards.mkdir()
-        uname = guards / "uname"
-        uname.write_text('#!/bin/sh\ncase "$1" in -s) echo Linux ;; -r) echo 6.6.87.2-microsoft-standard-WSL2 ;; -m) echo aarch64 ;; esac\n')
-        uname.chmod(0o755)
+        guards = self.linux_uname_fixture(machine="aarch64",
+                                           release="6.6.87.2-microsoft-standard-WSL2")
         result = self.deploy("--plan", "--role", "remote-compute",
                              environment=dict(self.environment, PATH=f"{guards}:/usr/bin:/bin"))
         self.assertEqual(result.returncode, 0, result.stderr)
