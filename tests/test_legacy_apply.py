@@ -89,6 +89,80 @@ class LegacyApplyTests(unittest.TestCase):
         self.assertIn("unknown manifest target", result.stderr)
         self.assertFalse((self.live / ".local/bin/dotfiles-host-up").exists())
 
+    def test_unknown_group_fails_before_any_write(self):
+        known = self.run_apply("--apply", "--groups", "agent,config")
+        self.assertEqual(known.returncode, 0, known.stderr)
+        self.assertTrue((self.live / ".local/bin/dotfiles-host-up").is_file())
+        self.assertTrue((self.live / ".config/herdr/config.toml").is_file())
+        self.live_root = self.root / "live2"
+        self.home2 = self.root / "home2"
+        for directory in (self.home2, self.live_root / ".local/bin", self.live_root / ".local/lib/dotfiles", self.live_root / ".config/herdr", self.live_root / ".codex"):
+            directory.mkdir(parents=True)
+        (self.home2 / ".local").symlink_to(self.live_root / ".local")
+        (self.home2 / ".config").symlink_to(self.live_root / ".config")
+        (self.home2 / ".codex").symlink_to(self.live_root / ".codex")
+        mistyped = subprocess.run(
+            ["/bin/bash", str(SCRIPT), "--checkout", str(SOURCE),
+             "--home", str(self.home2), "--live-root", str(self.live_root),
+             "--apply", "--groups", "agent,agnt"],
+            cwd=SOURCE, capture_output=True, text=True, timeout=60,
+        )
+        self.assertNotEqual(mistyped.returncode, 0)
+        self.assertIn("unknown manifest group: agnt", mistyped.stderr)
+        self.assertFalse((self.live_root / ".local/bin/dotfiles-host-up").exists())
+        self.assertFalse((self.live_root / ".config/herdr/config.toml").exists())
+        # The manifest comment header is not a group; naming it must fail
+        # like any other unknown group instead of selecting nothing.
+        comment = subprocess.run(
+            ["/bin/bash", str(SCRIPT), "--checkout", str(SOURCE),
+             "--home", str(self.home2), "--live-root", str(self.live_root),
+             "--apply", "--groups", "# group"],
+            cwd=SOURCE, capture_output=True, text=True, timeout=60,
+        )
+        self.assertNotEqual(comment.returncode, 0)
+        self.assertIn("unknown manifest group: # group", comment.stderr)
+        self.assertFalse((self.live_root / ".local/bin/dotfiles-host-up").exists())
+        self.assertFalse((self.live_root / ".config/herdr/config.toml").exists())
+        every = subprocess.run(
+            ["/bin/bash", str(SCRIPT), "--checkout", str(SOURCE),
+             "--home", str(self.home2), "--live-root", str(self.live_root),
+             "--apply", "--groups", "all"],
+            cwd=SOURCE, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(every.returncode, 0, every.stderr)
+        self.assertTrue((self.live_root / ".local/bin/dotfiles-host-up").is_file())
+        self.assertTrue((self.live_root / ".config/herdr/config.toml").is_file())
+
+    def test_group_name_is_compared_literally(self):
+        # awk's -v unescapes its argument, so a group spelled "\141gent" used
+        # to compare equal to the group "agent" and pass as a valid selection.
+        result = self.run_apply("--apply", "--groups", "\\141gent")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("unknown manifest group: \\141gent", result.stderr)
+        self.assertFalse((self.live / ".local/bin/dotfiles-host-up").exists())
+        self.assertFalse((self.live / ".config/herdr/config.toml").exists())
+
+    def test_empty_group_selection_is_refused(self):
+        for selection in ("", "all,", ",agent", "agent,,config"):
+            with self.subTest(selection=selection):
+                result = self.run_apply("--check", "--groups", selection)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("groups selection", result.stderr)
+                self.assertFalse((self.live / ".local/bin/dotfiles-host-up").exists())
+        # An absent flag still selects every group.
+        every = self.run_apply("--check")
+        self.assertNotEqual(every.returncode, 0)
+        self.assertIn("MISSING .local/bin/dotfiles-host-up", every.stdout)
+        self.assertIn("MISSING .config/herdr/config.toml", every.stdout)
+
+    def test_empty_target_selection_is_refused(self):
+        for selection in ("", ".local/bin/dotfiles-host-up,"):
+            with self.subTest(selection=selection):
+                result = self.run_apply("--check", "--targets", selection)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("targets selection", result.stderr)
+                self.assertFalse((self.live / ".local/bin/dotfiles-host-up").exists())
+
     def test_symlink_target_is_refused(self):
         target = self.live / ".local/bin/codex-herdr"
         target.symlink_to(self.root / "elsewhere")

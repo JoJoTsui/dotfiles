@@ -34,9 +34,18 @@ renames atomically. It refuses symlink targets and any target that resolves
 outside the live tree. It never creates missing parent directories.
 
 `--groups agent` selects only the agent-stack files; `--groups config` selects
-the Herdr config. `--targets` narrows either selection to comma-separated target
-paths from the manifest; unknown targets fail before any writes. For a focused
-restart repair on a legacy home, use:
+the Herdr config. `--groups all` (the default when the flag is absent) selects
+every manifest group. `--targets` narrows either selection to comma-separated
+target paths from the manifest; unknown targets fail before any writes. An
+unknown group name also fails before any write, so a mistyped group is never a
+silent no-op. The membership check reads only the manifest's file records: a
+blank or comment line, such as the manifest's own header, names no group and
+no target, so naming one fails like any other unknown selection. A name is
+compared literally, so a spelling such as `\141gent` is unknown rather than a
+decoded `agent`. An explicit `--groups` or `--targets` selection must carry
+names: an empty selection or an empty comma-separated member is refused
+instead of selecting everything, while the absent flag still selects
+everything. For a focused restart repair on a legacy home, use:
 
 ```bash
 bash deployment/legacy/apply.sh --check --targets .local/bin/dotfiles-agent-health,.local/bin/dotfiles-host-up,.config/herdr/config.toml

@@ -14,7 +14,9 @@ HOME_DIR=${HOME:-}
 LIVE_ROOT=
 LIVE_ROOT_SET=false
 GROUP_FILTER=
+GROUP_FILTER_SET=false
 TARGET_FILTER=
+TARGET_FILTER_SET=false
 MODE=check
 
 usage() {
@@ -28,8 +30,10 @@ Apply repo-owned files to a legacy symlink home. The default is --check.
   --home DIR       home whose symlinks point at the live tree (default: $HOME)
   --live-root DIR  persistent tree that symlinked home entries resolve to
                    (default: parent of --checkout)
-  --groups LIST    comma-separated manifest groups (default: all)
-  --targets LIST   comma-separated manifest target paths (default: all)
+  --groups LIST    comma-separated manifest groups; "all" selects every group
+                   (default: all when the flag is absent)
+  --targets LIST   comma-separated manifest target paths (default: all when the
+                   flag is absent)
   --check          report OK/DRIFT/MISSING/FOREIGN/CONFLICT; exit 1 on drift
   --dry-run        print planned changes and diffs; write nothing
   --apply          back up and replace the selected files
@@ -58,14 +62,31 @@ group_selected() {
     [ -z "$GROUP_FILTER" ] && return 0
     case ",$GROUP_FILTER," in *",$1,"*) return 0 ;; *) return 1 ;; esac
 }
+# Membership test for a manifest field. Blank and comment records are ignored
+# exactly like the dispatcher below, so a comment header can never name a
+# group or a target. The searched value travels through the environment
+# because awk's -v assignment unescapes its argument, which let a name like
+# "\141gent" compare equal to the group "agent". The field index stays a
+# number inside this script.
+manifest_has() {
+    local field=$1 value=$2
+    case "$field" in
+        1|3) : ;;
+        *) fail "internal manifest field: $field" ;;
+    esac
+    LEGACY_APPLY_MANIFEST_VALUE=$value awk -F '|' -v field="$field" '
+        $1 == "" || $1 ~ /^#/ { next }
+        $field == ENVIRON["LEGACY_APPLY_MANIFEST_VALUE"] { found = 1 }
+        END { exit !found }' "$MANIFEST"
+}
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --checkout) CHECKOUT=$2; shift 2 ;;
         --home) HOME_DIR=$2; shift 2 ;;
         --live-root) LIVE_ROOT=$2; LIVE_ROOT_SET=true; shift 2 ;;
-        --groups) GROUP_FILTER=$2; shift 2 ;;
-        --targets) TARGET_FILTER=$2; shift 2 ;;
+        --groups) GROUP_FILTER=$2; GROUP_FILTER_SET=true; shift 2 ;;
+        --targets) TARGET_FILTER=$2; TARGET_FILTER_SET=true; shift 2 ;;
         --check) MODE=check; shift ;;
         --dry-run) MODE=dry-run; shift ;;
         --apply) MODE=apply; shift ;;
@@ -77,13 +98,37 @@ done
 [ -n "$HOME_DIR" ] || fail 'home is empty'
 [ -f "$MANIFEST" ] || fail "manifest missing: $MANIFEST"
 # Validate the entire selection before any write; typos must not silently skip.
-remaining=$TARGET_FILTER
-while [ -n "$remaining" ]; do
-    target_name=${remaining%%,*}
-    awk -F '|' -v target="$target_name" '$3 == target { found=1 } END { exit !found }' "$MANIFEST" ||
-        fail "unknown manifest target: $target_name"
-    case "$remaining" in *,*) remaining=${remaining#*,} ;; *) remaining= ;; esac
-done
+# An explicit selection must carry names: an empty selection or an empty
+# member is refused instead of selecting everything. The absent flag keeps the
+# default selection of every record.
+if [ "$TARGET_FILTER_SET" = true ]; then
+    [ -n "$TARGET_FILTER" ] || fail 'targets selection is empty'
+    remaining=$TARGET_FILTER
+    while :; do
+        target_name=${remaining%%,*}
+        [ -n "$target_name" ] || fail 'targets selection has an empty member'
+        manifest_has 3 "$target_name" || fail "unknown manifest target: $target_name"
+        case "$remaining" in *,*) remaining=${remaining#*,} ;; *) break ;; esac
+    done
+fi
+# An explicit group must name a manifest group; "all" keeps the default
+# selection of every group. An unknown group fails before any file is written.
+select_all=false
+if [ "$GROUP_FILTER_SET" = true ]; then
+    [ -n "$GROUP_FILTER" ] || fail 'groups selection is empty'
+    remaining=$GROUP_FILTER
+    while :; do
+        group_name=${remaining%%,*}
+        [ -n "$group_name" ] || fail 'groups selection has an empty member'
+        if [ "$group_name" = all ]; then
+            select_all=true
+        else
+            manifest_has 1 "$group_name" || fail "unknown manifest group: $group_name"
+        fi
+        case "$remaining" in *,*) remaining=${remaining#*,} ;; *) break ;; esac
+    done
+fi
+[ "$select_all" = true ] && GROUP_FILTER=
 [ "$LIVE_ROOT_SET" = true ] || LIVE_ROOT=$(dirname "$CHECKOUT")
 LIVE_REAL=$(realpath_py "$LIVE_ROOT") || fail "cannot resolve live root: $LIVE_ROOT"
 FAILURES=0
