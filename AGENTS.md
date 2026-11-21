@@ -124,7 +124,12 @@ explains every changed pair.
 - **The completion module owns the Nu loader publication**:
   `dot_local/lib/dotfiles/completions.py` publishes one validated generation to
   every canonical loader (the canonical XDG loader plus the platform's catalog
-  native copy) and retires a generation only after no loader imports it. A
+  native copy) and retires a generation only after no loader imports it and
+  its bytes prove the deployment published it: the published name carries the
+  digest of its module files, so the cleanup recomputes that digest and a
+  device directory with the same shape stays. A startup path is inside the home
+  when it is spelled under the home or under its canonical spelling, so an
+  alias outside the home that resolves into it is refused. A
   legacy loader path — one an earlier publication may have written, such as the
   macOS vendor autoload directory — is taken over only when the file carries
   the managed marker: a device file of the same name is preserved, an existing

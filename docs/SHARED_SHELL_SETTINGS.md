@@ -100,7 +100,10 @@ Standalone startup works before package installation. After packages exist,
 `dotfiles-shell-prepare` generates native Starship/Pixi/fzf resources and
 prepares command completions under
 `XDG_DATA_HOME/nushell/vendor/autoload`. New resources are validated before
-replacement, and symlinked startup state is rejected. Startup reads prepared
+replacement, and symlinked startup state is rejected. A startup path is inside
+the home when it is spelled under the home or under its canonical spelling; an
+alias outside the home that resolves into it is refused, because the alias is
+not part of the home. Startup reads prepared
 files; fetching and generation belong to bootstrap, never shell startup.
 
 `deployment/nu-completions.json` pins the `nu_scripts` revision, each module's
@@ -130,8 +133,12 @@ text: a Windows path spells every separator twice and a quoted home name
 escapes its quote, and both keep the generation they name. A loader that
 refuses the replacement keeps the generation it imports, so an interrupted
 publication leaves every loader usable and a failed publication leaves the
-working loader and its generation alone. A device-created entry and a symlink
-never match the published name and are left alone.
+working loader and its generation alone. A generation is retired only when its
+bytes prove this deployment published it: the published name carries the digest
+of the module files, so the cleanup recomputes that digest from the exact
+regular files the directory holds. A device-created directory that carries the
+published shape, a directory with an added or a foreign entry, and a symlink
+are left alone.
 
 Ownership decides which loader a publication may write. A canonical loader is
 owned by declaration: the XDG loader the deployment writes, plus the native

@@ -60,9 +60,12 @@ def safe_destination(path: Path, home: Path) -> Path:
     """Reject a destination that leaves the home or crosses a symlink.
 
     The home can be reached through a symlinked path, and the same directory
-    then carries two spellings: the resolved paths decide whether a
-    destination stays inside the home, and the written path keeps the
-    symlinked spelling the chain check walks.
+    then carries two spellings. A destination is inside the home when it is
+    spelled under the home or under its canonical spelling. The canonical
+    spelling is compared lexically, so an alias outside the home that
+    resolves into it is refused instead of being written through, and the
+    chain check then walks the components the destination is written
+    through, so a symlink inside the home is refused as well.
     """
     if ".." in path.parts:
         raise CompletionError("completion state paths cannot contain parent traversal")
@@ -71,7 +74,7 @@ def safe_destination(path: Path, home: Path) -> Path:
         relative = path.relative_to(home)
     except ValueError:
         try:
-            relative = path.resolve().relative_to(home.resolve())
+            relative = path.relative_to(home.resolve())
         except ValueError as error:
             raise CompletionError("completion state must remain in the designated home") from error
         home = home.resolve()
@@ -441,13 +444,80 @@ def mentioned_generations(loaders: Sequence[Path], modules_root: Path) -> set[Pa
     return mentioned
 
 
+def published_modules(directory: Path) -> list[tuple[str, Path]] | None:
+    """The regular module files a published directory holds.
+
+    The names are the module paths relative to the directory, which is how
+    the publication named them. A symlink or another irregular entry makes
+    the directory something other than a publication, so the walk stops
+    there.
+    """
+    modules: list[tuple[str, Path]] = []
+    pending = [(directory, "")]
+    while pending:
+        current, prefix = pending.pop()
+        try:
+            entries = sorted(current.iterdir())
+        except OSError:
+            return None
+        for entry in entries:
+            name = prefix + entry.name
+            if entry.is_symlink():
+                return None
+            if entry.is_dir():
+                pending.append((entry, name + "/"))
+            elif entry.is_file():
+                modules.append((name, entry))
+            else:
+                return None
+    return modules
+
+
+def published_digest(directory: Path) -> str | None:
+    """The digest of the modules a published directory holds.
+
+    A published directory is named after the digest of its modules, so a
+    directory that recomputes to the digest in its name was published by
+    this deployment. The recomputation reads the exact regular module files
+    the directory holds, so a directory that carries an added or a foreign
+    entry recomputes to a different digest and is never ours to remove.
+
+    ``None`` reports a directory this deployment cannot prove it published.
+    """
+    modules = published_modules(directory)
+    if modules is None:
+        return None
+    digest = hashlib.sha256()
+    for name, path in sorted(modules):
+        try:
+            content = path.read_bytes()
+        except OSError:
+            return None
+        digest.update(name.encode() + b"\0" + content)
+    return digest.hexdigest()
+
+
+def published_by_deployment(directory: Path) -> bool:
+    """Whether this deployment published the directory.
+
+    The name of a published directory carries the digest of its modules, so
+    a directory that recomputes to that digest is one this deployment
+    published. A device directory that carries the published shape but other
+    bytes recomputes to a different digest and is never removed.
+    """
+    _, _, digest = directory.name.partition("-")
+    computed = published_digest(directory)
+    return computed is not None and computed.startswith(digest)
+
+
 def retire_published(root: Path, imported: set[Path]) -> None:
     """Remove the module directories no loader imports any more.
 
-    Only a regular directory carrying the published name is removed, and only
-    after every managed loader stopped importing it and no preserved device
-    loader names it. A device-created entry or a symlink never matches, so
-    neither is ever touched.
+    Only a directory this deployment published is removed, and only after
+    every managed loader stopped importing it and no preserved device loader
+    names it. A device-created entry, a symlink, and a directory whose bytes
+    do not match the digest in its name never match, so none of them is ever
+    touched.
     """
     if not root.is_dir() or root.is_symlink():
         return
@@ -455,6 +525,8 @@ def retire_published(root: Path, imported: set[Path]) -> None:
         if entry in imported or not PUBLISHED_DIRECTORY.fullmatch(entry.name):
             continue
         if entry.is_symlink() or not entry.is_dir():
+            continue
+        if not published_by_deployment(entry):
             continue
         shutil.rmtree(entry)
 

@@ -134,3 +134,45 @@ Checks on this Mac (Python 3.15.2, nu 0.117.0):
 Windows acceptance (this host has no PowerShell), and the package downloads
 stay with the coordinator. The alias destination guard reported above stays
 open for the Codex review. The ticket stays open.
+Pi fixed the two final-review correctness findings and left the ticket open
+for the Codex review.
+
+The destination guard resolved the supplied destination before comparing it
+with the resolved home. A path outside the home that an alias spelled into it
+therefore passed the check: the chain check then walked the resolved
+components instead of the ones the write follows, and the module wrote
+through the alias. The fallback now compares the supplied destination
+lexically against the canonical home. A destination is inside the home when
+it is spelled under the home or under its canonical spelling, and an alias
+outside the home is refused. A symlink inside the home is still refused by
+the chain check, which walks the components the write follows.
+
+The cleanup removed every directory whose name carried the published shape,
+so a device directory that only looked like a generation was deleted. The
+cleanup now requires proof of ownership: it recomputes the digest from the
+exact regular module files the directory holds and removes the directory only
+when the result matches the digest in its name. The recomputation is the
+digest the publication computed, so the generations an earlier publication
+wrote are still retired, while a directory with an added or a foreign entry
+recomputes to a different digest and stays.
+
+Regressions: an alias outside the home is refused and nothing is written
+through it, the canonical home spelling is accepted, and a same-shaped
+foreign directory is preserved. The alias regression and the same-shaped
+foreign directory fail against the previous behavior; the canonical spelling
+guards the other half of the contract. The
+three earlier tests that relied on the name shape alone now publish a real
+generation first, so they still cover the superseded retirement, the empty
+selection, and the encoded Windows import.
+
+Checks on this Mac (Python 3.15.2, nu 0.117.0): python3 -m unittest
+tests.test_nu_completions (33 tests, OK) and git diff --check (clean). The
+full unittest discovery loop, the native deployment gate, the Windows
+acceptance (this host has no PowerShell), and the package downloads stay with
+the coordinator.
+
+The coordinator reproduced one exception to the new content proof before
+merge. Adding an empty device directory to a previously published generation
+does not change the file digest, so it was deleted. Reject empty directories in
+the retirement ownership walk because the publisher creates directories only
+for module files. Likewise reject unexpected non-.nu files before reading them.
