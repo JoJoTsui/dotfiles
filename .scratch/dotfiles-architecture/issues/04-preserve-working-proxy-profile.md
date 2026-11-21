@@ -4,9 +4,15 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Refresh publishes a valid replacement only after staging and validation. A failed fetch, conversion, or validation preserves the active profile.
-- [ ] A valid retry publishes the replacement through the normal deployment command.
-- [ ] The temporary deployment process and device proxy retain their existing ownership and lifecycle.
-- [ ] Verify failed refresh and successful retry using the existing deployment seam.
+- [x] Refresh publishes a valid replacement only after staging and validation. A failed fetch, conversion, or validation preserves the active profile.
+- [x] A valid retry publishes the replacement through the normal deployment command.
+- [x] The temporary deployment process and device proxy retain their existing ownership and lifecycle.
+- [x] Verify failed refresh and successful retry using the existing deployment seam.
+
+## Comments
+
+### Integrated verification
+
+The final proxy group covered invalid publication and valid retry. The pinned Mihomo binary independently rejected the malformed candidate.

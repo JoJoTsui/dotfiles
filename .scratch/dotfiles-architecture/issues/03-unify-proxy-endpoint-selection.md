@@ -4,9 +4,15 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Both launchers agree on precedence, supported overrides, health checks, and fallback under the same input.
-- [ ] Direct fallback clears supported inherited proxy variables for the child. Proxied launch applies its environment only to the child.
-- [ ] Parent environment, command arguments, and child exit status are preserved.
-- [ ] Verify selection and fallback using the existing public command interfaces and a local endpoint.
+- [x] Both launchers agree on precedence, supported overrides, health checks, and fallback under the same input.
+- [x] Direct fallback clears supported inherited proxy variables for the child. Proxied launch applies its environment only to the child.
+- [x] Parent environment, command arguments, and child exit status are preserved.
+- [x] Verify selection and fallback using the existing public command interfaces and a local endpoint.
+
+## Comments
+
+### Integrated verification
+
+The final proxy group passed with one occupied-port skip. Disposable shell fixtures covered endpoint precedence and direct fallback.

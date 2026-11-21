@@ -4,12 +4,12 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] The existing preparation and refresh commands publish to the loader paths active on their supported platforms.
-- [ ] New generations validate before a live loader switches. An interrupted publication leaves every active loader usable, including when some loaders switched and others did not.
-- [ ] Cleanup retires managed generations only after all managed loaders stop referencing them and preserves device-created files.
-- [ ] Exercise normal publication, failed second publication, and retry with real Nu. Document the preserved startup contract.
+- [x] New generations validate before a live loader switches. An interrupted publication leaves every active loader usable, including when some loaders switched and others did not.
+- [x] Cleanup retires managed generations only after all managed loaders stop referencing them and preserves device-created files.
+- [x] Exercise normal publication, failed second publication, and retry with real Nu. Document the preserved startup contract.
 
 ## Comments
 
@@ -206,3 +206,7 @@ Checks on this Mac (Python 3.15.2, nu 0.117.0):
 deployment gate, the Windows acceptance (this host has no PowerShell), and
 the package downloads stay with the coordinator. The ticket stays open for
 the Codex review.
+
+### Integrated verification
+
+Real Nushell fixtures passed on the final runtime revision. A native Windows shell preparation check remains open.

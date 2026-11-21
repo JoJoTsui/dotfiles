@@ -4,9 +4,15 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Herdr restoration uses the saved provider, model, and reasoning effort for each supported provider path. Fresh launches use their existing route.
-- [ ] Install, repeat install, and removal preserve device hook commands and metadata within mixed SessionStart groups.
-- [ ] Herdr continues to own its integration entries, and the managed resume hook retains the required ordering.
-- [ ] Regressions exercise the public launcher and hook commands with a disposable home.
+- [x] Herdr restoration uses the saved provider, model, and reasoning effort for each supported provider path. Fresh launches use their existing route.
+- [x] Install, repeat install, and removal preserve device hook commands and metadata within mixed SessionStart groups.
+- [x] Herdr continues to own its integration entries, and the managed resume hook retains the required ordering.
+- [x] Regressions exercise the public launcher and hook commands with a disposable home.
+
+## Comments
+
+### Integrated verification
+
+The launcher and mixed hook regressions passed. The real Codex loopback run verified saved thread identity.

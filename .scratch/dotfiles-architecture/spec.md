@@ -1,6 +1,6 @@
 # Deepen dotfiles lifecycle modules
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Design baseline:** `97d7ff2`. The five behavior contracts were confirmed in the design review.
 
@@ -56,3 +56,38 @@ Give Nushell publication, proxy resolution and refresh, and PortableGit replacem
 ## Further Notes
 
 Use an integration branch based on the confirmed baseline. Pi owns implementation. Codex owns the standards and spec reviews, guides fixes back to Pi, and verifies the integration evidence.
+
+## Integration verification
+
+Pi implemented all six slices. Codex reviewed standards and spec compliance
+separately, reproduced the findings in disposable fixtures, and rechecked the
+corrections on the combined branch.
+
+- Runtime and primary fixture revision: `ed27988`. The source apply and
+  reapply checks passed for both legacy Linux profiles. Rendered Nushell
+  started in both isolated homes. The small offline skill fixture emits two
+  ratchet warnings for its shortened humanizer files.
+- At `ed27988`, the shell and Herdr group passed 100 tests with 10 opt-in
+  runtime skips. A separate real Codex 0.171.0 run against loopback providers
+  preserved both threads' saved provider, model, and reasoning effort.
+- At `ed27988`, the proxy group passed 71 tests with one occupied-port skip.
+  The pinned Mihomo 1.19.29 runtime accepted a valid synthetic profile and
+  refused a malformed port in config-test mode.
+- At `ed27988`, the PortableGit and Windows shell preparation group passed
+  all 20 tests using portable PowerShell on macOS. The public plan matrix
+  passed 14 cells, 112 public plans, and 70 bundle outcomes with zero skips.
+  The corrected WSL detection fixture also passed on offline Ubuntu.
+- At `3f509a8`, the final verifier group passed 128 tests with four skips
+  across 132 collected. This was the report parser follow-up, with coverage
+  for Windows PowerShell 5.1 UTF-16 logs and UTF-8 logs.
+- The cache-assisted Apple silicon workstation gate passed at `f909d6c`.
+  It ran two isolated installations and 49 native behavior tests with zero
+  skips. Subsequent ownership and quoting corrections passed their focused
+  real-shell and application tests on the later revision. The full install
+  gate was run on `f909d6c`.
+
+Native Windows acceptance has no result for this branch. Portable PowerShell
+covered the adapter fixtures. The stock Windows PowerShell and vendor archive
+still require the native workflow. Starting that workflow requires permission
+to push the verification branch. Native WSL and other macOS matrix cells were
+outside the local runtime coverage.

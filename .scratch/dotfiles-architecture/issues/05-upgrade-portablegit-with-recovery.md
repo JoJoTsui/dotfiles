@@ -4,9 +4,15 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] Same-pin reapplication reuses its verified installation.
-- [ ] A different pin extracts into a confined staging location and passes digest, launcher, and version checks before replacement.
-- [ ] Interior vendor links do not prevent upgrading the owned tree. Substituted destination or parent paths remain refused.
+- [x] Same-pin reapplication reuses its verified installation.
+- [x] A different pin extracts into a confined staging location and passes digest, launcher, and version checks before replacement.
+- [x] Interior vendor links do not prevent upgrading the owned tree. Substituted destination or parent paths remain refused.
 - [ ] A failed replacement or retry preserves a usable previous runtime. Exercise same-pin reuse, upgrade, and failure recovery through the Windows installation path.
+
+## Comments
+
+### Integrated verification
+
+Portable PowerShell fixtures passed, including same-pin repair, vendor links, and interrupted rollback. Native vendor archive acceptance remains open.
