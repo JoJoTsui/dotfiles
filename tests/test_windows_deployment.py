@@ -2558,7 +2558,8 @@ class WindowsNativeInstallTests(unittest.TestCase):
         for pin in pins:
             self.assertIn(pin, bash_versions.stdout)
         from fixtures.windows_clients import verify_clients
-        verify_clients(self, SOURCE, environment)
+        with self.subTest(native_scenario='client discovery'):
+            verify_clients(self, SOURCE, environment)
         console_report = self.root / 'native-console-report.json'
         console = subprocess.run([str(self.home / '.pixi/bin/python.exe'), str(SOURCE / 'tests/fixtures/windows_console.py'),
                                   '--home', str(self.home), '--source', str(SOURCE), '--report', str(console_report)],
@@ -2628,6 +2629,7 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertRegex(status.stdout, r'(?m)^codex\s')
         self.assertRegex(status.stdout, r'(?m)^pi\s')
         self.assertRegex(status.stdout, r'(?m)^claude\s.*\| live: installed \| provider: bun \|')
+        print('Native Windows full-to-narrow agent state and status passed', flush=True)
 
         pending_shell = self.home / '.env_core'
         pending_shell.write_bytes(pending_shell.read_bytes() + b'\n# preserve shell drift\n')
@@ -2668,6 +2670,7 @@ class WindowsNativeInstallTests(unittest.TestCase):
             self.assertNotEqual(invalid_shell.returncode, 0)
             self.assertIn('.env_core failed the Git Bash check', invalid_shell.stderr)
             self.assertEqual(pending_shell.read_bytes(), early_stop)
+        print('Native Windows targeted repair and preservation passed', flush=True)
 
 
 

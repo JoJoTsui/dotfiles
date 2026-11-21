@@ -82,6 +82,7 @@ console.log(JSON.stringify({shellPath:settings.getShellPath(),result}));
             listener.bind(('127.0.0.1', 0))
             port = listener.getsockname()[1]
         env = dict(environment, OPENCODE_SERVER_PASSWORD='synthetic-native-mcp')
+        endpoint = '/api/v1/mcp/servers' if client == 'kimi' else '/api/mcp'
         arguments = (['web', '--host', '127.0.0.1', '--port', str(port), '--no-open', '--dangerous-bypass-auth']
                      if client == 'kimi' else ['serve', '--hostname', '127.0.0.1', '--port', str(port)])
         def api(path, data=None):
@@ -96,24 +97,30 @@ console.log(JSON.stringify({shellPath:settings.getShellPath(),result}));
             try:
                 deadline = time.monotonic() + 60
                 record = None
+                last_error = 'no transport error'
                 while time.monotonic() < deadline:
                     try:
-                        records = api('/api/v2/mcp/servers' if client == 'kimi' else '/api/mcp')['data']
+                        records = api(endpoint)['data']
                         record = next((item for item in records if item['name'] == 'codegraph'), None)
                         if record and (client == 'kimi' or record['status']['status'] == 'connected'):
                             break
-                    except OSError:
-                        pass
+                    except OSError as error:
+                        last_error = f'{type(error).__name__}: {error}'
                     time.sleep(0.1)
-                case.assertIsNotNone(record)
+                case.assertIsNotNone(record, f'{client} GET {endpoint} did not list CodeGraph; last transport failure: {last_error}')
                 if client == 'kimi':
                     case.assertEqual(record['config']['command'], command['command'])
                     case.assertEqual(record['config']['args'], command['args'])
-                    checked = api('/api/v2/mcp/servers:test', {'name': 'codegraph'})['data']
+                    test_endpoint = '/api/v1/mcp/servers:test'
+                    try:
+                        checked = api(test_endpoint, {'name': 'codegraph'})['data']
+                    except OSError as error:
+                        case.fail(f'{client} POST {test_endpoint}: {type(error).__name__}: {error}')
                     case.assertTrue(checked['success'], checked)
                     case.assertIn('codegraph_explore', checked['output'])
                 else:
-                    case.assertEqual(record['status']['status'], 'connected')
+                    case.assertEqual(record['status']['status'], 'connected',
+                                     f'{client} GET {endpoint}; last transport failure: {last_error}')
             finally:
                 stop_client(process)
     case.assertFalse((project / '.codegraph').exists())
