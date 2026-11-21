@@ -64,6 +64,50 @@ Use the same selection with `--dry-run` or an authorized `--apply`. Keep the
 legacy `nu-login` until its shared environment is migrated: the managed wrapper
 requires `_dotfiles_can_start_nu`, which older live `.env_core` files lack.
 
+## Incremental deployment on the legacy T9K host
+
+The legacy host is not a chezmoi home: its entries are symlinks into the live
+tree, so the public bootstrap refuses it. The incremental deployment is the
+set of explicit adapters, in this order:
+
+```bash
+# 1. The repo-owned agent stack, the history helper, and the Herdr config.
+bash deployment/legacy/apply.sh --check
+bash deployment/legacy/apply.sh --dry-run
+bash deployment/legacy/apply.sh --apply
+
+# 2. The approved global agent policy: instructions, skills, client settings.
+bash deployment/legacy/agent-integrations.sh --check
+bash deployment/legacy/agent-integrations.sh --apply
+
+# 3. The T9K job automation.
+bash deployment/legacy/agent-integrations.sh --t9k-jobs --check
+bash deployment/legacy/agent-integrations.sh --t9k-jobs --dry-run
+bash deployment/legacy/agent-integrations.sh --t9k-jobs --apply
+
+# 4. The symlink topology of the home.
+bash deployment/legacy/link-home.sh --check
+bash deployment/legacy/link-home.sh --dry-run
+bash deployment/legacy/link-home.sh --apply
+```
+
+The order matters in one place: the integration adapter records the observed
+Herdr integration state, and the observation needs the status helper that the
+first adapter installs. Every other adapter is independent, and each one is
+safe to run again.
+
+Two constraints belong to this host:
+
+- The proxy launcher stays the live tree's own `with-proxy`. It does not know
+  the `--if-available` option, so the Codex launcher asks the launcher before
+  it uses the option and keeps the plain proxied route when it cannot answer.
+  That launch depends on the proxy stack, so the narrow health check keeps
+  the proxy readiness for such a launcher.
+- The shell startup files are links into the live tree. The tree holds the
+  managed bytes, so a link carries the current configuration, and the
+  rehearsed shell migration replaces them with the rendered resources it
+  prepares. Linking them is the last step, not a repair.
+
 ## Incremental T9K jobs
 
 Use the explicit T9K job mode on the existing symlink-managed T9K host.
