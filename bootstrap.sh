@@ -10,6 +10,7 @@ DEPLOY_AGENTS_ONLY=false
 DEPLOY_AGENT_UPDATE=false
 DEPLOY_TARGET_AGENT=''
 DEPLOY_TARGET_POLICIES=''
+DEPLOY_AGENT_RENDER_DIR=''
 DEPLOY_SYSTEM_CONFIG=false
 DEPLOY_LOGIN_SHELL=false
 DEPLOY_PROXY=false
@@ -84,11 +85,11 @@ snapshot_magpie_clients() {
 }
 
 initialize_source() {
-    "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false
+    "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$DEPLOY_CHEZMOI_CONFIG" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$DEPLOY_CHEZMOI_STATE" --no-tty --force init --data=false
 }
 
 apply_source_files() {
-    "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply "$@"
+    "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$DEPLOY_CHEZMOI_CONFIG" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$DEPLOY_CHEZMOI_STATE" --no-tty --force apply "$@"
 }
 
 apply_source() {
@@ -97,15 +98,26 @@ apply_source() {
 }
 
 prepare_agent_update() {
-    if [ -n "$DEPLOY_TARGET_POLICIES" ] && [ ! -f "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" ]; then
+    if [ -n "$DEPLOY_TARGET_POLICIES" ]; then
+        # The existing Chezmoi file can describe an older deployment profile.
+        # Render selected targets against the current inputs without applying
+        # that profile to unrelated files or modifying the device config.
+        DEPLOY_AGENT_RENDER_DIR=$(mktemp -d "$TMPDIR/agent-render.XXXXXX")
+        DEPLOY_CHEZMOI_CONFIG="$DEPLOY_AGENT_RENDER_DIR/chezmoi.toml"
+        DEPLOY_CHEZMOI_STATE="$DEPLOY_AGENT_RENDER_DIR/chezmoistate.boltdb"
         initialize_source
     fi
     if [ "$DEPLOY_TARGET_AGENT" = codex ] && command -v herdr >/dev/null 2>&1; then
-        payload_safe_destination "$HOME/.local/bin/dotfiles-codex-herdr"
-        payload_safe_destination "$HOME/.local/bin/codex-herdr"
-        payload_safe_destination "$HOME/.codex/herdr-codex-resume.sh"
-        apply_source_files "$HOME/.local/bin/dotfiles-codex-herdr" "$HOME/.local/bin/codex-herdr" \
-            "$HOME/.codex/herdr-codex-resume.sh"
+        local target targets=("$HOME/.local/bin/dotfiles-codex-herdr"
+            "$HOME/.local/bin/codex-herdr" "$HOME/.codex/herdr-codex-resume.sh")
+        # These shared commands are dependencies of codex-herdr. Restore
+        # missing copies while leaving existing shared configuration alone.
+        for target in "$HOME/.local/bin/dotfiles-agent-health" "$HOME/.local/bin/with-proxy"; do
+            if [ ! -e "$target" ]; then targets+=("$target"); fi
+        done
+        for target in "${targets[@]}"; do payload_safe_destination "$target"; done
+        mkdir -p "$HOME/.codex"
+        apply_source_files "${targets[@]}"
     fi
 }
 
@@ -207,6 +219,9 @@ HELP
 done
 if [ "${DOTFILES_PROXY:-false}" = true ] && ! "$DEPLOY_PROXY"; then DEPLOY_PROXY=true; fi
 if "$DEPLOY_APPLY_ONLY" && "$DEPLOY_AGENTS_ONLY"; then fail '--apply-only and --agents-only conflict'; fi
+if "$DEPLOY_AGENT_UPDATE" && "$DEPLOY_SYSTEM_CONFIG"; then
+    fail '--system-config cannot be used with --agent-update'
+fi
 if "$DEPLOY_PROXY" && { "$DEPLOY_APPLY_ONLY" || "$DEPLOY_AGENTS_ONLY"; }; then
     fail '--proxy requires a full deployment with common tools'
 fi
@@ -358,8 +373,6 @@ DEPLOY_STEP=apply-source.overrides
 validate_version_overrides
 if [ -n "$DEPLOY_TARGET_AGENT" ]; then
     DEPLOY_STEP=prepare-agent-update
-    payload_safe_destination "$DEPLOY_HOME/.config/chezmoi/chezmoi.toml"
-    payload_safe_destination "$DEPLOY_HOME/.config/chezmoi/chezmoistate.boltdb"
     payload_safe_destination "$DEPLOY_HOME/.cache/chezmoi"
     if [ -n "$DEPLOY_TARGET_POLICIES" ]; then validate_client_settings "$DEPLOY_TARGET_POLICIES"; fi
 else
@@ -420,8 +433,10 @@ trap report_failure ERR
 set -E
 mkdir -p "$HOME/.local/bin" "$XDG_CONFIG_HOME/chezmoi" "$TMPDIR" "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"
+DEPLOY_CHEZMOI_CONFIG="$XDG_CONFIG_HOME/chezmoi/chezmoi.toml"
+DEPLOY_CHEZMOI_STATE="$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb"
 DEPLOY_MAGPIE_BACKUP_SOURCE=''
-trap 'cleanup_skill_library; stop_deployment_proxy; if [ -n "$DEPLOY_MAGPIE_BACKUP_SOURCE" ]; then rm -rf "$DEPLOY_MAGPIE_BACKUP_SOURCE"; fi' EXIT
+trap 'cleanup_skill_library; stop_deployment_proxy; if [ -n "$DEPLOY_MAGPIE_BACKUP_SOURCE" ]; then rm -rf "$DEPLOY_MAGPIE_BACKUP_SOURCE"; fi; if [ -n "$DEPLOY_AGENT_RENDER_DIR" ]; then rm -rf "$DEPLOY_AGENT_RENDER_DIR"; fi' EXIT
 deploy_steps
 if [ -n "$DEPLOY_TARGET_AGENT" ]; then
     printf 'dotfiles: reconciled %s and its deployment dependencies; skipped shared source, skills and unselected client settings\n' "$DEPLOY_TARGET_AGENT"

@@ -149,16 +149,15 @@ function Get-LiveProvider($Row, [string]$Path) {
     $launchers = @((Join-Path $HOME '.local/bin'), (Join-Path $HOME '.bun/bin'))
     $launcherDirectory = [IO.Path]::GetDirectoryName($Path)
     if ($launcherDirectory -in $launchers -and $Path.EndsWith('.cmd', [StringComparison]::OrdinalIgnoreCase)) {
-        try { $lines = [IO.File]::ReadAllLines($Path) }
+        try { $launch = Get-ManagedWindowsLauncherTarget $Path }
         catch { return 'unverified' }
-        # Read the exact launcher form emitted by bootstrap without evaluating
-        # it. A matching --version or a managed directory alone proves nothing.
-        $launch = $lines | Where-Object { $_.EndsWith(' %*') } | Select-Object -First 1
-        if ($lines[0] -ne '@echo off' -or -not $launch) { return 'unverified' }
-        if ($Row.provider -eq 'bun' -and $launch -match '"%~dp0(?<target>\.\.\\\.\.\\[^"%]+)" %\*$') {
-            $entry = [IO.Path]::GetFullPath((Join-Path $launcherDirectory $Matches.target))
-        } elseif ($Row.provider -eq 'native' -and $launch -match '^"(?<target>[^"%]+)" %\*$') {
-            $entry = $Matches.target
+        if (-not $launch) { return 'unverified' }
+        if ($Row.provider -eq 'bun' -and $launch.relative) {
+            $entry = [IO.Path]::GetFullPath((Join-Path $HOME $launch.target))
+        } elseif ($Row.provider -eq 'native' -and -not $launch.relative) {
+            $entry = $launch.target
+        } else {
+            return 'unverified'
         }
     }
     if (-not [IO.File]::Exists($entry)) { return 'unverified' }
@@ -203,7 +202,7 @@ function Get-LiveCommand([string]$Name, $Row) {
         return $live
     }
     $first = $output | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Select-Object -First 1
-    $version = [regex]::Match([string]$first, '(?<![\w.])v?(\d+(?:\.\d+)+(?:-[\w.-]+)?(?:\+[\w.-]+)?)(?![\w.])')
+    $version = [regex]::Match([string]$first, '(?<![A-Za-z0-9._+\-])v?(\d+(?:\.\d+)+(?:-[\w.-]+)?(?:\+[\w.-]+)?)(?![A-Za-z0-9._+\-])')
     if (-not $version.Success) {
         $live.status = 'unverified (no version in probe output)'
         return $live
@@ -216,6 +215,7 @@ function Get-LiveCommand([string]$Name, $Row) {
 
 function Show-Status {
     Assert-Source
+    . (Join-Path $Source 'deployment/windows.ps1')
     $rows = Select-Agents (Get-AgentCatalog)
     $state = Get-AgentState
     if (-not $state) { $state = @{} }

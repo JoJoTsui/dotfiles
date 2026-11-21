@@ -2718,7 +2718,7 @@ magpie_codex_scope_preflight() {
 magpie_apply() {
     local platform dir index role preset source required group agent owner enabled
     local output live known current desired change='' entry used rest variable servable
-    local fatal='' missing='' manual='' manual_fatal='' guard='unchanged' backup='' codex_before codex_after codex_auth_before codex_auth_after forced
+    local fatal='' missing='' manual='' manual_fatal='' guard='unchanged' backup='' codex_before codex_after codex_auth_before codex_auth_after forced profile_failed
     local id recorded names name version plugin_state state status client_migration=no policies='' report=''
     local MAGPIE_DSH_COMPACT_GROUP='' MAGPIE_DSH_COMPACT_BEFORE=''
     # The scope the separate Codex profile is selected under, set by the
@@ -3280,13 +3280,19 @@ client-settings"
                     { magpie_fail 'cannot protect the Codex profile before it is written'; return 1; }
                 magpie_codex_profile_pending_write || return 1
                 if magpie_run codex "$group" >/dev/null; then status=0; else status=$?; fi
-                magpie_codex_profile_pending_write || return 1
+                profile_failed=0
+                magpie_codex_profile_pending_write || profile_failed=1
                 codex_after=$(magpie_content_digest "$HOME/.codex/config.toml" toml || true)
                 codex_auth_after=$(magpie_content_digest "$HOME/.codex/auth.json" json || true)
-                [ "$codex_before" = "$codex_after" ] ||
-                    { magpie_fail 'the Codex configuration changed during profile wiring'; return 1; }
-                [ "$codex_auth_before" = "$codex_auth_after" ] ||
-                    { magpie_fail 'the Codex authentication changed during profile wiring'; return 1; }
+                if [ "$codex_before" != "$codex_after" ]; then
+                    magpie_fail 'the Codex configuration changed during profile wiring'
+                    profile_failed=1
+                fi
+                if [ "$codex_auth_before" != "$codex_auth_after" ]; then
+                    magpie_fail 'the Codex authentication changed during profile wiring'
+                    profile_failed=1
+                fi
+                [ "$profile_failed" = 0 ] || return 1
                 [ "$status" = 0 ] || {
                     report=$(magpie_codex_profile_report "$group")
                     if [ "${report%%|*}" = unreadable ]; then

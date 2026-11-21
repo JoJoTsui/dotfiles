@@ -1,6 +1,7 @@
 # Native adapters share the source catalogs and Chezmoi merge template.
 $script:TargetedAgent = ''
 $script:TargetedPolicies = @()
+$script:TargetedRenderDirectory = ''
 
 function Test-AgentSelected($Row) {
     if ($Row.agent -in $selectedAgents) { return $true }
@@ -99,7 +100,7 @@ function Assert-OwnedState {
         Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ([string]$relative))
     }
     if ($script:TargetedAgent) {
-        foreach ($relative in @('.config/chezmoi/chezmoi.toml', '.config/chezmoi/chezmoistate.boltdb', '.cache/chezmoi', '.env_core')) {
+        foreach ($relative in @('.cache/chezmoi', '.env_core')) {
             Assert-SafePath (Join-Path $TargetHome $relative)
         }
         Assert-ClientSettingsPaths
@@ -199,9 +200,15 @@ function Write-Utf8([string]$Path, [string]$Text) {
 function Set-Private([string]$Path) {
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { return }
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent().User
-    $acl = New-Object Security.AccessControl.FileSecurity
+    $directory = [IO.Directory]::Exists($Path)
+    $acl = if ($directory) { New-Object Security.AccessControl.DirectorySecurity }
+           else { New-Object Security.AccessControl.FileSecurity }
     $acl.SetAccessRuleProtection($true, $false)
-    $rule = New-Object Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'Allow')
+    $rule = if ($directory) {
+        New-Object Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+    } else {
+        New-Object Security.AccessControl.FileSystemAccessRule($identity, 'FullControl', 'Allow')
+    }
     $acl.AddAccessRule($rule)
     Set-Acl -LiteralPath $Path -AclObject $acl
 }
@@ -817,20 +824,35 @@ function Copy-NativeConfiguration {
         Write-Utf8 (Join-Path $TargetHome ".local/bin/$name.cmd") ("@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$name.ps1`" %*`r`nexit /b %errorlevel%`r`n")
     }
 }
-function Set-ChezmoiArguments {
-    $script:ChezmoiArguments = @('--source', $Source, '--destination', $TargetHome, '--config', (Join-Path $roots.config 'chezmoi/chezmoi.toml'), '--cache', (Join-Path $roots.cache 'chezmoi'), '--persistent-state', (Join-Path $roots.config 'chezmoi/chezmoistate.boltdb'), '--no-tty', '--force')
+function Set-ChezmoiArguments([string]$ConfigDirectory = (Join-Path $roots.config 'chezmoi')) {
+    $script:ChezmoiArguments = @('--source', $Source, '--destination', $TargetHome, '--config', (Join-Path $ConfigDirectory 'chezmoi.toml'), '--cache', (Join-Path $roots.cache 'chezmoi'), '--persistent-state', (Join-Path $ConfigDirectory 'chezmoistate.boltdb'), '--no-tty', '--force')
 }
 function Initialize-Chezmoi {
     Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('init', '--data=false')) -Quiet | Out-Null
 }
 function Prepare-AgentUpdate {
-    Set-ChezmoiArguments
+    $script:TargetedRenderDirectory = Get-Scratch 'agent-render'
+    Set-Private $script:TargetedRenderDirectory
+    Set-ChezmoiArguments $script:TargetedRenderDirectory
+    Initialize-Chezmoi
+    if ($script:TargetedAgent -eq 'qoder') { return }
     $shellEnvironment = Join-Path $TargetHome '.env_core'
-    if (-not [IO.File]::Exists((Join-Path $roots.config 'chezmoi/chezmoi.toml'))) { Initialize-Chezmoi }
     # The Git Bash companions source this at runtime. Repair a missing
-    # prerequisite and leave an existing shell environment for a full apply.
+    # prerequisite but do not overwrite an existing device file.
     if (-not [IO.File]::Exists($shellEnvironment)) {
+        if ([IO.Directory]::Exists($shellEnvironment)) { Stop-Deployment '.env_core is a directory; repair the Git Bash environment before updating' }
         Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('apply', $shellEnvironment)) -Quiet | Out-Null
+    }
+    $gitBash = Join-Path $roots.data 'dotfiles/git-bash/bin/bash.exe'
+    if (-not [IO.File]::Exists($gitBash)) { Stop-Deployment 'managed Git Bash is missing; run full bootstrap before updating' }
+    $savedFailureCode = $script:FailureCode
+    try {
+        if ((Get-Item -LiteralPath $shellEnvironment).Length -eq 0) { throw 'empty shell environment' }
+        Invoke-Tool $gitBash @('-n', $shellEnvironment) -Quiet | Out-Null
+    } catch {
+        Stop-Deployment '.env_core failed the Git Bash check; repair it or run full bootstrap before updating'
+    } finally {
+        $script:FailureCode = $savedFailureCode
     }
 }
 function Apply-Source {
@@ -1014,13 +1036,57 @@ function Install-Common {
         }
     }
 }
+function Get-ManagedWindowsLauncherTarget([string]$Path) {
+    $text = [IO.File]::ReadAllText($Path)
+    if ($text.Length -gt 8192) { return }
+    if ($Path.EndsWith('.cmd', [StringComparison]::OrdinalIgnoreCase)) {
+        $grammar = '\A@echo off\r?\n(?:rem Managed by dotfiles;\r?\n)?(?:setlocal DisableDelayedExpansion\r?\n"(?<node>(?:[^"%\r\n]|%%)+)" )?"(?<target>[^"\r\n]+)" %\*\r?\nexit /b %errorlevel%\r?\n\z'
+        $match = [regex]::Match($text, $grammar)
+        if (-not $match.Success) { return }
+        $target = $match.Groups['target'].Value
+        $relativePrefix = '%~dp0..\..\'
+        if ($target.StartsWith($relativePrefix)) {
+            $relativeTarget = $target.Substring($relativePrefix.Length)
+            if ($relativeTarget -and $relativeTarget -notmatch '%|(^|[\\/])\.\.([\\/]|$)' -and
+                -not [IO.Path]::IsPathRooted($relativeTarget)) {
+                return [pscustomobject]@{ target = $relativeTarget; relative = $true }
+            }
+            return
+        }
+        if (-not $match.Groups['node'].Success -and $target -notmatch '%' -and [IO.Path]::IsPathRooted($target)) {
+            return [pscustomobject]@{ target = $target; relative = $false }
+        }
+        return
+    }
+    $quoted = @'
+'(?:[^'\r\n]|'"'"')*'
+'@
+    $device = 'dotfiles_device=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) || exit 1'
+    $relative = [regex]::Escape($device) + '\r?\n\. "\$dotfiles_device/\.env_core"\r?\nexec (?:' +
+        $quoted + ' )?"\$dotfiles_device/"(?<target>' + $quoted + ') "\$@"\r?\n'
+    $absolute = 'exec (?<target>' + $quoted + ') "\$@"\r?\n'
+    $match = [regex]::Match($text, '\A#!/bin/sh\r?\n(?:# Managed by dotfiles;\r?\n)?(?:(?<relative>' +
+        $relative + ')|' + $absolute + ')\z')
+    if ($match.Success) {
+        $target = $match.Groups['target'].Value
+        $apostrophe = [string][char]39
+        $escaped = $apostrophe + '"' + $apostrophe + '"' + $apostrophe
+        $target = $target.Substring(1, $target.Length - 2).Replace($escaped, $apostrophe)
+        $isRelative = $match.Groups['relative'].Success
+        if ($isRelative -and ($target -match '(^|[\\/])\.\.([\\/]|$)' -or [IO.Path]::IsPathRooted($target))) { return }
+        return [pscustomobject]@{ target = $target; relative = $isRelative }
+    }
+}
+
 function Assert-AgentLauncher([string]$Path, [string]$OldTarget) {
     Assert-SafePath $Path
     if ([IO.Directory]::Exists($Path)) { Stop-Deployment "agent launcher is a directory: $Path" }
     if (-not [IO.File]::Exists($Path)) { return }
-    $existing = [IO.File]::ReadAllText($Path).Replace('\', '/')
-    $header = if ($Path.EndsWith('.cmd', [StringComparison]::OrdinalIgnoreCase)) { '@echo off' } else { '#!/bin/sh' }
-    if (-not ($existing.StartsWith($header) -and ($existing.Contains('Managed by dotfiles;') -or $existing.Contains($OldTarget)))) {
+    $existing = Get-ManagedWindowsLauncherTarget $Path
+    $expected = if ($OldTarget.StartsWith('/.bun/')) { $OldTarget.TrimStart('/') }
+                else { $TargetHome.Replace('\', '/') + $OldTarget }
+    if (-not $existing -or -not $existing.target.Replace('\', '/').StartsWith($expected, [StringComparison]::OrdinalIgnoreCase) -or
+        ($existing.relative -ne $OldTarget.StartsWith('/.bun/'))) {
         Stop-Deployment "agent launcher would replace a device file: $Path"
     }
 }
@@ -1121,6 +1187,12 @@ function Get-BunAgentEntry($Package, [string]$Command) {
     return $Package.bin.$Command
 }
 
+function Test-AgentVersion([string]$Output, [string]$Version) {
+    $line = ($Output -split '\r?\n', 2)[0]
+    $token = '(?<![A-Za-z0-9._+\-])v?' + [regex]::Escape($Version) + '(?![A-Za-z0-9._+\-])'
+    return [regex]::IsMatch($line, $token)
+}
+
 function Test-BunAgentEntries($Row, [string]$PackageDirectory, [string]$Node) {
     $savedFailureCode = $script:FailureCode
     try {
@@ -1135,7 +1207,7 @@ function Test-BunAgentEntries($Row, [string]$PackageDirectory, [string]$Node) {
             } else {
                 Invoke-Tool $Node @($executable, '--version') -Quiet
             }
-            if (-not $output.Contains($Row.version)) { return $false }
+            if (-not (Test-AgentVersion $output $Row.version)) { return $false }
         }
         return $true
     } catch {
@@ -1224,7 +1296,7 @@ function Install-Agents {
                 } else {
                     $diagnostic = Invoke-Tool $javascript @('--version') -Quiet -ShowFailureOutput
                 }
-                if (-not $diagnostic.Contains($row.version)) { Stop-Deployment "$name diagnostic did not report its pinned version" }
+                if (-not (Test-AgentVersion $diagnostic $row.version)) { Stop-Deployment "$name diagnostic did not report its pinned version" }
                 [Console]::Out.Write($diagnostic)
             }
         } elseif ($row.provider -eq 'native') {

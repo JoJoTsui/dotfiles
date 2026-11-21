@@ -326,6 +326,20 @@ class AgentUpdateTests(unittest.TestCase):
         self.assertEqual(self.pins.read_text(), self.original_pins)
         self.assertFalse(self.bootstrap_log.exists())
 
+    def test_status_requires_the_complete_launcher_before_proving_provider(self):
+        entry = self.bun(self.home / ".bun/managed/pi/node_modules/bin/pi", "1.6.0")
+        launcher = self.common / "pi"
+        header = "#!/bin/sh\n# Managed by dotfiles; fixture.\n"
+        dispatch = f"""exec '{entry}' "$@"\n"""
+        for middle, provider in (("echo 1.6.0\nexit 0\n", "unverified"), ("", "bun")):
+            launcher.write_text(header + middle + dispatch)
+            launcher.chmod(0o755)
+            result = subprocess.run([str(self.command), "status", "pi"], cwd=self.root,
+                                    env=dict(self.env, PATH=f"{self.common}:/usr/bin:/bin"),
+                                    capture_output=True, text=True, timeout=30)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(f"provider: {provider} | version: 1.6.0", result.stdout)
+
     def test_failed_or_invalid_pixi_runtime_leaves_pins_intact(self):
         wrong = self.bun(self.root / "wrong/bun", "99.0.0")
         for name, result_path, status in (

@@ -65,6 +65,14 @@ class AgentTests(unittest.TestCase):
         seeded = self.deploy("--agents-only", "--agents", "pi", env=environment)
         self.assertEqual(seeded.returncode, 0, seeded.stderr)
         installed.write_text("")
+        plugins = self.root / "worktrunk.log"
+        worktrunk = self.home / ".pixi/bin/wt"
+        worktrunk.parent.mkdir(parents=True, exist_ok=True)
+        worktrunk.write_text(
+            f"#!{sys.executable}\nimport sys\nfrom pathlib import Path\n"
+            f"with Path({str(plugins)!r}).open('a') as log: log.write(' '.join(sys.argv[1:]) + '\\n')\n"
+        )
+        worktrunk.chmod(0o755)
 
         unrelated = {
             ".codex/config.toml": b"invalid TOML left for a full apply",
@@ -87,7 +95,7 @@ class AgentTests(unittest.TestCase):
         # A broken selected package bin must be checked and repaired even
         # when the catalog and lock still match.
         package_entry = self.home / ".bun/managed/pi/node_modules/.bin/pi"
-        package_entry.write_text("#!/bin/sh\nexit 99\n")
+        package_entry.write_text(f"#!/bin/sh\necho {pins['pi']['version']}0\n")
         settings = self.home / ".pi/agent/settings.json"
         settings.unlink()
         adjusted = tools / "replacement/node"
@@ -104,6 +112,7 @@ class AgentTests(unittest.TestCase):
                          pins["pi"]["version"])
         self.assertTrue(settings.exists())
         self.assertIn("codex|codex|current", state.read_text())
+        self.assertEqual(plugins.read_text().splitlines(), ["config plugins pi install --yes"])
         for relative, content in unrelated.items():
             path = self.home / relative
             self.assertEqual(path.read_bytes(), content)
@@ -115,6 +124,16 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(claude.returncode, 0, claude.stderr)
         self.assertTrue(claude_settings.is_file())
         self.assertIn("reconciled claude", claude.stdout)
+
+        renderer = self.home / ".config/chezmoi/chezmoi.toml"
+        renderer_fingerprint = (renderer.read_bytes(), renderer.stat().st_mtime_ns)
+        opencode = self.home / ".config/opencode/opencode.jsonc"
+        self.assertNotEqual(json.loads(opencode.read_text())["watcher"]["ignore"], ["**"])
+        compute = self.deploy("--agent-update", "--agents", "opencode", "--role", "remote-compute", env=environment)
+        self.assertEqual(compute.returncode, 0, compute.stderr)
+        self.assertEqual(json.loads(opencode.read_text())["watcher"]["ignore"], ["**"])
+        self.assertEqual((renderer.read_bytes(), renderer.stat().st_mtime_ns), renderer_fingerprint)
+        self.assertEqual((self.home / ".config/git/ignore").read_bytes(), unrelated[".config/git/ignore"])
 
     def test_default_plan_names_bun_owned_agents_and_independent_codegraph(self):
         result = self.deploy("--plan")

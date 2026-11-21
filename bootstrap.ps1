@@ -430,4 +430,10 @@ try {
     }
     [Console]::Error.WriteLine("dotfiles: step $script:Step failed (exit $script:FailureCode)")
     exit $script:FailureCode
+} finally {
+    if (Get-Variable -Name TargetedRenderDirectory -Scope Script -ErrorAction SilentlyContinue) {
+        if ($script:TargetedRenderDirectory) {
+            Remove-Item -LiteralPath $script:TargetedRenderDirectory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }

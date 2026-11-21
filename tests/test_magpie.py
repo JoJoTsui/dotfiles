@@ -275,6 +275,15 @@ elif argv[:1] == ["codex"] and len(argv) == 2:
         # the same content: the guard compares the content, not the bytes.
         rewrite_codex_config()
     profile = pathlib.Path(os.environ["HOME"]) / ".codex/magpie.config.toml"
+    if os.environ.get("FAKE_MAGPIE_BREAK_CODEX_PENDING") == "1":
+        home = pathlib.Path(os.environ["HOME"])
+        config = home / ".codex/config.toml"
+        config.write_text('guard_probe = "changed"\\n' + config.read_text())
+        (home / ".codex/auth.json").write_text('{"changed":true}\\n')
+        pending = home / ".local/state/dotfiles/magpie/codex-profile.pending"
+        pending.unlink()
+        pending.symlink_to(config)
+        sys.exit(1)
     catalog = pathlib.Path(os.environ["HOME"]) / ".codex/magpie-models.json"
     # The mode the writer was handed: the deployment has to make the profile
     # private before the credential is written into it, so the writer can
@@ -1259,6 +1268,14 @@ class MagpieApplyTests(unittest.TestCase):
         final = config.read_text(encoding="utf-8")
         self.assertNotEqual(final, seeded)
         self.assertEqual(tomllib.loads(final), tomllib.loads(seeded))
+
+    def test_failed_profile_record_still_reports_both_guarded_codex_changes(self):
+        result = self.apply(environment={"FAKE_MAGPIE_BREAK_CODEX_PENDING": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pending record is a symlink", result.stderr)
+        self.assertIn("Codex configuration changed during profile wiring", result.stderr)
+        self.assertIn("Codex authentication changed during profile wiring", result.stderr)
+        self.assertFalse(self.state_file().exists())
 
     def test_an_interrupted_codex_profile_write_retries_without_adopting_drift(self):
         result = self.apply(environment={"FAKE_MAGPIE_FAIL_CODEX_PROFILE": "1"})
