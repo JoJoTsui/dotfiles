@@ -136,3 +136,20 @@ ignore drift stayed in place.
 The comparison covers warm dispatch after version resolution. Full default
 setup, true native Linux, native Windows, and different agent selections
 require their own performance evidence.
+
+### Final review recheck
+
+The final runtime adds private Chezmoi rendering to targeted updates and
+checks exact version tokens. Warm pairs from clean source
+`b829c695ff36921f6c0be3a10cb7cd8380cc9b96` used the same toolchains and
+alternated the order of the two dispatches on one pre-warmed disposable home
+per environment. The source fingerprint was
+`f7e8f0e0209bb377fc6cbac1502267dc548e6371c8fd2cba795f1f32e01926e7`.
+
+| Environment | Warm regular (seconds) | Targeted (seconds) | Paired savings (seconds) |
+| --- | --- | --- | --- |
+| macOS | 4.174, 4.209, 4.306 | 1.051, 1.062, 1.124 | 3.123, 3.147, 3.182 |
+| Emulated Ubuntu | 19.052, 19.801, 19.812 | 5.852, 5.785, 5.767 | 13.200, 14.016, 14.045 |
+
+All 12 runs matched their step plans and validated the installed Pi version.
+Every pair still exceeded the initial savings target.
