@@ -48,8 +48,8 @@ function Resolve-Python {
     return $Python
 }
 
-function Invoke-Bootstrap([string]$Selector) {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $Bootstrap -Source $Source -AgentsOnly -Agents $Selector
+function Invoke-Bootstrap([string]$Selector, [string]$Mode = '-AgentsOnly') {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $Bootstrap -Source $Source $Mode -Agents $Selector
     exit $LASTEXITCODE
 }
 
@@ -81,7 +81,7 @@ function Update-Agents {
     } finally {
         Remove-Item -LiteralPath $proposalDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
-    Invoke-Bootstrap $Selection
+    Invoke-Bootstrap $Selection '-AgentUpdate'
 }
 
 function Get-AgentCatalog {

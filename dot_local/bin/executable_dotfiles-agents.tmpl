@@ -122,7 +122,7 @@ update_agents() {
     fi
     rm -rf "$proposal_dir"
     trap - EXIT
-    exec bash "$BOOTSTRAP" --source "$SOURCE" --agents-only --agents "$selection"
+    exec bash "$BOOTSTRAP" --source "$SOURCE" --agent-update --agents "$selection"
 }
 
 status_agents() {

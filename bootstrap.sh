@@ -7,6 +7,9 @@ DEPLOY_HOME="${HOME:?HOME must be set}"
 DEPLOY_PLAN=false
 DEPLOY_APPLY_ONLY=false
 DEPLOY_AGENTS_ONLY=false
+DEPLOY_AGENT_UPDATE=false
+DEPLOY_TARGET_AGENT=''
+DEPLOY_TARGET_POLICIES=''
 DEPLOY_SYSTEM_CONFIG=false
 DEPLOY_LOGIN_SHELL=false
 DEPLOY_PROXY=false
@@ -80,9 +83,30 @@ snapshot_magpie_clients() {
     DEPLOY_MAGPIE_BACKUP_SOURCE=$(magpie_snapshot_clients) || fail 'cannot snapshot the client settings before deployment'
 }
 
-apply_source() {
+initialize_source() {
     "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false
-    "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
+}
+
+apply_source_files() {
+    "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply "$@"
+}
+
+apply_source() {
+    initialize_source
+    apply_source_files
+}
+
+prepare_agent_update() {
+    if [ -n "$DEPLOY_TARGET_POLICIES" ] && [ ! -f "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" ]; then
+        initialize_source
+    fi
+    if [ "$DEPLOY_TARGET_AGENT" = codex ] && command -v herdr >/dev/null 2>&1; then
+        payload_safe_destination "$HOME/.local/bin/dotfiles-codex-herdr"
+        payload_safe_destination "$HOME/.local/bin/codex-herdr"
+        payload_safe_destination "$HOME/.codex/herdr-codex-resume.sh"
+        apply_source_files "$HOME/.local/bin/dotfiles-codex-herdr" "$HOME/.local/bin/codex-herdr" \
+            "$HOME/.codex/herdr-codex-resume.sh"
+    fi
 }
 
 deploy_steps() {
@@ -90,6 +114,11 @@ deploy_steps() {
         run_step magpie-snapshot snapshot_magpie_clients
     fi
     run_step install-managers install_managers
+    if [ -n "$DEPLOY_TARGET_AGENT" ]; then
+        run_step prepare-agent-update prepare_agent_update
+        run_step install-agents install_agents
+        return 0
+    fi
     run_step apply-source apply_source
     run_step apply-source.skills prepare_skill_library
     run_step apply-source.agent-payload deploy_agent_payload
@@ -135,6 +164,7 @@ Usage: bash bootstrap.sh [options]
   --login-shell             Set this account's login shell to the managed Nu launcher
   --apply-only              Apply files with chezmoi; skip tool/agent installers
   --agents-only             Apply files and install agents with an existing toolchain
+  --agent-update            Repair one selected agent and its dependencies
   --proxy                   Install Mihomo from the pinned release and refresh the profile
   --no-magpie               Do not wire the Magpie model gateway
 
@@ -153,6 +183,7 @@ HELP
         --plan) DEPLOY_PLAN=true; shift ;;
         --apply-only) DEPLOY_APPLY_ONLY=true; shift ;;
         --agents-only) DEPLOY_AGENTS_ONLY=true; shift ;;
+        --agent-update) DEPLOY_AGENTS_ONLY=true; DEPLOY_AGENT_UPDATE=true; shift ;;
         --system-config) DEPLOY_SYSTEM_CONFIG=true; shift ;;
         --proxy) DEPLOY_PROXY=true; shift ;;
         --login-shell) DEPLOY_LOGIN_SHELL=true; shift ;;
@@ -201,6 +232,11 @@ if "$DEPLOY_APPLY_ONLY"; then
     DEPLOY_ACTIONS=(apply-source)
 elif "$DEPLOY_AGENTS_ONLY"; then
     DEPLOY_ACTIONS=(install-managers apply-source install-agents)
+    if [ -n "$DEPLOY_TARGET_AGENT" ]; then
+        DEPLOY_ACTIONS=(install-managers prepare-agent-update install-agents)
+        DEPLOY_TARGET_POLICIES=$(awk -F'|' -v agent="$DEPLOY_TARGET_AGENT" '$1 == agent { print $2 }' \
+            "$DEPLOY_SOURCE/deployment/client-settings/agent-policies.tsv")
+    fi
 fi
 # The Magpie step is on by default on macOS, Linux, and WSL, and off on
 # native Windows. It runs after the agents are installed and before the shell
@@ -307,30 +343,46 @@ fi
 # Refuse pre-existing state directory symlinks before mkdir or installers can
 # follow them. This check covers every parent used during state preparation.
 [ ! -L "$DEPLOY_HOME" ] || fail "target home is a symlink: $DEPLOY_HOME"
-for relative in .local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config .config/chezmoi .config/dotfiles .config/opencode .cache .cache/tmp .pixi .pixi/bin .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml .bun .bun/bin .bun/managed .bun/install .bun/install/global .cargo .cargo/bin .rustup .codex .claude .kimi-code .pi .pi/agent .qoder .minimax .minimax-code .minimax-code-install-logs; do
+state_roots=(.local .local/bin .local/bin/chezmoi .local/run .local/share .local/state .config
+    .config/chezmoi .config/dotfiles .cache .cache/tmp .pixi .pixi/bin .bun .bun/bin .bun/managed .bun/install .bun/install/global)
+case "$DEPLOY_TARGET_AGENT" in
+    '') state_roots+=(.config/opencode .pixi/bin/pixi .pixi/manifests .pixi/manifests/pixi-global.toml
+        .cargo .cargo/bin .rustup .codex .claude .kimi-code .pi .pi/agent .qoder .minimax .minimax-code .minimax-code-install-logs) ;;
+    qoder) state_roots+=(.qoder) ;;
+    minimax) state_roots+=(.minimax .minimax-code .minimax-code-install-logs) ;;
+esac
+for relative in "${state_roots[@]}"; do
     [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target state root is a symlink: $DEPLOY_HOME/$relative"
 done
 DEPLOY_STEP=apply-source.overrides
 validate_version_overrides
-DEPLOY_STEP=apply-source.skills
-validate_skill_catalog
-if [ -z "${DOTFILES_SKILLS_DIR:-}" ]; then
-    validate_skill_state "$DEPLOY_HOME/.local/state/dotfiles/skills.lock.tsv"
+if [ -n "$DEPLOY_TARGET_AGENT" ]; then
+    DEPLOY_STEP=prepare-agent-update
+    payload_safe_destination "$DEPLOY_HOME/.config/chezmoi/chezmoi.toml"
+    payload_safe_destination "$DEPLOY_HOME/.config/chezmoi/chezmoistate.boltdb"
+    payload_safe_destination "$DEPLOY_HOME/.cache/chezmoi"
+    if [ -n "$DEPLOY_TARGET_POLICIES" ]; then validate_client_settings "$DEPLOY_TARGET_POLICIES"; fi
+else
+    DEPLOY_STEP=apply-source.skills
+    validate_skill_catalog
+    if [ -z "${DOTFILES_SKILLS_DIR:-}" ]; then
+        validate_skill_state "$DEPLOY_HOME/.local/state/dotfiles/skills.lock.tsv"
+    fi
+    DEPLOY_STEP=apply-source.agent-payload
+    validate_agent_payload
+    DEPLOY_STEP=apply-source.client-settings
+    validate_client_settings
+    DEPLOY_STEP=apply-source.macos-discovery
+    validate_macos_config
+
+    # History databases and credentials remain within the selected device root.
+    for relative in .config/atuin .config/atuin/config.toml .local/share/atuin .local/share/atuin/meta.db .local/share/atuin/history.db .local/share/atuin/records.db .local/share/atuin/key .local/share/atuin/session; do
+        [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target history state path is a symlink: $DEPLOY_HOME/$relative"
+    done
 fi
-DEPLOY_STEP=apply-source.agent-payload
-validate_agent_payload
-DEPLOY_STEP=apply-source.client-settings
-validate_client_settings
-DEPLOY_STEP=apply-source.macos-discovery
-validate_macos_config
 DEPLOY_STEP=apply-source.proxy-policy
 deploy_proxy_policy_complete
 validate_proxy_destinations
-
-# History databases and credentials remain within the selected device root.
-for relative in .config/atuin .config/atuin/config.toml .local/share/atuin .local/share/atuin/meta.db .local/share/atuin/history.db .local/share/atuin/records.db .local/share/atuin/key .local/share/atuin/session; do
-    [ ! -L "$DEPLOY_HOME/$relative" ] || fail "target history state path is a symlink: $DEPLOY_HOME/$relative"
-done
 # A designated home also designates every package-manager and XDG state root.
 # Inherited roots cannot route a simulated deployment into the actual host.
 export HOME="$DEPLOY_HOME"
@@ -371,7 +423,9 @@ chmod 700 "$XDG_RUNTIME_DIR"
 DEPLOY_MAGPIE_BACKUP_SOURCE=''
 trap 'cleanup_skill_library; stop_deployment_proxy; if [ -n "$DEPLOY_MAGPIE_BACKUP_SOURCE" ]; then rm -rf "$DEPLOY_MAGPIE_BACKUP_SOURCE"; fi' EXIT
 deploy_steps
-if "$DEPLOY_AGENTS_ONLY"; then
+if [ -n "$DEPLOY_TARGET_AGENT" ]; then
+    printf 'dotfiles: reconciled %s and its deployment dependencies; skipped shared source, skills and unselected client settings\n' "$DEPLOY_TARGET_AGENT"
+elif "$DEPLOY_AGENTS_ONLY"; then
     printf 'dotfiles: applied agent files and selected packages for %s to %s (copy mode)\n' "$DEPLOY_PROFILE" "$HOME"
 else
     printf 'dotfiles: applied %s to %s (copy mode)\n' "$DEPLOY_PROFILE" "$HOME"

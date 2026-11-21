@@ -138,6 +138,8 @@ def main():
     parser.add_argument("--execution", choices=("native-macos", "native-linux", "emulated-linux"), required=True)
     parser.add_argument("--report", type=Path, required=True, help="fresh directory outside the checkout")
     parser.add_argument("--samples", type=int, default=3)
+    parser.add_argument("--targeted-update", action="store_true",
+                        help="measure the selected update dispatch in the single-agent workload")
     parser.add_argument("--timeout", type=int, default=1800, help="per bootstrap, in seconds")
     parser.add_argument("--cache-seed", type=Path, help="quiescent public package cache snapshot, copied per sample")
     for tool in ("chezmoi", "bun", "node"):
@@ -160,6 +162,7 @@ def main():
         "execution": args.execution, "system": system, "architecture": platform.machine(),
         "profile": profile, "source": source_state(SOURCE),
         "fresh_cache": "public cache snapshot" if args.cache_seed else "empty",
+        "single_agent_dispatch": "targeted update" if args.targeted_update else "agents-only",
         "workloads": {name: [] for name in WORKLOADS},
         "exclusions": ["Magpie gateway and account operations", "upstream version proposal and pin refresh"],
     }
@@ -197,6 +200,8 @@ def main():
                     result["workloads"][workload].append({"status": "not-run", "reason": "fresh setup failed"})
                     continue
                 command = [*base, "--agents-only"] if assisted or workload == "single-agent" else base
+                if args.targeted_update and workload == "single-agent":
+                    command = [*base, "--agent-update"]
                 plan = json.loads(run([*command, "--plan"], env=env, cwd=SOURCE, timeout=30,
                                       log=args.report / f"{label}-plan.json", records=[]))
                 if inventory_plan is None:

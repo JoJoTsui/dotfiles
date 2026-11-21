@@ -30,9 +30,10 @@ client_claude_uses_plain_opus() {
 }
 
 validate_client_settings() {
-    local format source target policy value
+    local format source target policy value policies=${1:-}
     while IFS=$'|\r' read -r format source target policy; do
         case "$format" in ''|\#*) continue ;; json|jsonc|toml|yaml) ;; *) fail "unknown client settings format: $format" ;; esac
+        client_settings_policy_selected "$policy" "$policies" || continue
         for value in "$source" "$target" "$policy"; do
             case "$value" in ''|/*|..|../*|*/../*|*/..) fail "client settings catalog path must be relative: $value" ;; esac
         done
@@ -58,7 +59,7 @@ deploy_client_settings() {
     else
         export DOTFILES_SETTINGS_MAGPIE=false
     fi
-    validate_client_settings
+    validate_client_settings "$policies"
     stage=$(mktemp -d "$TMPDIR/client-settings.XXXXXX")
     # Render the entire batch before changing a client's files. Invalid existing
     # JSONC/TOML propagates a named failure while all client settings stay intact.

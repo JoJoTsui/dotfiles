@@ -1,0 +1,7 @@
+# Targeted update ownership: agent|space-separated client settings policies
+# CodeGraph's shared registrations are reconciled by source application.
+claude|claude-settings
+codex|codex codex-hooks
+kimi|kimi kimi-tui
+opencode|opencode
+pi|pi-settings pi-models-store

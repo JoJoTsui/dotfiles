@@ -1372,6 +1372,27 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertFalse(self.home.exists())
         self.assert_original_profile_unchanged()
 
+    def test_agent_update_plan_limits_package_and_stage_selection(self):
+        result = self.deploy("-Plan", "-AgentUpdate", "-Agents", "kimi-code")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan["agents"], ["kimi"])
+        self.assertEqual([agent["name"] for agent in plan["agentPackages"]], ["kimi"])
+        self.assertEqual(plan["steps"], ["install-managers", "prepare-agent-update", "install-agents"])
+        result = self.deploy("-Plan", "-AgentUpdate", "-Agents", "dsh-tui")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual([agent["name"] for agent in plan["agentPackages"]], ["dsh", "dsh-tui"])
+        for selected in ("all", "none", "pi,codex"):
+            with self.subTest(selected=selected):
+                update = self.deploy("-Plan", "-AgentUpdate", "-Agents", selected)
+                old = self.deploy("-Plan", "-AgentsOnly", "-Agents", selected)
+                self.assertEqual(update.returncode, 0, update.stderr)
+                self.assertEqual(old.returncode, 0, old.stderr)
+                self.assertEqual(json.loads(update.stdout), json.loads(old.stdout))
+        self.assertFalse(self.home.exists())
+        self.assert_original_profile_unchanged()
+
     def test_ordered_bootstrap_plan_preserves_legacy_actions(self):
         cases = (
             ((), ["install-common", "install-agents", "install-magpie-cli", "prepare-shell"],
@@ -2422,6 +2443,33 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertEqual(status.returncode, 0, status.stderr)
         self.assertRegex(status.stdout, r'(?m)^codex\s')
         self.assertRegex(status.stdout, r'(?m)^pi\s')
+
+        pending_shell = self.home / '.env_core'
+        pending_shell.write_bytes(pending_shell.read_bytes() + b'\n# preserve shell drift\n')
+        pending_config = self.home / '.codex/config.toml'
+        pending_config.write_bytes(b'unrelated config drift remains for a full apply\n')
+        preserved = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in
+                     (pending_shell, pending_config, self.home / '.local/bin/codegraph.cmd',
+                      self.home / '.bun/bin/codex.cmd')}
+        pi_settings = self.home / '.pi/agent/settings.json'
+        pi_settings.unlink()
+        pi_launcher = self.home / '.local/bin/pi.cmd'
+        pi_launcher.unlink()
+        pi_package = self.home / '.bun/managed/pi/node_modules' / agent_pins()['pi']['package']
+        bin_entry = json.loads((pi_package / 'package.json').read_text())['bin']
+        pi_entry = pi_package / (bin_entry if isinstance(bin_entry, str) else bin_entry['pi'])
+        pi_entry.unlink()
+        targeted = self.deploy('-Role', role, '-AgentUpdate', '-Agents', 'pi')
+        self.assertEqual(targeted.returncode, 0, targeted.stderr)
+        self.assertIn('reconciled pi', targeted.stdout)
+        self.assertTrue(pi_settings.is_file())
+        self.assertCountEqual(ledger.read_text().splitlines(), before)
+        diagnostic = subprocess.run([str(pi_launcher), '--version'], env=environment, capture_output=True,
+                                    text=True, timeout=60)
+        self.assertEqual(diagnostic.returncode, 0, diagnostic.stderr)
+        self.assertIn(pi_pin, diagnostic.stdout)
+        for path, previous in preserved.items():
+            self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), previous)
 
 
 

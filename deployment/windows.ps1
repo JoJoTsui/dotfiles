@@ -1,4 +1,19 @@
 # Native adapters share the source catalogs and Chezmoi merge template.
+$script:TargetedAgent = ''
+$script:TargetedPolicies = @()
+
+function Test-AgentSelected($Row) {
+    if ($Row.agent -in $selectedAgents) { return $true }
+    if ($script:TargetedAgent) { return $script:TargetedAgent -eq 'dsh-tui' -and $Row.agent -eq 'dsh' }
+    return $Row.selection -eq 'always'
+}
+
+function Get-SelectedClientSettings {
+    foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
+        if (-not $script:TargetedAgent -or $row.columns[3] -in $script:TargetedPolicies) { $row }
+    }
+}
+
 # A reparse point is recognized through its directory entry, so a link whose
 # target is missing is detected too: the attributes of a dangling link cannot
 # be read, and a link is never a safe managed path.
@@ -64,12 +79,31 @@ function Assert-OwnedState {
         if (Test-ReparsePath $ancestor) { Stop-Deployment 'TargetHome parent is a symlink or reparse point' }
         $ancestor = [IO.Path]::GetDirectoryName($ancestor)
     }
-    $managedPaths = @('.local', '.local/bin', '.local/lib', '.local/share', '.local/state', '.local/run', '.config', '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml', '.bun', '.bun/bin', '.bun/managed', '.bun/install/global', '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin', '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi', '.pi/agent', '.qoder', '.minimax', '.minimax-code', '.minimax-code-install-logs')
+    $managedPaths = @('.local', '.local/bin', '.local/share', '.local/state', '.local/run', '.config',
+        '.config/chezmoi', '.config/dotfiles', '.cache', '.cache/tmp', '.pixi', '.pixi/bin',
+        '.bun', '.bun/bin', '.bun/managed', '.bun/install/global')
+    if (-not $script:TargetedAgent) {
+        $managedPaths += @('.local/lib', '.pixi/bin/pixi.exe', '.pixi/manifests', '.pixi/manifests/pixi-global.toml',
+            '.cargo', '.cargo/bin', '.rustup', 'AppData', 'AppData/Roaming', 'AppData/Local', '.config/atuin',
+            '.config/atuin/config.toml', '.local/share/atuin', '.codex', '.claude', '.kimi-code', '.pi',
+            '.pi/agent', '.qoder', '.minimax', '.minimax-code', '.minimax-code-install-logs')
+    } elseif ($script:TargetedAgent -eq 'qoder') {
+        $managedPaths += '.qoder'
+    } elseif ($script:TargetedAgent -eq 'minimax') {
+        $managedPaths += @('.minimax', '.minimax-code', '.minimax-code-install-logs')
+    }
     if ($MagpieEnabled) {
         $managedPaths += @('.local/share/dotfiles/magpie', '.local/share/dotfiles/magpie/bin', '.local/bin/magpie.cmd')
     }
     foreach ($relative in $managedPaths) {
         Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ([string]$relative))
+    }
+    if ($script:TargetedAgent) {
+        foreach ($relative in @('.config/chezmoi/chezmoi.toml', '.config/chezmoi/chezmoistate.boltdb', '.cache/chezmoi', '.env_core')) {
+            Assert-SafePath (Join-Path $TargetHome $relative)
+        }
+        Assert-ClientSettingsPaths
+        return
     }
     if (-not $env:DOTFILES_SKILLS_DIR) {
         Assert-InstallerDirectory (Join-Path $TargetHome '.cache/dotfiles/skills')
@@ -99,15 +133,18 @@ function Assert-OwnedState {
         }
         Assert-CopyTree (Join-Path $Source "deployment/agent-payload/$($row.columns[1])") $destination
     }
-    foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
+    Assert-ClientSettingsPaths
+    foreach ($relative in @('nushell', 'uv', 'pip')) { Assert-SafePath (Join-Path $roots.appData $relative) }
+    foreach ($relative in @('nushell/env.nu', 'nushell/config.nu', 'nushell/proxy.nu', 'nushell/zoxide.nu', 'nushell/direnv.nu', 'nushell/micromamba.nu', 'uv/uv.toml', 'pip/pip.ini')) {
+        Assert-SafePath (Join-Path $roots.appData $relative)
+    }
+}
+function Assert-ClientSettingsPaths {
+    foreach ($row in (Get-SelectedClientSettings)) {
         foreach ($part in $row.columns) { Assert-Relative $part }
         Assert-SafePath (Join-Path $Source "deployment/client-settings/$($row.columns[1])") -SourcePath
         Assert-SafePath (Join-Path -Path $TargetHome -ChildPath ([string]$row.columns[2]))
         Assert-SafePath (Join-Path $TargetHome ".local/state/dotfiles/client-settings/$($row.columns[3]).json")
-    }
-    foreach ($relative in @('nushell', 'uv', 'pip')) { Assert-SafePath (Join-Path $roots.appData $relative) }
-    foreach ($relative in @('nushell/env.nu', 'nushell/config.nu', 'nushell/proxy.nu', 'nushell/zoxide.nu', 'nushell/direnv.nu', 'nushell/micromamba.nu', 'uv/uv.toml', 'pip/pip.ini')) {
-        Assert-SafePath (Join-Path $roots.appData $relative)
     }
 }
 function Set-EnvironmentRoots {
@@ -716,7 +753,8 @@ function Merge-ClientSettings {
     $stage = Join-Path $env:TEMP ('client-settings-' + [Guid]::NewGuid().ToString('N'))
     [IO.Directory]::CreateDirectory($stage) | Out-Null
     try {
-        foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
+        $clientSettings = @(Get-SelectedClientSettings)
+        foreach ($row in $clientSettings) {
             $env:DOTFILES_SETTINGS_FORMAT = $row.columns[0]; $env:DOTFILES_SETTINGS_POLICY = $row.columns[3]
             $env:DOTFILES_SETTINGS_SOURCE = Join-Path $Source "deployment/client-settings/$($row.columns[1])"
             $env:DOTFILES_SETTINGS_TARGET = Join-Path $TargetHome $row.columns[2]
@@ -734,7 +772,7 @@ function Merge-ClientSettings {
                 Set-Private $rendered
             }
         }
-        foreach ($row in (Read-Catalog 'deployment/client-settings/targets.tsv')) {
+        foreach ($row in $clientSettings) {
             $destination = Join-Path $TargetHome $row.columns[2]
             $baseline = Join-Path $roots.state "dotfiles/client-settings/$($row.columns[3]).json"
             $key = $row.columns[2] -replace '[/.]', '_'
@@ -779,10 +817,26 @@ function Copy-NativeConfiguration {
         Write-Utf8 (Join-Path $TargetHome ".local/bin/$name.cmd") ("@echo off`r`npowershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"%~dp0$name.ps1`" %*`r`nexit /b %errorlevel%`r`n")
     }
 }
+function Set-ChezmoiArguments {
+    $script:ChezmoiArguments = @('--source', $Source, '--destination', $TargetHome, '--config', (Join-Path $roots.config 'chezmoi/chezmoi.toml'), '--cache', (Join-Path $roots.cache 'chezmoi'), '--persistent-state', (Join-Path $roots.config 'chezmoi/chezmoistate.boltdb'), '--no-tty', '--force')
+}
+function Initialize-Chezmoi {
+    Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('init', '--data=false')) -Quiet | Out-Null
+}
+function Prepare-AgentUpdate {
+    Set-ChezmoiArguments
+    $shellEnvironment = Join-Path $TargetHome '.env_core'
+    if (-not [IO.File]::Exists((Join-Path $roots.config 'chezmoi/chezmoi.toml'))) { Initialize-Chezmoi }
+    # The Git Bash companions source this at runtime. Repair a missing
+    # prerequisite and leave an existing shell environment for a full apply.
+    if (-not [IO.File]::Exists($shellEnvironment)) {
+        Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('apply', $shellEnvironment)) -Quiet | Out-Null
+    }
+}
 function Apply-Source {
     $script:Step = 'apply-source'
-    $script:ChezmoiArguments = @('--source', $Source, '--destination', $TargetHome, '--config', (Join-Path $roots.config 'chezmoi/chezmoi.toml'), '--cache', (Join-Path $roots.cache 'chezmoi'), '--persistent-state', (Join-Path $roots.config 'chezmoi/chezmoistate.boltdb'), '--no-tty', '--force')
-    Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('init', '--data=false')) -Quiet | Out-Null
+    Set-ChezmoiArguments
+    Initialize-Chezmoi
     Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('apply')) -Quiet | Out-Null
     Import-SkillLibrary
     Copy-AgentPayload
@@ -1037,6 +1091,32 @@ function Install-Qoder([string]$Version, [string]$ManifestBase) {
     }
 }
 
+function Get-BunAgentEntry($Package, [string]$Command) {
+    if ($Package.bin -is [string]) { return $Package.bin }
+    return $Package.bin.$Command
+}
+
+function Test-BunAgentEntries($Row, [string]$PackageDirectory, [string]$Node) {
+    try {
+        $package = [IO.File]::ReadAllText((Join-Path $PackageDirectory 'package.json')) | ConvertFrom-Json
+        foreach ($command in $Row.commands.Split(',')) {
+            $entry = Get-BunAgentEntry $package $command
+            Assert-Relative $entry
+            $executable = Join-Path $PackageDirectory $entry
+            if (-not [IO.File]::Exists($executable)) { return $false }
+            $output = if ($entry.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) {
+                Invoke-Tool $executable @('--version') -Quiet
+            } else {
+                Invoke-Tool $Node @($executable, '--version') -Quiet
+            }
+            if (-not $output.Contains($Row.version)) { return $false }
+        }
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Install-Agents {
     $script:Step = 'install-agents.runtime'
     $statePath = Join-Path (Get-DotfilesStateRoot) 'dotfiles/agents.lock.tsv'
@@ -1051,7 +1131,7 @@ function Install-Agents {
     foreach ($row in (Get-AgentCatalog)) {
         if (-not (Test-AgentPlatform $row.platforms)) { continue }
         $name = $row.agent
-        if ($row.selection -ne 'always' -and $name -notin $selectedAgents) { continue }
+        if (-not (Test-AgentSelected $row)) { continue }
         if ($row.provider -eq 'bun') {
             if ([version](Get-Pin 'nodejs') -lt [version]$row.minimumNode) { Stop-Deployment "Node does not meet $name's minimum version" }
             $project = Join-Path $roots.bun "managed/$name"
@@ -1062,10 +1142,13 @@ function Install-Agents {
             $env:npm_config_global = 'false'; $env:pnpm_config_global = 'false'; $env:npm_config_location = 'project'
             Invoke-Tool $bun @('install', '--cwd', $project, '--frozen-lockfile') -Quiet | Out-Null
             $packageDirectory = Join-Path $project ('node_modules/' + $row.package)
+            if ($script:TargetedAgent -and -not (Test-BunAgentEntries $row $packageDirectory $node)) {
+                [Console]::Out.WriteLine("dotfiles: repairing the installed $name package before rebuilding its launchers")
+                Invoke-Tool $bun @('install', '--cwd', $project, '--frozen-lockfile', '--force') -Quiet | Out-Null
+            }
             $package = [IO.File]::ReadAllText((Join-Path $packageDirectory 'package.json')) | ConvertFrom-Json
             foreach ($command in $row.commands.Split(',')) {
-                $entry = $package.bin
-                if ($entry -isnot [string]) { $entry = $package.bin.$command }
+                $entry = Get-BunAgentEntry $package $command
                 Assert-Relative $entry
                 $javascript = Join-Path $packageDirectory $entry
                 if (-not [IO.File]::Exists($javascript)) { Stop-Deployment "$name did not expose $command" }
@@ -1134,6 +1217,7 @@ function Install-Agents {
     } finally {
         Remove-Item -LiteralPath $temporary -ErrorAction SilentlyContinue
     }
+    if ($script:TargetedPolicies.Count) { Merge-ClientSettings }
 }
 function Get-MagpieRelease {
     # The shared release catalog owns the Magpie CLI version every target
