@@ -126,7 +126,7 @@ $asset | ConvertTo-Json -Compress
 $fixture = $env:DOTFILES_TEST_FIXTURE
 $checks = @{
     cmd = Get-ManagedWindowsLauncherTarget (Join-Path $fixture 'managed.cmd')
-    decoy = Get-ManagedWindowsLauncherTarget (Join-Path $fixture 'decoy.cmd')
+    decoyAccepted = $null -ne (Get-ManagedWindowsLauncherTarget (Join-Path $fixture 'decoy.cmd'))
     companion = Get-ManagedWindowsLauncherTarget (Join-Path $fixture 'managed')
     exact = Test-AgentVersion 'pi v1.2.3' '1.2.3'
     suffix = Test-AgentVersion 'pi 1.2.30' '1.2.3'
@@ -143,7 +143,7 @@ $checks | ConvertTo-Json -Compress
         self.assertEqual(result.returncode, 0, result.stderr)
         checks = json.loads(result.stdout)
         self.assertEqual(checks['cmd'], {'target': target, 'relative': True})
-        self.assertIsNone(checks['decoy'])
+        self.assertIs(checks['decoyAccepted'], False)
         self.assertEqual(checks['companion'], {'target': target.replace('\\', '/'), 'relative': True})
         self.assertTrue(checks['exact'])
         self.assertFalse(any(checks[name] for name in ('suffix', 'prefix', 'prerelease')))
@@ -1297,13 +1297,21 @@ Install-Agents
             self.assertNotIn(str(runtime), native.with_suffix('.cmd').read_text())
             self.assertNotIn('node.exe', native.read_text())
             if os.name == 'nt':
-                probe = subprocess.run([str(js.with_suffix('.cmd')), *arguments], env=environment,
+                # Batch launchers receive CMD syntax, not a C-runtime argv.
+                # Quote these ordinary CMD arguments, including the ampersand.
+                # Embedded double quotes are exercised by the POSIX companion.
+                expected = ['argument with spaces', "single ' quote", '$literal; & values', '']
+                command_shell = environment.get('COMSPEC') or 'cmd.exe'
+                payload = ' '.join(f'"{part}"' for part in (str(js.with_suffix('.cmd')), *expected))
+                probe = subprocess.run(f'"{command_shell}" /d /s /v:off /c "{payload}"',
+                                       executable=command_shell, env=environment,
                                        capture_output=True, text=True, timeout=10)
             else:
+                expected = arguments
                 probe = subprocess.run(['sh', str(js), *arguments], env=environment,
                                        capture_output=True, text=True, timeout=10)
             self.assertEqual(probe.returncode, 37, probe.stderr)
-            self.assertEqual(json.loads(probe.stdout), arguments)
+            self.assertEqual(json.loads(probe.stdout), expected)
             before_native = log.read_bytes()
             if os.name != 'nt':
                 probe = subprocess.run(['sh', str(native), *arguments], env=environment,
