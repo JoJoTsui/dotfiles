@@ -104,6 +104,61 @@ $asset | ConvertTo-Json -Compress
         self.assertTrue(asset["url"].startswith("https://"))
         self.assertRegex(asset["sha256"], r"^[a-f0-9]{64}$")
 
+    def test_windows_claude_uses_the_frozen_native_package_instead_of_its_stub(self):
+        project = self.home / ".bun/managed/claude"
+        wrapper_name = "@anthropic-ai/claude-code"
+        native_name = wrapper_name + "-win32-x64"
+        pin = agent_pins()["claude"]["version"]
+        wrapper = project / "node_modules" / wrapper_name
+        native = project / "node_modules" / native_name
+        (wrapper / "bin").mkdir(parents=True)
+        native.mkdir(parents=True)
+        (wrapper / "bin/claude.exe").write_text("echo native binary not installed\n")
+        (wrapper / "package.json").write_text(json.dumps({
+            "name": wrapper_name, "version": pin, "bin": {"claude": "bin/claude.exe"},
+            "optionalDependencies": {native_name: pin},
+        }))
+        (native / "package.json").write_text(json.dumps({
+            "name": native_name, "version": pin, "os": ["win32"], "cpu": ["x64"],
+        }))
+        exe = native / "claude.exe"
+        header = bytearray(100)
+        header[:2] = b"MZ"
+        header[0x3c:0x40] = (0x40).to_bytes(4, "little")
+        header[0x40:0x46] = b"PE\x00\x00\x64\x86"
+        exe.write_bytes(header)
+        script = self.root / "claude-entry.ps1"
+        script.write_text(r'''
+$ErrorActionPreference = 'Stop'
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+function Stop-Deployment([string]$Message) { throw $Message }
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+$row = [pscustomobject]@{ agent = 'claude'; package = '@anthropic-ai/claude-code'; version = $env:DOTFILES_TEST_CLAUDE_VERSION }
+$entry = Get-BunAgentEntry $row $env:DOTFILES_TEST_CLAUDE_PROJECT 'claude'
+$launcher = Join-Path $TargetHome '.local/bin/claude.cmd'
+$relativeEntry = ('.bun/managed/claude/' + $entry).Replace('/', '\')
+Write-Utf8 $launcher ("@echo off`r`n`"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n")
+Assert-AgentLauncher $launcher '/.bun/managed/claude/node_modules/'
+$entry
+''')
+        args = [POWERSHELL, "-NoProfile", "-NonInteractive", "-File", str(script)]
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE),
+                           DOTFILES_TEST_TARGET_HOME=str(self.home), DOTFILES_TEST_CLAUDE_PROJECT=str(project),
+                           DOTFILES_TEST_CLAUDE_VERSION=pin)
+        result = subprocess.run(args, env=environment, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), f"node_modules/{native_name}/claude.exe")
+        nested = wrapper / "node_modules" / native_name
+        nested.parent.mkdir(parents=True)
+        native.rename(nested)
+        result = subprocess.run(args, env=environment, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), f"node_modules/{wrapper_name}/node_modules/{native_name}/claude.exe")
+        (nested / "claude.exe").write_text("echo this is a stub as well\n")
+        result = subprocess.run(args, env=environment, capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Windows x64 PE executable", result.stderr)
+
     def test_windows_launcher_and_version_checks_reject_decoys(self):
         fixture = self.root / 'launchers'
         fixture.mkdir()
@@ -2538,11 +2593,12 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertCountEqual(ledger.read_text().splitlines(), before)
         self.assertEqual(protected.read_text(), '{"synthetic":"native-preserve"}')
         self.assertTrue((self.home / '.bun/bin/codex.cmd').exists())
-        status = subprocess.run([str(self.home / '.local/bin/dotfiles-agents.cmd'), 'status', 'codex,pi'],
+        status = subprocess.run([str(self.home / '.local/bin/dotfiles-agents.cmd'), 'status', 'codex,pi,claude'],
                                 env=environment, capture_output=True, text=True, timeout=60)
         self.assertEqual(status.returncode, 0, status.stderr)
         self.assertRegex(status.stdout, r'(?m)^codex\s')
         self.assertRegex(status.stdout, r'(?m)^pi\s')
+        self.assertRegex(status.stdout, r'(?m)^claude\s.*\| live: installed \| provider: bun \|')
 
         pending_shell = self.home / '.env_core'
         pending_shell.write_bytes(pending_shell.read_bytes() + b'\n# preserve shell drift\n')

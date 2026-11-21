@@ -162,6 +162,14 @@ function Get-LiveProvider($Row, [string]$Path) {
     }
     if (-not [IO.File]::Exists($entry)) { return 'unverified' }
     if ($Row.provider -eq 'bun') {
+        if ($Row.package -ceq '@anthropic-ai/claude-code') {
+            $TargetHome = $HOME
+            $project = Join-Path $TargetHome '.bun/managed/claude'
+            try { $managed = Join-Path $project (Get-BunAgentEntry $Row $project 'claude') }
+            catch { return 'unverified' }
+            if ([IO.Path]::GetFullPath($entry) -eq [IO.Path]::GetFullPath($managed)) { return 'bun' }
+            return 'unverified'
+        }
         $package = [IO.Path]::GetFullPath((Join-Path $HOME ".bun/managed/$($Row.name)/node_modules/$($Row.package)"))
         if ($entry.StartsWith(($package + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)) {
             return 'bun'

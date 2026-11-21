@@ -1204,9 +1204,63 @@ function Install-Qoder([string]$Version, [string]$ManifestBase) {
     }
 }
 
-function Get-BunAgentEntry($Package, [string]$Command) {
-    if ($Package.bin -is [string]) { return $Package.bin }
-    return $Package.bin.$Command
+function Test-WindowsX64Executable([string]$Path) {
+    if (-not [IO.File]::Exists($Path) -or ([IO.File]::GetAttributes($Path) -band [IO.FileAttributes]::ReparsePoint)) { return $false }
+    $reader = New-Object IO.BinaryReader([IO.File]::OpenRead($Path))
+    try {
+        if ($reader.BaseStream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) { return $false }
+        $reader.BaseStream.Position = 0x3C
+        $header = $reader.ReadInt32()
+        if ($header -lt 64 -or $header -gt ($reader.BaseStream.Length - 6)) { return $false }
+        $reader.BaseStream.Position = $header
+        return $reader.ReadUInt32() -eq 0x00004550 -and $reader.ReadUInt16() -eq 0x8664
+    } finally { $reader.Dispose() }
+}
+
+function Get-BunAgentEntry($Row, [string]$Project, [string]$Command) {
+    $packagePath = 'node_modules/' + $Row.package
+    $packageDirectory = Join-Path $Project $packagePath
+    $claude = $Row.package -ceq '@anthropic-ai/claude-code' -and $Command -ceq 'claude'
+    $metadata = Join-Path $packageDirectory 'package.json'
+    if ($claude) {
+        Assert-SafePath $packageDirectory
+        if ([IO.File]::GetAttributes($metadata) -band [IO.FileAttributes]::ReparsePoint) {
+            Stop-Deployment 'Claude wrapper metadata must be a regular file'
+        }
+    }
+    $package = [IO.File]::ReadAllText($metadata) | ConvertFrom-Json
+    if ($claude) {
+        # This npm wrapper advertises bin/claude.exe even when it still
+        # contains the shell stub shipped in its tarball. The frozen project
+        # also installs the pinned platform package that the wrapper uses.
+        $platformName = '@anthropic-ai/claude-code-win32-x64'
+        $optionalPin = $package.optionalDependencies.PSObject.Properties[$platformName]
+        if ($package.name -cne $Row.package -or $package.version -cne $Row.version -or
+            -not $optionalPin -or $optionalPin.Value -cne $Row.version) {
+            Stop-Deployment 'Claude does not declare its pinned Windows x64 package'
+        }
+        $platformPaths = @(('node_modules/' + $platformName), ($packagePath + '/node_modules/' + $platformName))
+        $installed = @($platformPaths | Where-Object { [IO.Directory]::Exists((Join-Path $Project $_)) })
+        if ($installed.Count -ne 1) { Stop-Deployment 'Claude requires one pinned Windows x64 package in its frozen Bun project' }
+        $platformDirectory = Join-Path $Project $installed[0]
+        Assert-SafePath $platformDirectory
+        $platformMetadata = Join-Path $platformDirectory 'package.json'
+        if ([IO.File]::GetAttributes($platformMetadata) -band [IO.FileAttributes]::ReparsePoint) {
+            Stop-Deployment 'Claude Windows x64 package metadata must be a regular file'
+        }
+        $nativePackage = [IO.File]::ReadAllText($platformMetadata) | ConvertFrom-Json
+        if ($nativePackage.name -cne $platformName -or $nativePackage.version -cne $Row.version -or
+            'win32' -cnotin $nativePackage.os -or 'x64' -cnotin $nativePackage.cpu) {
+            Stop-Deployment 'Claude Windows x64 package does not match the pinned version and target'
+        }
+        if (-not (Test-WindowsX64Executable (Join-Path $platformDirectory 'claude.exe'))) {
+            Stop-Deployment 'Claude Windows x64 package does not contain a Windows x64 PE executable'
+        }
+        return $installed[0] + '/claude.exe'
+    }
+    $entry = if ($package.bin -is [string]) { $package.bin } else { $package.bin.$Command }
+    Assert-Relative $entry
+    return $packagePath + '/' + $entry
 }
 
 function Test-AgentVersion([string]$Output, [string]$Version) {
@@ -1215,14 +1269,12 @@ function Test-AgentVersion([string]$Output, [string]$Version) {
     return [regex]::IsMatch($line, $token)
 }
 
-function Test-BunAgentEntries($Row, [string]$PackageDirectory, [string]$Node) {
+function Test-BunAgentEntries($Row, [string]$Project, [string]$Node) {
     $savedFailureCode = $script:FailureCode
     try {
-        $package = [IO.File]::ReadAllText((Join-Path $PackageDirectory 'package.json')) | ConvertFrom-Json
         foreach ($command in $Row.commands.Split(',')) {
-            $entry = Get-BunAgentEntry $package $command
-            Assert-Relative $entry
-            $executable = Join-Path $PackageDirectory $entry
+            $entry = Get-BunAgentEntry $Row $Project $command
+            $executable = Join-Path $Project $entry
             if (-not [IO.File]::Exists($executable)) { return $false }
             $output = if ($entry.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) {
                 Invoke-Tool $executable @('--version') -Quiet
@@ -1272,21 +1324,18 @@ function Install-Agents {
             $script:Step = "install-agents.$name.install"
             $env:npm_config_global = 'false'; $env:pnpm_config_global = 'false'; $env:npm_config_location = 'project'
             Invoke-Tool $bun @('install', '--cwd', $project, '--frozen-lockfile') -Quiet | Out-Null
-            $packageDirectory = Join-Path $project ('node_modules/' + $row.package)
-            if ($script:TargetedAgent -and -not (Test-BunAgentEntries $row $packageDirectory $node)) {
+            if ($script:TargetedAgent -and -not (Test-BunAgentEntries $row $project $node)) {
                 [Console]::Out.WriteLine("dotfiles: repairing the installed $name package before rebuilding its launchers")
                 Invoke-Tool $bun @('install', '--cwd', $project, '--frozen-lockfile', '--force') -Quiet | Out-Null
             }
-            $package = [IO.File]::ReadAllText((Join-Path $packageDirectory 'package.json')) | ConvertFrom-Json
             foreach ($command in $row.commands.Split(',')) {
-                $entry = Get-BunAgentEntry $package $command
-                Assert-Relative $entry
-                $javascript = Join-Path $packageDirectory $entry
-                if (-not [IO.File]::Exists($javascript)) { Stop-Deployment "$name did not expose $command" }
+                $entry = Get-BunAgentEntry $row $project $command
+                $executable = Join-Path $project $entry
+                if (-not [IO.File]::Exists($executable)) { Stop-Deployment "$name did not expose $command" }
                 $usesNode = -not $entry.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)
                 foreach ($relative in @('.bun/bin', '.local/bin')) {
                     $launcher = Join-Path $TargetHome "$relative/$command.cmd"
-                    $relativeEntry = ('.bun/managed/' + $name + '/node_modules/' + $row.package + '/' + $entry).Replace('/', '\')
+                    $relativeEntry = ('.bun/managed/' + $name + '/' + $entry).Replace('/', '\')
                     if ($usesNode) {
                         $nodeCmd = $node.Replace('%', '%%')
                         $launcherText = "@echo off`r`nsetlocal DisableDelayedExpansion`r`n`"$nodeCmd`" `"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
@@ -1314,9 +1363,9 @@ function Install-Agents {
                 # Probe the package bin using its native format; the acceptance
                 # runner also checks the public .cmd launchers.
                 if ($usesNode) {
-                    $diagnostic = Invoke-Tool $node @($javascript, '--version') -Quiet -ShowFailureOutput
+                    $diagnostic = Invoke-Tool $node @($executable, '--version') -Quiet -ShowFailureOutput
                 } else {
-                    $diagnostic = Invoke-Tool $javascript @('--version') -Quiet -ShowFailureOutput
+                    $diagnostic = Invoke-Tool $executable @('--version') -Quiet -ShowFailureOutput
                 }
                 if (-not (Test-AgentVersion $diagnostic $row.version)) { Stop-Deployment "$name diagnostic did not report its pinned version" }
                 [Console]::Out.Write($diagnostic)
