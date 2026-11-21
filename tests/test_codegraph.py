@@ -365,6 +365,7 @@ class CodeGraphTests(unittest.TestCase):
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         for client in ("kimi", "opencode"):
             with self.subTest(client=client):
+                endpoint = "/api/v1/mcp/servers" if client == "kimi" else "/api/mcp"
                 with socket.socket() as listener:
                     listener.bind(("127.0.0.1", 0))
                     port = listener.getsockname()[1]
@@ -385,25 +386,31 @@ class CodeGraphTests(unittest.TestCase):
                     try:
                         deadline = time.monotonic() + 30
                         server = None
+                        last_error = "no transport error"
                         while time.monotonic() < deadline:
                             try:
-                                records = api("/api/v2/mcp/servers" if client == "kimi" else "/api/mcp")["data"]
+                                records = api(endpoint)["data"]
                                 server = next((item for item in records if item["name"] == "codegraph"), None)
                                 if server and (client == "kimi" or server["status"]["status"] == "connected"):
                                     break
-                            except OSError:
-                                pass
+                            except OSError as error:
+                                last_error = f"{type(error).__name__}: {error}"
                             time.sleep(0.1)
-                        self.assertIsNotNone(server)
+                        self.assertIsNotNone(server, f"{client} GET {endpoint} did not list CodeGraph; last transport failure: {last_error}")
                         if client == "kimi":
                             self.assertEqual(server["source"], "global")
                             self.assertEqual(server["config"]["args"], ["serve", "--mcp"])
                             # Fastify's :: route escape matches a literal single colon.
-                            checked = api("/api/v2/mcp/servers:test", {"name": "codegraph"})["data"]
+                            test_endpoint = "/api/v1/mcp/servers:test"
+                            try:
+                                checked = api(test_endpoint, {"name": "codegraph"})["data"]
+                            except OSError as error:
+                                self.fail(f"{client} POST {test_endpoint}: {type(error).__name__}: {error}")
                             self.assertTrue(checked["success"], checked)
                             self.assertIn("codegraph_explore", checked["output"])
                         else:
-                            self.assertEqual(server["status"]["status"], "connected", server)
+                            self.assertEqual(server["status"]["status"], "connected",
+                                             f"{client} GET {endpoint}; last transport failure: {last_error}; server: {server}")
                     finally:
                         stop_client(process)
         self.assertFalse((project / ".codegraph").exists())
