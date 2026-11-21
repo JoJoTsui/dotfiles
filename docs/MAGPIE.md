@@ -772,6 +772,11 @@ is the same configuration and is not reported as a change; a real change
 aborts the run and keeps the backup. The comparison needs a `python3` with
 the standard library's `tomllib` module; without one the run falls back to
 the byte digest, which is stricter, and says so once.
+The parsed value keeps its types: a TOML date, a TOML time and a TOML
+datetime are not the strings that spell them, at any path in the
+configuration, so a changed type is a changed configuration. The
+comparison stays insensitive to the layout, so the key order and the
+formatting of an unchanged configuration never read as a change.
 `~/.local/state/dotfiles/magpie/state.tsv` records what the last apply did:
 the providers, the groups with their model order, the
 wiring, the proxy, the DSH compaction group, and the Codex guard verdict.

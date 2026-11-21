@@ -293,8 +293,10 @@ magpie_content_digest_prepare() {
 # configuration, and the guard must not report that as a change. The digest
 # carries its kind: a file that parses at one point and stops parsing at
 # another never compares as equal, and a byte digest never equals a content
-# digest. Nothing of the file leaves this function but its digest: the
-# authentication holds a credential, and its digest is compared in memory.
+# digest. The parsed value keeps its types, so a date and the string that
+# spells it are two configurations and never one. Nothing of the file leaves
+# this function but its digest: the authentication holds a credential, and its
+# digest is compared in memory.
 magpie_content_digest() {
     local file=$1 format=$2 python digest
     [ -f "$file" ] || { printf ''; return 0; }
@@ -308,11 +310,47 @@ magpie_content_digest() {
     [ -n "$python" ] || python=$(magpie_content_python || true)
     if [ -n "$python" ]; then
         digest=$("$python" - "$file" "$format" <<'PYTHON'
+import datetime
 import hashlib
 import json
 import sys
 
 path, format = sys.argv[1], sys.argv[2]
+
+
+def encode(value):
+    """One parsed value as a tagged node.
+
+    Every node is a two-element list whose first element names the type, so
+    the encoding is injective: two different configurations never encode to
+    the same bytes, and an ordinary table cannot impersonate a tagged node,
+    because a table always encodes as a list of key and node pairs and never
+    as a mapping. The tags are what keeps a TOML date, a TOML time and a
+    TOML datetime apart from the strings that spell them.
+    """
+    if value is None:
+        return ["n", None]
+    if isinstance(value, bool):
+        return ["b", value]
+    if isinstance(value, int):
+        return ["i", str(value)]
+    if isinstance(value, float):
+        return ["f", repr(value)]
+    if isinstance(value, str):
+        return ["s", value]
+    if isinstance(value, datetime.datetime):
+        return ["dt", value.isoformat()]
+    if isinstance(value, datetime.date):
+        return ["d", value.isoformat()]
+    if isinstance(value, datetime.time):
+        return ["t", value.isoformat()]
+    if isinstance(value, dict):
+        return ["o", [[key, encode(item)] for key, item in sorted(value.items())]]
+    if isinstance(value, (list, tuple)):
+        return ["a", [encode(item) for item in value]]
+    raise TypeError(type(value).__name__)
+
+
 try:
     with open(path, "rb") as handle:
         raw = handle.read()
@@ -323,7 +361,7 @@ try:
         value = json.loads(raw.decode("utf-8"))
 except Exception:
     raise SystemExit(1)
-canonical = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+canonical = json.dumps(encode(value), sort_keys=True, separators=(",", ":"))
 sys.stdout.write("c:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest())
 PYTHON
 ) || digest=''

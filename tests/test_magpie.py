@@ -3534,6 +3534,53 @@ class CodexContentDigestTests(unittest.TestCase):
         self.assertEqual(first.stdout, second.stdout)
         self.assertNotEqual(first.stdout, changed.stdout)
 
+    def test_a_date_and_the_string_that_spells_it_are_two_configurations(self):
+        if not HAS_TOMLLIB:
+            self.skipTest("the content digest needs a python3 with the standard library's tomllib")
+        as_date = self.digest("date.toml", 'when = 2024-01-02\n',
+                              environment={"MAGPIE_PYTHON": sys.executable})
+        as_string = self.digest("string.toml", 'when = "2024-01-02"\n',
+                                environment={"MAGPIE_PYTHON": sys.executable})
+        self.assertTrue(as_date.stdout.startswith("c:"), as_date.stdout + as_date.stderr)
+        self.assertNotEqual(as_date.stdout, as_string.stdout)
+
+    def test_a_date_a_time_and_a_datetime_are_three_configurations(self):
+        if not HAS_TOMLLIB:
+            self.skipTest("the content digest needs a python3 with the standard library's tomllib")
+        digests = set()
+        for name, text in (("d.toml", 'when = 2024-01-02\n'),
+                           ("t.toml", 'when = 12:30:00\n'),
+                           ("dt.toml", 'when = 2024-01-02T12:30:00\n')):
+            result = self.digest(name, text, environment={"MAGPIE_PYTHON": sys.executable})
+            self.assertTrue(result.stdout.startswith("c:"), result.stdout + result.stderr)
+            digests.add(result.stdout)
+        self.assertEqual(len(digests), 3)
+
+    def test_the_type_survives_a_nested_path(self):
+        if not HAS_TOMLLIB:
+            self.skipTest("the content digest needs a python3 with the standard library's tomllib")
+        nested_date = self.digest("nested.toml", '[tool.thing]\nwhen = 2024-01-02\n',
+                                  environment={"MAGPIE_PYTHON": sys.executable})
+        nested_string = self.digest("nested-string.toml", '[tool.thing]\nwhen = "2024-01-02"\n',
+                                    environment={"MAGPIE_PYTHON": sys.executable})
+        self.assertNotEqual(nested_date.stdout, nested_string.stdout)
+        array_date = self.digest("array.toml", '[[tool.thing]]\nwhen = 2024-01-02\n',
+                                 environment={"MAGPIE_PYTHON": sys.executable})
+        array_string = self.digest("array-string.toml", '[[tool.thing]]\nwhen = "2024-01-02"\n',
+                                   environment={"MAGPIE_PYTHON": sys.executable})
+        self.assertNotEqual(array_date.stdout, array_string.stdout)
+        self.assertNotEqual(nested_date.stdout, array_date.stdout)
+
+    def test_an_ordinary_table_cannot_impersonate_a_tagged_value(self):
+        if not HAS_TOMLLIB:
+            self.skipTest("the content digest needs a python3 with the standard library's tomllib")
+        as_date = self.digest("tagged.toml", 'when = 2024-01-02\n',
+                              environment={"MAGPIE_PYTHON": sys.executable})
+        as_table = self.digest("table.toml",
+                                'when = { tag = "d", value = "2024-01-02" }\n',
+                                environment={"MAGPIE_PYTHON": sys.executable})
+        self.assertNotEqual(as_date.stdout, as_table.stdout)
+
     def test_without_a_parser_the_digest_is_the_bytes(self):
         result = self.digest("a.toml", self.LAYOUT_A)
         self.assertTrue(result.stdout.startswith("b:"), result.stdout + result.stderr)

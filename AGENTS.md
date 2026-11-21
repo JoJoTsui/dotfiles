@@ -428,7 +428,10 @@ explains every changed pair.
   not verified, only the field and its preservation.
   Codex's `~/.codex/config.toml` and `~/.codex/auth.json` stay device-owned:
   every apply guards both by their parsed content, so a configuration the
-  device rewrote into another layout is the same configuration. When Codex is
+  device rewrote into another layout is the same configuration. The parsed
+  content keeps its value types, so a TOML date, a TOML time and a TOML
+  datetime are not the strings that spell them, at any path in the
+  configuration. When Codex is
   selected, the deployment may select `magpie codex scope profile` and wire
   only its separate `~/.codex/magpie.config.toml` and `magpie-models.json`. The
   credential-bearing profile is private before it is written and stays 0600;
