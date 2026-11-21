@@ -85,10 +85,11 @@ bash deployment/legacy/agent-integrations.sh --t9k-jobs --check
 bash deployment/legacy/agent-integrations.sh --t9k-jobs --dry-run
 bash deployment/legacy/agent-integrations.sh --t9k-jobs --apply
 
-# 4. The symlink topology of the home.
+# 4. The symlink topology of the home. The utility relinks by default; with
+# --links-only it leaves the agent-stack preparation to the adapters above.
 bash deployment/legacy/link-home.sh --check
 bash deployment/legacy/link-home.sh --dry-run
-bash deployment/legacy/link-home.sh --apply
+bash deployment/legacy/link-home.sh --links-only
 ```
 
 The order matters in one place: the integration adapter records the observed
