@@ -106,6 +106,13 @@ Two findings the review leaves open:
 2. **The reapplication check is red on one managed file.** Something rewrites
    `~/.config/git/ignore` between two applies; the next apply restores the
    managed content, and the writer is still unidentified.
+3. **A narrow apply erased the recorded state of the agents it did not
+   install.** The agent state was replaced wholesale, so an install that
+   covered part of the selection dropped every other agent's row, and the
+   status then reported the catalog's floor instead of the version the device
+   runs. The state now replaces its own rows and keeps the rest, so a narrow
+   apply leaves what it did not look at alone. The bug was found on the
+   device, by a `--agents kimi` update that followed a full apply.
 
 Spec: the completion scope asks for a fresh Linux remote-compute deployment
 and for an incremental path on a partly deployed host. The fresh path is

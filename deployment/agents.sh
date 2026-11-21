@@ -1104,13 +1104,33 @@ agent_state_record() {
     AGENT_STATE_ROWS+=("$name|$provider|$version|$floor")
 }
 
+# Whether this run recorded one agent.
+agent_state_recorded() {
+    local name=$1 row
+    for row in ${AGENT_STATE_ROWS[@]+"${AGENT_STATE_ROWS[@]}"}; do
+        [ "${row%%|*}" = "$name" ] && return 0
+    done
+    return 1
+}
+
 agent_state_write() {
-    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/agents.lock.tsv" staged row
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/agents.lock.tsv" staged row name
     [ ! -L "${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles" ] ||
         fail 'the agent state directory is a symlink'
     mkdir -p "$(dirname "$state")"
     [ ! -L "$state" ] || fail 'the agent state file is a symlink'
     staged=$(mktemp "$state.XXXXXX")
+    # The state records every agent the device runs. A run that installs only
+    # part of the selection replaces its own rows and keeps the rest, so a
+    # narrow apply does not erase what it did not look at.
+    if [ -f "$state" ]; then
+        while IFS= read -r row || [ -n "$row" ]; do
+            [ -n "$row" ] || continue
+            name=${row%%|*}
+            agent_state_recorded "$name" && continue
+            printf '%s\n' "$row" >> "$staged"
+        done < "$state"
+    fi
     for row in ${AGENT_STATE_ROWS[@]+"${AGENT_STATE_ROWS[@]}"}; do
         printf '%s\n' "$row" >> "$staged"
     done

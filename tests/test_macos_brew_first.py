@@ -29,6 +29,13 @@ def catalog_records():
     return records
 
 
+def bun_version(name):
+    """The pinned version of one agent's deployment-owned Bun record."""
+    record = next(item for item in catalog_records()
+                  if item[0] == name and item[1] == "bun")
+    return record[4]
+
+
 def homebrew_record(name):
     """The Homebrew record of one agent: package, kind, floor, and commands."""
     record = next(item for item in catalog_records()
@@ -195,6 +202,20 @@ class MacosBrewFirstTests(unittest.TestCase):
             rows[fields[0]] = "|".join(fields[1:])
         return rows
 
+    def test_a_narrow_install_keeps_the_state_of_the_agents_it_did_not_install(self):
+        # The state records every agent the device runs. An install that
+        # covers part of the selection replaces its own rows and keeps the
+        # rest, so a narrow apply does not erase what it did not look at.
+        for name, version in (("kimi", "2.7.0"), ("opencode", "2.3.2")):
+            self.write_package(homebrew_record(name), version)
+            self.write_command(name, version)
+        self.install(selection="kimi")
+        self.assertIn("kimi", self.state())
+        self.install(selection="opencode")
+        state = self.state()
+        self.assertIn("opencode", state)
+        self.assertIn("kimi", state)
+
     def launcher(self, name):
         return (self.home / ".local/bin" / name).read_text()
 
@@ -291,14 +312,14 @@ class MacosBrewFirstTests(unittest.TestCase):
         for launcher in (self.launcher("kimi"), self.bun_launcher("kimi")):
             self.assertIn(str(project), launcher)
         self.assertNotIn(str(self.tools / "kimi"), self.launcher("kimi"))
-        self.assertEqual(self.state()["kimi"], f"bun|{record['floor']}|{record['floor']}")
+        self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_a_missing_package_falls_back_to_the_frozen_bun_project(self):
         record = homebrew_record("kimi")
         self.write_command("kimi", record["floor"])
         self.install()
         self.assertIn("kimi", self.bun_projects())
-        self.assertEqual(self.state()["kimi"], f"bun|{record['floor']}|{record['floor']}")
+        self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_an_older_command_earlier_on_path_does_not_block_the_adoption(self):
         record = homebrew_record("kimi")
@@ -318,7 +339,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.write_command("kimi", record["floor"])
         self.install(homebrew=False)
         self.assertIn("kimi", self.bun_projects())
-        self.assertEqual(self.state()["kimi"], f"bun|{record['floor']}|{record['floor']}")
+        self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_a_package_removed_after_adoption_is_repaired_on_the_next_apply(self):
         record = homebrew_record("kimi")
@@ -334,7 +355,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         for launcher in (self.launcher("kimi"), self.bun_launcher("kimi")):
             self.assertIn(str(project), launcher)
             self.assertNotIn(str(self.tools / "kimi"), launcher)
-        self.assertEqual(self.state()["kimi"], f"bun|{record['floor']}|{record['floor']}")
+        self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_the_deployment_never_installs_or_upgrades_a_homebrew_package(self):
         record = homebrew_record("kimi")
@@ -379,7 +400,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         project = self.home / ".bun/managed/kimi/node_modules/.bin/kimi"
         self.assertTrue(project.is_file())
         self.assertIn(str(project), self.launcher("kimi"))
-        self.assertEqual(self.state()["kimi"], f"bun|8.8.8|{record['floor']}")
+        self.assertEqual(self.state()["kimi"], f"bun|8.8.8|{bun_version('kimi')}")
 
     def test_a_package_that_drops_below_the_floor_is_revalidated_on_the_next_apply(self):
         record = homebrew_record("kimi")
@@ -391,7 +412,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.install()
         project = self.home / ".bun/managed/kimi/node_modules/.bin/kimi"
         self.assertIn(str(project), self.launcher("kimi"))
-        self.assertEqual(self.state()["kimi"], f"bun|{record['floor']}|{record['floor']}")
+        self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_the_managed_launchers_are_never_adopted_as_a_provider(self):
         record = homebrew_record("kimi")
@@ -401,7 +422,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.write_tool(self.home / ".bun/bin/kimi", "#!/bin/sh\n# Managed by dotfiles; device state.\n")
         self.install()
         self.assertIn("kimi", self.bun_projects())
-        self.assertEqual(self.state()["kimi"], f"bun|{record['floor']}|{record['floor']}")
+        self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_a_foreign_platform_or_architecture_never_adopts_the_host_package(self):
         record = homebrew_record("kimi")
@@ -411,7 +432,7 @@ class MacosBrewFirstTests(unittest.TestCase):
             with self.subTest(target=target):
                 self.install(**target)
                 self.assertIn("kimi", self.bun_projects())
-                self.assertEqual(self.state()["kimi"], f"bun|{record['floor']}|{record['floor']}")
+                self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_adoption_works_before_any_managed_bun_directory_exists(self):
         record = homebrew_record("kimi")
