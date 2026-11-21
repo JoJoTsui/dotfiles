@@ -1014,6 +1014,31 @@ function Install-Common {
         }
     }
 }
+function Assert-AgentLauncher([string]$Path, [string]$OldTarget) {
+    Assert-SafePath $Path
+    if ([IO.Directory]::Exists($Path)) { Stop-Deployment "agent launcher is a directory: $Path" }
+    if (-not [IO.File]::Exists($Path)) { return }
+    $existing = [IO.File]::ReadAllText($Path).Replace('\', '/')
+    $header = if ($Path.EndsWith('.cmd', [StringComparison]::OrdinalIgnoreCase)) { '@echo off' } else { '#!/bin/sh' }
+    if (-not ($existing.StartsWith($header) -and ($existing.Contains('Managed by dotfiles;') -or $existing.Contains($OldTarget)))) {
+        Stop-Deployment "agent launcher would replace a device file: $Path"
+    }
+}
+
+function Write-AgentLauncher([string]$Path, [string]$Text) {
+    if ($script:TargetedAgent) {
+        # Mark targeted replacements so a later repair can recognize them
+        # even if the command is broken. The assertion also accepts older
+        # launchers that point into the selected managed package.
+        $cmd = $Path.EndsWith('.cmd', [StringComparison]::OrdinalIgnoreCase)
+        $header = if ($cmd) { '@echo off' } else { '#!/bin/sh' }
+        $marker = if ($cmd) { 'rem Managed by dotfiles;' } else { '# Managed by dotfiles;' }
+        $eol = if ($cmd) { "`r`n" } else { "`n" }
+        $Text = $Text.Insert($header.Length + $eol.Length, $marker + $eol)
+    }
+    Write-Utf8 $Path $Text
+}
+
 function Install-Qoder([string]$Version, [string]$ManifestBase) {
     $root = Join-Path $TargetHome '.qoder'
     $cli = Join-Path $root "bin/qodercli/qodercli-$Version.exe"
@@ -1075,12 +1100,12 @@ function Install-Qoder([string]$Version, [string]$ManifestBase) {
         $targetPath = $cli
         foreach ($relative in @('.local/bin', '.bun/bin')) {
             $launcher = Join-Path $TargetHome "$relative/$name.cmd"
-            Write-Utf8 $launcher ("@echo off`r`n" + '"' + $targetPath + '" %*' + "`r`nexit /b %errorlevel%`r`n")
+            Write-AgentLauncher $launcher ("@echo off`r`n" + '"' + $targetPath + '" %*' + "`r`nexit /b %errorlevel%`r`n")
             $singleQuote = [string][char]39; $doubleQuote = [string][char]34
             $posixPath = $targetPath.Replace('\', '/')
             $quoted = $singleQuote + $posixPath.Replace($singleQuote, ($singleQuote + $doubleQuote + $singleQuote + $doubleQuote + $singleQuote)) + $singleQuote
             $posix = '#!/bin/sh' + "`n" + 'exec ' + $quoted + ' "$@"' + "`n"
-            Write-Utf8 (Join-Path $TargetHome "$relative/$name") $posix
+            Write-AgentLauncher (Join-Path $TargetHome "$relative/$name") $posix
         }
     }
     $script:Step = 'install-agents.qoder.diagnostic'
@@ -1097,6 +1122,7 @@ function Get-BunAgentEntry($Package, [string]$Command) {
 }
 
 function Test-BunAgentEntries($Row, [string]$PackageDirectory, [string]$Node) {
+    $savedFailureCode = $script:FailureCode
     try {
         $package = [IO.File]::ReadAllText((Join-Path $PackageDirectory 'package.json')) | ConvertFrom-Json
         foreach ($command in $Row.commands.Split(',')) {
@@ -1114,6 +1140,8 @@ function Test-BunAgentEntries($Row, [string]$PackageDirectory, [string]$Node) {
         return $true
     } catch {
         return $false
+    } finally {
+        $script:FailureCode = $savedFailureCode
     }
 }
 
@@ -1132,6 +1160,15 @@ function Install-Agents {
         if (-not (Test-AgentPlatform $row.platforms)) { continue }
         $name = $row.agent
         if (-not (Test-AgentSelected $row)) { continue }
+        if ($script:TargetedAgent) {
+            $oldTarget = if ($row.provider -eq 'native') { '/.qoder/bin/qodercli/' } else { "/.bun/managed/$name/node_modules/" }
+            foreach ($relative in @('.bun/bin', '.local/bin')) {
+                foreach ($command in $row.commands.Split(',')) {
+                    Assert-AgentLauncher (Join-Path $TargetHome "$relative/$command.cmd") $oldTarget
+                    Assert-AgentLauncher (Join-Path $TargetHome "$relative/$command") $oldTarget
+                }
+            }
+        }
         if ($row.provider -eq 'bun') {
             if ([version](Get-Pin 'nodejs') -lt [version]$row.minimumNode) { Stop-Deployment "Node does not meet $name's minimum version" }
             $project = Join-Path $roots.bun "managed/$name"
@@ -1164,7 +1201,7 @@ function Install-Agents {
                         # Do not pass a PE executable to Node as a JavaScript file.
                         $launcherText = "@echo off`r`n`"%~dp0..\..\$relativeEntry`" %*`r`nexit /b %errorlevel%`r`n"
                     }
-                    Write-Utf8 $launcher $launcherText
+                    Write-AgentLauncher $launcher $launcherText
                     # Match npm's Windows discovery contract: native clients use
                     # .cmd, while Git Bash resolves the bare POSIX companion.
                     $singleQuote = [string][char]39; $doubleQuote = [string][char]34
@@ -1177,7 +1214,7 @@ function Install-Agents {
                     } else {
                         $posix += 'exec "$dotfiles_device/"' + $quotedEntry + ' "$@"' + "`n"
                     }
-                    Write-Utf8 (Join-Path $TargetHome "$relative/$command") $posix
+                    Write-AgentLauncher (Join-Path $TargetHome "$relative/$command") $posix
                 }
                 $script:Step = "install-agents.$name.diagnostic"
                 # Probe the package bin using its native format; the acceptance

@@ -109,6 +109,13 @@ class AgentTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), content)
             self.assertEqual(path.stat().st_mtime_ns, timestamps[relative])
 
+        claude_settings = self.home / ".claude/settings.json"
+        claude_settings.unlink()
+        claude = self.deploy("--agent-update", "--agents", "claude-code", env=environment)
+        self.assertEqual(claude.returncode, 0, claude.stderr)
+        self.assertTrue(claude_settings.is_file())
+        self.assertIn("reconciled claude", claude.stdout)
+
     def test_default_plan_names_bun_owned_agents_and_independent_codegraph(self):
         result = self.deploy("--plan")
         self.assertEqual(result.returncode, 0, result.stderr)

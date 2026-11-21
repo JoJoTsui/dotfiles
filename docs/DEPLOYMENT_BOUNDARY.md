@@ -67,6 +67,12 @@ installation and shell preparation. It conflicts with `--apply-only`.
 See [agent ownership and validation](AGENT_INSTALLATION.md) for supported
 locks, runtime overrides, and partial deployment acceptance.
 
+The managed agent updater selects `--agent-update` for repair of one agent
+and its declared dependencies. The plan lists those packages and the targeted
+dispatch. Unrelated source, skill, shell, and client settings remain for an
+ordinary apply. A selection of zero or multiple agents retains
+`--agents-only` behavior.
+
 Unix-only `--system-config` adds the portable managed block to the existing
 system Bash rc (`/etc/bash.bashrc` or `/etc/bashrc`), preserving the original
 file in a `.dotfiles.bak` backup on first change. `--login-shell`

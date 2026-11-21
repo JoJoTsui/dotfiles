@@ -46,10 +46,10 @@ the pinned DSH command starts; it does not establish profile initialization,
 Magpie routing, or a successful headless model request. See the upstream
 [CLI guide](https://github.com/ccch1mneyyy/dsh-TUI/blob/v0.20.1/guide/dsh-tui-guide/cli.en.md).
 
-CodeGraph is always selected, including with `--agents none`. Installation
-never indexes a repository. Selection does not gate configuration, shared
-instructions, or portable skills, and does not uninstall omitted clients.
-Instruction/skill adapters deploy by default through the public bootstrap; see
+Ordinary bootstrap selects CodeGraph, including with `--agents none`.
+Installation never indexes a repository or uninstalls omitted clients.
+Ordinary source application deploys configuration, shared instructions, and
+portable skills independently of the agent selection. See
 [agent payloads](AGENT_PAYLOAD.md) for discovery and ownership.
 
 ```bash
@@ -70,7 +70,8 @@ dotfiles-agents status               # show intent, last apply, and live command
 `install` runs `bootstrap.sh --agents-only` (or `bootstrap.ps1` on native
 Windows). `update` asks `deployment/update_versions.py propose-agents` for the
 selected upstream versions, rewrites pins and regenerates Bun locks only when a
-proposal exists, and then reinstalls through the same boundary. Vendor
+proposal exists, and then reinstalls through the same boundary. A single-agent
+update uses the narrower dispatch described below. Vendor
 self-updaters are not invoked. The working checkout remains the source of
 truth, so the refreshed manifests and locks can be reviewed and committed.
 
@@ -109,6 +110,29 @@ dotfiles-agents update claude      # one client
 dotfiles-agents update all         # every selected client
 dotfiles-agents status             # show intent, last apply, and live command
 ```
+
+When the resolved selection names one agent, `update` uses
+`--agent-update` (native Windows `-AgentUpdate`). Aliases select the same
+agent. Multiple agents, `all`, and `none` use the ordinary
+`--agents-only` path. `install` also keeps that path. Inspect a targeted
+plan with `bash bootstrap.sh --agent-update --agents pi --plan` or
+`./bootstrap.ps1 -AgentUpdate -Agents pi -Plan`.
+
+A targeted update reruns the selected provider's normal install and
+diagnostics, rebuilds its launchers, and merges the selected client settings.
+If a frozen Bun install leaves a missing or failing package entry, the
+adapter forces a reinstall of that package project and verifies the launcher.
+The DSH TUI update also reconciles its DSH runtime. On Unix, the selected
+agent's existing Worktrunk and Herdr integration steps still run. A Codex
+update restores the managed Herdr hook files when Herdr is available. On
+Windows a missing `.env_core` is restored for the Git Bash launchers.
+
+CodeGraph's independent installation and standalone registrations, configuration
+of other clients, generated skills, and shared shell drift remain for a full
+apply. The targeted client policy map under `deployment/client-settings/`
+limits which settings are merged. Existing device values within those
+settings keep the same ownership policy as a full apply. See the
+[paired timing measurements](verification/deployment-timing.md).
 
 `update` never invokes a vendor self-updater and never edits the device's
 global Bun registry. A device-owned version in

@@ -103,3 +103,36 @@ the observed warm spreads of 0.210 and 0.519 seconds. A candidate still
 needs broken-output repair and preservation evidence. This timing scope
 cannot establish cold full-bootstrap speed, package-manager retry totals,
 or native Linux performance.
+
+## Targeted update comparison
+
+Repeat the command above with `--targeted-update` to measure the new
+single-agent dispatch. Each fresh Pi home in the comparison ran the
+ordinary warm `--agents-only` workload and then the targeted update with the
+same toolchain, package cache, and version pins. Both commands verified
+Pi 1.6.0 after the run. The comparison used clean source
+`512a2af8778a252bf4aff94b12a920e6b09006bd` with fingerprint
+`e9515ef25a1d86f813d382bc7dc261eb51fe7371f9d3428cbe80ce475a88d28a`.
+
+| Environment | Warm regular (seconds) | Targeted (seconds) | Paired savings (seconds) |
+| --- | --- | --- | --- |
+| macOS | 4.433, 4.578, 4.480 | 1.035, 1.066, 1.035 | 3.398, 3.512, 3.445 |
+| Emulated Ubuntu | 19.852, 19.750, 20.411 | 5.686, 5.714, 5.421 | 14.166, 14.036, 14.990 |
+
+The targeted path dispatched three stages instead of eight. In every pair
+it exceeded the initial one-second macOS and four-second emulated Ubuntu
+targets. Median savings were 3.445 seconds on macOS and 14.166 seconds on
+emulated Ubuntu. All warm regular runs rewrote 12 inventoried files with
+identical bytes and mode. Each targeted run rewrote two identical files and
+changed one inventoried file's content or mode. No inventoried files were
+added or removed in the warm runs. An unselected-file preservation regression
+checks byte and mtime stability outside the selected update's ownership.
+
+A separate disposable macOS fixture moved the real Pi package entry, launcher,
+and settings file aside. The targeted update forced a frozen reinstall of Pi,
+restored the launcher and settings, and ran version 1.6.0. The unrelated Git
+ignore drift stayed in place.
+
+The comparison covers warm dispatch after version resolution. Full default
+setup, true native Linux, native Windows, and different agent selections
+require their own performance evidence.

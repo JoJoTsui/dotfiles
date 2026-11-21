@@ -2470,6 +2470,12 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertIn(pi_pin, diagnostic.stdout)
         for path, previous in preserved.items():
             self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), previous)
+        pi_launcher.write_text("@echo off\necho device launcher\n")
+        before_collision = pi_launcher.read_bytes()
+        collision = self.deploy('-Role', role, '-AgentUpdate', '-Agents', 'pi')
+        self.assertNotEqual(collision.returncode, 0)
+        self.assertIn('would replace a device file', collision.stderr)
+        self.assertEqual(pi_launcher.read_bytes(), before_collision)
 
 
 
