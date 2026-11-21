@@ -19,6 +19,12 @@ the complete Nushell/Bash/Zsh environment. Native Windows supplies Nushell and
 PortableGit's Git Bash. Ordinary deployment changes neither system PATH, account
 login shell, registry, Known Folder registration, nor driver/toolchain settings.
 
+`-Plan` retains the legacy `actions` summary and reports the actual dispatch
+order in `steps`. The manager stage still resolves Chezmoi in apply-only and
+agents-only modes. A full run lists the selected Magpie CLI installation
+before shell preparation. Set `DOTFILES_STEP_TRACE=1` to observe started steps
+on stderr during execution. [Deployment boundary](DEPLOYMENT_BOUNDARY.md)
+
 `TargetHome` designates HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG roots,
 Pixi/Bun/Cargo/Rustup caches and registries, Python configuration/cache roots,
 Atuin state, and agent homes. Managed `dotfiles-shell.cmd` starts Nushell after
@@ -46,7 +52,9 @@ Cached binaries and downloaded payloads must report the exact pinned version;
 an invalid cache is repaired only after the replacement passes verification.
 Bun projects live under
 `.bun/managed`; existing global Bun and Pixi registries survive. Omitted agents
-remain installed. Native command launchers
+keep their launchers and their last successful records in `agents.lock.tsv`.
+The installer publishes selected records after the agent checks succeed.
+Native command launchers
 bind JavaScript entries to the validated `DOTFILES_NODE_BIN` override when
 supplied, or managed `.pixi/bin/node.exe` by default. Git Bash companions use
 the same selected runtime. CodeGraph MCP registrations spawn `node.exe` plus the pinned

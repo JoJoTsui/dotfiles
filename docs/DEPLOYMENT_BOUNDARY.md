@@ -47,8 +47,18 @@ No adapter may silently turn a required failure into a completion message.
 `--apply-only` still provisions or uses chezmoi, applies the working source, and
 bypasses common-tool/agent/startup installation. `--plan` does neither and emits
 JSON with profile selectors, source/home, tools/actions, state roots, and target
-settings. Secret values never enter this output. Extend this metadata when a
-new installer becomes available; do not invoke installers to compute a plan.
+settings. The legacy `actions` summary is retained. Use `steps` for ordered
+dispatch, including the manager stage in restricted modes and source-apply
+stages that the summary groups together. On Unix a full run that selects the
+gateway snapshots its client settings before installing managers. An explicit
+proxy installation runs before Magpie wiring and shell preparation.
+
+Both bootstrap adapters emit a `dotfiles: step <name> started` line on stderr
+for each dispatched step when `DOTFILES_STEP_TRACE=1`. The list covers
+dispatch after preflight and root preparation. A step can complete without
+writing if its work is already satisfied. Planning does no dispatch, emits
+no trace, and never runs installers. Secret values never enter the plan or
+these trace lines.
 
 `--agents all|none|<comma-separated names>` selects client installation while
 CodeGraph remains an independent default. `--agents-only` applies source and
