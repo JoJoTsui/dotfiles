@@ -80,6 +80,14 @@ class DeploymentTests(unittest.TestCase):
                 self.assertEqual(update, old)
         self.assertFalse(self.home.exists())
 
+    def test_agent_update_rejects_system_config_before_planning_or_writing(self):
+        arguments = ("--platform", "linux", "--agent-update", "--agents", "pi", "--system-config")
+        for mode in (("--plan",), ()):
+            result = self.deploy(*arguments, *mode)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("--system-config cannot be used with --agent-update", result.stderr)
+            self.assertFalse(self.home.exists())
+
     def test_ordered_plan_matches_dispatch_in_a_disposable_installer_fixture(self):
         source = self.root / "working-source"
         shutil.copytree(SOURCE, source, ignore=shutil.ignore_patterns(".git", "__pycache__"))

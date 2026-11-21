@@ -148,7 +148,12 @@ platform = "macos" if sys.platform == "darwin" else "linux"
 # internally sourced .env_core may have moved managed paths to the front.
 os.environ["PATH"] = sys.argv[3]
 version_pattern = re.compile(
-    r"(?<![\w.])v?(\d+(?:\.\d+)+(?:-[\w.-]+)?(?:\+[\w.-]+)?)(?![\w.])"
+    r"(?<![A-Za-z0-9._+\-])v?(\d+(?:\.\d+)+(?:-[\w.-]+)?(?:\+[\w.-]+)?)(?![A-Za-z0-9._+\-])"
+)
+shell_word = r"'[^'\r\n]*(?:'\\''[^'\r\n]*)*'"
+launcher_pattern = re.compile(
+    rf"#!/bin/sh\n# Managed by dotfiles; [^\r\n]+\n"
+    rf'(?:PATH={shell_word}:"\$PATH"\nexport PATH\n)?exec (?P<entry>{shell_word}) "\$@"\n'
 )
 
 
@@ -244,17 +249,16 @@ def executable_provider(path, chain):
     bun = Path(os.environ.get("BUN_INSTALL") or (home / ".bun"))
     target = path.resolve()
     if path.parent.resolve() in ((home / ".local/bin").resolve(), (bun / "bin").resolve()):
-        # The installer emits a literal, shell-quoted exec target on the final
-        # line. Inspect it as data without sourcing or expanding the launcher.
+        # Recognize the whole emitted script. A trailing exec can be
+        # unreachable or refer to a different package than what ran.
         try:
             with target.open("rb") as launcher:
-                raw = launcher.read(4096)
-            if raw.startswith(b"#!/bin/sh\n# Managed by dotfiles;"):
-                tokens = shlex.split(raw.decode().splitlines()[-1])
-                if len(tokens) == 3 and tokens[0] == "exec" and tokens[2] == "$@":
-                    entry = Path(tokens[1])
-                    if entry.is_absolute() and entry.is_file():
-                        target = entry.resolve()
+                raw = launcher.read(4097)
+            match = launcher_pattern.fullmatch(raw.decode())
+            if match:
+                entry = Path(shlex.split(match["entry"])[0])
+                if entry.is_absolute() and entry.is_file():
+                    target = entry.resolve()
         except (OSError, UnicodeError, ValueError):
             pass
     for row in chain:

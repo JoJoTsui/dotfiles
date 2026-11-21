@@ -656,20 +656,21 @@ class HerdrStatusColumnTests(unittest.TestCase):
         self.state.write_text("pi|current\nclaude|missing\ncodex|outdated\n", encoding="utf-8")
         result = self.status()
         self.assertEqual(result.returncode, 0, result.stderr)
-        rows = {line.split()[0]: line.split() for line in result.stdout.splitlines()[1:] if line.split()}
-        self.assertIn("HERDR", result.stdout.splitlines()[0])
-        self.assertEqual(rows["codex"][4], "outdated")
-        self.assertEqual(rows["claude"][4], "missing")
-        self.assertEqual(rows["pi"][4], "current")
+        rows = {line.split()[0]: line.split(" | herdr: ")[-1]
+                for line in result.stdout.splitlines()[1:] if line.split()}
+        self.assertEqual(rows["codex"], "outdated")
+        self.assertEqual(rows["claude"], "missing")
+        self.assertEqual(rows["pi"], "current")
         # An agent Herdr does not integrate has no kind at all.
-        self.assertEqual(rows["minimax"][4], "unsupported")
+        self.assertEqual(rows["minimax"], "unsupported")
 
     def test_the_column_reports_unavailable_without_herdr(self):
         result = self.status(herdr=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        rows = {line.split()[0]: line.split() for line in result.stdout.splitlines()[1:] if line.split()}
-        self.assertEqual(rows["codex"][4], "unavailable")
-        self.assertEqual(rows["minimax"][4], "unsupported")
+        rows = {line.split()[0]: line.split(" | herdr: ")[-1]
+                for line in result.stdout.splitlines()[1:] if line.split()}
+        self.assertEqual(rows["codex"], "unavailable")
+        self.assertEqual(rows["minimax"], "unsupported")
 
 
 class HerdrHealthTests(unittest.TestCase):

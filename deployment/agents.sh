@@ -471,13 +471,17 @@ agent_shell_quote() {
 # provider must report exactly that diagnostic; an installer-owned provider
 # owns its installed version, so it accepts a diagnostic that contains it.
 agent_diagnostic_matches() {
-    local version=$1 diagnostic=$2 template=$3 policy=${4:-exact} expected
+    local version=$1 diagnostic=$2 template=$3 policy=${4:-exact} expected token
+    token=${version//./\\.}
+    token=${token//+/\\+}
+    local version_pattern="(^|[^[:alnum:]_.+-])v?$token([^[:alnum:]_.+-]|$)"
     case "$template" in
-        '-') case "$diagnostic" in *"$version"*) return 0 ;; esac; return 1 ;;
+        '-') [[ "${diagnostic%%$'\n'*}" =~ $version_pattern ]] ;;
         *'{version}'*)
             expected=${template//\{version\}/$version}
             case "$policy" in
-                floor) case "$diagnostic" in *"$expected"*) return 0 ;; esac; return 1 ;;
+                floor) [[ "${diagnostic%%$'\n'*}" =~ $version_pattern ]] &&
+                    case "$diagnostic" in *"$expected"*) return 0 ;; *) return 1 ;; esac ;;
                 *) [ "$diagnostic" = "$expected" ] ;;
             esac ;;
         *) return 1 ;;

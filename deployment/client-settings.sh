@@ -23,7 +23,7 @@ client_claude_uses_plain_opus() {
     # Source application already validated and normalized this target. Read it
     # with the same JSONC parser; diagnostics must not expose credential values.
     result=$(DOTFILES_SETTINGS_CLAUDE_TARGET="$HOME/.claude/settings.json" "$DEPLOY_CHEZMOI" \
-        --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" \
+        --source "$DEPLOY_SOURCE" --destination "$HOME" --config "${DEPLOY_CHEZMOI_CONFIG:-$XDG_CONFIG_HOME/chezmoi/chezmoi.toml}" \
         --no-tty execute-template '{{- $settings := include (env "DOTFILES_SETTINGS_CLAUDE_TARGET") | fromJsonc -}}{{- if and (kindIs "map" $settings) (kindIs "string" (get $settings "model")) (eq (get $settings "model") "opus") -}}true{{- else -}}false{{- end -}}' 2>/dev/null) ||
         fail 'cannot inspect the declared Claude model: .claude/settings.json'
     [ "$result" = true ]
@@ -48,6 +48,7 @@ validate_client_settings() {
 
 deploy_client_settings() {
     local format source target policy stage key trace_policy keep_plain_opus=${1:-0} magpie_wiring=${2:-0} policies=${3:-}
+    local config=${DEPLOY_CHEZMOI_CONFIG:-$XDG_CONFIG_HOME/chezmoi/chezmoi.toml}
     case "$keep_plain_opus" in 0|1) ;; *) fail 'invalid internal Claude model preservation request' ;; esac
     case "$magpie_wiring" in 0|1) ;; *) fail 'invalid internal Magpie client wiring request' ;; esac
     # Only the selected client installer can request the model restoration,
@@ -73,11 +74,11 @@ deploy_client_settings() {
         export DOTFILES_SETTINGS_SOURCE="$DEPLOY_SOURCE/deployment/client-settings/$source"
         export DOTFILES_SETTINGS_TARGET="$HOME/$target"
         export DOTFILES_SETTINGS_BASELINE="$XDG_STATE_HOME/dotfiles/client-settings/$policy.json"
-        if ! DOTFILES_SETTINGS_OUTPUT=config "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$key.config" 2> "$stage/parser.log"; then
+        if ! DOTFILES_SETTINGS_OUTPUT=config "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$config" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$key.config" 2> "$stage/parser.log"; then
             if [ "${DOTFILES_TEST_TRACE_CLIENT_SETTINGS:-}" = 1 ]; then
                 printf 'dotfiles: client settings shell policy (test-only): <%s>\n' "${DOTFILES_SETTINGS_POLICY-<unset>}" >&2
                 printf '%s\n' '{{ env "DOTFILES_SETTINGS_POLICY" }}' > "$stage/policy.tmpl"
-                if trace_policy=$("$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$stage/policy.tmpl" 2> "$stage/policy-query.log"); then
+                if trace_policy=$("$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$config" --no-tty execute-template --file "$stage/policy.tmpl" 2> "$stage/policy-query.log"); then
                     printf 'dotfiles: client settings template policy (test-only): <%s>\n' "$trace_policy" >&2
                 else
                     printf 'dotfiles: client settings template policy query failed (test-only):\n' >&2
@@ -89,7 +90,7 @@ deploy_client_settings() {
             rm -rf "$stage"
             fail "cannot merge client config ($format): $target; check its syntax"
         fi
-        if ! DOTFILES_SETTINGS_OUTPUT=baseline "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$key.baseline" 2> "$stage/parser.log"; then
+        if ! DOTFILES_SETTINGS_OUTPUT=baseline "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$config" --no-tty execute-template --file "$DEPLOY_SOURCE/deployment/client-settings/merge.tmpl" > "$stage/$key.baseline" 2> "$stage/parser.log"; then
             rm -rf "$stage"
             fail "cannot prepare client config baseline ($format): $target"
         fi

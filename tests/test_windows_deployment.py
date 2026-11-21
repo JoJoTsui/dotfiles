@@ -104,6 +104,50 @@ $asset | ConvertTo-Json -Compress
         self.assertTrue(asset["url"].startswith("https://"))
         self.assertRegex(asset["sha256"], r"^[a-f0-9]{64}$")
 
+    def test_windows_launcher_and_version_checks_reject_decoys(self):
+        fixture = self.root / 'launchers'
+        fixture.mkdir()
+        target = r'.bun\managed\pi\node_modules\package\cli.js'
+        dispatch = f'"C:\\managed\\node.exe" "%~dp0..\\..\\{target}" %*\r\n'
+        managed = '@echo off\r\nsetlocal DisableDelayedExpansion\r\n' + dispatch + 'exit /b %errorlevel%\r\n'
+        (fixture / 'managed.cmd').write_bytes(managed.encode('ascii'))
+        (fixture / 'decoy.cmd').write_bytes(managed.replace(
+            dispatch, 'echo 1.2.3\r\nexit /b 0\r\n' + dispatch).encode('ascii'))
+        companion = ('#!/bin/sh\n'
+                     'dotfiles_device=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd) || exit 1\n'
+                     '. "$dotfiles_device/.env_core"\n'
+                     'exec \'C:/managed/node.exe\' "$dotfiles_device/".bun/managed/pi/node_modules/package/cli.js "$@"\n')
+        companion = companion.replace('.bun/managed/pi/node_modules/package/cli.js',
+                                      "'.bun/managed/pi/node_modules/package/cli.js'")
+        (fixture / 'managed').write_text(companion, encoding='utf-8')
+        script = self.root / 'launcher-probe.ps1'
+        script.write_text(r'''
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+$fixture = $env:DOTFILES_TEST_FIXTURE
+$checks = @{
+    cmd = Get-ManagedWindowsLauncherTarget (Join-Path $fixture 'managed.cmd')
+    decoy = Get-ManagedWindowsLauncherTarget (Join-Path $fixture 'decoy.cmd')
+    companion = Get-ManagedWindowsLauncherTarget (Join-Path $fixture 'managed')
+    exact = Test-AgentVersion 'pi v1.2.3' '1.2.3'
+    suffix = Test-AgentVersion 'pi 1.2.30' '1.2.3'
+    prefix = Test-AgentVersion 'pi 11.2.3' '1.2.3'
+    prerelease = Test-AgentVersion 'pi 1.2.3-dev' '1.2.3'
+}
+$checks | ConvertTo-Json -Compress
+''', encoding='utf-8')
+        result = subprocess.run(
+            [POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)], cwd=SOURCE,
+            env=dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_FIXTURE=str(fixture)),
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        checks = json.loads(result.stdout)
+        self.assertEqual(checks['cmd'], {'target': target, 'relative': True})
+        self.assertIsNone(checks['decoy'])
+        self.assertEqual(checks['companion'], {'target': target.replace('\\', '/'), 'relative': True})
+        self.assertTrue(checks['exact'])
+        self.assertFalse(any(checks[name] for name in ('suffix', 'prefix', 'prerelease')))
+
     def test_agent_status_keeps_catalog_record_and_live_evidence_separate(self):
         status = self.root / 'dotfiles-agents.ps1'
         template = SOURCE / 'dot_local/bin/executable_dotfiles-agents.ps1.tmpl'
@@ -2471,12 +2515,18 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertIn(pi_pin, diagnostic.stdout)
         for path, previous in preserved.items():
             self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), previous)
-        pi_launcher.write_text("@echo off\necho device launcher\n")
+        pi_launcher.write_text('@echo off\necho ' + pi_pin + '\nexit /b 0\n'
+                               'rem .bun/managed/pi/node_modules/device launcher\n')
         before_collision = pi_launcher.read_bytes()
         collision = self.deploy('-Role', role, '-AgentUpdate', '-Agents', 'pi')
         self.assertNotEqual(collision.returncode, 0)
         self.assertIn('would replace a device file', collision.stderr)
         self.assertEqual(pi_launcher.read_bytes(), before_collision)
+        pending_shell.write_bytes(b"if then\n")
+        invalid_shell = self.deploy('-Role', role, '-AgentUpdate', '-Agents', 'pi')
+        self.assertNotEqual(invalid_shell.returncode, 0)
+        self.assertIn('.env_core failed the Git Bash check', invalid_shell.stderr)
+        self.assertEqual(pending_shell.read_bytes(), b"if then\n")
 
 
 
