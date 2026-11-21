@@ -721,16 +721,19 @@ Import-SkillLibrary
         temporary.mkdir(parents=True, exist_ok=True)
         script = self.root / 'qoder-install.ps1'
         script.write_text(r'''$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version 2.0
+$script:FailureCode = 1
 function Stop-Deployment([string]$Message) { throw $Message }
 $TargetHome = $env:DOTFILES_TEST_TARGET_HOME
-. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+$Source = $env:DOTFILES_TEST_SOURCE
+. (Join-Path $Source 'deployment/windows.ps1')
 function Invoke-RestMethod([string]$Uri, [switch]$UseBasicParsing) {
     if ($env:DOTFILES_TEST_QODER_CACHED -eq '1') { throw 'cached pin unexpectedly fetched a manifest' }
     if ($Uri -ne "https://example.invalid/$env:DOTFILES_TEST_QODER_VERSION/manifest.json") { throw 'unexpected manifest URL' }
     [IO.File]::ReadAllText($env:DOTFILES_TEST_QODER_MANIFEST) | ConvertFrom-Json
 }
 function Invoke-WebRequest([string]$Uri, [string]$OutFile, [switch]$UseBasicParsing, [int]$TimeoutSec) {
-    if ($Uri -ne 'https://example.invalid/qodercli.zip') { throw 'unexpected archive URL' }
+    if ($Uri -ne $env:DOTFILES_TEST_QODER_URL) { throw 'unexpected archive URL' }
     [IO.File]::Copy($env:DOTFILES_TEST_QODER_ARCHIVE, $OutFile)
 }
 # Execute the synthetic archive payload through Python on either host. Keep
@@ -751,6 +754,7 @@ Install-Qoder $env:DOTFILES_TEST_QODER_VERSION 'https://example.invalid'
         environment = dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE), DOTFILES_TEST_TARGET_HOME=str(self.home),
                            DOTFILES_TEST_PYTHON=sys.executable, DOTFILES_TEST_QODER_VERSION=version,
                            DOTFILES_TEST_QODER_ARCHIVE=str(archive), DOTFILES_TEST_QODER_MANIFEST=str(manifest),
+                           DOTFILES_TEST_QODER_URL='https://example.invalid/qodercli.zip',
                            DOTFILES_TEST_QODER_LOG=str(self.root / 'qoder-invocations.jsonl'), TEMP=str(temporary))
         return script, environment, payload
 
@@ -796,6 +800,31 @@ Install-Qoder $env:DOTFILES_TEST_QODER_VERSION 'https://example.invalid'
         for command in ('qoder', 'qodercli'):
             self.assertIn(str(self.home / '.local/bin' / (command + '.cmd')),
                           [call['requested'] for call in invocations])
+
+    def test_qoder_prefers_compatible_standard_and_accepts_legacy_fallback(self):
+        for standard_supported in (True, False):
+            with self.subTest(standard_supported=standard_supported):
+                self.home = self.root / f'qoder-windows-{standard_supported}'
+                script, environment, payload = self.qoder_fixture()
+                manifest_path = Path(environment['DOTFILES_TEST_QODER_MANIFEST'])
+                manifest = json.loads(manifest_path.read_text())
+                common = manifest['files'][0]
+                legacy = dict(common, variant='legacy', runtime='node-sea',
+                              url='https://example.invalid/qodercli-legacy.zip')
+                standard = dict(common, variant='standard', runtime='bun',
+                                min_windows_build=0 if standard_supported else 2**31 - 1,
+                                url='https://example.invalid/qodercli-standard.zip')
+                # The pinned manifest lists the unbounded legacy entry first.
+                # Its standard entry includes a minimum and omits the maximum.
+                manifest['files'] = [legacy, standard]
+                manifest_path.write_text(json.dumps(manifest))
+                expected = standard if standard_supported else legacy
+                result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                        env=dict(environment, DOTFILES_TEST_QODER_URL=expected['url']),
+                                        capture_output=True, text=True, timeout=30)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                pinned = self.home / f'.qoder/bin/qodercli/qodercli-{manifest["latest"]}.exe'
+                self.assertEqual(pinned.read_bytes(), payload)
 
     def test_qoder_rejects_wrong_or_failing_download_before_replacing_state(self):
         version = native_agent_pins()['qoder']['version']
