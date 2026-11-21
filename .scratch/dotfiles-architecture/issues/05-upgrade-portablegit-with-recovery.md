@@ -15,4 +15,4 @@
 
 ### Integrated verification
 
-Portable PowerShell fixtures passed, including same-pin repair, vendor links, and interrupted rollback. Native vendor archive acceptance remains open.
+Portable PowerShell fixtures passed, including same-pin repair, vendor links, and interrupted rollback. The operator deferred acceptance with the native vendor archive.

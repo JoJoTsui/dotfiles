@@ -86,8 +86,7 @@ corrections on the combined branch.
   real-shell and application tests on the later revision. The full install
   gate was run on `f909d6c`.
 
-Native Windows acceptance has no result for this branch. Portable PowerShell
-covered the adapter fixtures. The stock Windows PowerShell and vendor archive
-still require the native workflow. Starting that workflow requires permission
-to push the verification branch. Native WSL and other macOS matrix cells were
-outside the local runtime coverage.
+The operator deferred native Windows acceptance. Portable PowerShell covered
+the adapter fixtures. The vendor archive and Windows PowerShell 5.1 remain
+unverified on this branch. Native WSL and the remaining macOS matrix cells
+were outside the local runtime coverage.

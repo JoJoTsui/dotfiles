@@ -15,4 +15,4 @@
 
 ### Integrated verification
 
-The final verifier group, public plan matrix, simulated applies, and earlier Apple silicon gate passed within the scope recorded in the spec. Native Windows acceptance remains open.
+The final verifier group, public plan matrix, simulated applies, and earlier Apple silicon gate passed within the scope recorded in the spec. The operator deferred native Windows acceptance.

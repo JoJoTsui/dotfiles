@@ -209,4 +209,4 @@ the Codex review.
 
 ### Integrated verification
 
-Real Nushell fixtures passed on the final runtime revision. A native Windows shell preparation check remains open.
+Real Nushell fixtures passed on the final runtime revision. The operator deferred the native Windows shell preparation check.
