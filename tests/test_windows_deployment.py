@@ -148,6 +148,33 @@ $checks | ConvertTo-Json -Compress
         self.assertTrue(checks['exact'])
         self.assertFalse(any(checks[name] for name in ('suffix', 'prefix', 'prerelease')))
 
+    def test_git_bash_environment_rejects_active_device_edits_without_sourcing(self):
+        script = self.root / 'git-bash-env-probe.ps1'
+        script.write_text(r'''
+$ErrorActionPreference = 'Stop'
+. (Join-Path $env:DOTFILES_TEST_SOURCE 'deployment/windows.ps1')
+$managed = ': "${CHOKIDAR_USEPOLLING:=0}"' + "`n" + 'export CHOKIDAR_USEPOLLING' + "`n"
+$otherRole = $managed.Replace(':=0', ':=1')
+$checks = @{
+    exact = Test-ManagedGitBashEnvironment $managed $managed
+    comments = Test-ManagedGitBashEnvironment ($managed + "`n  # preserve device comment`n") $managed
+    formerRole = Test-ManagedGitBashEnvironment $otherRole $managed
+    earlySuccess = Test-ManagedGitBashEnvironment "exit 0`n" $managed
+    earlyFailure = Test-ManagedGitBashEnvironment "exit 1`n" $managed
+    appendedExit = Test-ManagedGitBashEnvironment ($managed + "exit 0`n") $managed
+}
+$checks | ConvertTo-Json -Compress
+''', encoding='utf-8')
+        result = subprocess.run(
+            [POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)], cwd=SOURCE,
+            env=dict(self.env, DOTFILES_TEST_SOURCE=str(SOURCE)),
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        checks = json.loads(result.stdout)
+        self.assertTrue(all(checks[name] for name in ('exact', 'comments', 'formerRole')))
+        self.assertFalse(any(checks[name] for name in ('earlySuccess', 'earlyFailure', 'appendedExit')))
+
     def test_agent_status_keeps_catalog_record_and_live_evidence_separate(self):
         status = self.root / 'dotfiles-agents.ps1'
         template = SOURCE / 'dot_local/bin/executable_dotfiles-agents.ps1.tmpl'
@@ -2522,11 +2549,12 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertNotEqual(collision.returncode, 0)
         self.assertIn('would replace a device file', collision.stderr)
         self.assertEqual(pi_launcher.read_bytes(), before_collision)
-        pending_shell.write_bytes(b"if then\n")
-        invalid_shell = self.deploy('-Role', role, '-AgentUpdate', '-Agents', 'pi')
-        self.assertNotEqual(invalid_shell.returncode, 0)
-        self.assertIn('.env_core failed the Git Bash check', invalid_shell.stderr)
-        self.assertEqual(pending_shell.read_bytes(), b"if then\n")
+        for early_stop in (b"if then\n", b"exit 0\n", b"exit 1\n"):
+            pending_shell.write_bytes(early_stop)
+            invalid_shell = self.deploy('-Role', role, '-AgentUpdate', '-Agents', 'pi')
+            self.assertNotEqual(invalid_shell.returncode, 0)
+            self.assertIn('.env_core failed the Git Bash check', invalid_shell.stderr)
+            self.assertEqual(pending_shell.read_bytes(), early_stop)
 
 
 
