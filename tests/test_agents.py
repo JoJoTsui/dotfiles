@@ -65,6 +65,14 @@ class AgentTests(unittest.TestCase):
         seeded = self.deploy("--agents-only", "--agents", "pi", env=environment)
         self.assertEqual(seeded.returncode, 0, seeded.stderr)
         installed.write_text("")
+        plugins = self.root / "worktrunk.log"
+        worktrunk = self.home / ".pixi/bin/wt"
+        worktrunk.parent.mkdir(parents=True, exist_ok=True)
+        worktrunk.write_text(
+            f"#!{sys.executable}\nimport sys\nfrom pathlib import Path\n"
+            f"with Path({str(plugins)!r}).open('a') as log: log.write(' '.join(sys.argv[1:]) + '\\n')\n"
+        )
+        worktrunk.chmod(0o755)
 
         unrelated = {
             ".codex/config.toml": b"invalid TOML left for a full apply",
@@ -104,6 +112,7 @@ class AgentTests(unittest.TestCase):
                          pins["pi"]["version"])
         self.assertTrue(settings.exists())
         self.assertIn("codex|codex|current", state.read_text())
+        self.assertEqual(plugins.read_text().splitlines(), ["config plugins pi install --yes"])
         for relative, content in unrelated.items():
             path = self.home / relative
             self.assertEqual(path.read_bytes(), content)

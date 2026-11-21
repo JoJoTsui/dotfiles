@@ -235,6 +235,22 @@ class HerdrSelectionTests(unittest.TestCase, HerdrFixture):
         installed = sorted(path.name for path in self.fixture.marker.iterdir())
         self.assertEqual(installed, ["codex"])
 
+    def test_targeted_codex_update_repairs_herdr_hook_without_updating_shared_skills(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-targeted-herdr-") as temporary:
+            fixture = HerdrFixture()
+            fixture.build(Path(temporary))
+            fixture.write_state([("codex", "missing"), ("pi", "missing")])
+            result = fixture.deploy("--agent-update", "--agents", "codex")
+            self.assertEqual(result.returncode, 0, result.stderr[-4000:])
+            installs = [line for line in fixture.invocations() if line.startswith("integration install")]
+            self.assertEqual(installs, ["integration install codex"])
+            for relative in (".local/bin/codex-herdr", ".local/bin/dotfiles-codex-herdr",
+                             ".codex/herdr-codex-resume.sh", ".local/bin/dotfiles-agent-health",
+                             ".local/bin/with-proxy"):
+                self.assertTrue(os.access(fixture.home / relative, os.X_OK), relative)
+            self.assertIn("herdr-codex-resume.sh", (fixture.home / ".codex/hooks.json").read_text())
+            self.assertFalse((fixture.home / ".agents/skills").exists())
+
 
 @unittest.skipUnless(shutil.which("chezmoi"), "the deployment boundary requires chezmoi")
 class HerdrAbsentTests(unittest.TestCase, HerdrFixture):

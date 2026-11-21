@@ -101,11 +101,16 @@ prepare_agent_update() {
         initialize_source
     fi
     if [ "$DEPLOY_TARGET_AGENT" = codex ] && command -v herdr >/dev/null 2>&1; then
-        payload_safe_destination "$HOME/.local/bin/dotfiles-codex-herdr"
-        payload_safe_destination "$HOME/.local/bin/codex-herdr"
-        payload_safe_destination "$HOME/.codex/herdr-codex-resume.sh"
-        apply_source_files "$HOME/.local/bin/dotfiles-codex-herdr" "$HOME/.local/bin/codex-herdr" \
-            "$HOME/.codex/herdr-codex-resume.sh"
+        local target targets=("$HOME/.local/bin/dotfiles-codex-herdr"
+            "$HOME/.local/bin/codex-herdr" "$HOME/.codex/herdr-codex-resume.sh")
+        # These shared commands are dependencies of codex-herdr. Restore
+        # missing copies while leaving existing shared configuration alone.
+        for target in "$HOME/.local/bin/dotfiles-agent-health" "$HOME/.local/bin/with-proxy"; do
+            if [ ! -e "$target" ]; then targets+=("$target"); fi
+        done
+        for target in "${targets[@]}"; do payload_safe_destination "$target"; done
+        mkdir -p "$HOME/.codex"
+        apply_source_files "${targets[@]}"
     fi
 }
 
