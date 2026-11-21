@@ -13,17 +13,24 @@ the `aim-xzy` project and keep the token in its mounted file.
    working directory are visible under the job's mounts. Treat input files
    as read-only and direct outputs to the agreed directory. Use a short,
    unique DNS-label job name, for example a task prefix and UTC timestamp.
-2. Run the launcher with `--dry-run` before `--`. It checks the current
+2. For each job, put the environment check at the start of the worker script.
+   Follow the [worker environment checks](#worker-environment-and-links)
+   below and decide how to capture GPU samples before submission. Use
+   `-g 0` for CPU-only work. For GPU work, request the smallest useful number
+   of shared GPUs. Prefer the known `a40` queue. Use shared A100s when needed
+   if an A100 queue is confirmed for the project. Pass its name with `-q`.
+   Use `--standalone-gpu` only when the user requests dedicated GPUs.
+3. Run the launcher with `--dry-run` before `--`. It checks the current
    TensorStack Project quota and sends the manifest through server-side
    admission. This does not create a job or reserve quota. Use `--print`
    to inspect the manifest locally. Keep credentials out of command
    arguments, `--env`, and manifests.
-3. When the task authorizes submission and the dry-run succeeds, run the
+4. When the task authorizes submission and the dry-run succeeds, run the
    same command with the same job name and resources, removing
    `--dry-run`. The launcher waits and prints recent logs by default.
-   Use `--no-wait` when tracking the job separately. If creation times out or
-   monitoring fails, look up that name before retrying. Escalate quota or
-   permission failures before using `--force` or `--skip-quota-check`.
+   Use `--no-wait` to monitor GPU work from the submitting shell. If creation
+   times out or monitoring fails, look up that name before retrying. Escalate
+   quota or permission failures before using `--force` or `--skip-quota-check`.
 
 Example dry-run for a CPU task. Substitute the paths and arguments for
 the actual script. Launcher flags go before `--`.
@@ -34,6 +41,24 @@ name="task-$(date -u +%Y%m%d-%H%M%S)"
   -w /t9k/mnt/joey/project -g 0 --cpu-limit 2 --mem-limit 4Gi --dry-run \
   -- --out "/t9k/mnt/joey/project/runs/$name"
 ```
+
+## Worker environment and links
+
+Use the project's check-only setup if it has one. In the worker, check the
+effective CPU and memory limits, free space in the output mount, required
+input and output paths, and the executable paths and versions the job needs.
+Check the worker even if the submitter has already run the same checks.
+
+The reference project's `scripts/setup.sh --check-only --link-dotfiles`
+shows the approach. It checks cgroup memory headroom and tool versions,
+prints potential links, and leaves the environment untouched. If the check
+finds that a link is needed, use the project's documented link step inside
+the worker with a trusted, mounted source. Link only missing destinations,
+preserve existing files and symlinks, and use the job's private home or
+workspace. Use read-only mounts for shared tooling where the job supports
+them. Recheck the resolved executable paths and versions before running the
+workload, and record the checks in the job log. Stop when a required tool,
+mount, or resource is missing.
 
 ## Monitor and verify
 
@@ -53,6 +78,25 @@ kind=pytorchtrainingjobs.batch.tensorstack.dev
 "${k[@]}" logs -l "tensorstack.dev/owner-name=$name" -c pytorch --tail=200
 ```
 
+For each GPU job, verify the visible GPU count and model at worker startup.
+Use the framework's device check when the workload depends on CUDA. Sample
+utilization and memory while the workload is active, with several samples
+during steady-state processing when the job runs long enough. For example,
+run this in the worker script or use `kubectl exec` against its running Pod.
+For short jobs, collect samples in the worker and retain them with the job
+logs or output artifacts.
+
+```bash
+nvidia-smi --query-gpu=timestamp,index,name,utilization.gpu,memory.used,memory.total \
+  --format=csv
+```
+
+Record the queue, GPU model and count, and sampled utilization and memory.
+On shared GPUs these are device-level readings that may include other jobs.
+Use workload throughput or per-process profiler metrics to assess the job's
+own performance. If measurements are unavailable, report that explicitly.
+For CPU-only jobs record GPU utilization as not applicable.
+
 Inspect the Pod events with `describe pod` for scheduling, PVC, and image-pull
 errors. If the service account gets `Forbidden`, use `kubectl auth can-i` with
 the same kubeconfig and namespace to identify the missing permission.
@@ -68,8 +112,7 @@ The launcher creates a single-worker TensorStack
 0. It uses the T9K Torch 2.5.0 image, requests 500m CPU and 500Mi memory, and
 limits them to 20 CPU and 100Gi. Size limits for the workload. The default is
 one shared GPU (`nvidia.com/gpu.shared`) with a 16Gi memory-backed `/dev/shm`.
-Use `-g 0` for CPU work. Use `--standalone-gpu` only when requested. Select the
-shared-memory size with `--shm` and remember that it counts against Pod memory.
+Select the shared-memory size with `--shm`. It counts against Pod memory.
 Use `--help` for overrides.
 
 | Default PVC | Mount path |
@@ -89,3 +132,4 @@ References
 - [Kubernetes API dry-run](https://kubernetes.io/docs/reference/using-api/api-concepts/#dry-run)
 - [Kubernetes service accounts](https://kubernetes.io/docs/concepts/security/service-accounts/)
 - [kubectl reference](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands/)
+- [NVIDIA System Management Interface](https://docs.nvidia.com/deploy/nvidia-smi/)
