@@ -360,18 +360,25 @@ try {
         }
         $agentPackages += $entry
     }
-    $actions = @('install-managers', 'apply-source', 'install-common', 'install-agents')
-    # The CLI installs after the agents and before the shell is prepared, so
-    # a client that needs the command finds it in the managed PATH.
-    if ($magpie.enabled) { $actions += 'install-magpie-cli' }
-    $actions += 'prepare-shell'
+    $steps = [ordered]@{
+        'install-managers' = 'Install-Managers'
+        'apply-source' = 'Apply-Source'
+    }
+    if (-not $ApplyOnly -and -not $AgentsOnly) { $steps['install-common'] = 'Install-Common' }
+    if (-not $ApplyOnly) { $steps['install-agents'] = 'Install-Agents' }
+    if ($magpie.enabled) { $steps['install-magpie-cli'] = 'Install-MagpieCli' }
+    if (-not $ApplyOnly -and -not $AgentsOnly) { $steps['prepare-shell'] = 'Prepare-Shell' }
+    # Keep the legacy summary for restricted modes, which omitted managers
+    # even though the bootstrap still resolves Chezmoi there.
+    $actions = @($steps.Keys)
     if ($ApplyOnly) { $actions = @('apply-source') }
     if ($AgentsOnly) { $actions = @('apply-source', 'install-agents') }
     $result = [ordered]@{
         platform = $selection.platform; role = $selection.role; arch = $selection.arch; profile = $selection.profile
         mirror = $selection.mirror
         source = $Source; home = $TargetHome; roots = $roots; agents = $selectedAgents; bundles = $selectedBundles
-        tools = @($tools | Select-Object -Unique); packages = $packages; bundlePackages = $bundlePackages; agentPackages = $agentPackages; actions = $actions; exceptions = $exceptions
+        tools = @($tools | Select-Object -Unique); packages = $packages; bundlePackages = $bundlePackages; agentPackages = $agentPackages
+        actions = $actions; steps = @($steps.Keys); exceptions = $exceptions
         managers = [ordered]@{ pixi = ($exceptions | Where-Object { $_.name -eq 'pixi' }).version; chezmoi = ($exceptions | Where-Object { $_.name -eq 'chezmoi' }).version; rustup = ($exceptions | Where-Object { $_.name -eq 'rustup' }).version }
         magpie = [ordered]@{
             cli = $magpie.enabled
@@ -396,14 +403,10 @@ try {
     Set-EnvironmentRoots
     $script:Step = 'prepare-state'
     foreach ($relative in @('.local/bin', '.config/chezmoi', '.cache/tmp', '.local/run')) { [IO.Directory]::CreateDirectory((Join-Path $TargetHome $relative)) | Out-Null }
-    Install-Managers
-    Apply-Source
-    if ($AgentsOnly) { Install-Agents }
-    elseif (-not $ApplyOnly) {
-        Install-Common
-        Install-Agents
-        if ($magpie.enabled) { Install-MagpieCli }
-        Prepare-Shell
+    foreach ($stepName in $steps.Keys) {
+        $script:Step = $stepName
+        if ($env:DOTFILES_STEP_TRACE -eq '1') { [Console]::Error.WriteLine("dotfiles: step $stepName started") }
+        & ($steps[$stepName])
     }
     if (-not $magpie.enabled) { [Console]::Out.WriteLine("dotfiles: magpie: skipped; $($magpie.reason)") }
     [Console]::Out.WriteLine("dotfiles: applied $($selection.profile) to $TargetHome (copy mode)")

@@ -19,6 +19,12 @@ the complete Nushell/Bash/Zsh environment. Native Windows supplies Nushell and
 PortableGit's Git Bash. Ordinary deployment changes neither system PATH, account
 login shell, registry, Known Folder registration, nor driver/toolchain settings.
 
+`-Plan` retains the legacy `actions` summary and reports the actual dispatch
+order in `steps`. The manager stage still resolves Chezmoi in apply-only and
+agents-only modes. A full run lists the selected Magpie CLI installation
+before shell preparation. Set `DOTFILES_STEP_TRACE=1` to observe started steps
+on stderr during execution. [Deployment boundary](DEPLOYMENT_BOUNDARY.md)
+
 `TargetHome` designates HOME, USERPROFILE, APPDATA, LOCALAPPDATA, XDG roots,
 Pixi/Bun/Cargo/Rustup caches and registries, Python configuration/cache roots,
 Atuin state, and agent homes. Managed `dotfiles-shell.cmd` starts Nushell after
