@@ -636,7 +636,9 @@ function Import-SkillLibrary {
                 Invoke-Tool git @('init', '--quiet', $repo) -Quiet | Out-Null
                 Invoke-Tool git @('-C', $repo, 'remote', 'add', 'origin', $sourceUrl) -Quiet | Out-Null
             }
-            & git -C $repo cat-file -e "$pin^{commit}" 2>$null | Out-Null
+            # A cache miss is routine. PowerShell 5.1 can make native stderr
+            # terminating even when redirected, so use a quiet Git probe.
+            & git -C $repo rev-parse --verify --quiet "$pin^{commit}" | Out-Null
             if ($LASTEXITCODE -ne 0) { Invoke-Tool git @('-C', $repo, 'fetch', '--quiet', '--depth', '1', 'origin', $pin) -Quiet | Out-Null }
             $resolved = $pin
             $archive = Join-Path $stage "$name.tar"
