@@ -169,6 +169,80 @@ class LinuxGitIgnoreEvidenceTests(unittest.TestCase):
             self.assertNotIn("synthetic mutation", json.dumps(evidence))
 
 
+class LinuxMiniMaxSqliteProbeTests(unittest.TestCase):
+    def test_only_the_selected_affected_client_is_probed(self):
+        command = mock.Mock()
+        result = native_linux.probe_minimax_sqlite(
+            Path("/device"), {"dsh", "dsh-tui"}, Path("/scratch"), command
+        )
+        self.assertEqual(result, {"selected_clients": [], "clients": {}})
+        command.assert_not_called()
+
+    def test_a_missing_installation_leaves_the_operation_unverified(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            def command(arguments, **kwargs):
+                return native_linux.run(arguments, log=root / "minimax-acp.log", records=[],
+                                        timeout=10, **kwargs)
+
+            report = native_linux.probe_minimax_sqlite(root / "absent", {"minimax"}, root, command)
+        self.assertEqual(report["clients"]["minimax"], {
+            "operation": "acp.initialize", "package_present": False, "native_binding_present": False,
+            "status": "unverified", "reason": "ACP command could not start or complete",
+        })
+
+    def test_package_presence_and_acp_behavior_are_independent(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-linux-minimax-") as temporary:
+            root = Path(temporary).resolve()
+            home = root / "device"
+            package = home / ".bun/managed/minimax/node_modules/better-sqlite3"
+            package.mkdir(parents=True)
+            (package / "package.json").write_text('{"name": "better-sqlite3"}')
+            launcher = home / ".local/bin/mcode"
+            launcher.parent.mkdir(parents=True)
+            records = []
+
+            def command(arguments, **kwargs):
+                return native_linux.run(arguments, log=root / "minimax-acp.log", records=records,
+                                        timeout=10, **kwargs)
+
+            cases = (
+                ("current_local_runtime_v2_migration_failed:sqlite:runtime-state:open:"
+                 "Could not locate the bindings file", 1, "degraded", False),
+                ("unexpected startup failure", 1, "unverified", False),
+                ('{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1}}', 0, "healthy", True),
+                ('{"jsonrpc":"2.0","id":1,"error":{"code":-32603}}', 0, "unverified", True),
+            )
+            binding = package / "better_sqlite3.node"
+            for output, exit_code, expected, has_binding in cases:
+                with self.subTest(status=expected, exit_code=exit_code, binding=has_binding):
+                    if has_binding:
+                        binding.touch()
+                    launcher.write_text(
+                        f"#!{sys.executable}\n"
+                        "import json, os, sys\n"
+                        "assert sys.argv[1:] == ['acp']\n"
+                        "assert os.environ['HOME'] == os.getcwd()\n"
+                        "assert os.environ['XDG_CONFIG_HOME'].startswith(os.getcwd() + '/')\n"
+                        "assert json.loads(sys.stdin.readline()) == {"
+                        "'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', "
+                        "'params': {'protocolVersion': 1, 'clientCapabilities': {}}}\n"
+                        f"print({output!r})\n"
+                        f"raise SystemExit({exit_code})\n"
+                    )
+                    launcher.chmod(0o755)
+                    report = native_linux.probe_minimax_sqlite(home, {"minimax", "dsh"}, root, command)
+                    self.assertEqual(report["selected_clients"], ["minimax"])
+                    result = report["clients"]["minimax"]
+                    self.assertEqual(result["operation"], "acp.initialize")
+                    self.assertTrue(result["package_present"])
+                    self.assertIs(result["native_binding_present"], has_binding)
+                    self.assertEqual(result["status"], expected)
+                    self.assertTrue(result["reason"])
+                    self.assertEqual(records[-1]["exit_code"], exit_code)
+
+
 class LinuxSuiteAuditTests(unittest.TestCase):
     def test_native_history_exclusions_are_named_and_other_required_skips_fail(self):
         summary = {"tests_run": 8, "successful": True, "skipped": [{

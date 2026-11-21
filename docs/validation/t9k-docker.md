@@ -293,3 +293,27 @@ before and after fresh apply, skill discovery, fixture seeding, and reapply.
 It retains the first drift interval when a later step restores the file.
 When the reapplication check fails, `checks_not_run` enumerates the subsequent
 checks. The existing whole-inventory preservation check remains in force.
+
+### MiniMax local ACP and the SQLite binding
+
+The Linux gate reports `optional_capabilities.better-sqlite3` for MiniMax
+Code when it is selected. The current DSH and DSH TUI locks do not include
+this dependency. The evidence records the JavaScript package, the native
+binding file, and the outcome of the actual `mcode acp` initialization
+separately. The probe uses a disposable HOME, sends only an ACP protocol
+initialization request, and uses the gate's bounded command runner. It
+reports a known binding failure as degraded, a successful initialization as
+healthy for that operation, and an unavailable or inconclusive result as
+unverified. Required installation and command checks keep their regular
+failure handling.
+
+The probe ran against MiniMax Code 0.7.9 in the retained
+`c3f4ecd46f75` Ubuntu 20.04 amd64 fixture, mounted read-only in a
+network-disabled container on the arm64 controller. The package directory
+was present and the native binding was missing. The version diagnostic
+worked, but ACP exited with status 1 at the SQLite runtime-state open step
+because the binding could not be loaded. This verifies degraded local ACP
+initialization in that fixture. The same probe on the retained
+`ef387745836b` Ubuntu 24.04 amd64 fixture found the package and binding
+and received a successful protocol version 1 response. These results
+cover ACP initialization in the two emulated fixtures.
