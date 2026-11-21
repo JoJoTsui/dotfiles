@@ -17,7 +17,9 @@ the same scenarios: native runtime and architecture, profile detection, two defa
 installations, pinned commands and pending history, ordinary native configuration
 discovery, and native shell, instruction, CodeGraph and encrypted-history
 behavior. The report also names the checkout it verified and records each
-scenario's outcome; a scenario that did not run states why.
+scenario's outcome; a scenario that did not run states why. The identity is
+established before the first check runs, and a run that cannot name the
+revision it verified establishes no acceptance.
 
 Local public-boundary checks established canonical regular copies at native
 Nu/pip paths, early source/destination symlink rejection, unrelated state/history/

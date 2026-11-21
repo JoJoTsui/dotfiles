@@ -6,6 +6,7 @@ wrong adapter is visible instead of passing as the platform's own.
 """
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -108,6 +109,52 @@ class AdapterAvailabilityTests(unittest.TestCase):
                 case = verify_portable.case_directory(root)
                 with self.assertRaises(verify_portable.VerificationError):
                     verify_portable.powershell_plan(case, "windows", "x86_64", "workstation")
+
+
+class LocalLayerAcceptanceTests(unittest.TestCase):
+    """The local layer is accepted only after every check it owns passed."""
+
+    def matrix(self):
+        return {"matrixCells": 1, "plans": 1, "bundleOutcomes": 0,
+                "scenarios": [{"name": "linux-x86_64-workstation public plan", "outcome": "passed"}],
+                "skipped": []}
+
+    def test_a_failed_catalog_check_leaves_the_local_layer_unaccepted(self):
+        report = {}
+        failed = subprocess.CompletedProcess([], 1, "", "the catalog is inconsistent")
+        with mock.patch.object(verify_portable, "verify_local_matrix", return_value=self.matrix()), \
+             mock.patch.object(verify_portable, "compare_public_adapters",
+                               return_value={"name": "public adapter comparison", "outcome": "passed"}), \
+             mock.patch.object(verify_portable, "invoke", return_value=failed):
+            with self.assertRaises(verify_portable.VerificationError):
+                verify_portable.verify_local(report)
+        self.assertEqual(report["local"]["status"], "failed")
+        self.assertFalse(report["local"]["acceptance"])
+        self.assertIn("catalog", report["local"]["failure"])
+
+    def test_a_passed_local_layer_is_accepted_after_its_checks(self):
+        report = {}
+        matrix = self.matrix()
+        passed = subprocess.CompletedProcess([], 0, "ok", "")
+        with mock.patch.object(verify_portable, "verify_local_matrix", return_value=matrix), \
+             mock.patch.object(verify_portable, "compare_public_adapters",
+                               return_value={"name": "public adapter comparison", "outcome": "passed"}), \
+             mock.patch.object(verify_portable, "invoke", return_value=passed), \
+             mock.patch.object(verify_portable, "run_suite"):
+            verify_portable.verify_local(report)
+        self.assertEqual(report["local"]["status"], "passed")
+        self.assertTrue(report["local"]["acceptance"])
+        self.assertEqual(report["local"]["versionCatalog"], "passed")
+        self.assertEqual(report["local"]["skillPins"], "passed")
+        self.assertEqual(report["local"]["testSuite"], "passed")
+
+    def test_the_failed_report_keeps_the_local_layer_failed(self):
+        report = {"local": {"status": "running"}}
+        verify_portable.record_failure(report, verify_portable.VerificationError("the catalog is inconsistent"))
+        self.assertEqual(report["local"]["status"], "failed")
+        self.assertFalse(report["local"]["acceptance"])
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("catalog", report["failure"])
 
 
 class PublicPlanTests(unittest.TestCase):

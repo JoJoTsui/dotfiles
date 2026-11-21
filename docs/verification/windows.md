@@ -34,15 +34,34 @@ report names the checkout it verified and the outcome of every scenario the
 run attempted:
 
 - `checkout` holds the commit, the tree it names, whether the working tree
-  carried uncommitted changes, and a digest of the source bytes.
-- `scenarios` holds one record per scenario: the native runtime and
-  architecture, the renderer preparation, the selected bundle exposure, the
-  native deployment tests, and the known folder fallback. Every record carries
-  an outcome of `passed`, `failed`, `skipped`, or `unavailable`, and every
-  record that did not pass carries the reason why.
+  carried uncommitted changes, a digest of the source bytes, and the state of
+  the revision. The identity is established before the first check runs, so it
+  names the source the scenarios actually exercised.
+- `scenarios` holds one record per scenario: the checkout identity, the native
+  runtime and architecture, the renderer preparation, the native deployment
+  tests, the native fixture scenarios (the full-to-narrow agent state and
+  status, the targeted repair and preservation, and the bundle exposure), and
+  the known folder fallback. Every record carries an outcome of `passed`,
+  `failed`, `skipped`, or `unavailable`, and every record that did not pass
+  carries the reason why.
+- `required` names the scenarios a native Windows run has to establish, with
+  the outcome each one reached. A required scenario that did not pass withholds
+  the acceptance instead of sitting beside it.
 - `status`, `acceptance`, and `counts` come from the shared contract in
   `tests/native_report.py`, the same module the macOS, Linux, and WSL2
   adapters use, so one owner decides the verdict.
+
+The renderer preparation applies the source without installing a package, so
+it cannot establish that a selected bundle is exposed. The bundle exposure is
+reported from the native deployment test that installs the bundle and checks
+its exposure; without a bundle selection it stays a skipped scenario with its
+reason.
+
+Every file the run writes carries the run's own name, and the assembled report
+is published as `windows.json` only after the shared contract succeeded and
+named the checkout the run established. A contract that cannot assemble the
+report replaces `windows.json` with a failed one, so a report left behind by an
+earlier run can never be published as this run's verdict.
 
 A runner that is not native Windows x86-64 cannot execute the target, so the
 preflight records `unavailable` and the report answers `status: unavailable`
@@ -52,9 +71,10 @@ contract forbids the Windows host it needs.
 
 On a non-Windows host the adapter was exercised with PowerShell 7.6.10 to
 establish that the preflight, the skipped scenarios, the checkout identity, and
-the missing acceptance behave as described. That evidence covers the report
-contract only; the native Windows install, the client discovery, and the
-console behavior above still need a Windows runner.
+the missing acceptance behave as described, and that a report contract which
+fails leaves no acceptance behind. That evidence covers the report contract
+only; the native Windows install, the client discovery, and the console
+behavior above still need a Windows runner.
 
 The native rows above were verified by the GitHub-hosted Windows runner, not by
 this Linux session. A separate `desktop` job also runs the native install with

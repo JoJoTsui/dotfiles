@@ -2550,6 +2550,10 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertTrue(Path(environment['KIMI_SHELL_PATH']).is_file())
         if bundles:
             self.assert_bundle_exposures(bundles, environment)
+            # The native adapter reads this report to state what the native
+            # install established, so it never infers a bundle exposure from
+            # the exit status alone.
+            print('Native Windows bundle exposure passed', flush=True)
         # Native managed Nu discovers its configured home without --config flags.
         ordinary = environment.copy()
         # Nu's native fallback uses Known Folder APIs. Do not remove the XDG

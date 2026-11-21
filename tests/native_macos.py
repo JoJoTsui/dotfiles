@@ -72,7 +72,7 @@ def run(arguments, *, env, cwd, timeout=60, allow_failure=False):
 
 def source_state(directory):
     """Identify working source without reading ignored device-local files."""
-    return native_report.checkout_identity(directory)
+    return native_report.establish_identity(directory)
 
 
 PUBLIC_CACHE_PATHS = ("pixi/pkgs", "pixi/repodata", "bun/install",
@@ -539,7 +539,10 @@ def main():
     try:
         require(sys.platform == "darwin", "native macOS execution requires Darwin; foreign rendering is separate")
         require(actual_arch == args.arch, "native macOS runner architecture does not match the requested target")
-        report.update(source_state(SOURCE))
+        # The checkout the run verifies is established before any check runs.
+        identity = source_state(SOURCE)
+        report.update(identity)
+        report["checkout"] = identity
         version = subprocess.check_output(["/usr/bin/sw_vers", "-productVersion"], text=True).strip()
         report["os_version"] = version
         require(int(version.split(".")[0]) >= 13, "common defaults require macOS 13 or newer")
@@ -655,7 +658,8 @@ def main():
         # establishes nothing.
         report["acceptance"] = (report["status"] == "passed"
                                  and native_report.acceptance(
-                                     log.records, native_execution=report["native_execution"]))
+                                     log.records, native_execution=report["native_execution"],
+                                     identity=report.get("checkout")))
         report.pop('current_check', None)
         report["elapsed_seconds"] = round(time.monotonic() - started, 3)
         args.report.parent.mkdir(parents=True, exist_ok=True)

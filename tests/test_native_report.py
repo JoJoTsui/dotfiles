@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -142,9 +143,101 @@ class CheckoutIdentityTests(GitCheckoutFixture):
         self.assertEqual(native_report.checkout_identity(self.source), clean)
 
     def test_an_unusable_checkout_is_reported_as_unknown(self):
-        identity = native_report.checkout_identity_or_unknown(self.root / "absent")
+        identity = native_report.establish_identity(self.root / "absent")
         self.assertEqual(identity["commit"], "unknown")
         self.assertIsNone(identity["working_tree_dirty"])
+        self.assertEqual(identity["revision_status"], "unknown")
+        self.assertFalse(native_report.identity_establishes_acceptance(identity))
+
+
+class IdentityEstablishmentTests(GitCheckoutFixture):
+    """The identity a run establishes before it starts testing."""
+
+    def test_the_identity_names_the_revision_the_run_verified(self):
+        identity = native_report.establish_identity(self.source)
+        self.assertEqual(identity["commit"], self.git("rev-parse", "HEAD").strip())
+        self.assertEqual(identity["tree"], self.git("rev-parse", "HEAD^{tree}").strip())
+        self.assertFalse(identity["working_tree_dirty"])
+        self.assertEqual(identity["revision_source"], "git")
+        self.assertEqual(identity["revision_status"], "verified")
+        self.assertRegex(identity["source_sha256"], r"^[0-9a-f]{64}$")
+        self.assertTrue(native_report.identity_establishes_acceptance(identity))
+
+    def test_the_identity_carries_the_declared_fields(self):
+        identity = native_report.establish_identity(self.source)
+        for field in native_report.IDENTITY_FIELDS:
+            self.assertIn(field, identity)
+
+    def test_the_expected_revision_is_confirmed_against_the_checkout(self):
+        revision = self.git("rev-parse", "HEAD").strip()
+        identity = native_report.establish_identity(self.source, revision)
+        self.assertEqual(identity["revision_status"], "verified")
+        self.assertTrue(native_report.identity_establishes_acceptance(identity))
+
+    def test_a_revision_that_differs_from_the_checkout_is_mismatched(self):
+        identity = native_report.establish_identity(self.source, "0" * 40)
+        self.assertEqual(identity["revision_status"], "mismatched")
+        self.assertFalse(native_report.identity_establishes_acceptance(identity))
+
+    def test_a_transported_source_carries_the_revision_its_transport_supplied(self):
+        transported = self.root / "transported"
+        transported.mkdir()
+        (transported / "managed.txt").write_text("committed configuration\n")
+        identity = native_report.establish_identity(transported, "a" * 40)
+        self.assertEqual(identity["commit"], "a" * 40)
+        self.assertEqual(identity["tree"], "unknown")
+        self.assertEqual(identity["revision_source"], "supplied")
+        self.assertEqual(identity["revision_status"], "supplied")
+        self.assertRegex(identity["source_sha256"], r"^[0-9a-f]{64}$")
+        self.assertTrue(native_report.identity_establishes_acceptance(identity))
+
+    def test_a_source_without_a_revision_establishes_no_acceptance(self):
+        transported = self.root / "transported"
+        transported.mkdir()
+        (transported / "managed.txt").write_text("committed configuration\n")
+        identity = native_report.establish_identity(transported)
+        self.assertEqual(identity["revision_status"], "unknown")
+        self.assertFalse(native_report.identity_establishes_acceptance(identity))
+
+    def test_a_transported_digest_ignores_runtime_bytecode(self):
+        transported = self.root / "transported"
+        transported.mkdir()
+        (transported / "managed.txt").write_text("committed configuration\n")
+        before = native_report.source_digest(transported)
+        cache = transported / "__pycache__"
+        cache.mkdir()
+        (cache / "managed.cpython-313.pyc").write_bytes(b"cached bytecode\n")
+        self.assertEqual(native_report.source_digest(transported), before)
+
+
+class RequiredScenarioTests(unittest.TestCase):
+    """A scenario the run must establish gates the acceptance."""
+
+    def records(self, *outcomes):
+        log = native_report.ScenarioLog()
+        for index, outcome in enumerate(outcomes):
+            log.record(f"scenario-{index}", outcome,
+                       reason=None if outcome == native_report.PASSED else "the scenario did not run")
+        return log.records
+
+    def test_a_required_scenario_that_did_not_pass_withholds_acceptance(self):
+        records = self.records(native_report.PASSED, native_report.SKIPPED)
+        self.assertTrue(native_report.acceptance(records))
+        self.assertFalse(native_report.acceptance(records, required=["scenario-1"]))
+        summary = native_report.summarize(records, required=["scenario-1"])
+        self.assertEqual(summary["required"]["unmet"], ["scenario-1"])
+        self.assertEqual(summary["required"]["missing"], [])
+
+    def test_a_required_scenario_the_run_never_reached_is_missing(self):
+        records = self.records(native_report.PASSED)
+        self.assertFalse(native_report.acceptance(records, required=["scenario-9"]))
+        summary = native_report.summarize(records, required=["scenario-9"])
+        self.assertEqual(summary["required"]["missing"], ["scenario-9"])
+
+    def test_an_unknown_revision_withholds_acceptance(self):
+        records = self.records(native_report.PASSED)
+        identity = {"commit": "unknown", "revision_status": "unknown"}
+        self.assertFalse(native_report.acceptance(records, identity=identity))
 
 
 class NativeReportAssemblyTests(GitCheckoutFixture):
@@ -172,15 +265,79 @@ class NativeReportAssemblyTests(GitCheckoutFixture):
         with self.assertRaisesRegex(ValueError, "needs a reason"):
             native_report.build_report(facts)
 
+    def test_the_report_carries_the_identity_the_run_established(self):
+        identity = native_report.establish_identity(self.source)
+        facts = {"source": str(self.source), "native_execution": True, "identity": identity,
+                 "required": ["native renderer preparation"],
+                 "scenarios": [{"name": "native renderer preparation", "outcome": native_report.PASSED}],
+                 "fields": {"platform": "windows"}}
+        report = native_report.build_report(facts)
+        self.assertEqual(report["checkout"]["commit"], identity["commit"])
+        self.assertEqual(report["checkout"]["source_sha256"], identity["source_sha256"])
+        self.assertTrue(report["acceptance"])
+        self.assertEqual(report["required"]["unmet"], [])
+
+    def test_a_source_that_changed_during_the_run_fails_the_report(self):
+        identity = native_report.establish_identity(self.source)
+        (self.source / "managed.txt").write_text("changed during the run\n")
+        facts = {"source": str(self.source), "native_execution": True, "identity": identity,
+                 "scenarios": [{"name": "native renderer preparation", "outcome": native_report.PASSED}]}
+        report = native_report.build_report(facts)
+        outcomes = {record["name"]: record["outcome"] for record in report["scenarios"]}
+        self.assertEqual(outcomes["source remained unchanged"], native_report.FAILED)
+        self.assertFalse(report["acceptance"])
+
+    def test_a_required_scenario_that_did_not_pass_withholds_the_acceptance(self):
+        facts = {"source": str(self.source), "native_execution": True,
+                 "required": ["native targeted repair and preservation"],
+                 "scenarios": [{"name": "native renderer preparation", "outcome": native_report.PASSED},
+                               {"name": "native targeted repair and preservation",
+                                "outcome": native_report.SKIPPED,
+                                "reason": "the native deployment tests did not reach it"}]}
+        report = native_report.build_report(facts)
+        self.assertFalse(report["acceptance"])
+        self.assertEqual(report["required"]["unmet"], ["native targeted repair and preservation"])
+
+
+class IdentityCommandTests(GitCheckoutFixture):
+    """The adapter establishes the identity before it starts testing."""
+
+    def test_the_identity_command_prints_the_checkout_identity(self):
+        result = subprocess.run([sys.executable, str(SOURCE / "tests" / "native_report.py"),
+                                 "--identity", "--source", str(self.source)],
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        identity = json.loads(result.stdout)
+        self.assertEqual(identity["commit"], self.git("rev-parse", "HEAD").strip())
+        self.assertEqual(identity["revision_status"], "verified")
+
 
 @unittest.skipUnless(powershell_runtime(), "the native Windows adapter needs a PowerShell runtime")
 class NativeWindowsReportTests(unittest.TestCase):
     """The native Windows adapter reports the checkout and every scenario."""
 
-    def run_adapter(self, *arguments):
+    def run_adapter(self, *arguments, environment=None):
         return subprocess.run([powershell_runtime(), "-NoLogo", "-NoProfile", "-NonInteractive",
                                "-File", str(WINDOWS_ADAPTER), *arguments],
-                              capture_output=True, text=True, timeout=300)
+                              capture_output=True, text=True, timeout=300,
+                              env=environment or dict(os.environ))
+
+    def failing_python(self, directory, *, identity_only=False):
+        """A Python stand-in the report contract cannot finish with.
+
+        Without `identity_only` every call fails. With it, the identity probe
+        answers and the assembler fails, so the run knows its checkout but
+        cannot assemble a report from it.
+        """
+        path = Path(directory) / "report-python"
+        if identity_only:
+            path.write_text(f'#!/bin/sh\ncase "$*" in\n'
+                            f'  *--identity*) exec "{sys.executable}" "{SOURCE / "tests" / "native_report.py"}" "$@" ;;\n'
+                            f'  *) exit 4 ;;\nesac\n')
+        else:
+            path.write_text("#!/bin/sh\nexit 4\n")
+        path.chmod(0o755)
+        return str(path)
 
     def test_the_adapter_script_parses(self):
         environment = dict(os.environ, DOTFILES_PARSE_TARGET=str(WINDOWS_ADAPTER))
@@ -208,15 +365,61 @@ class NativeWindowsReportTests(unittest.TestCase):
         self.assertFalse(report["acceptance"], "a foreign runner cannot establish acceptance")
         self.assertEqual(report["status"], native_report.UNAVAILABLE)
         scenarios = {record["name"]: record for record in report["scenarios"]}
+        self.assertEqual(scenarios["checkout identity"]["outcome"], native_report.PASSED)
         self.assertEqual(scenarios["native runtime and architecture"]["outcome"],
                          native_report.UNAVAILABLE)
         self.assertIn("Windows", scenarios["native runtime and architecture"]["reason"])
         for name in ("native renderer preparation", "native windows deployment tests",
-                     "selected bundle exposure", "known folder fallback"):
+                     "native bundle exposure", "native full-to-narrow agent state and status",
+                     "native targeted repair and preservation", "known folder fallback"):
             self.assertEqual(scenarios[name]["outcome"], native_report.SKIPPED, name)
             self.assertTrue(scenarios[name]["reason"], name)
         for record in report["scenarios"]:
             self.assertIn(record["outcome"], native_report.OUTCOMES)
+
+    def test_the_apply_only_seed_never_claims_the_bundle_exposure(self):
+        # The renderer preparation applies the source without installing a
+        # bundle, so it cannot establish that the bundle is exposed.
+        with tempfile.TemporaryDirectory(prefix="dotfiles-windows-report-") as temporary:
+            report_directory = Path(temporary) / "report"
+            result = self.run_adapter("-Role", "workstation", "-Bundles", "desktop",
+                                       "-ReportDirectory", str(report_directory))
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            report = json.loads((report_directory / "windows.json").read_text())
+        scenarios = {record["name"]: record for record in report["scenarios"]}
+        exposure = scenarios["native bundle exposure"]
+        self.assertNotEqual(exposure["outcome"], native_report.PASSED,
+                            "the apply-only renderer preparation cannot establish a bundle exposure")
+        self.assertTrue(exposure["reason"])
+
+    def test_a_preseeded_acceptance_does_not_survive_a_failed_contract(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-windows-report-") as temporary:
+            report_directory = Path(temporary) / "report"
+            report_directory.mkdir(parents=True)
+            stale = report_directory / "windows.json"
+            stale.write_text(json.dumps({"status": "passed", "acceptance": True}))
+            environment = dict(os.environ, DOTFILES_TEST_PYTHON=self.failing_python(temporary))
+            result = self.run_adapter("-Role", "workstation",
+                                       "-ReportDirectory", str(report_directory), environment=environment)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            report = json.loads(stale.read_text())
+        self.assertFalse(report["acceptance"], "a stale acceptance must never survive a failed report")
+        self.assertEqual(report["status"], "failed")
+
+    def test_a_failed_assembler_publishes_no_stale_report(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-windows-report-") as temporary:
+            report_directory = Path(temporary) / "report"
+            report_directory.mkdir(parents=True)
+            stale = report_directory / "windows.json"
+            stale.write_text(json.dumps({"status": "passed", "acceptance": True}))
+            environment = dict(os.environ, DOTFILES_TEST_PYTHON=self.failing_python(temporary, identity_only=True))
+            result = self.run_adapter("-Role", "workstation",
+                                       "-ReportDirectory", str(report_directory), environment=environment)
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            report = json.loads(stale.read_text())
+        self.assertFalse(report["acceptance"], "a failed assembler must not publish a stale verdict")
+        self.assertEqual(report["status"], "failed")
+        self.assertIn("contract", report["reason"])
 
 
 if __name__ == "__main__":

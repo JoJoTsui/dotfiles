@@ -726,6 +726,8 @@ def main():
                                  "ubuntu_release": release["VERSION_ID"], "glibc": platform.libc_ver(),
                                  "controller_python": sys.version.split()[0], "execution_claim": "caller-supplied"}
             report["source"] = source_identity()
+            # The shared identity fields every native report declares.
+            report["checkout"] = native_report.establish_identity(SOURCE)
             return report["runtime"]
         check("runtime, source identity, and fresh target", preflight)
         bootstrap = ["/bin/bash", SOURCE / "bootstrap.sh", "--source", SOURCE, "--home", args.home]
@@ -989,7 +991,8 @@ def main():
         # Linux target natively.
         report["acceptance"] = (report["status"] == "passed"
                                  and native_report.acceptance(
-                                     log.records, native_execution=native_runtime_available()))
+                                     log.records, native_execution=native_runtime_available(),
+                                     identity=report.get("checkout")))
         report["resources_after"] = resource_snapshot()
         report["cpu_stat_delta"] = {name: value - report["resources_before"]["cpu_stat"].get(name, value)
                                     for name, value in report["resources_after"]["cpu_stat"].items()}

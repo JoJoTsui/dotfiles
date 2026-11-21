@@ -189,6 +189,13 @@ outcome of every scenario it attempted. A scenario that did not run states
 its reason, and a runner that cannot execute natively is unavailable rather
 than passed.
 
+**Checkout identity**:
+The revision a verification run established before it started testing, with
+the tree it names and a digest of the source bytes. A checkout names its own
+revision; a transported source names the revision its transport supplied. An
+unknown or mismatched revision establishes no acceptance.
+_Avoid_: Report identity, Source stamp
+
 **Container validation**:
 Verification of a deployment within a disposable container. The container's
 operating environment and execution limits are part of the result.

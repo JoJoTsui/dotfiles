@@ -73,6 +73,20 @@ in `tests/native_report.py` owns that report, and the native Windows adapter
 hands it the scenarios it observed instead of deciding the verdict itself. See
 [Windows evidence](windows.md) for the native Windows report shape.
 
+The identity is established before the first check runs, so the report names
+the source the scenarios exercised rather than the source the run ended on. A
+run that cannot name a revision - because Git cannot answer, or because the
+revision it verified differs from the one it was asked to verify - establishes
+no acceptance. A transported source, which carries no repository metadata,
+names the revision its transport supplied and says so.
+
+A run can also declare the scenarios it has to establish. The required
+scenarios appear in the report with the outcome each one reached, and one that
+did not pass withholds the acceptance. The local layer of the portable check
+follows the same rule: it is accepted only after the version catalog, the skill
+pins, and the deterministic suite passed, and a failed report keeps the layer
+failed instead of claiming it.
+
 ## Original requests
 
 | # | Requested behavior | Observable check or evidence |

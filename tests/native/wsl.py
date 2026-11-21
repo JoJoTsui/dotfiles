@@ -37,7 +37,14 @@ def main():
               "commit": arguments.commit, "runUrl": arguments.run_url,
               "runtime": {"system": platform.system(), "kernel": platform.release(),
                           "architecture": platform.machine()}, "scenarios": []}
+    # The checkout the run verifies is established before any check runs. A
+    # transported source carries the revision its transport supplied, so the
+    # report names the revision of the source it actually exercised.
+    identity = native_report.establish_identity(SOURCE, arguments.commit)
+    report["checkout"] = identity
+    report["commit"] = identity["commit"]
     log = native_report.ScenarioLog()
+    current = {"scenario": None}
     environment = {"HOME": str(arguments.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color",
                    "LANG": "C.UTF-8", "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1",
                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1",
@@ -56,8 +63,11 @@ def main():
 
     def check(name, operation):
         started = time.monotonic()
+        # A failure names the scenario it happened in, not the phase around it.
+        current["scenario"] = name
         details = operation()
         log.passed(name, seconds=time.monotonic() - started, details=details)
+        current["scenario"] = None
         report["scenarios"] = log.records
         print(f"native-wsl: passed {name}", flush=True)
 
@@ -303,17 +313,23 @@ def main():
         report["failure"] = str(error)
         print(f"native-wsl: {error}", file=sys.stderr)
         phase = report.get("phase", "unknown phase")
-        if not any(record["name"] == phase and record["outcome"] == native_report.UNAVAILABLE
+        # The scenario that failed is named; the phase is only the fallback
+        # for a failure before a scenario started.
+        scenario = current["scenario"] or phase
+        report["failed_scenario"] = scenario
+        if not any(record["name"] == scenario and record["outcome"] == native_report.UNAVAILABLE
                    for record in log.records):
-            log.failed(phase, report["failure"])
-        print(f"::error title=Native WSL2 acceptance failed::{phase}", file=sys.stderr, flush=True)
+            log.failed(scenario, report["failure"])
+        print(f"::error title=Native WSL2 acceptance failed::{scenario}", file=sys.stderr, flush=True)
         return 1
     finally:
         report["scenarios"] = log.records
         # The native WSL2 gate establishes acceptance only when it reached its
-        # end; a probe or a stopped run does not.
+        # end and named the revision it verified; a probe or a stopped run
+        # does not.
         report["acceptance"] = (bool(report["nativePass"])
-                                 and native_report.acceptance(log.records, native_execution=True))
+                                 and native_report.acceptance(log.records, native_execution=True,
+                                                               identity=identity))
         report["status"] = native_report.status(log.records)
         arguments.report.parent.mkdir(parents=True, exist_ok=True)
         arguments.report.write_text(json.dumps(report, indent=2) + "\n")

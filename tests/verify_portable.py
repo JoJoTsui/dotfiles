@@ -98,9 +98,7 @@ def read_rows(path: Path) -> list[list[str]]:
 
 def checkout_identity() -> dict[str, Any]:
     """The checkout this verification ran against."""
-    identity = native_report.checkout_identity_or_unknown(SOURCE)
-    return {"commit": identity["commit"], "tree": identity["tree"],
-            "working_tree_dirty": identity["working_tree_dirty"]}
+    return native_report.establish_identity(SOURCE)
 
 
 def invoke(command: list[str], *, environment: dict[str, str], timeout: int = 1800,
@@ -415,6 +413,16 @@ def run_suite(label: str, *, pattern: str | None = None, environment: dict[str, 
                         for line in output.splitlines()), "a required runtime check was skipped")
 
 
+def fail_local_layer(report: dict[str, Any], error: Exception) -> None:
+    """Mark the local layer failed, so the report does not claim it."""
+    local = report.get("local")
+    if not isinstance(local, dict):
+        return
+    local["status"] = "failed"
+    local["acceptance"] = False
+    local["failure"] = str(error)
+
+
 def verify_local(report: dict[str, Any], *, require_runtime: bool = False) -> None:
     if require_runtime:
         require(sys.version_info >= (3, 11), "required runtime checks need Python 3.11 or newer")
@@ -424,15 +432,25 @@ def verify_local(report: dict[str, Any], *, require_runtime: bool = False) -> No
             require(bool(executable) and Path(executable).is_file(), f"required prerequisite missing: {variable}")
             os.environ[variable] = str(Path(executable).resolve())
         os.environ["DOTFILES_TEST_PWSH"] = os.environ["DOTFILES_TEST_POWERSHELL"]
+    try:
+        run_local_layer(report, require_runtime=require_runtime)
+    except (VerificationError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+        fail_local_layer(report, error)
+        raise
+
+
+def run_local_layer(report: dict[str, Any], *, require_runtime: bool = False) -> None:
     with tempfile.TemporaryDirectory(prefix="dotfiles-verify-local-") as temporary:
         root = Path(temporary)
         environment = clean_environment(root / "control")
         matrix = verify_local_matrix(root / "matrix")
-        report["local"] = {"status": "passed", **matrix}
+        # The layer is running until every check it owns has passed, so a
+        # report never claims a layer that did not finish.
+        report["local"] = {"status": "running", **matrix}
         report["local"]["scenarios"].append(compare_public_adapters(root / "comparison"))
         # A cell that could not run leaves the local layer without full
         # coverage, so acceptance needs every planned scenario to have run.
-        report["local"]["acceptance"] = not any(
+        matrix_accepted = not any(
             scenario["outcome"] != "passed" for scenario in report["local"]["scenarios"])
         print(f"local matrix: passed {matrix['matrixCells']} cells, {matrix['plans']} read-only plans, "
               f"{matrix['bundleOutcomes']} declared bundle outcomes")
@@ -449,6 +467,10 @@ def verify_local(report: dict[str, Any], *, require_runtime: bool = False) -> No
         report["local"]["skillPins"] = "passed"
         run_suite("deterministic unittest suite", environment=environment, report=report, require_runtime=require_runtime)
         report["local"]["testSuite"] = "passed"
+    # The catalog, the skill pins, and the deterministic suite passed, so the
+    # local layer is accepted.
+    report["local"]["status"] = "passed"
+    report["local"]["acceptance"] = matrix_accepted
     report["native"] = {
         "status": "pending native CI",
         "acceptance": False,
@@ -523,6 +545,23 @@ def verify_network(report: dict[str, Any]) -> None:
         report["network"]["status"] = "passed"
 
 
+def record_failure(report: dict[str, Any], error: Exception) -> None:
+    """Preserve the failed state of a verification report.
+
+    A layer that was still running when the run failed stays failed, so the
+    report never claims a layer that did not finish.
+    """
+    report["status"] = "failed"
+    report["failure"] = str(error)
+    local = report.get("local")
+    if isinstance(local, dict) and local.get("status") != "passed":
+        fail_local_layer(report, error)
+    network = report.get("network")
+    if isinstance(network, dict) and network.get("status") == "running":
+        network["status"] = "failed"
+        network["failure"] = str(error)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--network", action="store_true",
@@ -548,11 +587,7 @@ def main() -> int:
             print("network: passed; native macOS/Windows/WSL: pending CI")
         return 0
     except (VerificationError, OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
-        report["status"] = "failed"
-        report["failure"] = str(error)
-        if report.get("network", {}).get("status") == "running":
-            report["network"]["status"] = "failed"
-            report["network"]["failure"] = str(error)
+        record_failure(report, error)
         if arguments.report:
             arguments.report.parent.mkdir(parents=True, exist_ok=True)
             arguments.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

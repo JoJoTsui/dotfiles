@@ -211,6 +211,15 @@ explains every changed pair.
   scenario; a skip states its reason, and an unavailable runner never counts
   as acceptance. Read `docs/verification/complete-matrix.md` before changing
   the verification boundary.
+- **A native report names the checkout it verified before it tested**: the
+  identity is established before the first check runs, a run that cannot name
+  its revision establishes no acceptance, and a required scenario that did not
+  pass withholds the acceptance instead of sitting beside it. The native
+  Windows adapter publishes its report only after the shared contract
+  succeeded, so a report left by an earlier run never becomes this run's
+  verdict. The portable check accepts its local layer only after the catalog,
+  the skill pins, and the deterministic suite passed, and a failed report keeps
+  the layer failed.
 - Not applied to `$HOME` (ignored): `system/`, `clash/`, `docs/`, `deployment/`,
   `tests/`. Ordinary bootstrap has no system or account login-shell action.
 - **Legacy home symlinks are explicit and opt-in**:
