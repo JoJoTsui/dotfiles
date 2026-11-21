@@ -135,6 +135,52 @@ class AgentIntegrationTests(unittest.TestCase):
         shutil.copy2(SOURCE / runner, self.source / runner)
         self.env["DOTFILES_CHEZMOI_BIN"] = str(self.root / "missing-chezmoi")
 
+    def write_status_helper(self, answer="codex|current"):
+        """Install the managed Herdr status helper in the legacy home."""
+        helper = self.live / ".local/bin/dotfiles-herdr-status"
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_text(f'#!/bin/sh\nprintf "%s\\n" "{answer}"\n', encoding="utf-8")
+        helper.chmod(0o755)
+        return helper
+
+    def herdr_state(self):
+        return self.live / ".local/state/dotfiles/herdr.tsv"
+
+    def test_the_herdr_state_is_recorded_and_another_owner_survives(self):
+        self.fetch()
+        self.write_status_helper()
+        state = self.herdr_state()
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text("# agent|kind|state\npi|pi|current\n", encoding="utf-8")
+        check = self.run_policy("--check")
+        self.assertEqual(check.returncode, 1)
+        self.assertIn("DRIFT .local/state/dotfiles/herdr.tsv", check.stdout)
+
+        applied = self.run_policy("--apply")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        recorded = state.read_text()
+        # The kind comes from the provider catalog and the state from the
+        # managed helper, and the row of another owner stays untouched.
+        self.assertIn("codex|codex|current", recorded)
+        self.assertIn("pi|pi|current", recorded)
+        journal, = (self.live / ".local/state/dotfiles/disabled-integrations").glob("files.*/restore.tsv")
+        self.assertIn(".local/state/dotfiles/herdr.tsv", journal.read_text())
+
+        clean = self.run_policy("--check")
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+
+    def test_the_missing_status_helper_is_named_and_nothing_is_recorded(self):
+        self.fetch()
+        state = self.herdr_state()
+        applied = self.run_policy("--apply")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertFalse(state.exists())
+        check = self.run_policy("--check")
+        # The helper belongs to the legacy file apply, so a host without it
+        # has no state to record and the check names the gap.
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertIn("dotfiles-herdr-status is missing", check.stderr)
+
     def test_t9k_jobs_apply_offline_and_preserve_global_policy(self):
         self.stage_t9k_sources()
         runner = self.live / ".local/bin/t9k-run-job"

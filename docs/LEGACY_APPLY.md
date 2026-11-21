@@ -11,7 +11,7 @@ files listed in `deployment/legacy/apply.tsv`:
 
 - agent-stack executables: health, `codex-herdr`, the managed resume command the
   Herdr launcher reaches for, the hook installer, the host-up command,
-  `nu-login`, and the custom Codex resume hook;
+  `nu-login`, the Herdr status helper, and the custom Codex resume hook;
 - the shared history action helper, whose legacy opt-in routes through the
   local-storage launcher;
 - the Herdr config.
@@ -32,6 +32,15 @@ nonzero on drift. `--dry-run` prints the planned writes and unified diffs.
 temporary file in the resolved target directory, sets the manifest mode, and
 renames atomically. It refuses symlink targets and any target that resolves
 outside the live tree. It never creates missing parent directories.
+
+The global integration adapter records the observed Herdr integration state of
+the kind it manages in `~/.local/state/dotfiles/herdr.tsv`, the same record
+the public deployment writes, so the health check can report the live state on
+a legacy host. The observation needs the status helper, so a host installs the
+agent stack with this adapter before the integration adapter records the
+state; without the helper the adapter names the gap and leaves the record
+alone. A row of another owner stays untouched, and a replaced record reaches
+the recovery journal.
 
 `--groups agent` selects only the agent-stack files; `--groups config` selects
 the Herdr config. `--groups all` (the default when the flag is absent) selects

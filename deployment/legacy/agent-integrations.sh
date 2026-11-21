@@ -90,20 +90,26 @@ policy_previous_managed_skill() {
 # before its first change in this apply. A rollback that withdraws a new
 # skill also withdraws the row that would otherwise let a later apply
 # overwrite a new device directory.
+# Back up a state file and record its original mode, so a rollback restores it.
+policy_journal_state() {
+    local state=$1 relative=$2 mode
+    policy_batch
+    if [ -f "$state" ]; then
+        mkdir -p "$batch/$(dirname "$relative")"
+        cp -p "$state" "$batch/$relative"
+        chmod 600 "$batch/$relative"
+        mode=$(stat -c '%a' "$state")
+        printf '%s|%s|%s\n' "$state" "$batch/$relative" "$mode" >> "$batch/restore.tsv"
+    else
+        printf '%s|NEW|-\n' "$state" >> "$batch/restore.tsv"
+    fi
+}
+
 policy_journal_inventory() {
     local state=$1 mode
     [ -z "$INVENTORY_JOURNALED" ] || return 0
     INVENTORY_JOURNALED=1
-    policy_batch
-    if [ -f "$state" ]; then
-        mkdir -p "$batch/$(dirname "$INVENTORY_RELATIVE")"
-        cp -p "$state" "$batch/$INVENTORY_RELATIVE"
-        chmod 600 "$batch/$INVENTORY_RELATIVE"
-        mode=$(stat -c '%a' "$state")
-        printf '%s|%s|%s\n' "$state" "$batch/$INVENTORY_RELATIVE" "$mode" >> "$batch/restore.tsv"
-    else
-        printf '%s|NEW|-\n' "$state" >> "$batch/restore.tsv"
-    fi
+    policy_journal_state "$state" "$INVENTORY_RELATIVE"
 }
 
 # The managed skill inventory records the skill directories the deployment
@@ -242,6 +248,61 @@ publish_plan() {
             fail "cannot install $relative"
         fi
     done < "$plan"
+}
+
+# The Herdr integration state is an observation of the host: the health check
+# reads it to learn which kinds to ask about, and it reads the live state. The
+# legacy adapter manages the Codex hook, so it records that kind; the kind name
+# comes from the provider catalog, and the observed state comes from the
+# managed status helper that the legacy file apply installs. A row of another
+# owner stays untouched.
+policy_herdr_state() {
+    local helper="$HOME/.local/bin/dotfiles-herdr-status"
+    local catalog="$ROOT/deployment/agents/providers.tsv"
+    local state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/herdr.tsv"
+    local agent=codex kind observed kept staged relative
+    relative=${state#"$HOME"/}
+    kind=$(awk -F'|' -v agent="$agent" '$1 == agent && $11 != "-" { print $11; exit }' "$catalog")
+    [ -n "$kind" ] || return 0
+    [ ! -L "$state" ] || fail "the Herdr integration state is a symlink: $state"
+    kept=$(mktemp "$TMPDIR/policy-herdr.XXXXXX") || return 0
+    staged=$(mktemp "$TMPDIR/policy-herdr.XXXXXX") || { rm -f "$kept"; return 0; }
+    if [ -f "$state" ]; then
+        awk -F'|' -v agent="$agent" '!/^#/ && NF >= 3 && $1 != agent { print }' "$state" > "$kept"
+    fi
+    if [ ! -x "$helper" ]; then
+        # The observation needs the managed helper. Without it the recorded
+        # state stays as it is: the helper belongs to the legacy file apply,
+        # and a host that has not installed it yet has no state to record.
+        rm -f "$kept" "$staged"
+        printf 'agent-integrations: %s is missing; the Herdr integration state of %s is not recorded\n' "$helper" "$agent" >&2
+        return 0
+    fi
+    observed=$("$helper" "$kind" 2>/dev/null) || observed=''
+    case "$observed" in
+        "$kind|"*) ;;
+        *) observed="$kind|unavailable" ;;
+    esac
+    {
+        printf '# agent|kind|state\n'
+        cat "$kept"
+        printf '%s|%s\n' "$agent" "$observed"
+    } > "$staged"
+    rm -f "$kept"
+    if [ -f "$state" ] && cmp -s "$staged" "$state"; then
+        rm -f "$staged"
+        return 0
+    fi
+    if [ "$ACTION" = check ]; then
+        rm -f "$staged"
+        drift=$((drift + 1))
+        printf 'DRIFT %s\n' "$relative"
+        return 0
+    fi
+    policy_journal_state "$state" "$relative"
+    mkdir -p "$(dirname "$state")"
+    chmod 644 "$staged"
+    mv -f "$staged" "$state"
 }
 
 drift=0
@@ -460,6 +521,7 @@ apply_skill_tree() {
 }
 
 publish_plan
+policy_herdr_state
 if [ "$ACTION" = apply ]; then
     payload_quarantine_disabled
 else
