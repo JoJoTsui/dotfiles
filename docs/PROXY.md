@@ -108,7 +108,7 @@ direct codex exec -C . "task"
 `with-proxy` sets upper- and lower-case HTTP/HTTPS/ALL proxy variables plus a
 loopback `NO_PROXY`; `direct` removes every proxy variable. Both exec the
 command, so exit status and signals pass through. Override the endpoint with
-`PROXY_HTTP` and `PROXY_SOCKS`.
+`PROXY_HTTP` and `PROXY_SOCKS`, and the bypass list with `PROXY_NO`.
 
 The endpoint is resolved per call, not per platform. A port belongs to the
 proxy process that owns it — the deployment instance uses 7890, Clash Verge
@@ -120,6 +120,46 @@ endpoint, rather than persisting the ordinary fallback.
 `noproxy`, in both the POSIX and the Nu adapter, asks `with-proxy` for the same
 answer, so the port is never baked in at `chezmoi init` and one checkout
 serves a headless host and a desktop running a different client.
+
+### One endpoint decision
+
+`with-proxy` owns that decision, and every shell reads it from there. The
+Nushell adapter (`~/.config/nushell/proxy.nu`) and the POSIX helper
+(`~/.env_core`) both ask the same launcher, so a session in Nushell and a
+session in Bash route the same way.
+
+| Command | Answers |
+| --- | --- |
+| `with-proxy cmd ...` | runs the child through the resolved endpoint |
+| `with-proxy --if-available cmd ...` | runs the child directly when no endpoint is healthy |
+| `direct cmd ...` | runs the child without any proxy variable |
+| `with-proxy --print` | the export lines for a POSIX session |
+| `with-proxy --print-env` | the same variables as `KEY=VALUE` lines |
+| `with-proxy --print-url` | the endpoint, with the ordinary fallback |
+| `with-proxy --print-url-if-available` | the endpoint, or nothing |
+
+The variables the launchers own are `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`,
+`https_proxy`, `ALL_PROXY`, `all_proxy`, `NO_PROXY`, `no_proxy`, and `PROXY`.
+A direct launch clears those and the two FTP spellings, so a stale inherited
+value cannot route a child through an endpoint that is not there. A proxied
+launch applies its variables to the child only: the calling session keeps its
+own environment, and the child's arguments and exit status are unchanged.
+
+The answer is line-delimited, so the interface fixes two things. The bindings
+carry fixed variable names: the launcher owns the names and the value each
+name carries, so a value never chooses the name it is bound to. The supported
+overrides are single-line values, and an override that carries a line
+separator is refused before any binding is emitted — a second line inside a
+value would otherwise be read as another variable name, both in the child's
+environment and in the export lines a POSIX session evaluates. The POSIX
+`noproxy` reads the launcher's answer before it evaluates it, so a refusal is
+the caller's failure and the session keeps the environment it had.
+
+In Nushell, `with-proxy`, `direct`, `noproxy`, and `unproxy` are the same four
+commands. `noproxy` sets the session variables and `unproxy` clears them.
+Nushell's environment is case-insensitive, so a session keeps one spelling per
+variable; a launched child receives every spelling, because the shared
+launcher applies them in a POSIX environment.
 
 The routing policy follows the source project: local and China destinations go
 direct, advertising domains are rejected, and everything

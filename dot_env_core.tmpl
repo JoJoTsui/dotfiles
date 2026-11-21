@@ -95,14 +95,23 @@ fi
 # an explicit PROXY_HTTP wins, otherwise it probes the port the device serves
 # (Clash Verge 7897, managed mihomo 7890). Baking the URL in here made a Mac
 # running Clash Verge inherit the headless 7890 and fail every request.
+# The Nushell adapter asks the same launcher for the same answer, so the shell
+# a session runs in never changes the route.
 noproxy() {
     if ! command -v with-proxy >/dev/null 2>&1; then
         printf '%s\n' 'noproxy: with-proxy is not installed' >&2
         return 1
     fi
-    eval "$(with-proxy --print)"
+    # The answer is read before it is evaluated, and a launcher that refuses
+    # an override is the caller's failure: the session keeps the environment
+    # it had instead of a half-applied one.
+    _dotfiles_proxy_exports=$(with-proxy --print) || return $?
+    eval "$_dotfiles_proxy_exports"
+    unset _dotfiles_proxy_exports
 }
-unproxy() { unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy; }
+# unproxy clears the supported inherited proxy variables, the same list the
+# direct launcher and the direct fallback clear for their child.
+unproxy() { unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy FTP_PROXY ftp_proxy NO_PROXY no_proxy PROXY; }
 
 # Tailspin owns highlighting/paging; arguments and stdin pass through unchanged.
 logs() { command tspin "$@"; }

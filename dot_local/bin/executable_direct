@@ -7,6 +7,10 @@
 #   direct codex --model deepseek-chat
 #
 # Counterpart to with-proxy. Same universality: real executable in $PATH.
+#
+# The variables cleared here are the supported inherited proxy variables, and
+# they are the ones a direct fallback clears for its child. The Nushell
+# adapter clears the same list, so a direct launch is the same in every shell.
 
 set -euo pipefail
 

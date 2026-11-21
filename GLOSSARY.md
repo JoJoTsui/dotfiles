@@ -267,3 +267,9 @@ Resuming a thread so that it keeps the provider, the model, and the reasoning
 effort it saved. A layer that carries provider definitions only preserves it;
 a layer that selects a provider, a model, or an effort replaces it.
 _Avoid_: Provider switch, retagging, migration
+
+**Proxy launcher**:
+A command that runs a child process with the proxy environment the shared
+endpoint decision produced. `with-proxy` and `direct` are the launchers; the
+session helpers `noproxy` and `unproxy` change the current session instead.
+_Avoid_: Proxy helper, proxy wrapper
