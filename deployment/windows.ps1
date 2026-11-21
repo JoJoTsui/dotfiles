@@ -1149,9 +1149,12 @@ function Install-Qoder([string]$Version, [string]$ManifestBase) {
         $build = [Environment]::OSVersion.Version.Build
         $candidates = @($manifest.files | Where-Object { $_.os -eq 'windows' -and $_.arch -in @('amd64', 'x64') })
         $file = $candidates | Where-Object {
-            $_.variant -ne 'legacy' -and $_.runtime -ne 'node-sea' -and
-            (-not $_.min_windows_build -or $build -ge [int]$_.min_windows_build) -and
-            (-not $_.max_windows_build -or $build -le [int]$_.max_windows_build)
+            # Optional fields can be absent altogether, including the upper
+            # build bound on the pinned standard archive.
+            $metadata = $_ | Select-Object variant, runtime, min_windows_build, max_windows_build
+            $metadata.variant -ne 'legacy' -and $metadata.runtime -ne 'node-sea' -and
+            (-not $metadata.min_windows_build -or $build -ge [int]$metadata.min_windows_build) -and
+            (-not $metadata.max_windows_build -or $build -le [int]$metadata.max_windows_build)
         } | Select-Object -First 1
         if (-not $file) { $file = $candidates | Select-Object -First 1 }
         if (-not $file) { Stop-Deployment 'Qoder has no Windows x64 release for the pinned version' }
