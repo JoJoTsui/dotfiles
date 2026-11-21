@@ -72,10 +72,19 @@ private, unauthenticated staging with sync disabled, runs Atuin's own secret,
 history and directory filters, then transfers accepted entries only. Native
 timestamps, session and exit metadata survive. Rejected commands never enter
 the device's history database or encrypted record WAL. The original file stays
-unchanged. Each format has a device-local completion marker; rerunning that
-format leaves history unchanged. If local record initialization fails after
-accepted entries transfer, the failure is visible and `dotfiles-history sync`
-can finish Atuin's automatic store initialization without importing again.
+unchanged. Each format records its completion as a `dotfiles_history_imports`
+receipt in the history database, committed in the same SQLite transaction as the
+accepted rows. A receipt that cannot be written rolls the rows back with it, so
+the one-time import lock sees a committed receipt before any row is written
+again: rerunning that format leaves history unchanged, and a retry after a
+failed transfer imports the source exactly once. Migrations that already ran
+carry a device-local completion marker file; that marker stays honored for
+those homes, it is not required for a new import, and it is read before the
+history database, so an already imported home returns unchanged even when its
+database is unavailable or malformed. If local record
+initialization fails after accepted entries transfer, the failure is visible and
+`dotfiles-history sync` can finish Atuin's automatic store initialization
+without importing again.
 
 The transfer reads the catalog-owned Atuin pin rendered into
 `$XDG_CONFIG_HOME/dotfiles/profile.json` as `atuinVersion`. Migration requires
@@ -162,11 +171,12 @@ restoring missing local data.
 Moving the Atuin databases does not import Nushell's separate `history.txt`.
 Recover that older history explicitly with
 `dotfiles-history import nu --file ~/.config/nushell/history.txt`. Filtering
-runs in unauthenticated local staging and the source stays unchanged. On this
-local-storage host, a `dotfiles_history_imports` receipt commits in the same
-SQLite transaction as the accepted history rows, and the launcher durably
-snapshots them together before reporting completion. This prevents a notebook
-reset from retaining an import receipt while losing its imported data. The
+runs in unauthenticated local staging and the source stays unchanged. Every home
+records a `dotfiles_history_imports` receipt in the same SQLite transaction as
+the accepted history rows. On this local-storage host the launcher also durably
+snapshots the rows and their receipt together before reporting completion.
+This prevents a notebook reset from retaining an import receipt while losing
+its imported data. The
 local-storage settings file is separate from import receipts. Cross-device
 cloud sync still requires separate account activation.
 

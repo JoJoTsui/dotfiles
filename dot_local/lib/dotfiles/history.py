@@ -299,6 +299,25 @@ def import_nu_file(atuin, kind, source, database, environment):
         connection.close()
 
 
+def import_receipt(database, kind):
+    """Return the accepted count recorded for a format, or None.
+
+    The receipt lives in the same SQLite database as the imported rows, so a
+    recorded receipt always implies committed rows. A missing database or a
+    missing table means the format was never imported through this helper.
+    """
+    if not database.is_file():
+        return None
+    with closing(sqlite3.connect(database)) as connection:
+        table = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' "
+                                   "AND name='dotfiles_history_imports'").fetchone()
+        if not table:
+            return None
+        row = connection.execute("SELECT accepted FROM dotfiles_history_imports WHERE format = ?",
+                                 (kind,)).fetchone()
+    return row[0] if row else None
+
+
 def import_history(atuin, kind, source):
     if kind is None:
         print("Choose an explicit one-time import: dotfiles-history import FORMAT [--file PATH]")
@@ -314,21 +333,25 @@ def import_history(atuin, kind, source):
     data = configured_path(atuin, "data_dir")
     local_state = Path(os.environ['HOME']) / '.local/state/dotfiles/history-local/enabled.json'
     local_mode = local_state.is_file()
-    local_database = configured_path(atuin, 'db_path') if local_mode else None
-    if local_database and local_database.is_file():
-        with closing(sqlite3.connect(local_database)) as connection:
-            receipts = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='dotfiles_history_imports'").fetchone()
-            if receipts and connection.execute('SELECT 1 FROM dotfiles_history_imports WHERE format = ?', (kind,)).fetchone():
-                print(f'history: {kind} already imported; no changes')
-                return
     imports = data / "dotfiles-imports"
-    reject_symlinks(imports)
-    imports.mkdir(mode=0o700, parents=True, exist_ok=True)
     marker = imports / f"{kind}.json"
     reject_symlinks(marker)
     if marker.exists():
+        # A migration that already ran carries a device-local file marker. Its
+        # receipt is honored without opening the history database, so a home
+        # whose database is unavailable or malformed still returns cleanly.
         print(f"history: {kind} already imported; no changes")
         return
+    # The database receipt is the authoritative completion record for every
+    # home; it commits with the imported rows in one transaction. The
+    # local-mode home keeps that transactional receipt priority, because its
+    # rows and the receipt share one database.
+    destination = configured_path(atuin, 'db_path')
+    if import_receipt(destination, kind) is not None:
+        print(f'history: {kind} already imported; no changes')
+        return
+    reject_symlinks(imports)
+    imports.mkdir(mode=0o700, parents=True, exist_ok=True)
     candidates = (Path(source),) if source else default_sources()[kind]
     available = [path for path in candidates if path.is_file()]
     if len(available) > 1:
@@ -345,6 +368,12 @@ def import_history(atuin, kind, source):
     try:
         if marker.exists():
             print(f"history: {kind} already imported; no changes")
+            return
+        # The receipt is consulted under the one-time import lock, before any
+        # row is written again, so a retry after a failed receipt write cannot
+        # duplicate the rows the receipt already covers.
+        if import_receipt(destination, kind) is not None:
+            print(f'history: {kind} already imported; no changes')
             return
         # Deployment renders the catalog-owned schema pin for this device.
         # Account setup, status and source listing do not require this metadata.
@@ -449,21 +478,20 @@ def import_history(atuin, kind, source):
                     connection.execute(f"INSERT OR IGNORE INTO main.history ({columns}) "
                                        f"SELECT {columns} FROM migration.history WHERE deleted_at IS NULL")
                     imported = connection.total_changes - before
-                    if local_mode:
-                        # The receipt and imported rows commit in the same DB
-                        # transaction, so any concurrent snapshot includes both.
-                        connection.execute('CREATE TABLE IF NOT EXISTS dotfiles_history_imports '
-                                           '(format TEXT PRIMARY KEY, accepted INTEGER NOT NULL)')
-                        connection.execute('INSERT INTO dotfiles_history_imports VALUES (?, ?)', (kind, imported))
+                    # The receipt and the imported rows commit in the same DB
+                    # transaction, so a failure to record the receipt leaves no
+                    # rows behind and a retry cannot import the same source
+                    # twice.
+                    connection.execute('CREATE TABLE IF NOT EXISTS dotfiles_history_imports '
+                                       '(format TEXT PRIMARY KEY, accepted INTEGER NOT NULL)')
+                    connection.execute('INSERT INTO dotfiles_history_imports VALUES (?, ?)', (kind, imported))
             finally:
                 connection.close()
             # Local-mode rows and their transactional receipt must reach the
             # persistent snapshot together before reporting import completion.
-            # Other homes retain the existing one-time file marker.
+            # Other homes keep the receipt in the same database transaction.
             if local_mode:
                 run_atuin(atuin, ['__dotfiles-persist'])
-            else:
-                marker.write_text(json.dumps({"format": kind, "accepted": imported}) + "\n")
         run_atuin(atuin, ["history", "init-store"], env=dict(os.environ, ATUIN_AUTO_SYNC="false"))
         print(f"history: imported {imported} filtered {kind} entries; original file unchanged")
     finally:

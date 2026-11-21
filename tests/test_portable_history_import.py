@@ -68,7 +68,7 @@ class PortableHistoryImportTests(unittest.TestCase):
         self.profile.write_text(json.dumps({'atuinVersion': '99.1.0'}))
         result = self.history('import', 'nu-file', '--file', str(selected))
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn('verified Atuin 99.1.0 pin', result.stderr)
+        self.assertIn('migration requires stable Atuin 99.1.0 or newer', result.stderr)
         self.assertFalse((self.home / '.local/share/atuin/history.db').exists())
         self.assertFalse((self.home / '.local/share/atuin/dotfiles-imports/nu.json').exists())
         self.assertEqual(selected.read_text(), 'echo deployed-pin-token\n')
@@ -103,6 +103,24 @@ class PortableHistoryImportTests(unittest.TestCase):
                 result = self.history(*arguments)
                 self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.home / '.local/share/atuin/history.db').exists())
+
+    def device_database(self):
+        return self.home / '.local/share/atuin/history.db'
+
+    def command_count(self, token):
+        database = self.device_database()
+        if not database.is_file():
+            return 0
+        with closing(sqlite3.connect(database)) as connection:
+            return connection.execute('SELECT COUNT(*) FROM history WHERE command LIKE ?',
+                                      (f'%{token}%',)).fetchone()[0]
+
+    def receipt_formats(self):
+        database = self.device_database()
+        if not database.is_file():
+            return set()
+        with closing(sqlite3.connect(database)) as connection:
+            return {row[0] for row in connection.execute('SELECT format FROM dotfiles_history_imports')}
 
     def nu_source(self, directory, kind, token):
         directory.mkdir(parents=True, exist_ok=True)
@@ -178,6 +196,70 @@ class PortableHistoryImportTests(unittest.TestCase):
         status = self.history('status')
         self.assertEqual(status.returncode, 0, status.stderr)
         self.assertIn('sync pending activation', status.stdout)
+
+    def test_receipt_commits_with_its_rows_and_a_retry_keeps_one_copy(self):
+        text_source = self.root / 'receipt-history.txt'
+        text_source.write_text('echo receipt-text-token\n')
+        imported = self.history('import', 'nu-file', '--file', str(text_source))
+        self.assertEqual(imported.returncode, 0, imported.stderr)
+        self.assertEqual(self.command_count('receipt-text-token'), 1)
+        # The completion receipt is recorded in the history database itself.
+        self.assertIn('nu', self.receipt_formats())
+        # A receipt that cannot be written fails the whole transfer
+        # transaction, so the rows it would have covered stay uncommitted.
+        database = self.device_database()
+        with closing(sqlite3.connect(database)) as connection:
+            with connection:
+                connection.execute('DROP TABLE dotfiles_history_imports')
+                connection.execute('CREATE TABLE dotfiles_history_imports (format TEXT PRIMARY KEY)')
+        db_source = self.nu_source(self.root, 'nu-db', 'receipt-db-token')
+        failed = self.history('import', 'nu-db-file', '--file', str(db_source))
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertNotIn('Traceback', failed.stderr)
+        self.assertEqual(self.command_count('receipt-db-token'), 0)
+        # The retry after the repair imports the source exactly once.
+        with closing(sqlite3.connect(database)) as connection:
+            with connection:
+                connection.execute('DROP TABLE dotfiles_history_imports')
+                connection.execute('CREATE TABLE dotfiles_history_imports '
+                                   '(format TEXT PRIMARY KEY, accepted INTEGER NOT NULL)')
+        retried = self.history('import', 'nu-db-file', '--file', str(db_source))
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertEqual(self.command_count('receipt-db-token'), 1)
+        self.assertIn('nu-db', self.receipt_formats())
+        repeated = self.history('import', 'nu-db-file', '--file', str(db_source))
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        self.assertIn('already imported', repeated.stdout)
+        self.assertEqual(self.command_count('receipt-db-token'), 1)
+
+    def test_legacy_format_marker_is_honored_without_a_database_receipt(self):
+        source = self.root / 'legacy-history.txt'
+        source.write_text('echo legacy-marker-token\n')
+        imports = self.home / '.local/share/atuin/dotfiles-imports'
+        imports.mkdir(parents=True, exist_ok=True)
+        (imports / 'nu.json').write_text(json.dumps({'format': 'nu', 'accepted': 3}) + '\n')
+        result = self.history('import', 'nu-file', '--file', str(source))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('already imported', result.stdout)
+        self.assertEqual(self.command_count('legacy-marker-token'), 0)
+
+    def test_legacy_format_marker_is_honored_without_reading_the_database(self):
+        source = self.root / 'legacy-marker-database.txt'
+        source.write_text('echo legacy-marker-database-token\n')
+        imports = self.home / '.local/share/atuin/dotfiles-imports'
+        imports.mkdir(parents=True, exist_ok=True)
+        (imports / 'nu.json').write_text(json.dumps({'format': 'nu', 'accepted': 3}) + '\n')
+        # An unavailable or malformed database must not break a home that
+        # already carries the file receipt, so the receipt needs no database
+        # read at all.
+        database = self.device_database()
+        database.parent.mkdir(parents=True, exist_ok=True)
+        database.write_bytes(b'not a sqlite database\n')
+        result = self.history('import', 'nu-file', '--file', str(source))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn('Traceback', result.stderr)
+        self.assertIn('already imported', result.stdout)
+        self.assertEqual(database.read_bytes(), b'not a sqlite database\n')
 
     def test_nu_sqlite_preserves_public_metadata_and_signed_session(self):
         selected = self.root / 'selected-history.sqlite3'
