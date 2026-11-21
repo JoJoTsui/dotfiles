@@ -38,36 +38,66 @@ read -r subscription_url < "$SUBSCRIPTION_URL_FILE" || :
 [[ -n $subscription_url ]] || { echo "Subscription URL is empty." >&2; exit 1; }
 
 umask 077
-tmpfile=$(mktemp)
-trap 'rm -f "$tmpfile"' EXIT
+
+# The replacement profile is staged beside the profile it replaces, so the
+# publication is a rename on one filesystem. The active profile is not touched
+# until the staged copy has been fetched, validated, and converted: a failed
+# fetch, conversion, or validation leaves the last working profile in place,
+# and a later refresh publishes a valid replacement without provisioning again.
+PROFILE_DIR=$(dirname "$PROFILE_PATH")
+mkdir -p "$PROFILE_DIR"
+staged=$(mktemp "$PROFILE_DIR/.${PROFILE_PATH##*/}.staged.XXXXXX")
+trap 'rm -f "$staged"' EXIT
 
 curl --fail --location --silent --show-error \
   --user-agent clash.meta \
-  --output "$tmpfile" \
+  --output "$staged" \
   "$subscription_url"
 
-for key in mixed-port proxies proxy-groups rules; do
-  if ! grep -Eq "^${key}:" "$tmpfile"; then
-    echo "Subscription did not return a Clash-compatible profile (missing ${key}:)." >&2
-    exit 1
-  fi
-done
+# A Clash-compatible profile needs these sections; anything else is not a
+# usable Mihomo configuration.
+missing_profile_key() {
+  local key
+  for key in mixed-port proxies proxy-groups rules; do
+    if ! grep -Eq "^${key}:" "$staged"; then
+      printf '%s' "$key"
+      return 0
+    fi
+  done
+  return 1
+}
 
-mv "$tmpfile" "$PROFILE_PATH"
+missing_key=$(missing_profile_key || true)
+if [[ -n $missing_key ]]; then
+  echo "Subscription did not return a Clash-compatible profile (missing ${missing_key}:)." >&2
+  exit 1
+fi
 
 # Narrow every proxy-group to the configured region so Mihomo never picks a
 # non-US exit even if a rule falls through to a selector. Idempotent; safe to
 # re-run; before every supervised start as well (run-mihomo-supervised.sh).
+# The conversion runs on the staged copy: a profile the conversion rejects is
+# never published over the working one.
 SCRIPT_DIR=$(cd "$(dirname "$SCRIPT_PATH")" && pwd)
 if [[ -x "$SCRIPT_DIR/restrict-proxy-groups.py" ]]; then
-  python3 "$SCRIPT_DIR/restrict-proxy-groups.py" us "$PROFILE_PATH"
+  python3 "$SCRIPT_DIR/restrict-proxy-groups.py" us "$staged"
 fi
 
 # Replace the provider's rules with the routing policy: local and China
 # destinations go DIRECT, advertising domains are rejected, everything else
 # goes to GLOBAL, which startup pins to a US leaf. Idempotent; safe to re-run.
 if [[ -x "$SCRIPT_DIR/apply-us-routing-policy.py" ]]; then
-  python3 "$SCRIPT_DIR/apply-us-routing-policy.py" "$PROFILE_PATH"
+  python3 "$SCRIPT_DIR/apply-us-routing-policy.py" "$staged"
 fi
-chmod 0600 "$PROFILE_PATH"
+
+# The converted profile is published only when it still carries every section
+# Mihomo needs.
+missing_key=$(missing_profile_key || true)
+if [[ -n $missing_key ]]; then
+  echo "Converted profile is missing ${missing_key}:; the active profile is unchanged." >&2
+  exit 1
+fi
+
+chmod 0600 "$staged"
+mv -f "$staged" "$PROFILE_PATH"
 echo "Refreshed $PROFILE_PATH"

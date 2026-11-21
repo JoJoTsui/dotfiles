@@ -34,6 +34,25 @@ fails there with that reason instead of installing a Linux binary. The Codex
 launcher still asks `with-proxy --if-available`, which uses whatever proxy the
 device runs (Clash Verge on macOS) and otherwise starts direct.
 
+## Refresh
+
+The refresh fetches the subscription, converts it, and publishes it. The
+replacement is staged beside the profile it replaces, so publication is a
+rename on one filesystem, and the active profile is published only after every
+step succeeds:
+
+1. The fetch writes the subscription to a staged file.
+2. The staged profile must carry `mixed-port`, `proxies`, `proxy-groups`, and
+   `rules`; without them it is not a usable Mihomo configuration.
+3. The US restriction and the routing policy are applied to the staged copy,
+   not to the profile in use.
+4. The converted profile is checked again and renamed over the active one.
+
+A failed fetch, conversion, or validation leaves the active profile exactly as
+it was, so the last working profile keeps serving and a later refresh can
+publish a valid replacement without provisioning again. The staged file is
+removed on every exit, so a failed refresh leaves nothing behind.
+
 ## The deployment proxy
 
 The deployment has network needs of its own: manager releases, the skill
