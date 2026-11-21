@@ -270,7 +270,7 @@ def deterministic_environment(home, temporary, tools):
     return environment
 
 
-def run(command, *, env, cwd, timeout, log, records):
+def run(command, *, env, cwd, timeout, log, records, observe=None):
     """Bound output and stop the entire subprocess group on timeout."""
     command = [str(part) for part in command]
     started = time.monotonic()
@@ -293,6 +293,8 @@ def run(command, *, env, cwd, timeout, log, records):
                             selector.unregister(key.fileobj)
                             continue
                         total += len(chunk)
+                        if observe is not None:
+                            observe(chunk, time.monotonic() - started)
                         output.extend(chunk)
                         if len(output) > LOG_LIMIT:
                             del output[:-LOG_LIMIT]
@@ -444,11 +446,11 @@ def trampoline_metadata(home, plan):
     return captured
 
 
-def source_managed_paths(home):
+def source_managed_paths(home, chezmoi=None):
     # Chezmoi owns source-name mapping, ignore rules and profile selection.
     # Its inventory lists desired paths even when a target has been removed.
     result = subprocess.run([
-        str(home / ".local/bin/chezmoi"), "--source", str(SOURCE), "--destination", str(home),
+        str(chezmoi or home / ".local/bin/chezmoi"), "--source", str(SOURCE), "--destination", str(home),
         "--config", str(home / ".config/chezmoi/chezmoi.toml"),
         "--cache", str(home / ".cache/chezmoi"),
         "--persistent-state", str(home / ".config/chezmoi/chezmoistate.boltdb"),
@@ -465,8 +467,8 @@ def source_managed_paths(home):
     return paths
 
 
-def snapshot(home, plan):
-    paths = source_managed_paths(home)
+def managed_paths(home, plan, chezmoi=None):
+    paths = source_managed_paths(home, chezmoi)
     trees = {".config/nushell", ".local/share/nushell/vendor", ".local/bin", ".local/lib/dotfiles"}
     for line in (SOURCE / "deployment/agent-payload/targets.tsv").read_text().splitlines():
         if line and not line.startswith("#"):
@@ -487,7 +489,12 @@ def snapshot(home, plan):
         paths.update(home / ".pixi/bin" / command for command in package["exposed"])
     for package in plan["agentPackages"]:
         paths.update(home / ".local/bin" / command for command in package["commands"])
-    return {str(path.relative_to(home)): snapshot_fingerprint(path, home) for path in sorted(paths)}
+    return paths
+
+
+def snapshot(home, plan):
+    return {str(path.relative_to(home)): snapshot_fingerprint(path, home)
+            for path in sorted(managed_paths(home, plan))}
 
 
 def seed_device(home):
