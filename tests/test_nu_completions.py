@@ -167,20 +167,65 @@ class NuCompletionTests(unittest.TestCase):
         modules = self.home / ".local/share/nushell/completions/nu-scripts"
         published = [path for path in modules.iterdir() if path.name.startswith(self.revision)]
         self.assertEqual(len(published), 1)
-        superseded = modules / ("b" * 40 + "-" + "c" * 16)
-        (superseded / "custom-completions/git").mkdir(parents=True)
-        (superseded / "custom-completions/git/git-completions.nu").write_text("# earlier bytes\n")
+        superseded = published[0]
         device = modules / "device-created"
         device.mkdir()
         (device / "keep.nu").write_text("# device skill\n")
         linked = modules / ("d" * 40 + "-" + "e" * 16)
         linked.symlink_to(device, target_is_directory=True)
-        self.assertEqual(self.prepare(), 1)
+        # A changed selection publishes a second generation, and the first
+        # one is retired with it.
+        self.install("just")
+        self.write_desired(common=("git",), bundles=("just",))
+        self.assertEqual(self.prepare(), 2)
         self.assertFalse(superseded.exists())
         self.assertEqual((device / "keep.nu").read_text(), "# device skill\n")
         self.assertTrue(linked.is_symlink())
-        self.assertTrue(published[0].is_dir())
-        self.assertIn(published[0].name, self.loader.read_text())
+        current = [entry for entry in self.published_generations() if not entry.is_symlink()]
+        self.assertEqual(len(current), 1)
+        self.assertIn(current[0].name, self.loader.read_text())
+
+    def test_a_foreign_directory_with_a_generation_name_is_preserved(self):
+        """A device directory shaped like a generation is not ours to remove.
+
+        The cleanup removes a generation only when its bytes prove that this
+        deployment published it. A directory whose name only looks like a
+        generation carries other bytes, so it stays where it is. A published
+        generation that carries an entry the publisher never writes is not
+        provably ours either, so it stays with that entry inside it.
+        """
+        self.install("git")
+        self.assertEqual(self.prepare(), 1)
+        modules = self.home / ".local/share/nushell/completions/nu-scripts"
+        published = modules / self.published_generations()[0]
+        foreign = modules / ("b" * 40 + "-" + "c" * 16)
+        (foreign / "custom-completions/git").mkdir(parents=True)
+        (foreign / "custom-completions/git/git-completions.nu").write_text("# device bytes\n")
+        self.assertEqual(self.prepare(), 1)
+        self.assertTrue(foreign.is_dir())
+        self.assertEqual((foreign / "custom-completions/git/git-completions.nu").read_text(), "# device bytes\n")
+        # The publication writes only .nu module files, and it creates a
+        # directory only for the parents of those files. An empty directory
+        # inside a published generation is a device entry, so the generation
+        # is not provably ours and its bytes are not read.
+        (published / "device-created").mkdir()
+        self.assertIsNone(self.module.published_digest(published))
+        # A file of another kind is not a module either, so the directory
+        # that holds it is not a publication.
+        unrelated = modules / ("d" * 40 + "-" + "e" * 16)
+        (unrelated / "custom-completions/git").mkdir(parents=True)
+        (unrelated / "custom-completions/git/git-completions.nu").write_text("# device bytes\n")
+        (unrelated / "notes.txt").write_text("# device notes\n")
+        self.assertIsNone(self.module.published_digest(unrelated))
+        # A changed selection publishes a second generation, and the first
+        # one is no longer imported, so the cleanup reaches for it.
+        self.install("just")
+        self.write_desired(common=("git",), bundles=("just",))
+        self.assertEqual(self.prepare(), 2)
+        self.assertTrue(published.is_dir())
+        self.assertTrue((published / "device-created").is_dir())
+        self.assertTrue(unrelated.is_dir())
+        self.assertEqual((unrelated / "notes.txt").read_text(), "# device notes\n")
 
     def test_every_managed_loader_imports_the_published_generation(self):
         """The canonical loader and a native copy both import the new generation."""
@@ -300,9 +345,10 @@ class NuCompletionTests(unittest.TestCase):
         loader. Only a decoded reference finds the generation, and this check
         runs on every platform.
         """
+        self.install("git")
+        self.assertEqual(self.prepare(), 1)
         modules = self.home / ".local/share/nushell/completions/nu-scripts"
-        generation = modules / (self.revision + "-" + "d" * 16)
-        (generation / "custom-completions/git").mkdir(parents=True)
+        generation = modules / self.published_generations()[0]
         windows_module = ("C:\\Users\\device\\.local\\share\\nushell\\completions\\nu-scripts\\"
                           + generation.name + "\\custom-completions\\git\\git-completions.nu")
         loader = self.root / "windows-loader.nu"
@@ -346,11 +392,13 @@ class NuCompletionTests(unittest.TestCase):
         self.assertTrue(generation.is_dir())
 
     def test_an_empty_selection_prunes_every_published_directory(self):
+        self.install("git")
+        self.assertEqual(self.prepare(), 1)
         modules = self.home / ".local/share/nushell/completions/nu-scripts"
-        published = modules / (self.revision + "-" + "c" * 16)
-        published.mkdir(parents=True)
+        published = modules / self.published_generations()[0]
         device = modules / "device-created"
         device.mkdir()
+        self.write_desired(common=(), bundles=())
         with mock.patch.object(self.module.urllib.request, "urlopen", side_effect=AssertionError("network forbidden")):
             self.assertEqual(self.prepare(), 0)
         self.assertFalse(published.exists())
@@ -528,6 +576,35 @@ class NuCompletionTests(unittest.TestCase):
         with self.assertRaisesRegex(self.module.CompletionError, "symlink"):
             self.prepare()
         self.assertFalse(list(outside.iterdir()))
+
+    def test_an_alias_outside_the_home_is_rejected(self):
+        """A destination spelled through an outside alias leaves the home.
+
+        The alias points into the home, so a resolved path would place the
+        destination inside it. The alias itself is not part of the home, so
+        the destination is refused and nothing is written through it.
+        """
+        self.install("git")
+        alias = self.root / "alias"
+        try:
+            alias.symlink_to(self.home, target_is_directory=True)
+        except OSError:
+            self.skipTest("symlink creation prohibited by this host")
+        loader = alias / "Library/Application Support/nushell/autoload/nu-scripts.nu"
+        with self.assertRaisesRegex(self.module.CompletionError, "designated home"):
+            self.prepare(loaders=[loader])
+        self.assertFalse((self.home / "Library/Application Support/nushell/autoload/nu-scripts.nu").exists())
+
+    def test_the_canonical_home_spelling_is_accepted(self):
+        """A destination under the canonical home stays inside the home.
+
+        The home carries two spellings when an ancestor is a symlink. Both
+        the lexical spelling and the canonical one name a directory inside
+        the home, so both are accepted.
+        """
+        canonical = self.home.resolve()
+        destination = canonical / ".local/share/nushell/vendor/autoload/nu-scripts.nu"
+        self.assertEqual(self.module.safe_destination(destination, self.home), destination)
 
     def test_command_matching_requires_executable_unix_files_and_accepts_windows_wrappers(self):
         self.install("git", executable=False)
