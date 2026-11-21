@@ -53,6 +53,72 @@ class ScenarioOutcomeTests(unittest.TestCase):
                                         native_report.SKIPPED: 1, native_report.UNAVAILABLE: 0})
 
 
+class FixtureScenarioOutcomeTests(unittest.TestCase):
+    """The outcome a native fixture reported for one scenario."""
+
+    def report(self, *lines):
+        return "\n".join(lines) + "\n"
+
+    def test_a_scenario_the_fixture_passed_is_passed(self):
+        text = self.report(native_report.fixture_marker('native bundle exposure', native_report.FIXTURE_STARTED),
+                           native_report.fixture_marker('native bundle exposure', native_report.PASSED))
+        self.assertEqual(native_report.fixture_scenario_outcome(text, 'native bundle exposure'),
+                         native_report.PASSED)
+
+    def test_a_scenario_the_fixture_started_and_never_passed_failed(self):
+        # The run stopped inside the scenario, so the scenario failed instead
+        # of staying a scenario that was never reached.
+        text = self.report(native_report.fixture_marker('native bundle exposure', native_report.FIXTURE_STARTED))
+        self.assertEqual(native_report.fixture_scenario_outcome(text, 'native bundle exposure'),
+                         native_report.FAILED)
+
+    def test_a_scenario_the_fixture_never_started_was_never_reached(self):
+        text = self.report(native_report.fixture_marker('native full-to-narrow agent state and status',
+                                                         native_report.PASSED))
+        self.assertIsNone(native_report.fixture_scenario_outcome(text, 'native bundle exposure'))
+
+    def test_a_scenario_the_fixture_reported_as_failed_is_failed(self):
+        text = self.report(native_report.fixture_marker('native targeted repair and preservation',
+                                                         native_report.FAILED))
+        self.assertEqual(native_report.fixture_scenario_outcome(text, 'native targeted repair and preservation'),
+                         native_report.FAILED)
+
+    def test_the_marker_names_the_scenario_and_its_transition(self):
+        self.assertEqual(native_report.fixture_marker('native bundle exposure', native_report.FIXTURE_STARTED),
+                         'native scenario native bundle exposure started')
+        with self.assertRaises(ValueError):
+            native_report.fixture_marker('native bundle exposure', 'maybe')
+
+    def test_the_outcome_query_answers_from_the_fixture_report(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-fixture-report-") as temporary:
+            log = Path(temporary) / "fixture.log"
+            log.write_text(self.report(native_report.fixture_marker('native bundle exposure',
+                                                                     native_report.FIXTURE_STARTED),
+                                       native_report.fixture_marker('native bundle exposure',
+                                                                     native_report.PASSED)),
+                           encoding="utf-8")
+            command = [sys.executable, str(SOURCE / "tests" / "native_report.py"),
+                       "--fixture-outcome", "--log", str(log)]
+            passed = subprocess.run(command + ["--scenario", "native bundle exposure"],
+                                    capture_output=True, text=True, timeout=30)
+            unreached = subprocess.run(command + ["--scenario", "native targeted repair and preservation"],
+                                       capture_output=True, text=True, timeout=30)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        self.assertEqual(passed.stdout.strip(), native_report.PASSED)
+        self.assertEqual(unreached.returncode, 0, unreached.stderr)
+        self.assertEqual(unreached.stdout.strip(), native_report.SKIPPED)
+
+    def test_the_outcome_query_reads_a_missing_report_as_never_reached(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-fixture-report-") as temporary:
+            log = Path(temporary) / "absent.log"
+            result = subprocess.run([sys.executable, str(SOURCE / "tests" / "native_report.py"),
+                                     "--fixture-outcome", "--log", str(log),
+                                     "--scenario", "native bundle exposure"],
+                                    capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), native_report.SKIPPED)
+
+
 class ReportStatusTests(unittest.TestCase):
     def records(self, *outcomes):
         log = native_report.ScenarioLog()
@@ -392,6 +458,19 @@ class NativeWindowsReportTests(unittest.TestCase):
                             "the apply-only renderer preparation cannot establish a bundle exposure")
         self.assertTrue(exposure["reason"])
 
+    def assert_fresh_nonacceptance(self, report):
+        """The report this run leaves replaces the verdict of an earlier run.
+
+        A runner that could not execute natively establishes nothing about the
+        target, so its report is unavailable; a native run whose report
+        contract failed is failed.
+        """
+        self.assertFalse(report["acceptance"], "a stale acceptance must never survive a failed report")
+        self.assertNotEqual(report["status"], "passed")
+        self.assertIn("contract", report.get("reason", ""))
+        self.assertTrue(report.get("scenarios"), "the fresh report names the scenarios this run observed")
+        self.assertEqual(report["status"], "failed" if report.get("nativeExecution") else "unavailable")
+
     def test_a_preseeded_acceptance_does_not_survive_a_failed_contract(self):
         with tempfile.TemporaryDirectory(prefix="dotfiles-windows-report-") as temporary:
             report_directory = Path(temporary) / "report"
@@ -403,8 +482,7 @@ class NativeWindowsReportTests(unittest.TestCase):
                                        "-ReportDirectory", str(report_directory), environment=environment)
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             report = json.loads(stale.read_text())
-        self.assertFalse(report["acceptance"], "a stale acceptance must never survive a failed report")
-        self.assertEqual(report["status"], "failed")
+        self.assert_fresh_nonacceptance(report)
 
     def test_a_failed_assembler_publishes_no_stale_report(self):
         with tempfile.TemporaryDirectory(prefix="dotfiles-windows-report-") as temporary:
@@ -417,8 +495,7 @@ class NativeWindowsReportTests(unittest.TestCase):
                                        "-ReportDirectory", str(report_directory), environment=environment)
             self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
             report = json.loads(stale.read_text())
-        self.assertFalse(report["acceptance"], "a failed assembler must not publish a stale verdict")
-        self.assertEqual(report["status"], "failed")
+        self.assert_fresh_nonacceptance(report)
         self.assertIn("contract", report["reason"])
 
 

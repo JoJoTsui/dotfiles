@@ -8,7 +8,10 @@ unavailable rather than passed.
 
 An adapter observes a run and writes down what it saw. It hands those facts
 to this module, which turns them into the report every native verification
-leaves, so the verdict has one owner instead of one per adapter.
+leaves, so the verdict has one owner instead of one per adapter. This module
+also owns the vocabulary a native fixture uses to report the transition each
+of its own scenarios reached, so an adapter reads what the fixture observed
+instead of inferring an outcome from an exit status.
 """
 from __future__ import annotations
 
@@ -16,6 +19,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +30,19 @@ SKIPPED = "skipped"
 UNAVAILABLE = "unavailable"
 
 OUTCOMES = (PASSED, FAILED, SKIPPED, UNAVAILABLE)
+
+# The transition a native fixture reports for one scenario. The fixture states
+# that it started a scenario before it works on it, and that it passed the
+# scenario when the work succeeded, so an adapter reads what the fixture
+# observed instead of inferring an outcome from an exit status.
+FIXTURE_STARTED = "started"
+FIXTURE_TRANSITIONS = (FIXTURE_STARTED, PASSED, FAILED)
+# The marker a fixture prints for one transition, and the pattern that reads
+# it back. The scenario name keeps its own words, so the marker is read as
+# the transition it states.
+FIXTURE_MARKER = "native scenario"
+_FIXTURE_MARKER_PATTERN = re.compile(
+    r"\bnative scenario (?P<name>.+?) (?P<outcome>started|passed|failed)\b")
 
 UNKNOWN = "unknown"
 # The identity fields the verification notes declare for every native report.
@@ -188,6 +205,35 @@ class ScenarioLog:
         return [record["name"] for record in self._records]
 
 
+def fixture_marker(name: str, outcome: str) -> str:
+    """The marker line a native fixture prints for one scenario transition."""
+    if outcome not in FIXTURE_TRANSITIONS:
+        raise ValueError(f"unknown fixture transition: {outcome}")
+    return f"{FIXTURE_MARKER} {name} {outcome}"
+
+
+def fixture_scenario_outcome(text: str, name: str) -> str | None:
+    """The outcome one scenario reached in a native fixture's report.
+
+    A scenario the fixture reported as passed passed. A scenario the fixture
+    started and never reported as passed failed, because the run stopped
+    inside it. A scenario the fixture never started was never reached, and a
+    scenario that was never reached is not a failure of that scenario.
+    """
+    started = False
+    for line in text.splitlines():
+        match = _FIXTURE_MARKER_PATTERN.search(line)
+        if match is None or match.group("name") != name:
+            continue
+        outcome = match.group("outcome")
+        if outcome == PASSED:
+            return PASSED
+        if outcome == FAILED:
+            return FAILED
+        started = True
+    return FAILED if started else None
+
+
 def counts(records):
     """The number of scenarios per outcome."""
     counted = {outcome: 0 for outcome in OUTCOMES}
@@ -292,7 +338,24 @@ def main(argv=None) -> int:
                         help="print the checkout identity the run verified and exit")
     parser.add_argument("--expected-revision", default=None,
                         help="the revision the run was asked to verify")
+    parser.add_argument("--fixture-outcome", action="store_true",
+                        help="print the outcome a native fixture reported for one scenario")
+    parser.add_argument("--log", help="the fixture report the outcome is read from")
+    parser.add_argument("--scenario", help="the scenario whose outcome is reported")
     arguments = parser.parse_args(argv)
+    if arguments.fixture_outcome:
+        if not (arguments.log and arguments.scenario):
+            print("native report: the fixture report and the scenario are required", file=sys.stderr)
+            return 1
+        try:
+            reported = Path(arguments.log).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            reported = ""
+        outcome = fixture_scenario_outcome(reported, arguments.scenario)
+        # A scenario the fixture never started did not run, so it answers with
+        # the outcome vocabulary instead of a word of its own.
+        print(outcome if outcome else SKIPPED)
+        return 0
     if arguments.identity:
         if not arguments.source:
             print("native report: the identity needs the checkout the run verified", file=sys.stderr)

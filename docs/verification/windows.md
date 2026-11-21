@@ -44,6 +44,16 @@ run attempted:
   the known folder fallback. Every record carries an outcome of `passed`,
   `failed`, `skipped`, or `unavailable`, and every record that did not pass
   carries the reason why.
+- The native fixture states the transition it reached for each of its own
+  scenarios: it reports that a scenario started before it works on it, and
+  that the scenario passed when the work succeeded. The adapter reads those
+  reports through the shared contract, which owns the marker vocabulary. A
+  scenario the fixture started and never passed failed inside it, so a broken
+  bundle exposure, a broken agent state, or a broken targeted repair is a
+  failed scenario instead of a skipped one. A scenario the fixture never
+  started was never reached, and that is a skipped scenario with its reason,
+  not a failure of that scenario. The deployment tests keep their own guard:
+  a failed test run is a failed scenario whatever the fixture reported.
 - `required` names the scenarios a native Windows run has to establish, with
   the outcome each one reached. A required scenario that did not pass withholds
   the acceptance instead of sitting beside it.
@@ -60,8 +70,11 @@ reason.
 Every file the run writes carries the run's own name, and the assembled report
 is published as `windows.json` only after the shared contract succeeded and
 named the checkout the run established. A contract that cannot assemble the
-report replaces `windows.json` with a failed one, so a report left behind by an
-earlier run can never be published as this run's verdict.
+report replaces `windows.json` with a fresh report of this run, so a report
+left behind by an earlier run can never be published as this run's verdict.
+That replacement follows the shared rule for the status: a runner that could
+not execute natively is `unavailable`, and a native run whose report contract
+failed is `failed`. Neither carries an acceptance.
 
 A runner that is not native Windows x86-64 cannot execute the target, so the
 preflight records `unavailable` and the report answers `status: unavailable`
@@ -74,7 +87,10 @@ establish that the preflight, the skipped scenarios, the checkout identity, and
 the missing acceptance behave as described, and that a report contract which
 fails leaves no acceptance behind. That evidence covers the report contract
 only; the native Windows install, the client discovery, and the console
-behavior above still need a Windows runner.
+behavior above still need a Windows runner. The rule that turns the fixture's
+own reports into scenario outcomes is covered by a portable check of the shared
+contract; the end-to-end mapping of a native fixture run into the report
+remains a Windows-runner claim.
 
 The native rows above were verified by the GitHub-hosted Windows runner, not by
 this Linux session. A separate `desktop` job also runs the native install with
