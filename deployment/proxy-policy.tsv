@@ -8,6 +8,7 @@
 # Loopback never goes through the proxy, so the local agent daemons stay
 # reachable in every section.
 install-managers|yes|manager releases are fetched from GitHub
+magpie-snapshot|no|the client settings backup is local
 apply-source.skills|yes|skill clones and archive downloads
 install-agents|yes|agent packages are fetched from the npm registry
 magpie-apply|yes|provider requests leave through the device proxy

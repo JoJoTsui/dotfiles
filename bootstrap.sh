@@ -55,8 +55,15 @@ report_failure() {
 # A step runs with the proxy when the policy says it needs one, and without
 # it otherwise. The rules live in deployment/proxy-policy.tsv.
 run_step() {
+    if "$DEPLOY_PLAN"; then
+        DEPLOY_STEPS+=("$1")
+        return 0
+    fi
     DEPLOY_STEP=$1
     shift
+    if [ "${DOTFILES_STEP_TRACE:-0}" = 1 ]; then
+        printf 'dotfiles: step %s started\n' "$DEPLOY_STEP" >&2
+    fi
     if deploy_step_uses_proxy "$DEPLOY_STEP"; then
         deploy_proxy_ensure
         deploy_proxy_env_on
@@ -67,6 +74,46 @@ run_step() {
     fi
     deploy_proxy_env_off
     "$@"
+}
+
+snapshot_magpie_clients() {
+    DEPLOY_MAGPIE_BACKUP_SOURCE=$(magpie_snapshot_clients) || fail 'cannot snapshot the client settings before deployment'
+}
+
+apply_source() {
+    "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false
+    "$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
+}
+
+deploy_steps() {
+    if "$DEPLOY_MAGPIE_SELECTED"; then
+        run_step magpie-snapshot snapshot_magpie_clients
+    fi
+    run_step install-managers install_managers
+    run_step apply-source apply_source
+    run_step apply-source.skills prepare_skill_library
+    run_step apply-source.agent-payload deploy_agent_payload
+    run_step apply-source.skills-prune prune_managed_skills
+    if ! "$DEPLOY_PLAN"; then cleanup_skill_library; fi
+    run_step apply-source.client-settings deploy_client_settings
+    run_step apply-source.macos-discovery deploy_macos_config
+    if "$DEPLOY_AGENTS_ONLY"; then
+        run_step install-agents install_agents
+    elif ! "$DEPLOY_APPLY_ONLY"; then
+        run_step install-installer-tools install_installer_tools
+        run_step install-common install_common
+        run_step install-agents install_agents
+        if "$DEPLOY_PROXY"; then run_step install-proxy install_proxy; fi
+        if "$DEPLOY_MAGPIE_SELECTED"; then run_step magpie-apply magpie_apply; fi
+    fi
+    if ! "$DEPLOY_MAGPIE_SELECTED" && ! "$DEPLOY_PLAN"; then
+        printf 'dotfiles: magpie: skipped; %s\n' "$DEPLOY_MAGPIE_REASON"
+    fi
+    if ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
+        run_step prepare-shell prepare_shell
+    fi
+    if "$DEPLOY_SYSTEM_CONFIG"; then run_step configure-system configure_system; fi
+    if "$DEPLOY_LOGIN_SHELL"; then run_step set-login-shell set_login_shell; fi
 }
 
 while [ "$#" -gt 0 ]; do
@@ -183,7 +230,9 @@ case "$DEPLOY_PLATFORM" in
         DEPLOY_MAGPIE_REASON='Magpie is not available on native Windows'
         ;;
 esac
+DEPLOY_MAGPIE_SELECTED=false
 if "$DEPLOY_MAGPIE" && ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
+    DEPLOY_MAGPIE_SELECTED=true
     actions=()
     for action in "${DEPLOY_ACTIONS[@]}"; do
         actions+=("$action")
@@ -197,6 +246,8 @@ if "$DEPLOY_LOGIN_SHELL"; then DEPLOY_ACTIONS+=(set-login-shell); fi
 if "$DEPLOY_PLAN"; then
     # An invalid device override is rejected before the plan is printed.
     validate_version_overrides
+    DEPLOY_STEPS=()
+    deploy_steps
     printf '{"platform":'; json_string "$DEPLOY_PLATFORM"
     printf ',"role":'; json_string "$DEPLOY_ROLE"
     printf ',"arch":'; json_string "$DEPLOY_ARCH"
@@ -220,6 +271,7 @@ printf ',"installerTools":'; if "$DEPLOY_AGENTS_ONLY"; then printf '[]'; else pr
     printf ',"proxy":'; if "$DEPLOY_PROXY"; then printf 'true'; else printf 'false'; fi
     printf ',"magpie":'; if "$DEPLOY_MAGPIE"; then printf 'true'; else printf 'false'; fi
     printf ',"actions":'; json_array "${DEPLOY_ACTIONS[@]}"
+    printf ',"steps":'; json_array "${DEPLOY_STEPS[@]}"
     printf ',"roots":{"config":'; json_string "$DEPLOY_HOME/.config"
     printf ',"data":'; json_string "$DEPLOY_HOME/.local/share"
     printf ',"state":'; json_string "$DEPLOY_HOME/.local/state"
@@ -246,7 +298,7 @@ fi
 # account, so fail closed before any state is created. The resolver reads the
 # current account home from the native account database and compares it with
 # the target on the native platform; inherited HOME is never an authority.
-if "$DEPLOY_MAGPIE" && ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
+if "$DEPLOY_MAGPIE_SELECTED"; then
     if ! installer_real_account_home; then
         fail 'the Magpie gateway step cannot target a simulated or foreign home; re-run with --no-magpie'
     fi
@@ -318,39 +370,7 @@ mkdir -p "$HOME/.local/bin" "$XDG_CONFIG_HOME/chezmoi" "$TMPDIR" "$XDG_RUNTIME_D
 chmod 700 "$XDG_RUNTIME_DIR"
 DEPLOY_MAGPIE_BACKUP_SOURCE=''
 trap 'cleanup_skill_library; stop_deployment_proxy; if [ -n "$DEPLOY_MAGPIE_BACKUP_SOURCE" ]; then rm -rf "$DEPLOY_MAGPIE_BACKUP_SOURCE"; fi' EXIT
-if "$DEPLOY_MAGPIE" && ! "$DEPLOY_APPLY_ONLY" && ! "$DEPLOY_AGENTS_ONLY"; then
-    DEPLOY_STEP=magpie-snapshot
-    DEPLOY_MAGPIE_BACKUP_SOURCE=$(magpie_snapshot_clients) || fail 'cannot snapshot the client settings before deployment'
-fi
-run_step install-managers install_managers
-DEPLOY_STEP=apply-source
-"$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force init --data=false
-"$DEPLOY_CHEZMOI" --source "$DEPLOY_SOURCE" --destination "$HOME" --config "$XDG_CONFIG_HOME/chezmoi/chezmoi.toml" --cache "$XDG_CACHE_HOME/chezmoi" --persistent-state "$XDG_CONFIG_HOME/chezmoi/chezmoistate.boltdb" --no-tty --force apply
-run_step apply-source.skills prepare_skill_library
-run_step apply-source.agent-payload deploy_agent_payload
-run_step apply-source.skills-prune prune_managed_skills
-cleanup_skill_library
-run_step apply-source.client-settings deploy_client_settings
-run_step apply-source.macos-discovery deploy_macos_config
-if "$DEPLOY_AGENTS_ONLY"; then
-    run_step install-agents install_agents
-    printf 'dotfiles: magpie: skipped; %s\n' "$DEPLOY_MAGPIE_REASON"
-elif ! "$DEPLOY_APPLY_ONLY"; then
-    run_step install-installer-tools install_installer_tools
-    run_step install-common install_common
-    run_step install-agents install_agents
-    if "$DEPLOY_PROXY"; then run_step install-proxy install_proxy; fi
-    if "$DEPLOY_MAGPIE"; then
-        run_step magpie-apply magpie_apply
-    else
-        printf 'dotfiles: magpie: skipped; %s\n' "$DEPLOY_MAGPIE_REASON"
-    fi
-    run_step prepare-shell prepare_shell
-else
-    printf 'dotfiles: magpie: skipped; %s\n' "$DEPLOY_MAGPIE_REASON"
-fi
-if "$DEPLOY_SYSTEM_CONFIG"; then run_step configure-system configure_system; fi
-if "$DEPLOY_LOGIN_SHELL"; then run_step set-login-shell set_login_shell; fi
+deploy_steps
 if "$DEPLOY_AGENTS_ONLY"; then
     printf 'dotfiles: applied agent files and selected packages for %s to %s (copy mode)\n' "$DEPLOY_PROFILE" "$HOME"
 else

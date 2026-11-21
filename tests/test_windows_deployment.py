@@ -1301,6 +1301,26 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         self.assertFalse(self.home.exists())
         self.assert_original_profile_unchanged()
 
+    def test_ordered_bootstrap_plan_preserves_legacy_actions(self):
+        cases = (
+            ((), ["install-common", "install-agents", "install-magpie-cli", "prepare-shell"],
+             ["install-managers", "apply-source"], ["install-managers", "apply-source"]),
+            (("-NoMagpie",), ["install-common", "install-agents", "prepare-shell"],
+             ["install-managers", "apply-source"], ["install-managers", "apply-source"]),
+            (("-ApplyOnly",), [], ["apply-source"], ["install-managers", "apply-source"]),
+            (("-AgentsOnly",), ["install-agents"], ["apply-source"], ["install-managers", "apply-source"]),
+        )
+        for args, suffix, actions, steps in cases:
+            with self.subTest(args=args):
+                result = self.deploy("-Plan", *args, env=dict(self.env, DOTFILES_STEP_TRACE="1"))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                plan = json.loads(result.stdout)
+                self.assertEqual(plan["actions"], actions + suffix)
+                self.assertEqual(plan["steps"], steps + suffix)
+                self.assertNotIn(" started", result.stderr)
+                self.assertFalse(self.home.exists())
+        self.assert_original_profile_unchanged()
+
     def test_mirror_selection_is_planned_and_invalid_values_fail_before_writes(self):
         result = self.deploy('-Plan', env=dict(self.env, DOTFILES_MIRROR='upstream'))
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -1344,11 +1364,16 @@ Invoke-Tool $env:DOTFILES_TEST_COMMAND @() -Quiet -ShowFailureOutput
         native_nu_history = self.home / 'AppData/Roaming/nushell/history.txt'
         native_nu_history.parent.mkdir(parents=True)
         native_nu_history.write_text('synthetic-existing-native-history\n')
-        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi,
+        environment = dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_STEP_TRACE='1',
                            GLM_API_TOKEN='synthetic-quote"\\\n$`', KIMI_API_KEY='synthetic-quote"\\\n$`')
         for role in ('remote-compute', 'workstation'):
-            result = self.deploy('-ApplyOnly', '-Source', str(source), '-Role', role, env=environment)
+            arguments = ('-ApplyOnly', '-Source', str(source), '-Role', role)
+            planned = self.deploy('-Plan', *arguments, env=environment)
+            self.assertEqual(planned.returncode, 0, planned.stderr)
+            result = self.deploy(*arguments, env=environment)
             self.assertEqual(result.returncode, 0, result.stderr)
+            observed = re.findall(r'^dotfiles: step ([a-z.-]+) started$', result.stderr, re.MULTILINE)
+            self.assertEqual(observed, json.loads(planned.stdout)['steps'])
             self.assertIn('uncommitted-windows-source', (self.home / '.env_core').read_text())
             self.assertTrue(json.loads(settings.read_text())['deviceOnly'])
             self.assertNotIn('ANTHROPIC_AUTH_TOKEN', json.loads(settings.read_text())['env'])
@@ -2146,8 +2171,15 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.env['DOTFILES_ROLE'] = role
         bundles = [name for name in os.environ.get('DOTFILES_TEST_WINDOWS_BUNDLES', '').split(',') if name]
         selection = ('-Bundles', ','.join(bundles)) if bundles else ()
-        result = self.deploy('-Role', role, *selection)
+        arguments = ('-Role', role, *selection)
+        traced = dict(self.env, DOTFILES_STEP_TRACE='1')
+        planned = self.deploy('-Plan', *arguments, env=traced)
+        self.assertEqual(planned.returncode, 0, planned.stderr)
+        self.assertFalse(self.home.exists())
+        result = self.deploy(*arguments, env=traced)
         self.assertEqual(result.returncode, 0, result.stderr)
+        observed = re.findall(r'^dotfiles: step ([a-z.-]+) started$', result.stderr, re.MULTILINE)
+        self.assertEqual(observed, json.loads(planned.stdout)['steps'])
         self.assertIn('sync pending activation', result.stdout)
         environment = self.env.copy()
         environment.update(HOME=str(self.home), USERPROFILE=str(self.home), APPDATA=str(self.home / 'AppData/Roaming'),
