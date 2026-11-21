@@ -64,7 +64,7 @@ The managed `dotfiles-agents` command wraps the same boundary:
 ```bash
 dotfiles-agents install all          # apply source, install selected agents
 dotfiles-agents update claude,codex  # resolve pins, refresh locks, reinstall
-dotfiles-agents status               # compare pinned and installed versions
+dotfiles-agents status               # show intent, last apply, and live command
 ```
 
 `install` runs `bootstrap.sh --agents-only` (or `bootstrap.ps1` on native
@@ -104,13 +104,18 @@ rewrites the pin and its Bun lock, and reinstalls the selected clients:
 ```bash
 dotfiles-agents update claude      # one client
 dotfiles-agents update all         # every selected client
-dotfiles-agents status             # pinned, device-owned, and installed versions
+dotfiles-agents status             # show intent, last apply, and live command
 ```
 
 `update` never invokes a vendor self-updater and never edits the device's
 global Bun registry. A device-owned version in
-`~/.config/dotfiles/versions.tsv` stays in effect; `status` reports it as
-device-owned rather than as a mismatch.
+`~/.config/dotfiles/versions.tsv` stays in effect and is shown next to
+the catalog's exact pin or floor. The last apply is reported separately and
+may be unavailable. The live row shows the executable selected by PATH and
+the version reported by a successful probe. An unverifiable provider is
+left unverified even when the version satisfies the policy. A failed probe
+is unverified, while an observed policy mismatch or difference from the
+last apply is drift.
 
 Lock generation requires the exact Bun pin from the common catalog. When a
 proposal changes Bun-managed pins, `update` reuses the selected Bun only at that

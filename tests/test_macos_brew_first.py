@@ -465,7 +465,9 @@ class MacosBrewFirstTests(unittest.TestCase):
         line = next(line for line in result.stdout.splitlines() if line.startswith("kimi "))
         self.assertIn("homebrew", line)
         self.assertIn(record["floor"], line)
+        self.assertIn("last apply: unavailable", line)
         self.assertIn("installed", line)
+        self.assertIn("provider: unverified | version: 9.9.9", line)
         self.assertNotIn("mismatch", line)
 
     def test_status_reports_a_device_owned_version_as_device_owned(self):
@@ -479,6 +481,8 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.assertIn("bun", line)
         self.assertIn("8.8.8", line)
         self.assertIn("device-owned version", line)
+        self.assertIn("last apply: bun 8.8.8", line)
+        self.assertIn("live: installed | provider: bun | version: 8.8.8", line)
 
 
 if __name__ == "__main__":
