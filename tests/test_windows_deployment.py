@@ -104,6 +104,62 @@ $asset | ConvertTo-Json -Compress
         self.assertTrue(asset["url"].startswith("https://"))
         self.assertRegex(asset["sha256"], r"^[a-f0-9]{64}$")
 
+    def test_agent_status_keeps_catalog_record_and_live_evidence_separate(self):
+        status = self.root / 'dotfiles-agents.ps1'
+        template = SOURCE / 'dot_local/bin/executable_dotfiles-agents.ps1.tmpl'
+        status.write_text(template.read_text(encoding='utf-8'), encoding='utf-8')
+        tools = self.root / 'shadow tools'
+        tools.mkdir()
+        binary = tools / ('pi.cmd' if os.name == 'nt' else 'pi')
+        state = self.home / '.local/state'
+        ledger = state / 'dotfiles/agents.lock.tsv'
+        ledger.parent.mkdir(parents=True)
+        ledger.write_text('pi|bun|1.5.0\n', encoding='utf-8')
+        override = self.home / '.config/dotfiles/versions.tsv'
+        override.parent.mkdir(parents=True)
+        override.write_text('agent|pi|8.8.8\n', encoding='utf-8')
+        env = dict(self.env, HOME=str(self.home), USERPROFILE=str(self.home),
+                   XDG_STATE_HOME=str(state), DOTFILES_SOURCE=str(SOURCE),
+                   PATH=str(tools) + os.pathsep + self.env['PATH'])
+
+        for version, code, outcome in (
+            ('8.8.8', 27, 'unverified (probe exited 27)'),
+            ('8.8.80', 0, 'drift (version or provider mismatch)'),
+            ('8.8.8', 0, 'installed (drift since last apply)'),
+        ):
+            with self.subTest(version=version, code=code):
+                if os.name == 'nt':
+                    binary.write_bytes(f'@echo off\r\necho {version}\r\nexit /b {code}\r\n'.encode('ascii'))
+                else:
+                    binary.write_text(f'#!/bin/sh\necho {version}\nexit {code}\n', encoding='utf-8')
+                    binary.chmod(0o755)
+                result = subprocess.run(
+                    [POWERSHELL, '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(status), 'status', 'pi'],
+                    cwd=self.root, env=env, capture_output=True, text=True, timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(f'intent: bun ={agent_pins()["pi"]["version"]}', result.stdout)
+                self.assertIn('override: bun =8.8.8 (device-owned version)', result.stdout)
+                self.assertIn('last apply: bun 1.5.0', result.stdout)
+                self.assertIn(f'live: {outcome}', result.stdout)
+                self.assertIn(f'provider: unverified | version: {version if code == 0 else "-"}', result.stdout)
+                self.assertIn(f'path: {binary}', result.stdout)
+
+        ledger.unlink()
+        package = self.home / '.bun/managed/pi/node_modules' / agent_pins()['pi']['package']
+        package.mkdir(parents=True)
+        managed = package / binary.name
+        shutil.copy2(binary, managed)
+        result = subprocess.run(
+            [POWERSHELL, '-NoLogo', '-NoProfile', '-NonInteractive', '-File', str(status), 'status', 'pi'],
+            cwd=self.root, env=dict(env, PATH=str(package) + os.pathsep + env['PATH']),
+            capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('last apply: unavailable', result.stdout)
+        self.assertIn('live: installed | provider: bun | version: 8.8.8', result.stdout)
+        self.assertIn(f'path: {managed}', result.stdout)
+
     def asset_version_fixture(self, name, *, cached=None, downloaded=None):
         asset = windows_assets()[name]
         target = self.home / asset['target']
