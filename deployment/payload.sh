@@ -117,6 +117,12 @@ payload_instruction() {
         content="$content"$'\n\n'"$(cat "$overlay"; printf '.')"
         content=${content%.}
     fi
+    if [ "${DEPLOY_T9K_JOBS:-0}" = 1 ]; then
+        overlay="$DEPLOY_SOURCE/deployment/agent-payload/overlays/t9k.md"
+        [ -f "$overlay" ] || fail "missing T9K overlay: $overlay"
+        content="$content"$'\n\n'"$(cat "$overlay"; printf '.')"
+        content=${content%.}
+    fi
     case "$existing" in
         *"$start"*)
             prefix=${existing%%"$start"*}

@@ -61,6 +61,7 @@ sourceDir = {{ .chezmoi.sourceDir | quote }}
     role = {{ $role | quote }}
     arch = {{ $arch | quote }}
     class = {{ $class | quote }}
+    t9kJobs = {{ and (eq $class "t9k") (or (eq $legacy "t9k") (eq (env "DOTFILES_T9K_JOBS") "1")) }}
     proxyUrl = {{ $proxy | quote }}
     mirror = {{ $mirror | quote }}
     kimiApiKey = {{ $kimiKey | quote }}

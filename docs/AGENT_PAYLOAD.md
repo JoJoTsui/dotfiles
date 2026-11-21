@@ -16,7 +16,8 @@ Host-specific text (absolute shared-mount paths, the proxy route, Caveman/Herdr
 daemon names) belongs outside that block in the client's user file; the block
 replacement preserves it. Platform command differences live in
 `deployment/agent-payload/overlays/<platform>.md` and are concatenated into the
-block; the core stays portable.
+block. The `t9k` preset also appends `overlays/t9k.md`, which routes job requests
+to the deployed T9K runbook.
 - `retire`: remove a previously owned instruction block from a target that is no
   longer managed, preserving device text and deleting the file when nothing else
   remains. It is idempotent and runs on every deployment.

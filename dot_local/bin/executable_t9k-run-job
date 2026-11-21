@@ -1,0 +1,398 @@
+#!/usr/bin/env bash
+set -euo pipefail
+#
+# t9k-run-job - submit a PyTorchTrainingJob with kubectl from this SSH pod.
+#
+# Auth: service account aim-xzy/managed-project-sa (kubeconfig-incluster.yaml).
+# Default mounts replicate the notebook host:
+#   /t9k/mnt/joey       <- ssd-joey
+#   /t9k/mnt/omics      <- omics-cephfs
+#   /t9k/mnt/scllm      <- scllm-cephfs
+#   /t9k/mnt/WorkSpace  <- neoantigen
+#   /t9k/mnt/hdd        <- obs-xuzy
+# Plus /dev/shm as a memory emptyDir for GPU jobs (16Gi default).
+# GPUs are shared (nvidia.com/gpu.shared) unless --standalone-gpu is given.
+# A quota pre-check against Project aim-xzy refuses submissions that would
+# exceed CPU / memory / pod / GPU limits.
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+KUBECONFIG_FILE="${HERE}/../share/dotfiles/t9k-automation/kubeconfig-incluster.yaml"
+
+NAME=""
+SCRIPT=""
+CMD=()
+ARGS=()
+ENVS=()
+WORKDIR="/t9k/mnt/hdd"
+IMAGE="registry.ibmc.t9kcloud.cn/t9kpublic/jupyterlab-torch-2.5.0:20241031-sudo"
+GPU=1
+GPU_MODE="shared"
+CPU_REQUEST="500m"
+MEM_REQUEST="500Mi"
+CPU_LIMIT="20"
+MEM_LIMIT="100Gi"
+SHM=""
+QUEUE="a40"
+PRIORITY="0"
+PROJECT="aim-xzy"
+EXTRA_MOUNTS=()
+DEFAULT_MOUNTS=1
+DRY_RUN=0
+WAIT=1
+SHOW_LOGS=1
+QUOTA_CHECK=1
+QUOTA_OVERRIDE=0
+PRINT_ONLY=0
+
+usage() {
+  cat <<'USAGE'
+Usage: t9k-run-job -n NAME (-s SCRIPT | -c COMMAND) [options] [-- job args...]
+
+Core:
+  -n, --name NAME        Job name, unique in the project (required)
+  -s, --script PATH      Run `bash PATH` (script must be on a mounted volume)
+  -c, --command STR      Custom command, split on spaces (alternative to -s)
+  -w, --workdir DIR      workingDir (default /t9k/mnt/hdd)
+  -i, --image IMAGE      Container image (default jupyterlab-torch-2.5.0)
+  --env KEY=VALUE        Extra environment variable (repeatable)
+  --                     Everything after this is passed to the job as args
+
+Resources:
+  -g, --gpu N            GPUs to request (default 1, 0 for CPU-only)
+      --standalone-gpu   Use nvidia.com/gpu instead of nvidia.com/gpu.shared
+      --shm SIZE         /dev/shm sizeLimit (default 16Gi for GPU jobs, 0 = off)
+      --cpu-limit V      limits.cpu (default 20)
+      --mem-limit V      limits.memory (default 100Gi)
+      --cpu-request V    requests.cpu (default 500m)
+      --mem-request V    requests.memory (default 500Mi)
+  -q, --queue NAME       t9k scheduler queue (default a40)
+      --priority N       t9k scheduler priority (default 0)
+
+Mounts:
+      --no-default-mounts    Do not mount the five default PVCs
+      --mount PVC:/path      Extra persistentVolumeClaim mount (repeatable)
+
+Control:
+  -p, --project NAME     Namespace/project (default aim-xzy)
+      --dry-run          Server-side validation + quota check, nothing created
+      --print            Print the rendered manifest and exit
+      --no-wait          Return right after creation
+      --no-logs          Do not print container logs when finished
+      --skip-quota-check Do not refuse over-quota submissions
+      --force            Submit even if the quota check fails
+  -h, --help
+
+Examples:
+  # 3 shared GPUs with 32Gi /dev/shm, like neovar-3gpu-ds-2
+  t9k-run-job -n train-example -s /t9k/mnt/joey/project/train.sh \
+      -w /t9k/mnt/joey/project -g 3 --shm 32Gi \
+      --cpu-limit 12 --mem-limit 48Gi -- --devices 3 --batch-size 128
+
+  # CPU-only job, inline command
+  t9k-run-job -n cpu-smoke -c "printf ok" -g 0 \
+      -w /tmp --no-default-mounts --cpu-limit 1 --mem-limit 1Gi --dry-run
+
+  # render without contacting the cluster
+  t9k-run-job -n smoke-print -s /t9k/mnt/joey/project/task.sh --print
+USAGE
+}
+
+die() { echo "error: $*" >&2; exit 1; }
+
+# YAML scalar values are emitted on a single line.
+for argument in "$@"; do
+  [[ "$argument" != *[[:cntrl:]]* ]] || die "control characters are unsupported in arguments"
+done
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -n|--name) NAME="$2"; shift 2 ;;
+    -s|--script) SCRIPT="$2"; shift 2 ;;
+    -c|--command) read -r -a CMD <<< "$2"; shift 2 ;;
+    -w|--workdir) WORKDIR="$2"; shift 2 ;;
+    -i|--image) IMAGE="$2"; shift 2 ;;
+    -g|--gpu) GPU="$2"; shift 2 ;;
+    --standalone-gpu) GPU_MODE="standalone"; shift ;;
+    --shm) SHM="$2"; shift 2 ;;
+    --cpu-limit) CPU_LIMIT="$2"; shift 2 ;;
+    --mem-limit) MEM_LIMIT="$2"; shift 2 ;;
+    --cpu-request) CPU_REQUEST="$2"; shift 2 ;;
+    --mem-request) MEM_REQUEST="$2"; shift 2 ;;
+    -q|--queue) QUEUE="$2"; shift 2 ;;
+    --priority) PRIORITY="$2"; shift 2 ;;
+    -p|--project) PROJECT="$2"; shift 2 ;;
+    --env) ENVS+=("$2"); shift 2 ;;
+    --mount) EXTRA_MOUNTS+=("$2"); shift 2 ;;
+    --no-default-mounts) DEFAULT_MOUNTS=0; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    --print) PRINT_ONLY=1; shift ;;
+    --no-wait) WAIT=0; shift ;;
+    --no-logs) SHOW_LOGS=0; shift ;;
+    --skip-quota-check) QUOTA_CHECK=0; shift ;;
+    --force) QUOTA_OVERRIDE=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; ARGS+=("$@"); break ;;
+    *) die "unknown argument: $1 (see --help)" ;;
+  esac
+done
+
+[[ -n "$NAME" ]] || die "--name is required"
+[[ -n "$SCRIPT" || ${#CMD[@]} -gt 0 ]] || die "--script or --command is required"
+[[ "$GPU" =~ ^(0|[1-9][0-9]*)$ ]] || die "--gpu must be a nonnegative integer"
+[[ "$PRIORITY" =~ ^-?(0|[1-9][0-9]*)$ ]] || die "--priority must be an integer"
+if [[ -n "$SCRIPT" ]]; then
+  [[ ${#CMD[@]} -eq 0 ]] || die "use either --script or --command, not both"
+  CMD=("bash")
+  ARGS=("$SCRIPT" "${ARGS[@]}")
+fi
+
+if [[ -z "$SHM" ]]; then
+  if [[ "$GPU" != 0 ]]; then SHM="16Gi"; else SHM="0"; fi
+fi
+
+GPU_KEY="nvidia.com/gpu.shared"
+[[ "$GPU_MODE" == "standalone" ]] && GPU_KEY="nvidia.com/gpu"
+
+yaml_q() {
+  local v="$1"
+  v="${v//\\/\\\\}"
+  v="${v//\"/\\\"}"
+  printf '"%s"' "$v"
+}
+
+emit_list() { # key indent items...
+  local key="$1" indent="$2"; shift 2
+  if [[ $# -eq 0 ]]; then
+    printf '%s%s: []\n' "$indent" "$key"
+    return
+  fi
+  printf '%s%s:\n' "$indent" "$key"
+  local item
+  for item in "$@"; do
+    printf '%s- %s\n' "$indent" "$(yaml_q "$item")"
+  done
+}
+
+manifest() {
+  local i
+  cat <<YAML
+apiVersion: batch.tensorstack.dev/v1beta1
+kind: PyTorchTrainingJob
+metadata:
+  name: $(yaml_q "$NAME")
+  namespace: $(yaml_q "$PROJECT")
+spec:
+  replicaSpecs:
+  - replicas: 1
+    restartPolicy: Never
+    template:
+      spec:
+        containers:
+        - name: pytorch
+          image: $(yaml_q "$IMAGE")
+          workingDir: $(yaml_q "$WORKDIR")
+YAML
+  emit_list "command" "          " "${CMD[@]}"
+  emit_list "args" "          " "${ARGS[@]}"
+  if [[ ${#ENVS[@]} -gt 0 ]]; then
+    printf '          env:\n'
+    local kv k v
+    for kv in "${ENVS[@]}"; do
+      [[ "$kv" == *=* ]] || die "--env expects KEY=VALUE"
+      k="${kv%%=*}"
+      v="${kv#*=}"
+      printf '          - name: %s\n            value: %s\n' "$(yaml_q "$k")" "$(yaml_q "$v")"
+    done
+  fi
+  cat <<YAML
+          resources:
+            requests:
+              cpu: $(yaml_q "$CPU_REQUEST")
+              memory: $(yaml_q "$MEM_REQUEST")
+            limits:
+              cpu: $(yaml_q "$CPU_LIMIT")
+              memory: $(yaml_q "$MEM_LIMIT")
+YAML
+  if [[ "$GPU" != 0 ]]; then
+    printf '              %s: %s\n' "$GPU_KEY" "$(yaml_q "$GPU")"
+  fi
+  printf '          volumeMounts:\n'
+  if (( DEFAULT_MOUNTS )); then
+    cat <<'YAML'
+          - {name: joey, mountPath: /t9k/mnt/joey}
+          - {name: omics, mountPath: /t9k/mnt/omics}
+          - {name: scllm, mountPath: /t9k/mnt/scllm}
+          - {name: workspace, mountPath: /t9k/mnt/WorkSpace}
+          - {name: hdd, mountPath: /t9k/mnt/hdd}
+YAML
+  fi
+  i=0
+  local m
+  for m in "${EXTRA_MOUNTS[@]}"; do
+    [[ "$m" == *:* ]] || die "--mount expects PVC:/path"
+    printf '          - {name: extra-%d, mountPath: %s}\n' "$i" "$(yaml_q "${m#*:}")"
+    i=$((i + 1))
+  done
+  if [[ "$SHM" != "0" && -n "$SHM" ]]; then
+    printf '          - {name: dshm, mountPath: /dev/shm}\n'
+  fi
+  printf '        volumes:\n'
+  if (( DEFAULT_MOUNTS )); then
+    cat <<'YAML'
+        - {name: joey, persistentVolumeClaim: {claimName: ssd-joey}}
+        - {name: omics, persistentVolumeClaim: {claimName: omics-cephfs}}
+        - {name: scllm, persistentVolumeClaim: {claimName: scllm-cephfs}}
+        - {name: workspace, persistentVolumeClaim: {claimName: neoantigen}}
+        - {name: hdd, persistentVolumeClaim: {claimName: obs-xuzy}}
+YAML
+  fi
+  i=0
+  for m in "${EXTRA_MOUNTS[@]}"; do
+    printf '        - {name: extra-%d, persistentVolumeClaim: {claimName: %s}}\n' "$i" "$(yaml_q "${m%%:*}")"
+    i=$((i + 1))
+  done
+  if [[ "$SHM" != "0" && -n "$SHM" ]]; then
+    printf '        - {name: dshm, emptyDir: {medium: Memory, sizeLimit: %s}}\n' "$(yaml_q "$SHM")"
+  fi
+  cat <<YAML
+    type: worker
+  runMode:
+    debug:
+      enabled: false
+      replicaSpecs: []
+  runPolicy:
+    cleanUpPolicy: None
+  scheduler:
+    t9kScheduler:
+      priority: $PRIORITY
+      queue: $(yaml_q "$QUEUE")
+YAML
+}
+
+quota_check() {
+  local pjson
+  pjson=$("${K[@]}" get projects.tensorstack.dev "$PROJECT" -o json) \
+    || die "cannot read project $PROJECT for quota check"
+  python3 - "$pjson" "$CPU_REQUEST" "$MEM_REQUEST" "$CPU_LIMIT" "$MEM_LIMIT" \
+              "$GPU" "$GPU_KEY" <<'PY'
+import json, re, sys
+
+(pjson, cpu_req, mem_req, cpu_lim, mem_lim, gpu, gpu_key) = sys.argv[1:8]
+gpu = int(gpu)
+
+def cpu_m(s):
+    s = str(s)
+    return float(s[:-1]) if s.endswith('m') else float(s) * 1000.0
+
+def mem_b(s):
+    s = str(s)
+    m = re.fullmatch(r'([0-9.]+)([KMGTPE]i?)?', s)
+    if not m:
+        raise SystemExit(f'cannot parse memory quantity: {s}')
+    n = float(m.group(1)); u = m.group(2) or ''
+    binary = {'Ki': 2**10, 'Mi': 2**20, 'Gi': 2**30, 'Ti': 2**40, 'Pi': 2**50}
+    decimal = {'K': 1e3, 'M': 1e6, 'G': 1e9, 'T': 1e12, 'P': 1e15}
+    return n * (binary.get(u) or decimal.get(u) or 1)
+
+def fmt_cpu(v):
+    return f'{v/1000:.2f}'.rstrip('0').rstrip('.') if v >= 1000 else f'{v:.0f}m'
+
+def fmt_mem(v):
+    for u, f in (('Ti', 2**40), ('Gi', 2**30), ('Mi', 2**20)):
+        if v >= f:
+            return f'{v/f:.1f}'.rstrip('0').rstrip('.') + u
+    return f'{v:.0f}B'
+
+proj = json.loads(pjson)
+q = (proj.get('status') or {}).get('resourceQuota') or {}
+hard = q.get('hard') or {}
+used = q.get('used') or {}
+
+rows = []
+def add(label, key, new, conv, fmt):
+    if key not in hard:
+        return
+    h = conv(hard[key]); u = conv(used.get(key, '0')); n = conv(new) if not isinstance(new, (int, float)) else new
+    rows.append((label, u, n, h, fmt))
+
+add('pods', 'pods', 1, float, lambda v: f'{v:.0f}')
+add('requests.cpu', 'cpu', cpu_req, cpu_m, fmt_cpu)
+add('requests.memory', 'memory', mem_req, mem_b, fmt_mem)
+add('limits.cpu', 'limits.cpu', cpu_lim, cpu_m, fmt_cpu)
+add('limits.memory', 'limits.memory', mem_lim, mem_b, fmt_mem)
+if gpu > 0:
+    add(f'requests.{gpu_key}', f'requests.{gpu_key}', float(gpu), float, lambda v: f'{v:.0f}')
+
+print(f'quota {proj["metadata"]["name"]} (used -> after -> hard):')
+over = []
+for label, u, n, h, fmt in rows:
+    after = u + n
+    flag = 'OVER' if after > h + 1e-9 else 'ok'
+    if flag == 'OVER':
+        over.append(label)
+    print(f'  {label:<34} {fmt(u):>8} -> {fmt(after):>8} -> {fmt(h):>8}  {flag}')
+
+if over:
+    print('over quota: ' + ', '.join(over))
+    sys.exit(3)
+PY
+}
+
+K=(kubectl --kubeconfig "$KUBECONFIG_FILE")
+
+# Render completely before sending a manifest to the API.
+rendered=$(manifest)
+if [[ "$PRINT_ONLY" == "1" ]]; then
+  printf '%s\n' "$rendered"
+  exit 0
+fi
+
+command -v kubectl >/dev/null || die "kubectl is required on the T9K host"
+if [[ "$QUOTA_CHECK" == "1" ]]; then
+  command -v python3 >/dev/null || die "python3 is required for the quota check"
+fi
+
+# The pod API is internal even when the account proxies external traffic.
+export NO_PROXY="${NO_PROXY:+$NO_PROXY,}${no_proxy:+$no_proxy,}kubernetes.default.svc"
+
+if [[ "$QUOTA_CHECK" == "1" ]]; then
+  if ! quota_check; then
+    if [[ "$QUOTA_OVERRIDE" == "1" ]]; then
+      echo "warning: over quota, submitting anyway (override)" >&2
+    else
+      echo "refusing to submit; use --skip-quota-check to override" >&2
+      exit 1
+    fi
+  fi
+fi
+
+if [[ "$DRY_RUN" == "1" ]]; then
+  "${K[@]}" create -f - --dry-run=server <<< "$rendered"
+  exit 0
+fi
+
+"${K[@]}" create -f - <<< "$rendered"
+echo "submitted ${PROJECT}/${NAME}"
+
+if [[ "$WAIT" == "0" ]]; then exit 0; fi
+
+while :; do
+  phase=$("${K[@]}" get pytorchtrainingjobs.batch.tensorstack.dev "$NAME" -n "$PROJECT" \
+            --request-timeout=30s -o jsonpath='{.status.phase}') \
+    || die "could not monitor submitted job ${PROJECT}/${NAME}; check its status before resubmitting"
+  case "$phase" in
+    Succeeded|Failed) break ;;
+  esac
+  sleep 20
+done
+echo "finished: phase=${phase}"
+
+if [[ "$SHOW_LOGS" == "1" ]]; then
+  while read -r pod; do
+    [[ -n "$pod" ]] || continue
+    echo "--- logs: ${pod}"
+    "${K[@]}" logs -n "$PROJECT" "$pod" -c pytorch --tail=200 || true
+  done < <("${K[@]}" get pods -n "$PROJECT" -l "tensorstack.dev/owner-name=${NAME}" -o name)
+fi
+
+[[ "$phase" == "Succeeded" ]]

@@ -58,11 +58,16 @@ as `--profile linux-remote-compute`, or use `--platform` and `--role`.
 Command-line selections override environment inputs; conflicting explicit
 presets and component selections fail before writing files.
 
-Legacy `--class t9k` / `DOTFILES_CLASS=t9k` maps to Linux remote compute;
-`linux` and `win` map to their workstation profiles. Remote compute targets
-receive `~/.vscode-server` settings. The current host uses the documented
-`linux-remote-compute` preset and remains outside deployment validation. Its
-pre-chezmoi symlink layout is maintained explicitly by the ignored
+Select `--profile t9k` for a T9K pod in the `aim-xzy` project. The preset
+installs `~/.local/bin/t9k-run-job`, adds the kubeconfig and
+[T9K runbook](dot_local/share/dotfiles/t9k-automation/README.md) under
+`~/.local/share/dotfiles/t9k-automation`, and adds a pointer to the managed
+agent instructions. The launcher uses the platform's `kubectl` and
+the pod's mounted service account. Legacy `--class t9k` / `DOTFILES_CLASS=t9k`
+selects the same payload. Generic `linux-remote-compute` deploys the portable
+compute configuration. Both presets receive `~/.vscode-server` settings.
+
+The existing T9K host's pre-chezmoi symlink layout is maintained explicitly by the ignored
 `deployment/legacy/link-home.sh` utility; see
 [legacy home links](docs/LEGACY_HOME_LINKS.md). Ordinary bootstrap never runs
 that utility and never converts a copy-mode home to symlinks.

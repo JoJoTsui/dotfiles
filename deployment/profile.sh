@@ -35,6 +35,7 @@ detect_platform() {
 }
 
 resolve_profile() {
+    local preset=''
     DEPLOY_PLATFORM=''
     DEPLOY_ROLE=workstation
     # A CLI preset owns both dimensions. Component flags only suppress the
@@ -42,10 +43,12 @@ resolve_profile() {
     if [ -z "$CLI_CLASS$CLI_PROFILE" ] && { [ -z "$CLI_PLATFORM" ] || [ -z "$CLI_ROLE" ]; }; then
         if [ -n "${DOTFILES_CLASS:-}" ]; then
             parse_class "$DOTFILES_CLASS"
+            preset=$DOTFILES_CLASS
             DEPLOY_PLATFORM=$PROFILE_PLATFORM; DEPLOY_ROLE=$PROFILE_ROLE
         fi
         if [ -n "${DOTFILES_PROFILE:-}" ]; then
             parse_profile "$DOTFILES_PROFILE"
+            preset=$DOTFILES_PROFILE
             if [ -n "${DOTFILES_CLASS:-}" ] &&
                 [[ ( -z "$CLI_PLATFORM" && "$DEPLOY_PLATFORM" != "$PROFILE_PLATFORM" ) ||
                    ( -z "$CLI_ROLE" && "$DEPLOY_ROLE" != "$PROFILE_ROLE" ) ]]; then
@@ -58,6 +61,7 @@ resolve_profile() {
     DEPLOY_ROLE="${DOTFILES_ROLE:-$DEPLOY_ROLE}"
     if [ -n "$CLI_CLASS" ]; then
         parse_class "$CLI_CLASS"
+        preset=$CLI_CLASS
         DEPLOY_PLATFORM=$PROFILE_PLATFORM; DEPLOY_ROLE=$PROFILE_ROLE
     fi
     if [ -n "$CLI_PROFILE" ]; then
@@ -66,6 +70,7 @@ resolve_profile() {
             fail 'conflicting --profile and --class'
         fi
         DEPLOY_PLATFORM=$PROFILE_PLATFORM; DEPLOY_ROLE=$PROFILE_ROLE
+        preset=$CLI_PROFILE
     fi
     if [ -n "$CLI_CLASS$CLI_PROFILE" ]; then
         [ -z "$CLI_PLATFORM" ] || [ "$CLI_PLATFORM" = "$DEPLOY_PLATFORM" ] || fail 'conflicting platform and profile/class selections'
@@ -84,6 +89,10 @@ resolve_profile() {
     esac
     [ "$DEPLOY_PLATFORM-$DEPLOY_ARCH" != windows-aarch64 ] || fail 'Windows ARM is outside the supported architecture matrix'
     DEPLOY_PROFILE="$DEPLOY_PLATFORM-$DEPLOY_ROLE"
+    DEPLOY_T9K_JOBS=0
+    if [ "$DEPLOY_PROFILE" = linux-remote-compute ] && [[ "$preset" = t9k || "$CLI_CLASS" = t9k ]]; then
+        DEPLOY_T9K_JOBS=1
+    fi
     DEPLOY_MIRROR=${DOTFILES_MIRROR:-tuna}
     case "$DEPLOY_MIRROR" in tuna|upstream) ;; *) fail 'invalid DOTFILES_MIRROR; use tuna or upstream' ;; esac
     case "$DEPLOY_PROFILE" in

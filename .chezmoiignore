@@ -13,6 +13,11 @@ clash
 .git
 .gitignore
 .gitattributes
+# T9K jobs use a specific TensorStack project and its mounted service account.
+{{- if not (get . "t9kJobs") }}
+.local/bin/t9k-run-job
+.local/share/dotfiles/t9k-automation
+{{- end }}
 # Runtime client files merge through the public boundary; source application
 # must not overwrite unrelated settings or authentication before that merge.
 .claude.json

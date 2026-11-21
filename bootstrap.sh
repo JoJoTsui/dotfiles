@@ -311,6 +311,7 @@ if "$DEPLOY_PLAN"; then
     printf ',"profile":'; json_string "$DEPLOY_PROFILE"
     printf ',"mirror":'; json_string "$DEPLOY_MIRROR"
     printf ',"class":'; json_string "$DEPLOY_CLASS"
+    printf ',"t9kJobs":'; if [ "$DEPLOY_T9K_JOBS" = 1 ]; then printf 'true'; else printf 'false'; fi
     printf ',"home":'; json_string "$DEPLOY_HOME"
     printf ',"source":'; json_string "$DEPLOY_SOURCE"
     printf ',"tools":'; json_array "${DEPLOY_TOOLS[@]}"
@@ -430,6 +431,7 @@ export PATH="$HOME/.local/bin:$HOME/.pixi/bin:$HOME/.bun/bin:$CARGO_HOME/bin:$PA
 export DOTFILES_COMMON_BIN="$PIXI_HOME/bin"
 if [ "$DEPLOY_PLATFORM" = macos ]; then export DOTFILES_COMMON_BIN="$HOME/.local/bin"; fi
 export DOTFILES_PLATFORM="$DEPLOY_PLATFORM" DOTFILES_ROLE="$DEPLOY_ROLE" DOTFILES_ARCH="$DEPLOY_ARCH"
+export DOTFILES_T9K_JOBS="$DEPLOY_T9K_JOBS"
 export DOTFILES_BUNDLES="$DEPLOY_BUNDLES_CSV"
 export DOTFILES_MIRROR="$DEPLOY_MIRROR"
 unset DOTFILES_CLASS DOTFILES_PROFILE

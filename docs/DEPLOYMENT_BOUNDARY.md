@@ -22,8 +22,13 @@ common-tool installation and separately records foreign package resolution.
 `deployment/profile.sh` resolves canonical `DEPLOY_PLATFORM`, `DEPLOY_ROLE`,
 `DEPLOY_ARCH`, `DEPLOY_PROFILE`, and compatibility `DEPLOY_CLASS`. Public
 flags override environment selections. Preset/component conflicts at the
-explicit-flag tier fail. `DOTFILES_CLASS=t9k` remains a Linux remote compute
-compatibility input. Detected platform never supplies a compute role.
+explicit-flag tier fail. The `t9k` preset (including legacy class selection)
+uses Linux remote compute and enables the T9K job payload. The plan records
+the selection in `t9kJobs`. The T9K platform supplies `kubectl` and the pod's
+mounted service account. Applying a different preset to a previously
+deployed T9K home removes the managed agent instruction pointer. Chezmoi
+keeps the previously installed launcher and configuration files.
+Detected platform never supplies a compute role.
 
 `deployment/installers.sh` is sourced after selection. It may declare plan
 metadata (`DEPLOY_TOOLS`, `DEPLOY_ACTIONS`) and define the following functions;

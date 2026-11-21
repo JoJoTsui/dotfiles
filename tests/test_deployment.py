@@ -33,7 +33,7 @@ class DeploymentTests(unittest.TestCase):
         # against an older bootstrap that does not understand --plan.
         self.guards = self.root / "guards"
         self.guards.mkdir()
-        for name in ("curl", "sudo", "chsh"):
+        for name in ("curl", "sudo", "chsh", "kubectl"):
             command = self.guards / name
             command.write_text('#!/bin/sh\nprintf "forbidden external command: %s\\n" "$0" >&2\nexit 91\n')
             command.chmod(0o755)
@@ -139,6 +139,20 @@ prepare_shell() { :; }
         self.assertEqual(self.plan("--profile", "macos-workstation", env=legacy)["profile"], "macos-workstation")
         self.assertEqual(self.plan()["role"], "workstation")
 
+    def test_t9k_jobs_require_the_t9k_preset(self):
+        for arguments, environment, enabled in (
+            (("--profile", "t9k"), self.env, True),
+            (("--class", "t9k"), self.env, True),
+            ((), dict(self.env, DOTFILES_PROFILE="t9k"), True),
+            ((), dict(self.env, DOTFILES_CLASS="t9k"), True),
+            (("--profile", "linux-remote-compute"), dict(self.env, DOTFILES_CLASS="t9k"), False),
+            (("--platform", "linux", "--role", "remote-compute"), self.env, False),
+            (("--role", "workstation"), dict(self.env, DOTFILES_PROFILE="t9k"), False),
+            (("--profile", "wsl-remote-compute"), self.env, False),
+        ):
+            with self.subTest(arguments=arguments, enabled=enabled):
+                self.assertIs(self.plan(*arguments, env=environment)["t9kJobs"], enabled)
+
     def test_explicit_cli_target_overrides_conflicting_inherited_presets(self):
         environment = dict(self.env, DOTFILES_CLASS="t9k", DOTFILES_PROFILE="linux-workstation")
         for arguments in (("--profile", "macos-workstation"),
@@ -210,10 +224,14 @@ prepare_shell() { :; }
                            XDG_CONFIG_HOME=str(self.original_home / "config"),
                            PIXI_HOME=str(self.original_home / "pixi"),
                            BUN_INSTALL=str(self.original_home / "bun"))
-        for role in ("workstation", "remote-compute"):
-            with self.subTest(role=role):
-                self.home = self.root / role
-                args = ("--apply-only", "--source", str(source), "--platform", "linux", "--role", role)
+        for selector, preset, role in (
+            ("--class", "linux", "workstation"),
+            ("--profile", "linux-remote-compute", "remote-compute"),
+            ("--class", "t9k", "remote-compute"),
+        ):
+            with self.subTest(preset=preset):
+                self.home = self.root / preset
+                args = ("--apply-only", "--source", str(source), selector, preset)
                 planned_steps = self.plan(*args, env=environment)["steps"]
                 result = self.deploy(*args, env=environment)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -234,6 +252,65 @@ prepare_shell() { :; }
                 self.assertIn("REPLACE_ME", (self.home / ".kimi-code/config.toml").read_text())
                 profile = json.loads((self.home / ".config/dotfiles/profile.json").read_text())
                 self.assertEqual(profile["role"], role)
+                job_dir = self.home / ".local/share/dotfiles/t9k-automation"
+                runner = self.home / ".local/bin/t9k-run-job"
+                self.assertEqual(job_dir.is_dir(), preset == "t9k")
+                self.assertEqual(runner.is_file(), preset == "t9k")
+                for instruction in (".agents/AGENTS.md", ".codex/AGENTS.md", ".claude/CLAUDE.md"):
+                    self.assertEqual(
+                        "t9k-automation/README.md" in (self.home / instruction).read_text(),
+                        preset == "t9k",
+                    )
+                if preset == "t9k":
+                    self.assertEqual({p.name for p in job_dir.iterdir()},
+                                     {"kubeconfig-incluster.yaml", "README.md"})
+                    self.assertTrue(all(p.is_file() and not p.is_symlink() for p in job_dir.iterdir()))
+                    self.assertFalse(runner.is_symlink())
+                    self.assertTrue(runner.stat().st_mode & 0o100)
+                    manifest = subprocess.run(
+                        [runner, "-n", "render-smoke", "-s", "/t9k/mnt/joey/work/task.sh",
+                         "-g", "2", "--shm", "32Gi", "--print", "--", "argument with spaces"],
+                        env=environment, capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertEqual(manifest.returncode, 0, manifest.stderr)
+                    for expected in (
+                        "kind: PyTorchTrainingJob", 'namespace: "aim-xzy"',
+                        'nvidia.com/gpu.shared: "2"', 'sizeLimit: "32Gi"',
+                        'claimName: ssd-joey', '- "argument with spaces"',
+                    ):
+                        self.assertIn(expected, manifest.stdout)
+                    invalid = subprocess.run(
+                        [runner, "-n", "render-smoke", "-c", "true", "--gpu", "one", "--print"],
+                        env=environment, capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertNotEqual(invalid.returncode, 0)
+                    self.assertIn("--gpu must be a nonnegative integer", invalid.stderr)
+                    malformed = subprocess.run(
+                        [runner, "-n", "render-smoke", "-c", "true", "--env", "missing-value"],
+                        env=environment, capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertNotEqual(malformed.returncode, 0)
+                    self.assertIn("--env expects KEY=VALUE", malformed.stderr)
+                    self.assertNotIn("forbidden external command", malformed.stderr)
+                    mock_bin = self.root / "mock-bin"
+                    mock_bin.mkdir()
+                    kubectl = mock_bin / "kubectl"
+                    kubectl.write_text(
+                        '#!/bin/sh\ncase "$3" in\n'
+                        '  create) cat >/dev/null ;;\n'
+                        '  get) echo "Forbidden" >&2; exit 1 ;;\n'
+                        '  *) exit 91 ;;\nesac\n'
+                    )
+                    kubectl.chmod(0o755)
+                    lost_status = subprocess.run(
+                        [runner, "-n", "monitor-smoke", "-c", "true", "--skip-quota-check"],
+                        env=dict(environment, PATH=f"{mock_bin}:{environment['PATH']}"),
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    self.assertNotEqual(lost_status.returncode, 0)
+                    self.assertIn("submitted aim-xzy/monitor-smoke", lost_status.stdout)
+                    self.assertIn("Forbidden", lost_status.stderr)
+                    self.assertIn("could not monitor submitted job aim-xzy/monitor-smoke", lost_status.stderr)
                 for name in ("docs", "README.md", "AGENTS.md", "GLOSSARY.md", "deployment", "tests", "bootstrap.sh"):
                     self.assertFalse((self.home / name).exists(), name)
                 before = {p.relative_to(self.home): p.read_bytes() for p in self.home.rglob("*") if p.is_file()}
