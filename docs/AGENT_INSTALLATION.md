@@ -93,10 +93,13 @@ owns an installed formula or cask: the catalog states a floor, and the
 deployment adopts what is installed without installing it. The update brings
 the device's own installation up to date first, so a client the operator
 upgraded by hand and a client the update upgraded end in the same place, and
-the deployment's launcher follows the new version. A client upgraded by hand
-without the update keeps a launcher that points at the removed cellar path
-until the next apply re-adopts it; the apply resolves the installed path
-again and rewrites the launcher.
+the deployment's launcher follows the new version. Adoption verifies that the
+resolved executable lies in the installed formula keg or staged cask before
+running its version probe. When the formula exposes a package-scoped opt
+path, the launcher follows the active keg even after a manual upgrade.
+Casks and formulae without a verified opt path use the checked, versioned
+executable. A targeted update re-adopts that executable after a manual
+upgrade and refreshes the last applied version in either case.
 
 Update a client through the wrapper instead. It resolves the upstream version,
 rewrites the pin and its Bun lock, and reinstalls the selected clients:
@@ -192,9 +195,10 @@ the next apply repairs both managed launchers. The deployment never installs or
 upgrades a Homebrew package. See
 [ADR 0011](adr/0011-agent-provider-chain.md).
 
-Both regular managed launchers point at the selected executable, and every
-deployment rechecks it. The frozen Bun project stays on disk as the offline
-fallback, so switching providers is a reapply rather than a reinstall. On
+Both regular managed launchers use the checked executable or its package's
+stable opt path, and every deployment rechecks it. The frozen Bun project
+stays on disk as the offline fallback, so switching providers is a reapply
+rather than a reinstall. On
 macOS the managed launcher directory precedes the Bun directory in the managed
 PATH, so the adopted command wins in an interactive shell; the other platforms
 keep Bun first and retain Bun ownership; Pixi does not declare Codex. OpenCode

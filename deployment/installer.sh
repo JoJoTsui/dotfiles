@@ -49,8 +49,8 @@ installer_version_at_least() {
 installer_tool_version() {
     local brew=$1 kind=$2 package=$3 listing version newest=''
     case "$kind" in
-        cask) listing=$("$brew" list --cask --versions "$package" 2>/dev/null) ;;
-        formula) listing=$("$brew" list --versions "$package" 2>/dev/null) ;;
+        cask) listing=$("$brew" list --cask --versions "$package" 2>/dev/null) || return 1 ;;
+        formula) listing=$("$brew" list --versions "$package" 2>/dev/null) || return 1 ;;
         *) return 1 ;;
     esac
     [ -n "$listing" ] || return 1
