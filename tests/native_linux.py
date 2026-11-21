@@ -34,6 +34,7 @@ except ModuleNotFoundError:
     tomllib = None
 
 from dsh_adapter import capability_status
+import native_report
 from pins import common_pin, manager_pin
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -53,6 +54,15 @@ MAGPIE_GATEWAY_PID = ".local/state/dotfiles/magpie/gateway/gateway.pid"
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
+
+
+def native_runtime_available():
+    """Whether this runner can execute the Linux acceptance natively.
+
+    A runner on another operating system or processor establishes nothing about
+    the Linux target, so its report is unavailable rather than passed.
+    """
+    return sys.platform == "linux" and platform.machine() == "x86_64"
 
 
 def require_default_agents(plan):
@@ -654,7 +664,7 @@ def main():
     report_path = args.artifacts / "report.json"
     report = {"schema_version": 1, "status": "running", "profile": "linux-remote-compute",
               "execution": args.execution, "native_t9k_pass": False, "installation_cache": "empty",
-              "home": str(args.home), "checks": [], "commands": [], "suites": [],
+              "home": str(args.home), "scenarios": [], "commands": [], "suites": [],
               "git_ignore": {"path": ".config/git/ignore", "checkpoints": [], "first_divergence": None},
               "agents": selection if selection is not None else "default",
               "magpie": magpie_report_scope(selection),
@@ -664,6 +674,7 @@ def main():
     report["disk_free_bytes_before"] = shutil.disk_usage(args.artifacts).free
     started = time.monotonic()
     environment = clean_environment(args.home, temporary)
+    log = native_report.ScenarioLog()
 
     def command(name, arguments, *, env=environment, cwd=SOURCE, timeout=60, stdin=None):
         write_json(report_path, report)
@@ -676,13 +687,10 @@ def main():
         write_json(report_path, report)
         print(f"linux acceptance: {name}", flush=True)
         tick = time.monotonic()
-        try:
-            details = operation()
-        except Exception:
-            report["checks"].append({"name": name, "passed": False})
-            raise
-        report["checks"].append({"name": name, "passed": True,
-                                 "seconds": round(time.monotonic() - tick, 3), "details": details})
+        details = operation()
+        log.passed(name, seconds=time.monotonic() - tick, details=details)
+        report["scenarios"] = log.records
+        write_json(report_path, report)
 
     def track_git_ignore(stage, operation):
         record_git_ignore(args.home, report["git_ignore"], "before-" + stage)
@@ -704,7 +712,7 @@ def main():
             require(sys.version_info >= (3, 11), "controller Python 3.11 or newer is required")
             require(not any(character.isspace() for character in sys.executable),
                     "controller Python path must contain no whitespace for deterministic fixture shebangs")
-            require(sys.platform == "linux" and platform.machine() == "x86_64", "Linux x86_64 execution is required")
+            require(native_runtime_available(), "Linux x86_64 execution is required")
             require(os.geteuid() != 0, "Linux acceptance must run as an unprivileged user")
             release = {}
             for line in Path("/etc/os-release").read_text().splitlines():
@@ -718,6 +726,8 @@ def main():
                                  "ubuntu_release": release["VERSION_ID"], "glibc": platform.libc_ver(),
                                  "controller_python": sys.version.split()[0], "execution_claim": "caller-supplied"}
             report["source"] = source_identity()
+            # The shared identity fields every native report declares.
+            report["checkout"] = native_report.establish_identity(SOURCE)
             return report["runtime"]
         check("runtime, source identity, and fresh target", preflight)
         bootstrap = ["/bin/bash", SOURCE / "bootstrap.sh", "--source", SOURCE, "--home", args.home]
@@ -963,11 +973,26 @@ def main():
         report["unexpected_required_skips"] = 0
         return 0
     except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
-        report["status"] = "failed"
         report["reason"] = str(error)
+        scenario = report.get("current_check", "acceptance")
+        if native_runtime_available():
+            log.failed(scenario, report["reason"])
+            report["status"] = "failed"
+        else:
+            # A runner that cannot execute natively establishes nothing about
+            # the Linux target, so the scenario is unavailable, not failed.
+            log.unavailable(scenario, report["reason"])
+            report["status"] = "unavailable"
         print(f"linux acceptance failed: {error}", file=sys.stderr, flush=True)
         return 1
     finally:
+        report["scenarios"] = log.records
+        # Acceptance needs a passed run on a runner that could execute the
+        # Linux target natively.
+        report["acceptance"] = (report["status"] == "passed"
+                                 and native_report.acceptance(
+                                     log.records, native_execution=native_runtime_available(),
+                                     identity=report.get("checkout")))
         report["resources_after"] = resource_snapshot()
         report["cpu_stat_delta"] = {name: value - report["resources_before"]["cpu_stat"].get(name, value)
                                     for name, value in report["resources_after"]["cpu_stat"].items()}

@@ -248,6 +248,65 @@ class NativeVerifierAccountIsolationTests(unittest.TestCase):
                 self.assertEqual(len(commands), 1 if gateway else 2)
 
 
+class NativeVerifierReportTests(unittest.TestCase):
+    """The report names the checkout and the outcome of every scenario."""
+
+    def test_a_foreign_runner_reports_unavailable_with_a_reason(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            report = Path(temporary) / "report.json"
+            with patch.object(sys, "argv", ["native_macos.py", "--arch", "aarch64",
+                                            "--role", "workstation", "--report", str(report)]), \
+                 patch.object(sys, "platform", "linux"), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(native_macos.main(), 1)
+            evidence = json.loads(report.read_text())
+            self.assertEqual(evidence["status"], "unavailable")
+            self.assertFalse(evidence["native_execution"])
+            self.assertFalse(evidence["acceptance"], "a foreign runner cannot establish acceptance")
+            self.assertEqual(evidence["scenarios"][0]["outcome"], "unavailable")
+            self.assertIn("Darwin", evidence["scenarios"][0]["reason"])
+
+    def test_a_native_run_records_the_checkout_and_the_failed_scenario(self):
+        revision = subprocess.check_output(["git", "-C", str(Path(native_macos.__file__).resolve().parents[1]),
+                                             "rev-parse", "HEAD"], text=True).strip()
+        real_check_output = subprocess.check_output
+
+        def check_output(arguments, *positional, **keywords):
+            if list(arguments[:2]) == ["/usr/bin/sw_vers", "-productVersion"]:
+                return "15.8.1"
+            return real_check_output(arguments, *positional, **keywords)
+
+        def run(arguments, **keywords):
+            if "--plan" in arguments:
+                return subprocess.CompletedProcess(arguments, 0, json.dumps({
+                    "platform": "macos", "arch": "aarch64", "role": "workstation",
+                    "magpie": False, "agents": ["claude", "pi"]}))
+            raise RuntimeError("fixture stops before installation")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            report = Path(temporary) / "report.json"
+            with patch.object(sys, "argv", ["native_macos.py", "--arch", "aarch64",
+                                            "--role", "workstation", "--report", str(report)]), \
+                 patch.object(sys, "platform", "darwin"), \
+                 patch.object(native_macos.platform, "machine", return_value="arm64"), \
+                 patch.object(native_macos.platform, "platform", return_value="synthetic macOS"), \
+                 patch.object(native_macos.subprocess, "check_output", side_effect=check_output), \
+                 patch.object(native_macos, "run", side_effect=run), \
+                 contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(native_macos.main(), 1)
+            evidence = json.loads(report.read_text())
+            self.assertEqual(evidence["status"], "failed")
+            self.assertFalse(evidence["acceptance"])
+            self.assertEqual(evidence["commit"], revision)
+            self.assertRegex(evidence["source_sha256"], r"^[0-9a-f]{64}$")
+            outcomes = {record["name"]: record for record in evidence["scenarios"]}
+            self.assertEqual(outcomes["native runtime and architecture"]["outcome"], "passed")
+            self.assertEqual(outcomes["profile detection"]["outcome"], "passed")
+            failed = outcomes["default installation 1"]
+            self.assertEqual(failed["outcome"], "failed")
+            self.assertIn("fixture stops before installation", failed["reason"])
+
+
 class NativeVerifierDshAdapterTests(unittest.TestCase):
     def test_installed_versions_report_adapter_capabilities(self):
         with tempfile.TemporaryDirectory(prefix="dotfiles-dsh-adapter-") as temporary:

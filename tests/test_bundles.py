@@ -111,7 +111,11 @@ class BundleTests(unittest.TestCase):
         pixi.chmod(0o755)
         environment = dict(self.environment, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_PIXI_BIN=str(pixi))
         for selection in ("bio", "none"):
-            result = self.deploy("--platform", "linux", "--arch", "x86_64", "--bundles", selection, environment=environment)
+            # The simulated home is not the account home, so the live-only
+            # Magpie gateway step is out of its reach. This check measures the
+            # bundle installation, so the gateway step stays out of the run.
+            result = self.deploy("--platform", "linux", "--arch", "x86_64", "--bundles", selection,
+                                 "--no-magpie", environment=environment)
             self.assertEqual(result.returncode, 37, result.stderr)
             self.assertIn("install-common.pixi-sync", result.stderr)
             registered = tomllib.loads(registry.read_text())

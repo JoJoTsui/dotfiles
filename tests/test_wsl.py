@@ -173,7 +173,8 @@ class WSLDeploymentTests(unittest.TestCase):
                 self.assertEqual(probe.returncode, 0, probe.stderr)
                 observed = json.loads(report.read_text())
                 self.assertFalse(observed["nativePass"], "a Linux configuration probe cannot claim WSL2 native acceptance")
-                startup = observed["checks"][0]["details"]
+                self.assertFalse(observed["acceptance"], "a configuration probe is not native acceptance")
+                startup = observed["scenarios"][0]["details"]
                 self.assertEqual(startup["editor"], "hx")
                 self.assertEqual(startup["polling"], "1" if role == "remote-compute" else "0")
                 self.assertEqual(startup["prompt"], "nu")
@@ -236,7 +237,51 @@ class WSLNativeBoundaryTests(unittest.TestCase):
         evidence = json.loads(report.read_text())
         self.assertFalse(evidence["nativePass"])
         self.assertEqual(evidence["phase"], "native-preflight")
+        self.assertEqual(evidence["status"], "unavailable")
+        self.assertFalse(evidence["acceptance"],
+                         "an ordinary Linux host cannot establish WSL2 acceptance")
+        self.assertEqual(evidence["scenarios"][0]["outcome"], "unavailable")
+        self.assertIn("WSL2", evidence["scenarios"][0]["reason"])
         self.assertFalse(home.exists(), "a simulated Linux run must stop before package installation")
+
+    def test_the_native_gate_names_the_source_revision_it_verified(self):
+        if os.name != "posix" or "microsoft" in os.uname().release.lower():
+            self.skipTest("this check demonstrates that ordinary Linux cannot establish a WSL pass")
+        home = self.root / "validation-home"
+        report = self.root / "native-wsl.json"
+        result = subprocess.run([sys.executable, str(SOURCE / "tests/native/wsl.py"), "--verify",
+                                 "--home", str(home), "--report", str(report)],
+                                env={"HOME": str(self.root), "PATH": "/usr/bin:/bin"},
+                                capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        evidence = json.loads(report.read_text())
+        revision = subprocess.check_output(["git", "-C", str(SOURCE), "rev-parse", "HEAD"],
+                                           text=True).strip()
+        self.assertEqual(evidence["commit"], revision,
+                         "the report has to name the revision of the source it verified")
+        self.assertEqual(evidence["checkout"]["commit"], revision)
+        self.assertEqual(evidence["checkout"]["revision_status"], "verified")
+
+    def test_a_failed_probe_names_the_exact_scenario(self):
+        home = self.root / "probe-home"
+        (home / ".config/dotfiles").mkdir(parents=True)
+        (home / ".pixi/bin").mkdir(parents=True)
+        (home / ".config/dotfiles/profile.json").write_text(
+            json.dumps({"platform": "wsl", "role": "workstation"}))
+        nu = home / ".pixi/bin/nu"
+        nu.write_text("#!/bin/sh\necho 'not the managed startup state'\n")
+        nu.chmod(0o755)
+        report = self.root / "probe-report.json"
+        result = subprocess.run([sys.executable, str(SOURCE / "tests/native/wsl.py"), "--probe-nu",
+                                 "--home", str(home), "--role", "workstation", "--report", str(report)],
+                                env={"HOME": str(self.root), "PATH": "/usr/bin:/bin"},
+                                capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(result.returncode, 0)
+        evidence = json.loads(report.read_text())
+        outcomes = {record["name"]: record for record in evidence["scenarios"]}
+        self.assertIn("ordinary Nu env/config/vendor startup", outcomes)
+        self.assertEqual(outcomes["ordinary Nu env/config/vendor startup"]["outcome"], "failed")
+        self.assertEqual(evidence["failed_scenario"], "ordinary Nu env/config/vendor startup")
 
 
 if __name__ == "__main__":

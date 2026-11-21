@@ -21,6 +21,12 @@ _Avoid_: Host class
 **Profile preset**:
 A named choice of platform and host role for a common deployment.
 
+**Public adapter**:
+One of the public deployment entry points that produces a deployment plan:
+the Bash adapter for Linux, macOS, and WSL, or the PowerShell adapter for
+native Windows. A platform's plan is read from the adapter that owns it.
+_Avoid_: Platform adapter, Plan renderer
+
 **Manager pin**:
 The version and per-target release digests of one bootstrap manager, treated as
 a single value. A version without matching digests is not a pin.
@@ -176,6 +182,19 @@ device's home or settings.
 **Native validation**:
 Verification of a deployment on its target operating system and processor
 architecture without processor emulation.
+
+**Native report**:
+The record a native validation leaves: the checkout it verified and the
+outcome of every scenario it attempted. A scenario that did not run states
+its reason, and a runner that cannot execute natively is unavailable rather
+than passed.
+
+**Checkout identity**:
+The revision a verification run established before it started testing, with
+the tree it names and a digest of the source bytes. A checkout names its own
+revision; a transported source names the revision its transport supplied. An
+unknown or mismatched revision establishes no acceptance.
+_Avoid_: Report identity, Source stamp
 
 **Container validation**:
 Verification of a deployment within a disposable container. The container's

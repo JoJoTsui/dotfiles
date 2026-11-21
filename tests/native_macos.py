@@ -20,6 +20,7 @@ import tempfile
 import time
 
 from dsh_adapter import capability_status
+import native_report
 
 SOURCE = Path(__file__).resolve().parents[1]
 MIRROR = "https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
@@ -71,26 +72,7 @@ def run(arguments, *, env, cwd, timeout=60, allow_failure=False):
 
 def source_state(directory):
     """Identify working source without reading ignored device-local files."""
-    def git(*arguments):
-        return subprocess.check_output(['git', '-C', str(directory), *arguments], timeout=10)
-
-    revision = git('rev-parse', 'HEAD').decode().strip()
-    dirty = bool(git('status', '--porcelain', '--untracked-files=normal'))
-    digest = hashlib.sha256()
-    for relative in sorted(set(git('ls-files', '--cached', '--others', '--exclude-standard', '-z').split(b'\0'))):
-        if not relative:
-            continue
-        path = directory / os.fsdecode(relative)
-        digest.update(relative + b'\0')
-        if path.is_symlink():
-            digest.update(b'link\0' + os.fsencode(os.readlink(path)))
-        elif path.is_file():
-            digest.update(str(path.stat().st_mode & 0o777).encode() + b'\0')
-            digest.update(path.read_bytes())
-        else:
-            digest.update(b'missing')
-        digest.update(b'\0')
-    return {'commit': revision, 'working_tree_dirty': dirty, 'source_sha256': digest.hexdigest()}
+    return native_report.establish_identity(directory)
 
 
 PUBLIC_CACHE_PATHS = ("pixi/pkgs", "pixi/repodata", "bun/install",
@@ -534,7 +516,7 @@ def main():
     report = {"platform": "macos", "arch": args.arch, "actual_arch": actual_arch,
               "role": args.role, "native_execution": sys.platform == "darwin", "status": "unavailable",
               "runtime": platform.platform(), "image_version": os.environ.get("ImageVersion", "unknown"),
-              "commit": os.environ.get("GITHUB_SHA", "local"), "checks": [],
+              "commit": os.environ.get("GITHUB_SHA", "local"), "scenarios": [],
               "installation_timeout_seconds": args.install_timeout,
               "installation_cache": "cache-assisted" if args.package_cache else "empty",
               "account_gateway": "excluded: synthetic homes have no operator accounts",
@@ -545,8 +527,11 @@ def main():
     phase = "runtime"
     temporary = None
     started = time.monotonic()
+    log = native_report.ScenarioLog()
+
     def checkpoint(name):
         report['current_check'] = name
+        report['scenarios'] = log.records
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, indent=2) + '\n')
         print(f'native macOS: {name}', flush=True)
@@ -554,11 +539,14 @@ def main():
     try:
         require(sys.platform == "darwin", "native macOS execution requires Darwin; foreign rendering is separate")
         require(actual_arch == args.arch, "native macOS runner architecture does not match the requested target")
-        report.update(source_state(SOURCE))
+        # The checkout the run verifies is established before any check runs.
+        identity = source_state(SOURCE)
+        report.update(identity)
+        report["checkout"] = identity
         version = subprocess.check_output(["/usr/bin/sw_vers", "-productVersion"], text=True).strip()
         report["os_version"] = version
         require(int(version.split(".")[0]) >= 13, "common defaults require macOS 13 or newer")
-        report["checks"].append("native runtime and architecture")
+        log.passed("native runtime and architecture")
         report["status"] = "running"
         # Every install/cache/client fixture belongs to this temporary tree.
         # The temporary root is resolved because macOS puts it behind the
@@ -570,7 +558,7 @@ def main():
                 phase = "public package cache seed"
                 checkpoint(phase)
                 report["package_cache_seed"] = seed_package_cache(args.package_cache, home)
-                report["checks"].append(phase)
+                log.passed(phase)
             originals = seed_device(home)
             env = minimal_environment(home)
             # Bound Pixi's concurrent solves and downloads in the synthetic
@@ -599,7 +587,7 @@ def main():
             if args.bundles:
                 require(plan.get("bundles") == sorted(name for name in args.bundles.split(",") if name),
                         "requested bundle selection reached the native plan")
-            report["checks"].append(phase)
+            log.passed(phase)
             snapshot = None
             for attempt in (1, 2):
                 phase = f"default installation {attempt}"
@@ -614,26 +602,29 @@ def main():
                         report["changed_managed_files"] = changed
                     require(not changed, "managed files are idempotent after default reapplication")
                 snapshot = current
-                report["checks"].append(phase)
+                log.passed(phase)
             phase = "pinned commands and pending history"
             checkpoint(phase)
             check_pinned_tools(home, plan, report)
-            report["checks"].append(phase)
+            log.passed(phase)
             phase = "ordinary native configuration discovery"
             checkpoint(phase)
             check_native_discovery(home, args.role)
-            report["checks"].append(phase)
+            log.passed(phase)
             phase = "native shell, instruction, CodeGraph and encrypted-history behavior"
             checkpoint(phase)
             check_portable_suites(home, args.role, report)
-            report["checks"].append(phase)
+            log.passed(phase)
             if args.bundles:
                 phase = "selected bundle exposures"
                 checkpoint(phase)
                 check_bundle_tools(home, args.bundles, report)
-                report["checks"].append(phase)
+                log.passed(phase)
+            phase = "source remains unchanged"
+            checkpoint(phase)
             require(source_state(SOURCE)['source_sha256'] == report['source_sha256'],
                     'working source changed during native verification')
+            log.passed(phase)
         except BaseException:
             if args.keep_failed_home:
                 report['retained_fixture'] = str(Path(temporary).resolve())
@@ -646,6 +637,14 @@ def main():
         report["failed_check"] = phase
         # Errors contain test/check labels only, never config or account data.
         report["reason"] = str(error) if isinstance(error, RuntimeError) else type(error).__name__
+        if report["native_execution"]:
+            log.failed(phase, report["reason"])
+            report["status"] = "failed"
+        else:
+            # A runner that cannot execute natively establishes nothing about
+            # the target platform, so it reports unavailable rather than failed.
+            log.unavailable(phase, report["reason"])
+            report["status"] = "unavailable"
         suite = report.get("failed_suite", "")
         message = f"{phase}: {suite}" if suite else phase
         print(f"::error title=Native macOS acceptance failed::{message}", file=sys.stderr, flush=True)
@@ -654,6 +653,13 @@ def main():
             report['status'] = 'failed'
             report.setdefault('failed_check', phase)
             report.setdefault('reason', 'Interrupted')
+        report["scenarios"] = log.records
+        # Acceptance needs a passed run; an interrupted or unavailable runner
+        # establishes nothing.
+        report["acceptance"] = (report["status"] == "passed"
+                                 and native_report.acceptance(
+                                     log.records, native_execution=report["native_execution"],
+                                     identity=report.get("checkout")))
         report.pop('current_check', None)
         report["elapsed_seconds"] = round(time.monotonic() - started, 3)
         args.report.parent.mkdir(parents=True, exist_ok=True)
