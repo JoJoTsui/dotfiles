@@ -97,8 +97,11 @@ independent of its disabled DeepMind skill.
 On the legacy T9K home, use the explicit
 [agent integration adapter](LEGACY_APPLY.md#global-agent-integrations). It reuses
 the public instruction copier and settings codec while validating canonical
-destinations inside the persistent tree. Ordinary bootstrap keeps its stricter
-symlink refusal.
+destinations inside the persistent tree, and it applies the same copy-root
+ownership policy to the skills it writes: a device skill that carries the name
+of a selected skill keeps its own bytes and is reported, while a directory the
+managed-skill inventory records belongs to the deployment. Ordinary bootstrap
+keeps its stricter symlink refusal.
 
 `deployment/skills.lock.tsv` pins Git commits and archive SHA-256 values.
 A missing or invalid lock stops fetching; `DOTFILES_SKILLS_DIR` remains the

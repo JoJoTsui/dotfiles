@@ -389,6 +389,16 @@ explains every changed pair.
   The explicit legacy `deployment/legacy/agent-integrations.sh` adapter reuses
   the public copier/codec with canonical live-tree confinement and backups;
   it reconciles only global skills, owned instructions, and disabled integrations.
+  It copies a selected skill as a unit under the public copy-root ownership
+  policy: a device skill that carries the selected name keeps its own bytes and
+  is reported, a directory the managed-skill inventory records belongs to the
+  deployment and is replaced as a unit, and the replaced bytes reach the
+  recovery batch. The inventory path is confined and checked before that
+  ownership is read, so an inventory outside the live tree never authorizes an
+  overwrite; the candidate is staged beside the canonical destination before
+  the owned directory is touched, so a failed copy keeps the active skill; and
+  the shared inventory is journaled in the recovery batch, so a rollback also
+  withdraws the row that recorded a new skill.
   `deployment/disabled-skills.tsv` resources stay outside discovery and cannot
   return through an override library. The Graphify skill uses reviewed upstream
   bytes through `deployment/skill-layouts.tsv`; initialization remains explicit.

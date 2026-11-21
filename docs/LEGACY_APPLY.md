@@ -85,11 +85,49 @@ once per physical entry. Packages and unrelated skills remain installed.
 Recovery batches are private under
 `~/.local/state/dotfiles/disabled-integrations/`. `files.*/restore.tsv` records
 original paths, backups, and original modes; `NEW` marks a newly created file.
-`skills.*/restore.tsv` records original relative discovery paths and the moved
-directories. For an explicitly authorized rollback, revert the source policy
+The shared managed-skill inventory is recoverable state too, so it is backed up
+and journaled once before its first change in an apply, and an unchanged
+inventory is left alone. `skills.*/restore.tsv` records original relative
+discovery paths and the moved directories. For an explicitly authorized rollback, revert the source policy
 first, then restore the recorded resources and modes. Review `NEW` paths before
 removing them. Rerunning the current policy intentionally disables restored
 resources again. Interrupted applications retain their backups and can be retried.
+
+### Skill ownership in the legacy tree
+
+The adapter copies a selected skill as a unit and follows the public copy-root
+ownership policy, so a device entry never loses to the deployment:
+
+- a symlink at the skill path is preserved and reported; the adapter never
+  follows it and never writes through it
+- a regular file at the skill path is preserved and reported
+- a directory the managed-skill inventory does not record is adopted when it
+  already holds the pinned bytes, without a rewrite, and preserved and
+  reported when its bytes differ
+- a directory the inventory records belongs to the deployment, so the pinned
+  copy replaces it and the bytes it no longer carries are gone
+
+The inventory is the same record the public deployment writes,
+`~/.local/state/dotfiles/managed-skills.tsv`. The adapter adds its own rows and
+keeps every row of another owner. An owned directory is replaced as a unit,
+and the replaced bytes are copied into the recovery batch before the change, so
+the rollback still restores it. The inventory path is confined to the live tree
+and checked before that ownership is read, so an inventory that is a symlink
+out of the live tree is refused instead of authorizing an overwrite; a leaf
+alias inside the live tree keeps its canonical path. The candidate is staged
+beside the canonical destination and published there, so a failed copy leaves
+the active owned skill in place. The inventory itself is journaled in the
+recovery batch, so a rollback that withdraws a new skill also withdraws the row
+that recorded it and a later apply does not overwrite a new device directory.
+A preserved entry is reported once per physical
+path, because a shared alias names one entry. A preserved entry is not drift:
+`--check` reports it and stays green, because the deployment has nothing to
+change there.
+
+A copy the tree carried before the inventory existed is reported rather than
+replaced. When it already holds the pinned bytes it is adopted, so a later
+apply owns it; when the pinned bytes moved on, remove that directory
+deliberately to take the new bytes.
 
 `dotfiles-host-up up` invokes the adapter after Mihomo and before agent daemons.
 Thus `link-home` reasserts the policy before the laptop starts Herdr. Missing

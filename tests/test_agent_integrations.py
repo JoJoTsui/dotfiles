@@ -69,7 +69,58 @@ class AgentIntegrationTests(unittest.TestCase):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not chezmoi:
             self.skipTest("policy codec requires Chezmoi")
-        self.env = dict(os.environ, HOME=str(self.home), DOTFILES_CHEZMOI_BIN=chezmoi)
+        self.bin = self.root / "bin"
+        self.bin.mkdir()
+        self.write_stat_shim()
+        self.env = dict(os.environ, HOME=str(self.home), DOTFILES_CHEZMOI_BIN=chezmoi,
+                        PATH=f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    def write_stat_shim(self):
+        """The adapter records modes with GNU `stat -c`; macOS has BSD stat.
+
+        The shim answers the one format the adapter uses and passes every
+        other invocation to the host's stat, so the fixture runs on both
+        platforms.
+        """
+        real = shutil.which("stat")
+        shim = self.bin / "stat"
+        shim.write_text(
+            "#!/bin/sh\n"
+            f"real={real}\n"
+            "if \"$real\" -c '%a' /dev/null >/dev/null 2>&1; then\n"
+            "    exec \"$real\" \"$@\"\n"
+            "fi\n"
+            "if [ \"$1\" = '-c' ] && [ \"$2\" = '%a' ]; then\n"
+            "    shift 2\n"
+            "    for target in \"$@\"; do\n"
+            "        \"$real\" -f '%Lp' \"$target\"\n"
+            "    done\n"
+            "    exit 0\n"
+            "fi\n"
+            "exec \"$real\" \"$@\"\n")
+        shim.chmod(0o755)
+
+    def write_failing_cp_shim(self):
+        """Fail a copy of the staged skill tree, so a publish cannot land.
+
+        The shim only refuses the copy of the tree the adapter staged, so
+        every other copy of the apply still runs.
+        """
+        real = shutil.which("cp")
+        shim = self.bin / "cp"
+        shim.write_text(
+            "#!/bin/sh\n"
+            f"real={real}\n"
+            "for arg in \"$@\"; do\n"
+            "    case \"$arg\" in\n"
+            "        *agent-integrations.*/skills/*)\n"
+            "            echo 'cp: injected copy failure' >&2\n"
+            "            exit 1\n"
+            "            ;;\n"
+            "    esac\n"
+            "done\n"
+            "exec \"$real\" \"$@\"\n")
+        shim.chmod(0o755)
 
     def run_policy(self, action):
         return subprocess.run(["bash", str(self.script), action, "--home", str(self.home),
@@ -134,6 +185,165 @@ class AgentIntegrationTests(unittest.TestCase):
         self.assertEqual(before, sorted(str(p) for p in backups.rglob("*")))
         checked = self.run_policy("--check")
         self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+
+    def test_device_owned_graphify_entries_are_preserved(self):
+        """A device skill with the selected name keeps its own bytes.
+
+        The adapter copies a selected skill as a unit, so a device directory
+        whose bytes differ is preserved and reported instead of being
+        overlaid, and a device link is never followed. The unrelated actions
+        of the same apply still land.
+        """
+        device = self.live / ".agents/skills/graphify"
+        device.mkdir(parents=True)
+        (device / "SKILL.md").write_text("---\nname: graphify\ndescription: device copy\n---\nDevice body.\n")
+        (device / "references").mkdir()
+        (device / "references" / "query.md").write_text("device reference\n")
+        (device / "device-only.txt").write_text("device bytes\n")
+        linked = self.live / ".device/graphify"
+        linked.parent.mkdir(parents=True)
+        linked.mkdir()
+        (linked / "SKILL.md").write_text("device link bytes\n")
+        (self.live / ".claude/skills/graphify").symlink_to(linked)
+
+        self.fetch()
+        result = self.run_policy("--apply")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        # The differing device directory survives as a unit.
+        self.assertEqual((device / "SKILL.md").read_text(),
+                         "---\nname: graphify\ndescription: device copy\n---\nDevice body.\n")
+        self.assertEqual((device / "references" / "query.md").read_text(), "device reference\n")
+        self.assertEqual((device / "device-only.txt").read_text(), "device bytes\n")
+        self.assertNotIn("official fixture", (device / "SKILL.md").read_text())
+        # The device link is preserved and never written through.
+        alias = self.live / ".claude/skills/graphify"
+        self.assertTrue(alias.is_symlink())
+        self.assertEqual(os.readlink(alias), str(linked))
+        self.assertEqual((linked / "SKILL.md").read_text(), "device link bytes\n")
+        # The preservation is reported for the skill and its root.
+        self.assertIn("preserved skill graphify in .agents/skills", result.stderr)
+        self.assertIn("preserved skill graphify in .claude/skills", result.stderr)
+
+        # The unrelated actions of the same apply still land.
+        instructions = (self.home / ".codex/AGENTS.md").read_text()
+        self.assertIn("personal rules", instructions)
+        self.assertIn("Disabled integrations", instructions)
+        settings = json.loads((self.home / ".claude/settings.json").read_text())
+        self.assertEqual(settings["env"]["DISABLE_AUTOUPDATER"], "1")
+        self.assertEqual(settings["env"]["ANTHROPIC_AUTH_TOKEN"], "fixture-preserved")
+
+        # A preserved device entry is reported, and it is not drift: the
+        # deployment has nothing to change there.
+        checked = self.run_policy("--check")
+        self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
+        self.assertIn("preserved skill graphify in .agents/skills", checked.stderr)
+
+    def test_owned_graphify_copy_is_refreshed_and_backed_up(self):
+        """A skill the deployment wrote belongs to the deployment.
+
+        A later apply refreshes the owned copy and keeps the replaced bytes
+        in the recovery batch.
+        """
+        self.fetch()
+        first = self.run_policy("--apply")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        skill = self.live / ".agents/skills/graphify/SKILL.md"
+        skill.write_text("---\nname: graphify\ndescription: edited\n---\nEdited.\n")
+        second = self.run_policy("--apply")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(skill.read_bytes(), (self.repo / "graphify/skill-agents.md").read_bytes())
+        backups = list((self.live / ".local/state/dotfiles/disabled-integrations").glob(
+            "files.*/.agents/skills/graphify/SKILL.md"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual(backups[0].read_text(), "---\nname: graphify\ndescription: edited\n---\nEdited.\n")
+
+    def test_outside_inventory_symlink_never_authorizes_an_overwrite(self):
+        """An inventory outside the live tree cannot own a device directory.
+
+        The inventory decides which skill directories the deployment owns, so
+        its path is validated before that ownership is read: a symlink that
+        leaves the live tree is refused, and the device directory keeps its
+        own bytes.
+        """
+        device = self.live / ".agents/skills/graphify"
+        device.mkdir(parents=True)
+        (device / "SKILL.md").write_text("---\nname: graphify\ndescription: device copy\n---\nDevice body.\n")
+        outside = self.root / "outside-inventory.tsv"
+        outside.write_text("graphify|.agents/skills\n")
+        state = self.live / ".local/state/dotfiles"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "managed-skills.tsv").symlink_to(outside)
+
+        self.fetch()
+        result = self.run_policy("--apply")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("escapes live tree", result.stderr)
+        # The device directory keeps its own bytes, and the outside record is
+        # left untouched.
+        self.assertIn("Device body.", (device / "SKILL.md").read_text())
+        self.assertEqual(outside.read_text(), "graphify|.agents/skills\n")
+
+    def test_failed_copy_keeps_the_active_owned_skill(self):
+        """A failed publish leaves the bytes the deployment owns in place.
+
+        The candidate is staged beside the canonical destination before the
+        owned directory is touched, so a copy that fails never removes the
+        active skill.
+        """
+        self.fetch()
+        first = self.run_policy("--apply")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        skill = self.live / ".agents/skills/graphify/SKILL.md"
+        skill.write_text("---\nname: graphify\ndescription: edited\n---\nEdited.\n")
+
+        self.write_failing_cp_shim()
+        result = self.run_policy("--apply")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot copy the skill graphify", result.stderr)
+        # The owned skill is still there with its own bytes.
+        self.assertTrue((self.live / ".agents/skills/graphify").is_dir())
+        self.assertEqual(skill.read_text(), "---\nname: graphify\ndescription: edited\n---\nEdited.\n")
+        # The staging leaves no residue behind.
+        self.assertEqual([p.name for p in (self.live / ".agents/skills").iterdir()
+                          if p.name.startswith(".agent-policy")], [])
+
+    def test_inventory_rollback_withdraws_the_managed_row(self):
+        """The inventory is recoverable, so a rollback withdraws the row.
+
+        The recovery journal covers the shared inventory, so a rollback of a
+        new skill also withdraws the row that recorded it. A later apply then
+        treats a new device directory as device content instead of
+        overwriting it.
+        """
+        self.fetch()
+        first = self.run_policy("--apply")
+        self.assertEqual(first.returncode, 0, first.stderr)
+        inventory = self.home / ".local/state/dotfiles/managed-skills.tsv"
+        self.assertTrue(inventory.exists())
+        self.assertIn("graphify|.agents/skills", inventory.read_text())
+
+        batches = (self.live / ".local/state/dotfiles/disabled-integrations").glob("files.*")
+        journal = next(batch / "restore.tsv" for batch in batches if (batch / "restore.tsv").exists())
+        rows = [line.split("|") for line in journal.read_text().splitlines()]
+        inventory_rows = [row for row in rows if row[0] == str(inventory)]
+        self.assertEqual(len(inventory_rows), 1, journal.read_text())
+        self.assertEqual(inventory_rows[0][1], "NEW")
+
+        # The documented rollback: the new skill is withdrawn and the new
+        # inventory is removed.
+        shutil.rmtree(self.home / ".agents/skills/graphify")
+        inventory.unlink()
+
+        device = self.live / ".agents/skills/graphify"
+        device.mkdir(parents=True)
+        (device / "SKILL.md").write_text("---\nname: graphify\ndescription: device copy\n---\nDevice body.\n")
+
+        result = self.run_policy("--apply")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        # The new device directory keeps its own bytes.
+        self.assertIn("Device body.", (device / "SKILL.md").read_text())
+        self.assertIn("preserved skill graphify in .agents/skills", result.stderr)
 
     def test_bad_config_changes_nothing_and_keeps_disabled_resources(self):
         self.fetch()
