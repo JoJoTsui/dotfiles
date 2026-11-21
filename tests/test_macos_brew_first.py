@@ -58,6 +58,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.brew_log = self.root / "brew.log"
         self.packages = self.root / "brew-packages"
         self.packages.mkdir()
+        self.brew_prefix = self.root / "homebrew"
         self.commands = {name: entry["commands"].split(",") for name, entry in agent_pins().items()}
         self.write_tool(self.tools / "node", self.node_script())
         self.write_tool(self.tools / "bun", self.bun_script())
@@ -127,6 +128,12 @@ class MacosBrewFirstTests(unittest.TestCase):
                 "with open(os.environ['BREW_LOG'], 'a') as log:\n"
                 "    log.write(' '.join(sys.argv[1:]) + '\\n')\n"
                 "args = sys.argv[1:]\n"
+                f"prefix = pathlib.Path({str(self.brew_prefix)!r})\n"
+                "if args == ['--prefix']:\n"
+                "    print(prefix); raise SystemExit(0)\n"
+                "if args[0] in ('--cellar', '--caskroom'):\n"
+                "    root = prefix / ('Cellar' if args[0] == '--cellar' else 'Caskroom')\n"
+                "    print(root.joinpath(*args[1:])); raise SystemExit(0)\n"
                 "if args[:1] == ['list']:\n"
                 "    kind = 'cask' if '--cask' in args else 'formula'\n"
                 "    package = args[-1]\n"
@@ -145,13 +152,31 @@ class MacosBrewFirstTests(unittest.TestCase):
         (self.packages / (record["kind"] + "-" + record["package"])).unlink()
 
     def write_command(self, name, version, template="-"):
-        """The command the device's Homebrew exposes on PATH."""
+        """Install a keg or staged cask and link its Homebrew exposures."""
+        agent = next(row[0] for row in catalog_records()
+                     if row[1] == "homebrew" and row[6].split(",")[0] == name)
+        record = homebrew_record(agent)
+        formula = record["kind"] == "formula"
+        keg = self.brew_prefix / ("Cellar" if formula else "Caskroom") / record["package"] / version
+        binary = keg / "bin" / name
         diagnostic = version if template == "-" else template.replace("{version}", version)
-        self.write_tool(self.tools / name, "#!/bin/sh\nprintf '%s\\n' " + shlex.quote(diagnostic) + "\n")
+        self.write_tool(binary, "#!/bin/sh\nprintf '%s\\n' " + shlex.quote(diagnostic) + "\n")
+        links = [self.brew_prefix / "bin" / name]
+        if formula:
+            links.append(self.brew_prefix / "opt" / record["package"])
+        for link, target in zip(links, (binary, keg)):
+            link.parent.mkdir(parents=True, exist_ok=True)
+            link.unlink(missing_ok=True)
+            link.symlink_to(target)
+        return binary
+
+    def formula_command(self, name):
+        record = homebrew_record(name)
+        return self.brew_prefix / "opt" / record["package"] / "bin" / record["commands"][0]
 
     def install(self, *, selection="kimi", platform="macos", native_platform="macos",
                 arch="aarch64", native_arch="arm64", override=None, homebrew=True, source=SOURCE,
-                extra_path=(), expect_success=True):
+                extra_path=(), expect_success=True, update=False):
         if override:
             versions = self.home / ".config/dotfiles"
             versions.mkdir(parents=True, exist_ok=True)
@@ -161,7 +186,8 @@ class MacosBrewFirstTests(unittest.TestCase):
                        "BREW_LOG": str(self.brew_log), "BREW_PACKAGES": str(self.packages),
                        "XDG_STATE_HOME": str(self.home / ".local/state"),
                        "PATH": os.pathsep.join(map(str, (self.home / ".local/bin", self.home / ".bun/bin",
-                                                        *extra_path, self.tools, "/usr/bin", "/bin"))),
+                                                        *extra_path, self.brew_prefix / "bin",
+                                                        self.tools, "/usr/bin", "/bin"))),
                        "DOTFILES_COMMON_BIN": str(self.home / ".local/bin"),
                        "DOTFILES_BUN_BIN": str(self.tools / "bun"),
                        "DOTFILES_NODE_BIN": str(self.tools / "node")}
@@ -184,7 +210,28 @@ class MacosBrewFirstTests(unittest.TestCase):
             "deploy_client_settings() { printf '[\"settings\"]\\n' >> \"$ADOPTION_LOG\"; }",
             "install_agents",
         ))
-        result = subprocess.run(["/bin/bash", "-c", script], env=environment, cwd=SOURCE,
+        invocation = ["/bin/bash", "-c", script]
+        if update:
+            # Exercise the managed CLI and real Homebrew update command. Only
+            # the upstream pin lookup is replaced. Bootstrap runs the same
+            # Homebrew/Bun installer seam as the rest of the fixture.
+            update_source = self.root / "update-source"
+            update_source.mkdir(exist_ok=True)
+            deployment = update_source / "deployment"
+            if not deployment.is_symlink():
+                deployment.symlink_to(source / "deployment", target_is_directory=True)
+            (update_source / "bootstrap.sh").write_text(script)
+            python = self.root / "offline-python"
+            self.write_tool(python, "#!" + sys.executable + "\n"
+                            "import os, pathlib, sys\n"
+                            "args = sys.argv[1:]\n"
+                            "if args[1:2] == ['propose-agents']:\n"
+                            "    pathlib.Path(args[args.index('--output') + 1]).write_text('{\"agents\": {}}')\n"
+                            "else:\n"
+                            "    os.execv(sys.executable, [sys.executable, *args])\n")
+            environment.update(DOTFILES_SOURCE=str(update_source), DOTFILES_PYTHON=str(python))
+            invocation = ["/bin/bash", str(self.agent_wrapper()), "update", selection]
+        result = subprocess.run(invocation, env=environment, cwd=SOURCE,
                                 capture_output=True, text=True, timeout=120)
         if expect_success:
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -219,17 +266,22 @@ class MacosBrewFirstTests(unittest.TestCase):
     def launcher(self, name):
         return (self.home / ".local/bin" / name).read_text()
 
-    def status(self, selection="kimi"):
-        """The managed status view of the deployed agents."""
+    def agent_wrapper(self):
         command = self.root / "dotfiles-agents"
         template = (SOURCE / "dot_local/bin/executable_dotfiles-agents.tmpl").read_text()
         command.write_text(template.replace("{{ .chezmoi.sourceDir }}", str(SOURCE)))
         command.chmod(0o755)
+        return command
+
+    def status(self, selection="kimi"):
+        """The managed status view of the deployed agents."""
         environment = {"HOME": str(self.home), "PATH": os.pathsep.join(map(str, (
-            self.home / ".local/bin", self.home / ".bun/bin", self.tools, "/usr/bin", "/bin"))),
+            self.home / ".local/bin", self.home / ".bun/bin", self.brew_prefix / "bin",
+            self.tools, "/usr/bin", "/bin"))),
             "XDG_STATE_HOME": str(self.home / ".local/state"),
-            "DOTFILES_PYTHON": sys.executable}
-        return subprocess.run(["/bin/bash", str(command), "status", selection], env=environment,
+            "DOTFILES_PYTHON": sys.executable, "DOTFILES_HOMEBREW_BIN": str(self.root / "brew"),
+            "BREW_LOG": str(self.brew_log), "BREW_PACKAGES": str(self.packages)}
+        return subprocess.run(["/bin/bash", str(self.agent_wrapper()), "status", selection], env=environment,
                                cwd=self.root, capture_output=True, text=True, timeout=60)
 
     def bun_launcher(self, name):
@@ -289,7 +341,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.assertNotIn("kimi", self.bun_projects())
         self.assertFalse((self.home / ".bun/managed/kimi").exists())
         for launcher in (self.launcher("kimi"), self.bun_launcher("kimi")):
-            self.assertIn(str(self.tools / "kimi"), launcher)
+            self.assertIn(str(self.formula_command("kimi")), launcher)
         self.assertEqual(self.state()["kimi"], f"homebrew|{record['floor']}|{record['floor']}")
 
     def test_a_package_above_the_floor_is_adopted_at_its_own_version(self):
@@ -298,7 +350,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.write_command("kimi", "9.9.9")
         self.install()
         self.assertNotIn("kimi", self.bun_projects())
-        self.assertIn(str(self.tools / "kimi"), self.launcher("kimi"))
+        self.assertIn(str(self.formula_command("kimi")), self.launcher("kimi"))
         self.assertEqual(self.state()["kimi"], f"homebrew|9.9.9|{record['floor']}")
 
     def test_a_package_below_the_floor_falls_back_to_the_frozen_bun_project(self):
@@ -311,7 +363,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.assertTrue(project.is_file())
         for launcher in (self.launcher("kimi"), self.bun_launcher("kimi")):
             self.assertIn(str(project), launcher)
-        self.assertNotIn(str(self.tools / "kimi"), self.launcher("kimi"))
+        self.assertNotIn(str(self.formula_command("kimi")), self.launcher("kimi"))
         self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_a_missing_package_falls_back_to_the_frozen_bun_project(self):
@@ -321,18 +373,88 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.assertIn("kimi", self.bun_projects())
         self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
-    def test_an_older_command_earlier_on_path_does_not_block_the_adoption(self):
+    def test_a_same_version_command_earlier_on_path_is_not_adopted(self):
         record = homebrew_record("kimi")
         self.write_package(record, record["floor"])
         self.write_command("kimi", record["floor"])
         stale = self.root / "stale"
         stale.mkdir()
-        self.write_tool(stale / "kimi", "#!/bin/sh\nprintf '%s\\n' 0.0.1\n")
+        marker = self.root / "shadow-executed"
+        self.write_tool(stale / "kimi", f"#!/bin/sh\ntouch {shlex.quote(str(marker))}\n"
+                        f"printf '%s\\n' {record['floor']}\n")
         self.install(extra_path=(stale,))
-        # The command that reports the package version is the adopted one.
-        self.assertIn(str(self.tools / "kimi"), self.launcher("kimi"))
+        self.assertIn(str(self.formula_command("kimi")), self.launcher("kimi"))
         self.assertNotIn(str(stale / "kimi"), self.launcher("kimi"))
+        self.assertFalse(marker.exists())
         self.assertEqual(self.state()["kimi"], f"homebrew|{record['floor']}|{record['floor']}")
+
+    def test_same_version_links_outside_the_installed_keg_fall_back_to_bun(self):
+        record = homebrew_record("kimi")
+        self.write_package(record, record["floor"])
+        binary = self.write_command("kimi", record["floor"])
+        foreign = self.brew_prefix / "Cellar/other" / record["floor"] / "bin/kimi"
+        marker = self.root / "foreign-executed"
+        self.write_tool(foreign, f"#!/bin/sh\ntouch {shlex.quote(str(marker))}\n"
+                        f"printf '%s\\n' {record['floor']}\n")
+        binary.unlink()
+        binary.symlink_to(foreign)
+
+        self.install()
+        self.assertFalse(marker.exists())
+        self.assertIn("kimi", self.bun_projects())
+        self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
+
+    def test_a_formula_launcher_follows_a_relinked_opt_prefix_after_upgrade(self):
+        record = homebrew_record("kimi")
+        self.write_package(record, record["floor"])
+        original = self.write_command("kimi", record["floor"])
+        self.install()
+        launcher = self.home / ".local/bin/kimi"
+        self.assertIn(str(self.formula_command("kimi")), launcher.read_text())
+
+        self.write_package(record, "9.9.9")
+        self.write_command("kimi", "9.9.9")
+        original.unlink()
+        result = subprocess.run([launcher, "--version"], capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "9.9.9")
+
+        self.install()
+        self.assertEqual(self.state()["kimi"], f"homebrew|9.9.9|{record['floor']}")
+        if sys.platform == "darwin":
+            status = self.status()
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertIn("last apply: homebrew 9.9.9", status.stdout)
+            self.assertIn(f"live: installed | provider: homebrew | version: 9.9.9 | command: kimi | path: {launcher}",
+                          status.stdout)
+
+    def test_the_selected_update_recovers_a_removed_cask_executable(self):
+        record = homebrew_record("codex")
+        self.write_package(record, record["floor"])
+        original = self.write_command("codex", record["floor"], record["diagnostic"])
+        self.install(selection="codex")
+        launcher = self.home / ".local/bin/codex"
+        self.assertIn(str(original.resolve()), launcher.read_text())
+
+        self.write_package(record, "9.9.9")
+        replacement = self.write_command("codex", "9.9.9", record["diagnostic"])
+        original.unlink()
+        stale = self.root / "earlier tools"
+        self.write_tool(stale / "codex", "#!/bin/sh\nprintf 'codex-cli 9.9.9\\n'\n")
+        self.assertNotEqual(subprocess.run([launcher, "--version"], capture_output=True,
+                                           timeout=10).returncode, 0)
+
+        self.install(selection="codex", extra_path=(stale,), update=True)
+        self.assertIn(f"upgrade --cask {record['package']}", self.brew_calls())
+        self.assertFalse(any(call.startswith("install ") for call in self.brew_calls()))
+        self.assertIn(str(replacement.resolve()), launcher.read_text())
+        self.assertNotIn(str(stale / "codex"), launcher.read_text())
+        self.assertEqual(self.state()["codex"], f"homebrew|9.9.9|{record['floor']}")
+        if sys.platform == "darwin":
+            status = self.status("codex")
+            self.assertEqual(status.returncode, 0, status.stderr)
+            self.assertIn("last apply: homebrew 9.9.9", status.stdout)
+            self.assertIn("live: installed | provider: homebrew | version: 9.9.9", status.stdout)
 
     def test_a_device_without_homebrew_falls_back_to_the_frozen_bun_project(self):
         record = homebrew_record("kimi")
@@ -354,7 +476,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.assertTrue(project.is_file())
         for launcher in (self.launcher("kimi"), self.bun_launcher("kimi")):
             self.assertIn(str(project), launcher)
-            self.assertNotIn(str(self.tools / "kimi"), launcher)
+            self.assertNotIn(str(self.formula_command("kimi")), launcher)
         self.assertEqual(self.state()["kimi"], f"bun|{bun_version('kimi')}|{bun_version('kimi')}")
 
     def test_the_deployment_never_installs_or_upgrades_a_homebrew_package(self):
@@ -363,7 +485,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.write_command("kimi", record["floor"])
         self.install()
         for call in self.brew_calls():
-            self.assertTrue(call.startswith("list "), call)
+            self.assertTrue(call.startswith(("list ", "--")), call)
             self.assertNotIn("install", call)
             self.assertNotIn("upgrade", call)
 
@@ -374,12 +496,13 @@ class MacosBrewFirstTests(unittest.TestCase):
                 self.write_package(record, record["floor"])
                 # The package exposes one executable; the catalog may name
                 # more than one command for it.
-                self.write_command(record["commands"][0], record["floor"], record["diagnostic"])
+                binary = self.write_command(record["commands"][0], record["floor"], record["diagnostic"])
                 self.install(selection=name)
                 self.assertNotIn(name, self.bun_projects())
+                expected = self.formula_command(name) if record["kind"] == "formula" else binary.resolve()
                 for command in record["commands"]:
-                    self.assertIn(str(self.tools / record["commands"][0]), self.launcher(command))
-                    self.assertIn(str(self.tools / record["commands"][0]), self.bun_launcher(command))
+                    self.assertIn(str(expected), self.launcher(command))
+                    self.assertIn(str(expected), self.bun_launcher(command))
                 self.assertEqual(self.state()[name], f"homebrew|{record['floor']}|{record['floor']}")
 
     def test_an_unselected_agent_keeps_its_managed_launchers(self):
@@ -442,6 +565,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.install()
         self.assertEqual(self.state()["kimi"], f"homebrew|{record['floor']}|{record['floor']}")
 
+    @unittest.skipUnless(sys.platform == "darwin", "live status selects the native provider chain")
     def test_status_reports_the_provider_and_the_effective_version(self):
         record = homebrew_record("kimi")
         self.write_package(record, "9.9.9")
@@ -455,6 +579,7 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.assertIn("9.9.9", line)
         self.assertIn("installed", line)
 
+    @unittest.skipUnless(sys.platform == "darwin", "live status selects the native provider chain")
     def test_status_reports_a_version_above_the_floor_as_installed(self):
         record = homebrew_record("kimi")
         # Without device state the status compares the device's version with
@@ -465,7 +590,9 @@ class MacosBrewFirstTests(unittest.TestCase):
         line = next(line for line in result.stdout.splitlines() if line.startswith("kimi "))
         self.assertIn("homebrew", line)
         self.assertIn(record["floor"], line)
+        self.assertIn("last apply: unavailable", line)
         self.assertIn("installed", line)
+        self.assertIn("provider: unverified | version: 9.9.9", line)
         self.assertNotIn("mismatch", line)
 
     def test_status_reports_a_device_owned_version_as_device_owned(self):
@@ -479,6 +606,8 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.assertIn("bun", line)
         self.assertIn("8.8.8", line)
         self.assertIn("device-owned version", line)
+        self.assertIn("last apply: bun 8.8.8", line)
+        self.assertIn("live: installed | provider: bun | version: 8.8.8", line)
 
 
 if __name__ == "__main__":

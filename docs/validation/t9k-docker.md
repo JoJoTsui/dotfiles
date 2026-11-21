@@ -264,3 +264,32 @@ postponed annotations fix the helper on Python 3.8.10. The original helper's
 TypeError was reproduced, and all 28 affected skill/helper cases then passed
 with Focal's actual Git 2.25.1 and Python 3.8.10. The deployed helper change
 required another fresh verification, recorded in the completed evidence above.
+
+### Git ignore rewrite during skill discovery
+
+The November 20 acceptance reports at `e81bc1a` failed reapplication on both
+Ubuntu baselines. Fresh installation and command checks recorded the Git ignore
+file at SHA-256 prefix `2381f9a533a2` and mode `0600`. The pre-reapply
+fingerprint became `1b42e6b24ff8`, and reapply restored the original hash.
+
+A network-disabled Ubuntu 24.04 amd64 container on the arm64 controller
+reproduced the change with Qoder 1.1.82 from the retained
+`ef387745836b` synthetic fixture mounted read-only. In a fresh fixture with a
+copy of the installed ignore file, `qodercli --version` left the fingerprint
+unchanged, while `qodercli skills list` produced `1b42e6b24ff8` at mode
+`0600`. With separate HOME and XDG configuration paths, only the file under
+`XDG_CONFIG_HOME` changed. The discovery harness had pointed that variable at
+the deployment under test.
+
+The discovery harness now points Qoder's XDG configuration at a writable
+scratch directory while keeping HOME available for shared skill discovery.
+A second isolated run with the same binary and a copy of the retained skill
+tree returned the same 56 discovery records as the old harness and preserved
+the original hash and mode. This is a focused emulated reproduction. The
+full acceptance result for a source revision still comes from its own gate.
+
+The Linux gate's `git_ignore` report records existence, mode, and SHA-256
+before and after fresh apply, skill discovery, fixture seeding, and reapply.
+It retains the first drift interval when a later step restores the file.
+When the reapplication check fails, `checks_not_run` enumerates the subsequent
+checks. The existing whole-inventory preservation check remains in force.

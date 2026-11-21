@@ -182,6 +182,28 @@ class InstalledSkillDiscoveryTests(unittest.TestCase):
             self.assertEqual(result["status"], "failed")
             self.assertIn("real-manual-two", result["clients"]["qoder"]["error"])
 
+    def test_qoder_discovery_does_not_rewrite_the_managed_git_ignore(self):
+        git_ignore = self.home / ".config/git/ignore"
+        git_ignore.parent.mkdir(parents=True)
+        git_ignore.write_text("synthetic-managed-ignore\n")
+        git_ignore.chmod(0o600)
+        before = (git_ignore.read_bytes(), git_ignore.stat().st_mode)
+        binary = self.root / "qoder"
+        binary.write_text(
+            '#!/bin/sh\n'
+            '[ "$*" = "skills list" ] || exit 2\n'
+            '/bin/mkdir -p "$XDG_CONFIG_HOME/git" || exit 3\n'
+            'printf "synthetic-client-ignore\\n" >> "$XDG_CONFIG_HOME/git/ignore" || exit 4\n'
+            'printf "metadata-name [Enabled]\\n Location: %s\\n" "$HOME/.agents/skills/catalog-entry/SKILL.md"\n'
+        )
+        binary.chmod(0o755)
+        inventory = {"metadata-name": {"path": str(self.skill.resolve()), "disable_model_invocation": False}}
+        with mock.patch("installed_skill_discovery.selected_inventory", return_value=inventory):
+            report = discover_installed(self.home, self.root / "artifacts", {"qoder": str(binary)},
+                                        {"XDG_CONFIG_HOME": str(git_ignore.parent.parent)})
+        self.assertTrue(report["clients"]["qoder"]["passed"], report["clients"]["qoder"])
+        self.assertEqual((git_ignore.read_bytes(), git_ignore.stat().st_mode), before)
+
     def test_qoder_records_keep_names_and_locations_instead_of_description_mentions(self):
         records = qoder_skill_records("Discovered Agent Skills:\n\nmetadata-name [Enabled]\n"
                                       " Description: mentions another-name.\n"

@@ -21,6 +21,7 @@ import re
 import selectors
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -419,6 +420,24 @@ def snapshot_fingerprint(path, home):
     return {"sha256": hashlib.sha256(contents).hexdigest(), "mode": path.stat().st_mode & 0o777}
 
 
+def record_git_ignore(home, evidence, stage):
+    path = home / evidence["path"]
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        fingerprint = {"exists": False, "mode": None, "sha256": None}
+    else:
+        fingerprint = {"exists": True, "mode": mode & 0o777, "sha256": None}
+        if stat.S_ISREG(mode):
+            fingerprint.update(snapshot_fingerprint(path, home))
+    checkpoints = evidence["checkpoints"]
+    # The first transition is the fresh apply creating the file. Record the
+    # first later change without replacing it when reapply restores the bytes.
+    if len(checkpoints) > 1 and evidence["first_divergence"] is None and checkpoints[-1]["file"] != fingerprint:
+        evidence["first_divergence"] = {"after": checkpoints[-1]["stage"], "at": stage}
+    checkpoints.append({"stage": stage, "file": fingerprint})
+
+
 def trampoline_metadata(home, plan):
     registry = tomllib.loads((home / ".pixi/manifests/pixi-global.toml").read_text())
     owners = {command: name for name, environment in registry["envs"].items()
@@ -571,6 +590,7 @@ def main():
     report = {"schema_version": 1, "status": "running", "profile": "linux-remote-compute",
               "execution": args.execution, "native_t9k_pass": False, "installation_cache": "empty",
               "home": str(args.home), "checks": [], "commands": [], "suites": [],
+              "git_ignore": {"path": ".config/git/ignore", "checkpoints": [], "first_divergence": None},
               "agents": selection if selection is not None else "default",
               "magpie": magpie_report_scope(selection),
               "limits": "Linux userspace evidence; no T9K kernel/netfs/legacy migration, Windows claim, "
@@ -598,6 +618,13 @@ def main():
             raise
         report["checks"].append({"name": name, "passed": True,
                                  "seconds": round(time.monotonic() - tick, 3), "details": details})
+
+    def track_git_ignore(stage, operation):
+        record_git_ignore(args.home, report["git_ignore"], "before-" + stage)
+        try:
+            return operation()
+        finally:
+            record_git_ignore(args.home, report["git_ignore"], "after-" + stage)
 
     def source_identity():
         git = ["/usr/bin/git", "--no-optional-locks", "-c", f"safe.directory={SOURCE}", "-C", SOURCE]
@@ -652,7 +679,8 @@ def main():
         plan = json.loads((args.artifacts / "plan.json").read_text())
         full = bootstrap_execution_command(bootstrap, "linux-remote-compute", selection)
         check("bootstrap without gateway wiring from empty home and caches",
-              lambda: command("bootstrap-first", full, timeout=args.install_timeout) and "completed")
+              lambda: track_git_ignore("fresh-apply",
+                                       lambda: command("bootstrap-first", full, timeout=args.install_timeout) and "completed"))
         require(not (args.home / ".codex/auth.json").exists(), "fresh bootstrap created authentication")
         # The client credentials moved to the gateway's own store when the
         # deployment migrated to Magpie, so the fresh home carries a
@@ -732,10 +760,11 @@ def main():
             require(summary is not None and summary["status"] == "passed",
                     "installed selected skill discovery did not pass")
             return {"selected_skills": summary["selected_count"], "clients": len(summary["clients"])}
-        check("actual fetched default skill discovery after fresh installation", lambda: installed_skills("fresh"))
+        check("actual fetched default skill discovery after fresh installation",
+              lambda: track_git_ignore("fresh-discovery", lambda: installed_skills("fresh")))
 
         def reapplication():
-            originals = seed_device(args.home)
+            originals = track_git_ignore("fixture-seeding", lambda: seed_device(args.home))
             history_env = dict(managed)
             history_env["ATUIN_SESSION"] = command("history-uuid", [args.home / ".pixi/bin/atuin", "uuid"], env=managed).strip()
             token = "printf synthetic-linux-preserved-history"
@@ -744,7 +773,7 @@ def main():
             before = snapshot(args.home, plan)
             metadata_before = trampoline_metadata(args.home, plan)
             report["trampoline_metadata"] = {"before": metadata_before}
-            command("bootstrap-reapply", full, timeout=args.install_timeout)
+            track_git_ignore("reapply", lambda: command("bootstrap-reapply", full, timeout=args.install_timeout))
             check_preservation(args.home, originals)
             after = snapshot(args.home, plan)
             metadata_after = trampoline_metadata(args.home, plan)
@@ -777,9 +806,20 @@ def main():
             return {"synthetic_auth": "preserved", "settings": "preserved", "history": "preserved",
                     "pixi_and_bun_inventory": "preserved", "managed_files": "stable", "sync": "pending activation",
                     "generated_metadata_changed": len(metadata_changed)}
-        check("reapplication without gateway wiring and synthetic device preservation", reapplication)
-        check("installed inventory, exact pins, and executable commands after reapplication", pinned_commands)
-        check("actual fetched default skill discovery after reapplication", lambda: installed_skills("reapplied"))
+        reapplied_inventory = "installed inventory, exact pins, and executable commands after reapplication"
+        reapplied_discovery = "actual fetched default skill discovery after reapplication"
+        try:
+            check("reapplication without gateway wiring and synthetic device preservation", reapplication)
+        except Exception:
+            report["checks_not_run"] = [
+                {"name": name, "reason": "reapplication check failed"}
+                for name in (reapplied_inventory, reapplied_discovery,
+                             "pinned native Magpie CLI installation without a gateway",
+                             "installed runtime and deterministic acceptance suites", "source remains unchanged")
+            ]
+            raise
+        check(reapplied_inventory, pinned_commands)
+        check(reapplied_discovery, lambda: track_git_ignore("reapplied-discovery", lambda: installed_skills("reapplied")))
 
         def magpie_cli():
             # The public plan was validated with Magpie enabled, but the

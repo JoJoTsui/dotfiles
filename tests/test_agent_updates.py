@@ -297,6 +297,25 @@ class AgentUpdateTests(unittest.TestCase):
         self.assertIn("device-owned version", result.stdout)
         self.assertNotIn("mismatch", result.stdout)
 
+    def test_status_does_not_confuse_ledger_intent_and_failed_path_probe(self):
+        ledger = self.home / ".local/state/dotfiles/agents.lock.tsv"
+        ledger.parent.mkdir(parents=True)
+        # Three fields predate the catalog policy column.
+        ledger.write_text("pi|bun|1.5.0\n")
+        path = self.root / "shadow tools"
+        binary = self.bun(path / "pi", "1.5.0")
+        binary.write_text(binary.read_text() + "exit 27\n")
+        self.bun(self.common / "pi", "1.5.0")
+        (self.home / ".env_core").write_text(f'export PATH={shlex.quote(str(self.common))}:"$PATH"\n')
+        report = subprocess.run([str(self.command), "status", "pi"], cwd=self.root,
+                                env=dict(self.env, PATH=f"{path}:/usr/bin:/bin"),
+                                capture_output=True, text=True, timeout=30)
+        self.assertEqual(report.returncode, 0, report.stderr)
+        self.assertIn("last apply: bun 1.5.0", report.stdout)
+        self.assertIn(f"path: {binary}", report.stdout)
+        self.assertIn("unverified (probe exited 27)", report.stdout)
+        self.assertNotIn("live: installed", report.stdout)
+
     def test_missing_managed_pixi_fails_before_refresh_or_pin_changes(self):
         self.pixi.unlink()
         result = self.update()

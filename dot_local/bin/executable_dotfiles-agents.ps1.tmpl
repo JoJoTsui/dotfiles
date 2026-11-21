@@ -18,7 +18,7 @@ Usage: dotfiles-agents.ps1 <command> [selection]
 Commands:
   install [selection]  Apply source and install selected agents
   update  [selection]  Resolve current pins, refresh locks, then reinstall
-  status  [selection]  Show provider, effective version, and installed state
+  status  [selection]  Show catalog intent, last apply, and live command
 
 selection: all (default), none, or a comma-separated list such as
            qoder,minimax,kimi. Aliases kimi-code, claude-code, and
@@ -85,24 +85,15 @@ function Update-Agents {
 }
 
 function Get-AgentCatalog {
-    # The per-agent provider catalog is the only source of agent installation
-    # data. The status view reports the deployment-owned record of each agent.
-    $records = @{}
-    $order = @()
+    # The native Windows deployment uses the applicable deployment-owned row.
     foreach ($line in [IO.File]::ReadAllLines((Join-Path $Source 'deployment/agents/providers.tsv'))) {
         if (-not $line -or $line.StartsWith('#')) { continue }
         $fields = $line.Split('|')
-        $agent = $fields[0]
-        if (-not $records.ContainsKey($agent)) { $records[$agent] = @(); $order += $agent }
-        $records[$agent] += [pscustomobject]@{ provider = $fields[1]; version = $fields[4]; commands = $fields[6] }
+        $platforms = $fields[7].Split(',')
+        if ('all' -notin $platforms -and 'windows' -notin $platforms) { continue }
+        [pscustomobject]@{ name = $fields[0]; provider = $fields[1]; package = $fields[2]
+                          version = $fields[4]; policy = $fields[5]; commands = $fields[6] }
     }
-    $rows = @()
-    foreach ($agent in $order) {
-        $owned = @($records[$agent] | Where-Object { $_.provider -in @('bun', 'native') })
-        if ($owned.Count -ne 1) { continue }
-        $rows += [pscustomobject]@{ name = $agent; provider = $owned[0].provider; version = $owned[0].version; commands = $owned[0].commands }
-    }
-    return $rows
 }
 
 function Get-AgentState {
@@ -153,33 +144,109 @@ function Select-Agents {
     return @($Rows | Where-Object { $_.name -in $requested })
 }
 
+function Get-LiveProvider($Row, [string]$Path) {
+    $entry = $Path
+    $launchers = @((Join-Path $HOME '.local/bin'), (Join-Path $HOME '.bun/bin'))
+    $launcherDirectory = [IO.Path]::GetDirectoryName($Path)
+    if ($launcherDirectory -in $launchers -and $Path.EndsWith('.cmd', [StringComparison]::OrdinalIgnoreCase)) {
+        try { $lines = [IO.File]::ReadAllLines($Path) }
+        catch { return 'unverified' }
+        # Read the exact launcher form emitted by bootstrap without evaluating
+        # it. A matching --version or a managed directory alone proves nothing.
+        $launch = $lines | Where-Object { $_.EndsWith(' %*') } | Select-Object -First 1
+        if ($lines[0] -ne '@echo off' -or -not $launch) { return 'unverified' }
+        if ($Row.provider -eq 'bun' -and $launch -match '"%~dp0(?<target>\.\.\\\.\.\\[^"%]+)" %\*$') {
+            $entry = [IO.Path]::GetFullPath((Join-Path $launcherDirectory $Matches.target))
+        } elseif ($Row.provider -eq 'native' -and $launch -match '^"(?<target>[^"%]+)" %\*$') {
+            $entry = $Matches.target
+        }
+    }
+    if (-not [IO.File]::Exists($entry)) { return 'unverified' }
+    if ($Row.provider -eq 'bun') {
+        $package = [IO.Path]::GetFullPath((Join-Path $HOME ".bun/managed/$($Row.name)/node_modules/$($Row.package)"))
+        if ($entry.StartsWith(($package + [IO.Path]::DirectorySeparatorChar), [StringComparison]::OrdinalIgnoreCase)) {
+            return 'bun'
+        }
+    } elseif ($Row.provider -eq 'native') {
+        $directory = [IO.Path]::GetFullPath((Join-Path $HOME ".$($Row.name)/bin/$($Row.package)"))
+        if ([IO.Path]::GetDirectoryName($entry) -eq $directory -and
+            [IO.Path]::GetFileName($entry).StartsWith(($Row.package + '-'), [StringComparison]::OrdinalIgnoreCase)) {
+            return 'native'
+        }
+    }
+    return 'unverified'
+}
+
+function Get-LiveCommand([string]$Name, $Row) {
+    $live = @{ path = '-'; version = '-'; provider = '-'; status = 'not installed' }
+    $resolved = Get-Command $Name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $resolved) { return $live }
+    $live.provider = 'unverified'
+    if ($resolved.CommandType -in @('Application', 'ExternalScript')) { $live.path = $resolved.Path }
+    if ($resolved.CommandType -ne 'Application') {
+        $live.status = 'unverified (command is not an executable application)'
+        return $live
+    }
+    # Windows PowerShell can surface native stderr as an error record. Keep
+    # the exit status authoritative while still allowing a valid stderr version.
+    $ErrorActionPreference = 'Continue'
+    $global:LASTEXITCODE = 0
+    try {
+        $output = @(& $resolved.Path --version 2>&1)
+        $code = $global:LASTEXITCODE
+    } catch {
+        $live.status = 'unverified (probe could not complete)'
+        return $live
+    }
+    if ($code) {
+        $live.status = "unverified (probe exited $code)"
+        return $live
+    }
+    $first = $output | ForEach-Object { "$_".Trim() } | Where-Object { $_ } | Select-Object -First 1
+    $version = [regex]::Match([string]$first, '(?<![\w.])v?(\d+(?:\.\d+)+(?:-[\w.-]+)?(?:\+[\w.-]+)?)(?![\w.])')
+    if (-not $version.Success) {
+        $live.status = 'unverified (no version in probe output)'
+        return $live
+    }
+    $live.version = $version.Groups[1].Value
+    $live.provider = Get-LiveProvider $Row $live.path
+    $live.status = ''
+    return $live
+}
+
 function Show-Status {
     Assert-Source
     $rows = Select-Agents (Get-AgentCatalog)
     $state = Get-AgentState
     if (-not $state) { $state = @{} }
-    '{0,-10} {1,-10} {2,-12} {3,-16} {4}' -f 'NAME', 'PROVIDER', 'VERSION', 'COMMAND', 'STATE'
+    'NAME       PROVIDER EVIDENCE'
     foreach ($row in $rows) {
         $command = $row.commands.Split(',')[0]
-        $provider = $row.provider
         $version = $row.version
-        $note = ''
+        $intent = "$($row.provider) =$version"
+        $recorded = 'unavailable'
+        if ($state.ContainsKey($row.name)) {
+            $recorded = "$($state[$row.name].provider) $($state[$row.name].version)"
+        }
         $override = Get-DeviceOverride $row.name
         if ($override) {
-            # A device-owned version forces a deployment-owned install.
             $version = $override
-            $note = ' (device-owned version)'
-        } elseif ($state.ContainsKey($row.name)) {
-            $provider = $state[$row.name].provider
-            $version = $state[$row.name].version
+            $intent += " | override: $($row.provider) =$override (device-owned version)"
         }
-        $status = 'not installed'
-        $resolved = Get-Command $command -ErrorAction SilentlyContinue
-        if ($resolved) {
-            $output = (& $resolved.Source --version 2>&1 | Select-Object -First 1) -join ''
-            $status = if ($output -match [regex]::Escape($version)) { 'installed' } else { "mismatch ($output)" }
+        $live = Get-LiveCommand $command $row
+        if (-not $live.status) {
+            $live.status = 'drift (version or provider mismatch)'
+            if ($live.version -ceq $version -and $live.provider -in @($row.provider, 'unverified')) {
+                $live.status = 'installed'
+                if ($state.ContainsKey($row.name) -and
+                    ($live.version -cne $state[$row.name].version -or
+                     $live.provider -notin @($state[$row.name].provider, 'unverified'))) {
+                    $live.status += ' (drift since last apply)'
+                }
+            }
         }
-        '{0,-10} {1,-10} {2,-12} {3,-16} {4}' -f $row.name, $provider, $version, $command, ($status + $note)
+        '{0,-10} intent: {1} | last apply: {2} | live: {3} | provider: {4} | version: {5} | command: {6} | path: {7}' -f
+            $row.name, $intent, $recorded, $live.status, $live.provider, $live.version, $command, $live.path
     }
 }
 
