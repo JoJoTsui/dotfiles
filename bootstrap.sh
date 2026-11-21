@@ -112,7 +112,10 @@ prepare_agent_update() {
             "$HOME/.local/bin/codex-herdr" "$HOME/.codex/herdr-codex-resume.sh")
         # These shared commands are dependencies of codex-herdr. Restore
         # missing copies while leaving existing shared configuration alone.
-        for target in "$HOME/.local/bin/dotfiles-agent-health" "$HOME/.local/bin/with-proxy"; do
+        # The resume command is one of them: a Herdr restore runs through it,
+        # so a launcher without it cannot resume a thread.
+        for target in "$HOME/.local/bin/dotfiles-agent-health" "$HOME/.local/bin/with-proxy" \
+                      "$HOME/.local/bin/dotfiles-codex-resume"; do
             if [ ! -e "$target" ]; then targets+=("$target"); fi
         done
         for target in "${targets[@]}"; do payload_safe_destination "$target"; done

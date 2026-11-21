@@ -362,7 +362,9 @@ direct provider configuration.
 
 Inside interactive Herdr shells, Codex launches through `codex-herdr` (health
 preflight plus `with-proxy codex --no-daemon`) so its hooks inherit the pane
-identity; non-interactive `with-proxy codex exec` keeps the shared daemon.
+identity; a restore of a saved thread runs through the managed resume command
+instead, so the thread keeps its own provider, model, and reasoning effort.
+Non-interactive `with-proxy codex exec` keeps the shared daemon.
 After a reboot, `dotfiles-host-up up` chains links, proxy, the Codex
 daemon, and health; `up --restore` adds the saved Herdr workspace/agents. See
 [host bring-up](docs/HOST_UP.md).

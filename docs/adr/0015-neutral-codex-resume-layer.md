@@ -69,6 +69,24 @@ carries definitions only:
   dropped: the deployment's own rule is to fail closed on a getter it cannot
   parse rather than guessing, and a guessed provider definition reroutes the
   resumed thread through a provider nobody verified.
+- The options that are passed through select nothing either: `--cd`,
+  `--no-alt-screen`, and `--no-daemon` change where the session runs, not
+  which provider, model, or reasoning effort the thread uses. `--no-daemon`
+  keeps the app server in the process, which is what a Herdr pane needs for
+  its hooks to report to the pane that resumed the thread.
+
+## Consumers
+
+The Herdr-scoped launcher reaches the command for a restore. `codex-herdr`
+keeps two routes apart: a fresh launch runs `codex --no-daemon`, and a
+restore runs `dotfiles-codex-resume --no-daemon <session id>`, because Codex
+refuses a resume whose thread saved another provider than the current
+configuration selects. The health gate, the proxy gate, and the in-process app
+server stay on both routes, so a restored session keeps the pane identity its
+hooks report to.
+
+The command is the only resume interface the deployment owns. `codex exec
+resume` is not a substitute: it always sends resolved settings.
 
 ## Consequences
 

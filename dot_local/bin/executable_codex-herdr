@@ -6,10 +6,25 @@
 # first started in and reports every session to that pane. The wrapper also
 # checks the local stack and inherits the outbound proxy for Codex's
 # account/read call.
+#
+# Two routes leave this wrapper, and they stay distinct:
+#
+#   * A fresh launch keeps the plain route: codex --no-daemon. It starts a
+#     new session, so the configuration of the device selects its provider.
+#   * A restore resumes a thread that saved its own provider, model, and
+#     reasoning effort. Codex refuses a resume whose thread saved another
+#     provider than the current configuration selects, so a restore goes
+#     through the managed resume command, which carries provider definitions
+#     only and selects nothing.
+#
+# Both routes keep the health gate, the proxy gate, and the in-process app
+# server, so the hooks of a restored session still report to the pane that
+# restored them.
 set -uo pipefail
 
 health=${DOTFILES_AGENT_HEALTH:-$HOME/.local/bin/dotfiles-agent-health}
 with_proxy=${DOTFILES_WITH_PROXY:-$HOME/.local/bin/with-proxy}
+resume_command=${DOTFILES_CODEX_RESUME:-$HOME/.local/bin/dotfiles-codex-resume}
 
 if [ ! -x "$health" ]; then
     printf 'codex-herdr: %s is missing\n' "$health" >&2
@@ -29,4 +44,16 @@ fi
 # and otherwise drops inherited proxy variables before starting. Inheriting a
 # stale http_proxy is what made a pane report "connection failed" while a shell
 # without those variables reached the same endpoint.
+if [ "${1:-}" = resume ]; then
+    shift
+    if [ ! -x "$resume_command" ]; then
+        printf 'codex-herdr: %s is missing\n' "$resume_command" >&2
+        exit 1
+    fi
+    # The managed command adds the provider definitions and never a selection,
+    # so the resumed thread keeps the provider, the model, and the reasoning
+    # effort it saved. --no-daemon keeps the app server in the pane.
+    exec "$with_proxy" --if-available "$resume_command" --no-daemon "$@"
+fi
+
 exec "$with_proxy" --if-available codex --no-daemon "$@"

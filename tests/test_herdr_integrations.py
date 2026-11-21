@@ -246,7 +246,7 @@ class HerdrSelectionTests(unittest.TestCase, HerdrFixture):
             self.assertEqual(installs, ["integration install codex"])
             for relative in (".local/bin/codex-herdr", ".local/bin/dotfiles-codex-herdr",
                              ".codex/herdr-codex-resume.sh", ".local/bin/dotfiles-agent-health",
-                             ".local/bin/with-proxy"):
+                             ".local/bin/with-proxy", ".local/bin/dotfiles-codex-resume"):
                 self.assertTrue(os.access(fixture.home / relative, os.X_OK), relative)
             self.assertIn("herdr-codex-resume.sh", (fixture.home / ".codex/hooks.json").read_text())
             self.assertFalse((fixture.home / ".agents/skills").exists())

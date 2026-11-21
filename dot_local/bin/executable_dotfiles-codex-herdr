@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# dotfiles-codex-herdr — register the Herdr Codex resume hook idempotently.
+# dotfiles-codex-herdr — register, report, and remove the managed Herdr Codex
+# resume hook.
 #
 # The hook script is managed by the dotfiles source, but ~/.codex/hooks.json is
-# device-owned. Run this after `herdr integration install codex`; it preserves
-# every existing hook and places the custom SessionStart entry last so its
-# resume argv wins.
+# device-owned. The reconciliation works at command granularity: the managed
+# command is the one that runs the managed hook script, and only that command
+# is removed or replaced. A group that carries a device command beside it
+# keeps its own commands, its own metadata, and its place in the list; only a
+# group that held nothing but the managed command disappears. Herdr owns its
+# own entries, and the managed entry is placed last so its resume argv wins.
 set -uo pipefail
 
 hooks=${DOTFILES_CODEX_HOOKS:-$HOME/.codex/hooks.json}
@@ -13,24 +17,41 @@ shift || true
 
 usage() {
     cat <<'EOF'
-usage: dotfiles-codex-herdr [install|status]
+usage: dotfiles-codex-herdr [install|status|remove]
 
-  install   ensure the custom SessionStart hook is present and last
-  status    report whether it is registered
+  install   ensure the managed SessionStart command is present and last
+  status    report whether the managed command is registered
+  remove    remove the managed command and keep every other hook
 EOF
 }
 
 case "$action" in
-    install)
-        python3 - "$hooks" <<'PY'
+    install|status|remove) ;;
+    -h|--help|help)
+        usage
+        exit 0
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
+
+python3 - "$action" "$hooks" <<'PY'
 import json
 import os
 import shutil
 import sys
 import time
 
-path = sys.argv[1]
-entry = {
+action = sys.argv[1]
+path = sys.argv[2]
+
+# The managed command is the one that runs the managed hook script. It is the
+# only command this command owns: every other command in the file belongs to
+# the device or to Herdr.
+MARKER = "herdr-codex-resume.sh"
+MANAGED = {
     "hooks": [
         {
             "type": "command",
@@ -39,75 +60,130 @@ entry = {
         }
     ]
 }
-try:
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)
-except FileNotFoundError:
-    data = {}
-except Exception as error:
-    raise SystemExit(f"dotfiles-codex-herdr: cannot parse {path}: {error}")
-if not isinstance(data, dict):
-    raise SystemExit(f"dotfiles-codex-herdr: {path} is not a JSON object")
-hooks = data.setdefault("hooks", {})
-if not isinstance(hooks, dict):
-    raise SystemExit(f"dotfiles-codex-herdr: hooks in {path} is not an object")
-session = hooks.setdefault("SessionStart", [])
-if not isinstance(session, list):
-    raise SystemExit(f"dotfiles-codex-herdr: hooks.SessionStart in {path} is not a list")
-session[:] = [
-    item for item in session
-    if not any("herdr-codex-resume.sh" in hook.get("command", "")
-               for hook in item.get("hooks", []) if isinstance(hook, dict))
-]
-session.append(entry)
-if os.path.exists(path):
-    shutil.copy2(path, f"{path}.bak.{time.strftime('%Y%m%d-%H%M%S')}")
-    target = os.path.realpath(path)
-else:
-    target = path
-os.makedirs(os.path.dirname(target), exist_ok=True)
-temporary = f"{target}.tmp.{os.getpid()}"
-with open(temporary, "w", encoding="utf-8") as handle:
-    json.dump(data, handle, indent=2)
-    handle.write("\n")
-os.chmod(temporary, 0o600)
-os.replace(temporary, target)
-print(f"installed {path}")
-PY
-        ;;
-    status)
-        python3 - "$hooks" <<'PY'
-import json
-import sys
 
-path = sys.argv[1]
-try:
-    with open(path, encoding="utf-8") as handle:
-        data = json.load(handle)
-except FileNotFoundError:
-    raise SystemExit(f"dotfiles-codex-herdr: {path} is missing")
-except Exception as error:
-    raise SystemExit(f"dotfiles-codex-herdr: cannot parse {path}: {error}")
-found = any(
-    "herdr-codex-resume.sh" in hook.get("command", "")
-    for item in data.get("hooks", {}).get("SessionStart", [])
-    for hook in item.get("hooks", [])
-    if isinstance(hook, dict)
-)
-raise SystemExit(0 if found else 1)
+
+def fail(message):
+    raise SystemExit("dotfiles-codex-herdr: " + message)
+
+
+def load():
+    """The device-owned hook file. A missing file is an empty document."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return {}
+    except Exception as error:
+        fail("cannot parse %s: %s" % (path, error))
+    if not isinstance(data, dict):
+        fail("%s is not a JSON object" % path)
+    return data
+
+
+def session_groups(data):
+    hooks = data.setdefault("hooks", {})
+    if not isinstance(hooks, dict):
+        fail("hooks in %s is not an object" % path)
+    session = hooks.setdefault("SessionStart", [])
+    if not isinstance(session, list):
+        fail("hooks.SessionStart in %s is not a list" % path)
+    return session
+
+
+def owned(hook):
+    """Whether a hook command is the managed one."""
+    if not isinstance(hook, dict):
+        return False
+    command = hook.get("command")
+    return isinstance(command, str) and MARKER in command
+
+
+def has_managed(session):
+    for group in session:
+        if not isinstance(group, dict):
+            continue
+        commands = group.get("hooks")
+        if not isinstance(commands, list):
+            continue
+        for hook in commands:
+            if owned(hook):
+                return True
+    return False
+
+
+def reconcile(session):
+    """Take the managed command out of every group and keep the rest as it is.
+
+    A group that carries a device command beside the managed one keeps its
+    own commands, its own metadata, and its place in the list. Only a group
+    that held nothing but the managed command disappears.
+    """
+    kept = []
+    removed = 0
+    for group in session:
+        if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+            kept.append(group)
+            continue
+        commands = group["hooks"]
+        remaining = [hook for hook in commands if not owned(hook)]
+        removed += len(commands) - len(remaining)
+        if len(remaining) == len(commands):
+            kept.append(group)
+            continue
+        if not remaining:
+            continue
+        # The group's own metadata stays with its own commands.
+        group = dict(group)
+        group["hooks"] = remaining
+        kept.append(group)
+    return kept, removed
+
+
+def write(data):
+    """Publish the reconciled document, keeping the previous one as a backup."""
+    if os.path.exists(path):
+        shutil.copy2(path, "%s.bak.%s" % (path, time.strftime("%Y%m%d-%H%M%S")))
+        target = os.path.realpath(path)
+    else:
+        target = path
+    directory = os.path.dirname(target)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+    temporary = "%s.tmp.%d" % (target, os.getpid())
+    with open(temporary, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, target)
+
+
+data = load()
+session = session_groups(data)
+reconciled, removed = reconcile(session)
+
+if action == "status":
+    if has_managed(session):
+        print("registered %s" % path)
+        raise SystemExit(0)
+    print("not registered %s" % path, file=sys.stderr)
+    raise SystemExit(1)
+
+if action == "remove":
+    if not removed:
+        print("not registered %s" % path)
+        raise SystemExit(0)
+    data["hooks"]["SessionStart"] = reconciled
+    write(data)
+    print("removed the managed command from %s" % path)
+    raise SystemExit(0)
+
+# The managed entry is last, so its resume argv wins over every other
+# SessionStart entry. A file that already carries it there is left alone.
+final = reconciled + [MANAGED]
+if final == session:
+    print("already registered %s" % path)
+    raise SystemExit(0)
+data["hooks"]["SessionStart"] = final
+write(data)
+print("installed %s" % path)
 PY
-        if [ "$?" -eq 0 ]; then
-            printf 'registered %s\n' "$hooks"
-        else
-            printf 'not registered %s\n' "$hooks" >&2
-            exit 1
-        fi
-        ;;
-    -h|--help|help)
-        usage
-        ;;
-    *)
-        usage >&2
-        exit 2
-        ;;
-esac
