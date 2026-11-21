@@ -51,6 +51,14 @@ a command that passes the managed script an argument keeps its place too. A
 device may store the location of that same script with the path spelled
 another way, and those forms are the managed command.
 
+The spelling decides what the shell runs, so a placeholder counts only where
+the shell expands it: `$HOME` inside double quotes or unquoted, and a leading
+`~` unquoted. A single-quoted placeholder, an escaped placeholder, and a
+quoted `~` are literal, so they name a script of the working directory
+instead of the managed one, and a command that carries one keeps its place in
+the group. An absolute path of this home needs no expansion, so every
+quoting of it is the managed command.
+
 MiniMax Code has no Herdr kind and stays a pane command. `dotfiles-agents
 status` reports each selected agent's Herdr state
 (`current`/`outdated`/`missing`/`unsupported`), and `dotfiles-agent-health
