@@ -125,8 +125,11 @@ adapter forces a reinstall of that package project and verifies the launcher.
 The DSH TUI update also reconciles its DSH runtime. On Unix, the selected
 agent's existing Worktrunk and Herdr integration steps still run. A Codex
 update restores the managed Herdr hook files when Herdr is available. On
-Windows a missing `.env_core` is restored for the Git Bash launchers. If the
-existing file fails the Git Bash syntax check, update stops and preserves it.
+Windows a missing `.env_core` is restored for the Git Bash launchers. The
+update checks the existing file against the managed rendering without sourcing
+it. A different role's polling default and trailing comments are accepted.
+Other changes to the shell program stop the update and preserve the file.
+Put local shell inputs in `.config/dotfiles/env.local.sh`.
 
 CodeGraph's independent installation and standalone registrations, configuration
 of other clients, generated skills, and shared shell drift remain for a full

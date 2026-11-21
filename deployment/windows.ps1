@@ -830,6 +830,22 @@ function Set-ChezmoiArguments([string]$ConfigDirectory = (Join-Path $roots.confi
 function Initialize-Chezmoi {
     Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('init', '--data=false')) -Quiet | Out-Null
 }
+function Test-ManagedGitBashEnvironment([string]$Existing, [string]$Rendered) {
+    $existingText = $Existing.Replace("`r`n", "`n")
+    $renderedText = $Rendered.Replace("`r`n", "`n").TrimEnd("`n")
+    # A targeted update can select a different host role. The two generated
+    # polling values are safe and the full apply still owns changing them.
+    $roleDefault = '(?m)^: "\$\{CHOKIDAR_USEPOLLING:=[01]\}"$'
+    $existingText = $existingText -creplace $roleDefault, ': "${CHOKIDAR_USEPOLLING:=0}"'
+    $renderedText = $renderedText -creplace $roleDefault, ': "${CHOKIDAR_USEPOLLING:=0}"'
+    if (-not $renderedText -or -not $existingText.StartsWith($renderedText, [StringComparison]::Ordinal)) {
+        return $false
+    }
+    # Appended blank lines and comments do not change the generated program.
+    # Any other edit could stop or redirect the launcher before it runs Pi,
+    # even when the file passes Bash's syntax check.
+    return $existingText.Substring($renderedText.Length) -cmatch '\A(?:\n[ \t]*(?:#[^\n\r]*)?)*\z'
+}
 function Prepare-AgentUpdate {
     $script:TargetedRenderDirectory = Get-Scratch 'agent-render'
     Set-Private $script:TargetedRenderDirectory
@@ -845,12 +861,16 @@ function Prepare-AgentUpdate {
     }
     $gitBash = Join-Path $roots.data 'dotfiles/git-bash/bin/bash.exe'
     if (-not [IO.File]::Exists($gitBash)) { Stop-Deployment 'managed Git Bash is missing; run full bootstrap before updating' }
+    $rendered = Join-Path $script:TargetedRenderDirectory 'env_core.expected'
+    Invoke-Tool $script:Chezmoi (@($script:ChezmoiArguments) + @('--output', $rendered, 'cat', $shellEnvironment)) -Quiet | Out-Null
     $savedFailureCode = $script:FailureCode
     try {
-        if ((Get-Item -LiteralPath $shellEnvironment).Length -eq 0) { throw 'empty shell environment' }
-        Invoke-Tool $gitBash @('-n', $shellEnvironment) -Quiet | Out-Null
+        if (-not (Test-ManagedGitBashEnvironment ([IO.File]::ReadAllText($shellEnvironment)) ([IO.File]::ReadAllText($rendered)))) {
+            throw 'shell environment differs from the generated script'
+        }
+        Invoke-Tool $gitBash @('--noprofile', '--norc', '-p', '-n', $shellEnvironment.Replace('\', '/')) -Quiet | Out-Null
     } catch {
-        Stop-Deployment '.env_core failed the Git Bash check; repair it or run full bootstrap before updating'
+        Stop-Deployment '.env_core failed the Git Bash check; preserve local shell inputs in .config/dotfiles/env.local.sh and restore the managed environment before updating'
     } finally {
         $script:FailureCode = $savedFailureCode
     }
