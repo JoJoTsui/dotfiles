@@ -2283,7 +2283,7 @@ magpie_dsh_compact_current() {
 # The state the apply records: the providers, the groups with their model
 # order, the wiring, the proxy, the DSH compaction group, and the guard result.
 magpie_state_content() {
-    local guard=$1 index role group agent provider
+    local guard=$1 index role group agent provider recorded
     {
         printf '# Magpie apply state. The deployment owns this file.\n'
         printf '# kind|key|value\n'
@@ -2303,7 +2303,14 @@ magpie_state_content() {
         for (( index=0; index<${#MAGPIE_WIRING_AGENT[@]}; index++ )); do
             agent=${MAGPIE_WIRING_AGENT[index]}
             if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
-            if magpie_codex_profile_skipped "$agent"; then continue; fi
+            if magpie_codex_profile_skipped "$agent"; then
+                # An excluded apply must retain the last successful ownership
+                # record so selecting Codex again does not create a collision.
+                if recorded=$(magpie_recorded_wiring "$(magpie_state_dir)/state.tsv" codex); then
+                    printf 'wiring|codex|%s\n' "$recorded"
+                fi
+                continue
+            fi
             printf 'wiring|%s|%s\n' "$agent" "${MAGPIE_WIRING_GROUP[index]}"
         done
         if ! magpie_dsh_compact_selected; then
@@ -2362,27 +2369,40 @@ magpie_codex_profile_pending_path() {
 }
 
 magpie_codex_profile_fingerprint() {
-    local file=$1
+    local file=$1 digest
     [ ! -L "$file" ] || return 1
     if [ -e "$file" ]; then
         [ -f "$file" ] || return 1
-        magpie_sha256 "$file"
+        digest=$(set -o pipefail; magpie_sha256 "$file") || return 1
+        case "$digest" in ''|*[!0-9a-f]*) return 1 ;; esac
+        [ "${#digest}" -eq 64 ] || return 1
+        printf '%s\n' "$digest"
     else
         printf 'absent\n'
     fi
 }
 
+magpie_codex_profile_snapshot() {
+    local profile catalog
+    profile=$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml") || return 1
+    catalog=$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json") || return 1
+    printf 'profile|%s\ncatalog|%s\n' "$profile" "$catalog"
+}
+
 # Record the exact files an interrupted first write may retry. A later edit or
 # deletion no longer matches this record and is treated as device drift.
 magpie_codex_profile_pending_write() {
-    local root pending staged
+    local root pending staged snapshot issue
+    issue=$(magpie_codex_profile_validate_paths) || { magpie_fail "$issue"; return 1; }
+    snapshot=$(magpie_codex_profile_snapshot) ||
+        { magpie_fail 'cannot fingerprint the Codex profile and model catalog'; return 1; }
     root=$(magpie_state_dir)
     pending=$(magpie_codex_profile_pending_path)
     [ ! -L "$root" ] || { magpie_fail 'the Magpie state directory is a symlink'; return 1; }
     mkdir -p "$root" || { magpie_fail 'cannot create the Magpie state directory'; return 1; }
     [ ! -L "$pending" ] || { magpie_fail 'the Codex profile pending record is a symlink'; return 1; }
     staged=$(mktemp "$pending.XXXXXX") || { magpie_fail 'cannot stage the Codex profile pending record'; return 1; }
-    printf 'profile|%s\ncatalog|%s\n' "$1" "$2" > "$staged" || {
+    printf '%s\n' "$snapshot" > "$staged" || {
         rm -f "$staged"; magpie_fail 'cannot write the Codex profile pending record'; return 1;
     }
     chmod 600 "$staged" || { rm -f "$staged"; return 1; }
@@ -2390,27 +2410,17 @@ magpie_codex_profile_pending_write() {
 }
 
 magpie_codex_profile_pending_matches() {
-    local pending profile_record catalog_record profile_now catalog_now
-    pending=$(magpie_codex_profile_pending_path)
+    local pending=$1 snapshot
     [ -f "$pending" ] && [ ! -L "$pending" ] || return 1
-    {
-        IFS='|' read -r _ profile_record
-        IFS='|' read -r _ catalog_record
-    } < "$pending"
-    profile_now=$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml") || return 1
-    catalog_now=$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json") || return 1
-    [ -n "$profile_record" ] && [ -n "$catalog_record" ] &&
-        [ "$profile_record" = "$profile_now" ] && [ "$catalog_record" = "$catalog_now" ]
+    snapshot=$(magpie_codex_profile_snapshot) || return 1
+    cmp -s "$pending" <(printf '%s\n' "$snapshot")
 }
 
 magpie_codex_profile_pending_clear() {
     local pending
     pending=$(magpie_codex_profile_pending_path)
     [ -e "$pending" ] || [ -L "$pending" ] || return 0
-    magpie_codex_profile_pending_matches || {
-        magpie_fail 'the interrupted Codex profile files changed; preserving them'
-        return 1
-    }
+    magpie_codex_profile_preflight || return 1
     rm -f "$pending" || { magpie_fail 'cannot clear the Codex profile pending record'; return 1; }
 }
 
@@ -2453,7 +2463,7 @@ magpie_codex_profile_mode() {
 # writing, on reapplication, and by status so recorded intent is not proof.
 magpie_codex_profile_report() {
     local group=$1 profile="$HOME/.codex/magpie.config.toml"
-    local catalog="$HOME/.codex/magpie-models.json" python mode value drift=''
+    local catalog="$HOME/.codex/magpie-models.json" python mode value key expected drift=''
     if [ ! -e "$profile" ] && [ ! -e "$catalog" ]; then
         printf 'missing|'
         return 0
@@ -2543,27 +2553,23 @@ magpie_link_count() {
 # A pre-existing profile is device state until a successful apply records it.
 # Check every target before CLI installation or gateway mutation. In particular,
 # Magpie's atomic writer follows symlinks, so a link is never an adoption seam.
-magpie_codex_profile_preflight() {
-    magpie_codex_profile_enabled || return 0
-    local home profile catalog file recorded pending links
+magpie_codex_profile_validate_paths() {
+    local home file links
     home=$(magpie_codex_home)
-    profile="$home/magpie.config.toml"
-    catalog="$home/magpie-models.json"
-    pending=$(magpie_codex_profile_pending_path)
     # A linked Codex home is another directory: the writer would create the
     # profile there, and the deployment would change a file it does not own.
     if [ -L "$home" ]; then
-        magpie_fail "the Codex home is a symlink: $home"
+        printf 'the Codex home is a symlink: %s' "$home"
         return 1
     fi
     if [ -e "$home" ] && [ ! -d "$home" ]; then
-        magpie_fail "the Codex home is not a directory: $home"
+        printf 'the Codex home is not a directory: %s' "$home"
         return 1
     fi
-    for file in "$profile" "$catalog"; do
-        [ ! -L "$file" ] || { magpie_fail "the Codex profile path is a symlink: $file"; return 1; }
+    for file in "$home/magpie.config.toml" "$home/magpie-models.json"; do
+        [ ! -L "$file" ] || { printf 'the Codex profile path is a symlink: %s' "$file"; return 1; }
         if [ -e "$file" ] && [ ! -f "$file" ]; then
-            magpie_fail "the Codex profile path is not a regular file: $file"
+            printf 'the Codex profile path is not a regular file: %s' "$file"
             return 1
         fi
         # The pinned writer writes a file with other names in place, so a
@@ -2573,31 +2579,58 @@ magpie_codex_profile_preflight() {
             # An unreadable link count is not one link: the deployment cannot
             # tell an alias from a single name, so it refuses.
             links=$(magpie_link_count "$file") ||
-                { magpie_fail "cannot read the link count of the Codex profile path: $file"; return 1; }
+                { printf 'cannot read the link count of the Codex profile path: %s' "$file"; return 1; }
             case "$links" in
                 ''|*[!0-9]*)
-                    magpie_fail "cannot read the link count of the Codex profile path: $file"
+                    printf 'cannot read the link count of the Codex profile path: %s' "$file"
                     return 1 ;;
             esac
             if [ "$links" -gt 1 ]; then
-                magpie_fail "the Codex profile path has other names: $file"
+                printf 'the Codex profile path has other names: %s' "$file"
                 return 1
             fi
         fi
     done
-    if [ -e "$pending" ] || [ -L "$pending" ]; then
-        magpie_codex_profile_pending_matches || {
-            magpie_fail 'the interrupted Codex profile files do not match their pending record; preserving them'
-            return 1
-        }
+    return 0
+}
+
+# The read-only ownership and retry decision shared by apply and status.
+# Profile health alone cannot establish ownership or clear a pending write.
+magpie_codex_profile_recovery_state() {
+    local issue root pending recorded
+    issue=$(magpie_codex_profile_validate_paths) || { printf 'blocked|%s' "$issue"; return 0; }
+    root=$(magpie_state_dir)
+    if [ -L "$root" ] || [ -L "$root/state.tsv" ]; then
+        printf 'blocked|the Codex profile ownership record is reached through a symlink'
         return 0
     fi
-    recorded=$(magpie_recorded_wiring "$(magpie_state_dir)/state.tsv" codex || true)
-    if [ -z "$recorded" ] && { [ -e "$profile" ] || [ -e "$catalog" ]; }; then
-        magpie_fail 'an unrecorded Codex profile or model catalog already exists; preserving it'
-        return 1
+    pending=$(magpie_codex_profile_pending_path)
+    if [ -e "$pending" ] || [ -L "$pending" ]; then
+        if magpie_codex_profile_pending_matches "$pending"; then
+            printf 'recoverable|pending fingerprints match; rerun apply to finish'
+        else
+            printf 'blocked|the interrupted Codex profile files do not match their pending record; preserving them'
+        fi
+    else
+        recorded=$(magpie_recorded_wiring "$root/state.tsv" codex || true)
+        if [ -z "$recorded" ] && { [ -e "$HOME/.codex/magpie.config.toml" ] ||
+                                   [ -e "$HOME/.codex/magpie-models.json" ]; }; then
+            printf 'blocked|an unrecorded Codex profile or model catalog already exists; preserving it'
+        else
+            printf 'ready|'
+        fi
     fi
-    return 0
+}
+
+magpie_codex_profile_preflight() {
+    magpie_codex_profile_enabled || return 0
+    local recovery
+    recovery=$(magpie_codex_profile_recovery_state)
+    case "$recovery" in
+        ready\|*|recoverable\|*) return 0 ;;
+        blocked\|*) magpie_fail "${recovery#*|}" ;;
+        *) magpie_fail 'cannot determine ownership of the Codex profile' ;;
+    esac
 }
 
 # The scope the pinned CLI reports, read without changing anything. The
@@ -2700,13 +2733,13 @@ magpie_apply() {
     dir=$(magpie_catalog_dir)
     DEPLOY_STEP=magpie-apply.catalog
     magpie_catalog_validate "$dir" || return 1
+    magpie_codex_profile_preflight || return 1
     # The guard compares the parsed content of the device's Codex
     # configuration and authentication, so the interpreter that parses them
     # is resolved here, in the shell that owns the comparison.
     magpie_content_digest_prepare || true
     codex_before=$(magpie_content_digest "$HOME/.codex/config.toml" toml || true)
     codex_auth_before=$(magpie_content_digest "$HOME/.codex/auth.json" json || true)
-    magpie_codex_profile_preflight || return 1
     printf 'dotfiles: magpie: %s provider(s), %s model role(s), %s group(s), %s agent(s) declared\n' \
         "${#MAGPIE_PROVIDER_ROLE[@]}" "${#MAGPIE_MODEL_ROLE[@]}" \
         "${#MAGPIE_GROUP_ID[@]}" "${#MAGPIE_WIRING_AGENT[@]}"
@@ -3223,9 +3256,8 @@ client-settings"
                 # changes; a profile is never written for another scope.
                 [ "$MAGPIE_CODEX_SCOPE" = profile ] ||
                     { magpie_fail 'the separate Codex profile is not selected'; return 1; }
-                magpie_codex_profile_pending_write \
-                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
-                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
+                magpie_codex_profile_preflight || return 1
+                magpie_codex_profile_pending_write || return 1
                 if [ ! -e "$HOME/.codex/magpie.config.toml" ]; then
                     # A device without a Codex home gets one of its own,
                     # private: the deployment creates the directory it writes
@@ -3246,13 +3278,9 @@ client-settings"
                 # receives the credential while another user can read it.
                 chmod 600 "$HOME/.codex/magpie.config.toml" ||
                     { magpie_fail 'cannot protect the Codex profile before it is written'; return 1; }
-                magpie_codex_profile_pending_write \
-                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
-                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
+                magpie_codex_profile_pending_write || return 1
                 if magpie_run codex "$group" >/dev/null; then status=0; else status=$?; fi
-                magpie_codex_profile_pending_write \
-                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie.config.toml")" \
-                    "$(magpie_codex_profile_fingerprint "$HOME/.codex/magpie-models.json")" || return 1
+                magpie_codex_profile_pending_write || return 1
                 codex_after=$(magpie_content_digest "$HOME/.codex/config.toml" toml || true)
                 codex_auth_after=$(magpie_content_digest "$HOME/.codex/auth.json" json || true)
                 [ "$codex_before" = "$codex_after" ] ||
@@ -3326,6 +3354,7 @@ client-settings"
     printf 'dotfiles: magpie: the Codex configuration and authentication are unchanged\n'
 
     DEPLOY_STEP=magpie-apply.state
+    magpie_codex_profile_preflight || return 1
     content=$(magpie_state_content "$guard")
     if magpie_state_current "$(magpie_state_dir)/state.tsv" "$content"; then
         printf 'dotfiles: magpie: the recorded state is current; nothing was written\n'
@@ -3672,12 +3701,14 @@ magpie_dsh_compact_state() {
 magpie_status() {
     local index role preset source required group agent proxy output models
     local known guard='' missing='' state credential version name plugin_state current desired count
-    local enabled report keys dsh_compact_state dsh_excluded=no codex_excluded=no
-    if grep -qx 'selection|dsh|excluded' "$(magpie_state_dir)/state.tsv" 2>/dev/null; then
-        dsh_excluded=yes
-    fi
-    if grep -qx 'selection|codex|excluded' "$(magpie_state_dir)/state.tsv" 2>/dev/null; then
-        codex_excluded=yes
+    local enabled report keys recovery dsh_compact_state dsh_excluded=no codex_excluded=no
+    local state_dir state_file state_readable=no
+    state_dir=$(magpie_state_dir)
+    state_file="$state_dir/state.tsv"
+    if [ ! -L "$state_dir" ] && [ ! -L "$state_file" ] && [ -f "$state_file" ]; then
+        state_readable=yes
+        if grep -qx 'selection|dsh|excluded' "$state_file" 2>/dev/null; then dsh_excluded=yes; fi
+        if grep -qx 'selection|codex|excluded' "$state_file" 2>/dev/null; then codex_excluded=yes; fi
     fi
     magpie_catalog_validate "$(magpie_catalog_dir)" || return 1
     if magpie_gateway_ready; then
@@ -3811,6 +3842,14 @@ magpie_status() {
                     printf 'wiring|%s|%s\n' "$agent" "$group"
                     continue
                 fi
+                recovery=$(magpie_codex_profile_recovery_state)
+                case "$recovery" in
+                    blocked\|*|recoverable\|*)
+                        printf 'wiring|codex|%s (%s)\n' "${recovery%%|*}" "${recovery#*|}"
+                        missing="$missing wiring codex"
+                        continue
+                        ;;
+                esac
                 report=$(magpie_codex_profile_report "$group")
                 state=${report%%|*}; keys=${report#*|}
                 case "$state" in
@@ -3907,8 +3946,8 @@ magpie_status() {
             missing="$missing dsh-compact"
             ;;
     esac
-    if [ -f "$(magpie_state_dir)/state.tsv" ]; then
-        guard=$(grep '^codex-guard|' "$(magpie_state_dir)/state.tsv" 2>/dev/null | head -n1)
+    if [ "$state_readable" = yes ]; then
+        guard=$(grep -m 1 '^codex-guard|' "$state_file" 2>/dev/null || true)
         [ -n "$guard" ] || guard='codex-guard|unknown'
     else
         guard='codex-guard|not recorded'
