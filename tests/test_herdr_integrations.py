@@ -246,10 +246,98 @@ class HerdrSelectionTests(unittest.TestCase, HerdrFixture):
             self.assertEqual(installs, ["integration install codex"])
             for relative in (".local/bin/codex-herdr", ".local/bin/dotfiles-codex-herdr",
                              ".codex/herdr-codex-resume.sh", ".local/bin/dotfiles-agent-health",
-                             ".local/bin/with-proxy"):
+                             ".local/bin/with-proxy", ".local/bin/dotfiles-codex-resume"):
                 self.assertTrue(os.access(fixture.home / relative, os.X_OK), relative)
             self.assertIn("herdr-codex-resume.sh", (fixture.home / ".codex/hooks.json").read_text())
             self.assertFalse((fixture.home / ".agents/skills").exists())
+
+
+@unittest.skipUnless(shutil.which("chezmoi"), "the deployment boundary requires chezmoi")
+class HerdrCodexLauncherRepairTests(unittest.TestCase, HerdrFixture):
+    """A targeted codex update repairs the launcher and the resume helper."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-codex-repair-")
+        self.addCleanup(self.temporary.cleanup)
+        self.fixture = HerdrFixture()
+        self.fixture.build(Path(self.temporary.name))
+        self.fixture.write_state([("codex", "missing")])
+
+    def fake_codex(self):
+        """A fake Codex that reports a usable version and records its argv."""
+        directory = Path(self.temporary.name) / "codex-bin"
+        directory.mkdir()
+        record = Path(self.temporary.name) / "codex-argv.txt"
+        codex = directory / "codex"
+        codex.write_text(
+            "#!/bin/sh\n"
+            'if [ "$1" = "--version" ]; then echo "codex-cli 0.169.0"; exit 0; fi\n'
+            'printf "%s\\n" "$@" > "$CODEX_ARGV"\n'
+            "exit 0\n")
+        codex.chmod(0o755)
+        return directory, record
+
+    def test_the_update_refreshes_an_older_resume_helper_next_to_the_launcher(self):
+        # An existing home carries a resume helper that predates the
+        # --no-daemon passthrough. The launcher passes that option, so the
+        # helper has to be refreshed together with the launcher.
+        helper = self.fixture.home / ".local/bin/dotfiles-codex-resume"
+        helper.parent.mkdir(parents=True, exist_ok=True)
+        helper.write_text(
+            "#!/bin/sh\n"
+            "printf 'dotfiles-codex-resume: refusing --no-daemon\\n' >&2\n"
+            "exit 2\n")
+        helper.chmod(0o755)
+
+        result = self.fixture.deploy("--agent-update", "--agents", "codex")
+        self.assertEqual(result.returncode, 0, result.stderr[-4000:])
+
+        # The refreshed helper passes --no-daemon on to Codex.
+        directory, record = self.fake_codex()
+        environment = dict(self.fixture.env)
+        environment["PATH"] = f"{directory}:{environment['PATH']}"
+        environment["CODEX_ARGV"] = str(record)
+        resumed = subprocess.run([str(helper), "--no-daemon"], env=environment,
+                                 capture_output=True, text=True, timeout=60)
+        self.assertEqual(resumed.returncode, 0, resumed.stderr)
+        self.assertIn("--no-daemon", record.read_text(encoding="utf-8").splitlines())
+
+    def test_the_update_keeps_the_device_configuration_and_its_own_hooks(self):
+        # The refresh reaches the launcher and the helper only. The device's
+        # own Codex configuration, its own credentials, and its own hook
+        # commands are its own.
+        device = self.fixture.home / ".codex/config.toml"
+        device.parent.mkdir(parents=True, exist_ok=True)
+        device.write_text('model = "device-model"\n')
+        credentials = self.fixture.home / ".codex/auth.json"
+        credentials.write_text('{"tokens": "device-credentials"}\n')
+
+        first = self.fixture.deploy("--agent-update", "--agents", "codex")
+        self.assertEqual(first.returncode, 0, first.stderr[-4000:])
+        hooks = self.fixture.home / ".codex/hooks.json"
+        commands = self.hook_commands(hooks)
+        self.assertIn("herdr-codex-resume.sh", commands[-1])
+
+        # A device command beside the managed one survives the next update.
+        data = json.loads(hooks.read_text(encoding="utf-8"))
+        data["hooks"]["SessionStart"][0]["hooks"].insert(
+            0, {"type": "command", "command": "device-hook", "timeout": 30})
+        hooks.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        second = self.fixture.deploy("--agent-update", "--agents", "codex")
+        self.assertEqual(second.returncode, 0, second.stderr[-4000:])
+        commands = self.hook_commands(hooks)
+        self.assertIn("device-hook", commands)
+        self.assertIn("herdr-codex-resume.sh", commands[-1])
+        # The device's own configuration and credentials survive.
+        self.assertIn('model = "device-model"', device.read_text(encoding="utf-8"))
+        self.assertEqual(credentials.read_text(encoding="utf-8"),
+                         '{"tokens": "device-credentials"}\n')
+
+    def hook_commands(self, hooks):
+        data = json.loads(hooks.read_text(encoding="utf-8"))
+        return [hook["command"]
+                for group in data["hooks"]["SessionStart"]
+                for hook in group.get("hooks", [])]
 
 
 @unittest.skipUnless(shutil.which("chezmoi"), "the deployment boundary requires chezmoi")

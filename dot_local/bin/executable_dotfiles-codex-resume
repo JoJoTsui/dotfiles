@@ -7,6 +7,10 @@
 # settings. The Magpie credential is never owned here: it is read from
 # Magpie's own profile at run time and handed to the child through the
 # environment, so it never reaches argv, a file, or a log.
+#
+# The options that are passed through select nothing either: --cd,
+# --no-alt-screen, and --no-daemon change where the session runs, not which
+# provider, model, or reasoning effort the thread uses.
 set -uo pipefail
 
 usage() {
@@ -27,6 +31,7 @@ options:
   --last         continue the most recent thread without the picker
   -C, --cd DIR   the working directory to resume in
   --no-alt-screen  run the picker without the alternate screen
+  --no-daemon    run without the shared background server
 
 The resume covers every working directory and the resumable non-interactive
 threads. An explicit model, provider, reasoning effort, or profile is refused:
@@ -130,12 +135,16 @@ while [ "$#" -gt 0 ]; do
             passthrough+=("$1")
             shift
             ;;
+        --no-daemon)
+            passthrough+=("$1")
+            shift
+            ;;
         --)
             shift
             break
             ;;
         -*)
-            refuse "$1" "only --last, --cd, and --no-alt-screen are passed through to codex resume."
+            refuse "$1" "only --last, --cd, --no-alt-screen, and --no-daemon are passed through to codex resume."
             ;;
         *)
             positional=$((positional + 1))

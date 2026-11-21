@@ -134,6 +134,33 @@ Non-interactive `with-proxy codex exec` bypasses the shell wrapper and keeps
 the shared daemon; it has no pane identity to preserve. Outside Herdr, `codex`
 keeps the shared daemon.
 
+The launcher has two routes, and they stay distinct. A fresh launch keeps the
+plain route above: it starts a new session, so the configuration of the device
+selects its provider. A restore resumes a thread that saved its own provider,
+model, and reasoning effort, and Codex refuses a resume whose thread saved
+another provider than the current configuration selects. A restore therefore
+runs through the managed resume command, which carries provider definitions
+only and selects nothing:
+
+```text
+codex-herdr resume <id>  ->  with-proxy --if-available dotfiles-codex-resume --no-daemon <id>
+```
+
+Both routes keep the health gate, the proxy gate, and the in-process app
+server, so the hooks of a restored session still report to the pane that
+restored them. See
+[the resume layer](adr/0015-neutral-codex-resume-layer.md) for the guarantee
+the command carries.
+
+The restore route needs the managed resume command, so the launcher and that
+command are refreshed together: a targeted codex update restores the launcher,
+the hook script, and `dotfiles-codex-resume` itself, because a launcher
+without it cannot resume a thread and a command that predates the
+`--no-daemon` passthrough refuses the option the launcher passes. The update
+reaches those managed files only: the device's own Codex settings keep their
+own values, its own credentials are never written, and its own hook commands
+keep their place in the group.
+
 `~/.codex/herdr-codex-resume.sh` is a custom SessionStart hook beside the
 Herdr-installed `herdr-agent-state.sh`. It reports `codex-herdr resume <id>` as
 the resume argv, so a workspace restore keeps the health gate, proxy, and
@@ -149,12 +176,38 @@ reinstall, because Herdr rewrites the hook file when it reinstalls. The final
 client-settings merge runs after the Herdr step, so the merge preserves both
 the Herdr entry and the managed resume hook.
 
-The installer preserves every existing hook, removes an older copy of this
-entry, and places it last so its resume argv wins. For reference, the entry is:
+The installer reconciles at command granularity. The managed command is the
+one that runs the managed hook script, and only that command is replaced: a
+group that carries a device command beside it keeps its own commands, its own
+metadata, and its place in the list, and only a group that held nothing but
+the managed command disappears. Herdr's own entry and every other hook event
+are untouched. The managed entry is placed last so its resume argv wins, and
+a registration that finds it there already writes nothing. The managed
+command is the exact invocation of the managed script of this home: the
+location decides what a stored command runs, so a command that names another
+home's copy, that only mentions the script, or that runs a file beside it
+(`herdr-codex-resume.sh.backup`), is a device command and stays. The
+invocation has to be complete and simple — the script alone, or the script
+under `bash` or `sh`, with no extra argument and no operator — so
+`bash "$HOME/.codex/herdr-codex-resume.sh" --resume-all` is a device command
+too. A device may store the location of that same script with the path
+spelled another way — `$HOME/.codex/…`, `~/.codex/…`, or the expanded path
+of its own home — and those are the managed command. For reference, the entry
+is:
 
 ```json
 {"hooks":[{"type":"command","command":"bash \"$HOME/.codex/herdr-codex-resume.sh\"","timeout":5}]}
 ```
+
+The same command reports and removes the registration:
+
+```bash
+dotfiles-codex-herdr status
+dotfiles-codex-herdr remove
+```
+
+`remove` takes the managed command out of the SessionStart groups and keeps
+the device's own commands, their metadata, and the other hook events.
 
 Codex asks for hook trust once; approve it or the override is skipped.
 

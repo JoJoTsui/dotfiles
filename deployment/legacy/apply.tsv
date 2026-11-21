@@ -4,6 +4,7 @@
 # group|source relative to checkout|target relative to home|mode
 agent|dot_local/bin/executable_dotfiles-agent-health|.local/bin/dotfiles-agent-health|0755
 agent|dot_local/bin/executable_codex-herdr|.local/bin/codex-herdr|0755
+agent|dot_local/bin/executable_dotfiles-codex-resume|.local/bin/dotfiles-codex-resume|0755
 agent|dot_local/bin/executable_dotfiles-codex-herdr|.local/bin/dotfiles-codex-herdr|0755
 agent|dot_local/bin/executable_dotfiles-host-up|.local/bin/dotfiles-host-up|0755
 agent|dot_local/bin/executable_nu-login|.local/bin/nu-login|0755

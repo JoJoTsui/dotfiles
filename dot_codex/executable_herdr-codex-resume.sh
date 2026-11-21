@@ -4,9 +4,12 @@
 # The Herdr-installed herdr-agent-state.sh already reports the session id. This
 # custom hook runs after it on SessionStart and overrides the resume argv so a
 # Herdr restore runs codex-herdr (health gate + with-proxy + --no-daemon) instead
-# of the bare codex command. It holds the pane with an `unknown` state (not
-# `idle`), forwards the session-start source, and carries a sequence number so
-# the managed report is not silently replaced by an unsequenced one.
+# of the bare codex command. The launcher routes that resume through the
+# managed resume command, so the restored thread keeps the provider, the model,
+# and the reasoning effort it saved. The script holds the pane with an
+# `unknown` state (not `idle`), forwards the session-start source, and carries a
+# sequence number so the managed report is not silently replaced by an
+# unsequenced one.
 set -uo pipefail
 
 dry_run=false

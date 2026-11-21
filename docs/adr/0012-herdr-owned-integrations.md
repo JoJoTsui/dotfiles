@@ -33,6 +33,24 @@ integration install or reinstall is followed by `dotfiles-codex-herdr install`,
 which re-adds the managed resume hook last. Otherwise a Herdr update silently
 drops the `codex-herdr` resume argv and the proxy gate with it.
 
+The registration reconciles at command granularity. The managed command is the
+one that runs the managed hook script, and only that command is replaced: a
+group that carries a device command beside it keeps its own commands, its own
+metadata, and its place in the list, and only a group that held nothing but the
+managed command disappears. Herdr's own entries and the other hook events are
+never written by the deployment. The managed entry stays last, because its
+resume argv has to win.
+
+The managed command is the exact invocation of the managed script of this
+home, not a command that mentions it. The location decides what a stored
+command runs, so a device command that names another home's copy, that only
+names the script, or that runs a file beside it, keeps its place in the
+group. The invocation has to be complete and simple — the script alone, or
+the script under `bash` or `sh`, with no extra argument and no operator — so
+a command that passes the managed script an argument keeps its place too. A
+device may store the location of that same script with the path spelled
+another way, and those forms are the managed command.
+
 MiniMax Code has no Herdr kind and stays a pane command. `dotfiles-agents
 status` reports each selected agent's Herdr state
 (`current`/`outdated`/`missing`/`unsupported`), and `dotfiles-agent-health

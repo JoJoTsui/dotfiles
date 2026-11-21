@@ -393,8 +393,9 @@ first positional is the session id and the second is the prompt; with
 prompt of that thread, exactly as `codex resume` reads it. A session id
 together with `--last` is refused with a message that names the fix — drop
 `--last` to resume that thread — because Codex would otherwise type the id
-as the prompt. `--cd` and `--no-alt-screen`
-are passed through as well. Archived threads are not resumable and are not
+as the prompt. `--cd`, `--no-alt-screen`, and `--no-daemon` are passed
+through as well; they change where the session runs, not which provider the
+thread uses. Archived threads are not resumable and are not
 offered. `codex exec resume` always sends resolved settings and is not a
 substitute for this command.
 
@@ -419,6 +420,12 @@ and it applies the same rule to a linked Codex home.
 Plain `codex` keeps the subscription defaults for a new session, and
 `codex -p magpie` keeps the gateway defaults for a new session. Neither is
 changed by the resume command.
+
+The Herdr-scoped launcher uses this command for a restore, because a thread
+that saved another provider cannot be resumed by the plain route: `codex-herdr
+resume <id>` runs `dotfiles-codex-resume --no-daemon <id>`, and a fresh
+launch keeps the plain `codex --no-daemon` route. See
+[Herdr](HERDR.md).
 
 The command refuses the overrides that would defeat the preservation, with a
 message that names it: `--model`, `--model-provider`, `-c model=…`,

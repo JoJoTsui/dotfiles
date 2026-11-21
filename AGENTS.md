@@ -179,7 +179,21 @@ explains every changed pair.
   installed, a current one is left alone, and a host without Herdr completes
   the deployment with nothing to do. Every codex install or reinstall is
   followed by `dotfiles-codex-herdr install`, so the managed resume hook stays
-  last. `~/.local/bin/dotfiles-herdr-status` owns the status vocabulary the
+  last. That registration reconciles the owned command at command granularity:
+  the owned command is the exact invocation of the managed hook script of this
+  home — the script alone, or the script under `bash` or `sh`, with no extra
+  argument and no operator — so a device command that names another home's
+  copy, that only mentions the script, or that runs a file beside it, is a
+  device command; a device command beside the owned one in a mixed
+  SessionStart group keeps its own commands and its own metadata, Herdr's
+  entries are never written, and `dotfiles-codex-herdr remove` takes the owned
+  command out again. A Herdr restore reaches the thread through
+  `dotfiles-codex-resume`, so a restored thread keeps its saved provider,
+  model, and reasoning effort, while a fresh launch keeps the plain route. The
+  launcher and that command are refreshed together, because the launcher
+  passes `--no-daemon` and a command that predates that option refuses it.
+  `~/.local/bin/dotfiles-herdr-status` owns the
+  status vocabulary the
   deployment, `dotfiles-agents status`, and
   `dotfiles-agent-health --clients` share. Herdr's own skill is generated
   into the shared tree and recorded as a generated skill, so pruning leaves it
