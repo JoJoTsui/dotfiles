@@ -51,7 +51,9 @@ reads the same values. Nonempty device environment overrides retain precedence.
 Shell and history preparation mirror the artifacts they generated into an
 existing native autoload directory, so a preparation run outside a deployment
 cannot leave that launch reading an older startup; the catalog copy above
-remains the deployment's own write.
+remains the deployment's own write. The pinned completion loader is published
+by the completion module to every active native loader path, so a native copy
+never imports a generation the module already retired.
 See [Nu startup paths](https://www.nushell.sh/book/configuration.html),
 [uv storage](https://docs.astral.sh/uv/reference/storage/), and
 [pip configuration](https://pip.pypa.io/en/stable/topics/configuration/).

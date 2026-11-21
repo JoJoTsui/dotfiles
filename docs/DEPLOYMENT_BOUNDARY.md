@@ -167,6 +167,8 @@ for real solver/native evidence and reproducible opt-in checks.
 `deployment/shell.sh` calls the managed `dotfiles-shell-prepare` command during
 required shell preparation. That command validates new Nu prompt/completion
 resources before replacing working files and rejects symlinked startup state.
+The completion module publishes the pinned loader to every active loader path
+and retires a published generation only after no managed loader imports it.
 The shared shell model and actual interactive/non-interactive Nu distinction
 are documented in [shared shell settings](SHARED_SHELL_SETTINGS.md).
 

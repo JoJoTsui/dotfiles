@@ -1523,7 +1523,10 @@ $script:Pixi = 'controlled-pixi'
 function Get-Scratch([string]$Name) { return $env:DOTFILES_TEST_STAGE }
 function Invoke-Tool([string]$Executable, [string[]]$Arguments, [switch]$Quiet) {
     if ($Arguments.Count -and $Arguments[0].EndsWith('completions.py')) {
-        [IO.File]::WriteAllText((Join-Path $env:DOTFILES_TEST_STAGE 'nu-scripts.nu'), '# prepared completions')
+        # The module publishes the loader to every path named by --loader.
+        for ($index = 0; $index -lt $Arguments.Count; $index++) {
+            if ($Arguments[$index] -eq '--loader') { [IO.File]::WriteAllText($Arguments[$index + 1], '# prepared completions') }
+        }
     }
     return '# validated generated resource'
 }

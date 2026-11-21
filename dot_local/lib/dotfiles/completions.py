@@ -1,7 +1,16 @@
-"""Prepare native and pinned community Nu completions for managed CLIs.
+"""Publish native and pinned community Nu completions for managed CLIs.
 
 This runs after tool installation. Shell startup loads only its regular local
 files; it never downloads, checks out, or discovers a community script library.
+
+This module owns the whole completion publication lifecycle. A loader is the
+file a Nushell startup imports; the canonical one lives in the vendor autoload
+directory of the XDG data home, and a platform may add a native discovery copy.
+The module builds and validates a generation, switches every managed loader to
+it, and retires a generation only after no managed loader imports it. A
+publication that reaches only some loaders therefore leaves every loader with
+a complete generation. A loader stores each import as a JSON string, so the
+retirement check decodes that reference instead of matching raw text.
 """
 from __future__ import annotations
 
@@ -19,6 +28,7 @@ import tomllib
 import time
 import urllib.parse
 import urllib.request
+from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
 WINDOWS = os.name == "nt"
@@ -35,13 +45,24 @@ class CompletionError(ValueError):
 
 
 def safe_destination(path: Path, home: Path) -> Path:
+    """Reject a destination that leaves the home or crosses a symlink.
+
+    The home can be reached through a symlinked path, and the same directory
+    then carries two spellings: the resolved paths decide whether a
+    destination stays inside the home, and the written path keeps the
+    symlinked spelling the chain check walks.
+    """
     if ".." in path.parts:
         raise CompletionError("completion state paths cannot contain parent traversal")
     path = path.absolute()
     try:
         relative = path.relative_to(home)
-    except ValueError as error:
-        raise CompletionError("completion state must remain in the designated home") from error
+    except ValueError:
+        try:
+            relative = path.resolve().relative_to(home.resolve())
+        except ValueError as error:
+            raise CompletionError("completion state must remain in the designated home") from error
+        home = home.resolve()
     current = home
     for part in (None, *relative.parts):
         if part is not None:
@@ -222,24 +243,163 @@ def validate(nu: Path, loader: Path) -> None:
               "deprecated; review the pinned nu_scripts revision", file=sys.stderr)
 
 
-def prune_published(root: Path, keep: Path | None) -> None:
-    """Remove the module directories this tool published before now.
+def managed_loaders(data_root: Path, home: Path, extra: Sequence[Path]) -> list[Path]:
+    """The loader files this publication owns, in switch order.
+
+    The canonical loader under the XDG data home is always managed, so a
+    publication can never retire a generation the live loader still imports.
+    A platform adds its native discovery copy as an extra loader.
+    """
+    managed = [safe_destination(data_root / "nushell/vendor/autoload/nu-scripts.nu", home)]
+    for path in extra:
+        managed.append(safe_destination(path, home))
+    ordered: list[Path] = []
+    for path in managed:
+        if path not in ordered:
+            ordered.append(path)
+    return ordered
+
+
+def write_loader(path: Path, text: str) -> None:
+    """Replace one managed loader with the published generation.
+
+    The replacement is atomic, so a loader never holds a partial file. The
+    temporary name carries no Nu suffix, so a publication that is interrupted
+    leaves nothing a startup would try to parse.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(prefix=".nu-scripts-", suffix=".tmp", dir=path.parent)
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def switch_loaders(loaders: Sequence[Path], text: str) -> list[str]:
+    """Switch every managed loader to the published generation.
+
+    A loader the filesystem refuses keeps the generation it imports, so an
+    interrupted publication leaves each loader with a complete generation.
+    """
+    failures = []
+    for loader in loaders:
+        try:
+            write_loader(loader, text)
+        except OSError as error:
+            failures.append(f"{loader}: {error}")
+    return failures
+
+
+def loader_imports(text: str) -> list[str] | None:
+    """The paths a loader imports, decoded from its encoded import syntax.
+
+    A loader stores every import as a JSON string, so a path that carries a
+    backslash or a quote appears escaped in the file. The raw text therefore
+    cannot be matched against a filesystem path: a Windows path spells every
+    separator twice, and a quoted home name escapes its quote. The encoded
+    form is decoded instead.
+
+    ``None`` reports an import the module cannot decode, so the caller keeps
+    every generation.
+    """
+    decoder = json.JSONDecoder()
+    imports: list[str] = []
+    for line in text.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) != 2 or parts[0] not in ("source", "use"):
+            continue
+        try:
+            value, _ = decoder.raw_decode(parts[1].strip())
+        except ValueError:
+            return None
+        if not isinstance(value, str):
+            return None
+        imports.append(value)
+    return imports
+
+
+def published_generation(path: str, published: dict[str, Path]) -> Path | None:
+    """The published generation a decoded import path belongs to.
+
+    The generation name is a path component of every import it publishes, so
+    the component identifies the generation whatever separator or quoting the
+    import path uses.
+    """
+    for part in re.split(r"[\\/]", path):
+        entry = published.get(part)
+        if entry is not None:
+            return entry
+    return None
+
+
+def imported_generations(loaders: Sequence[Path], modules_root: Path) -> set[Path] | None:
+    """The managed generations the managed loaders still import.
+
+    ``None`` reports that a managed loader could not be read or decoded, so no
+    generation can be retired safely.
+    """
+    if not modules_root.is_dir() or modules_root.is_symlink():
+        return set()
+    published = {entry.name: entry for entry in modules_root.iterdir()
+                 if PUBLISHED_DIRECTORY.fullmatch(entry.name)}
+    imported: set[Path] = set()
+    for loader in loaders:
+        try:
+            text = loader.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            # A loader that does not exist references no generation.
+            continue
+        except (OSError, UnicodeDecodeError):
+            return None
+        paths = loader_imports(text)
+        if paths is None:
+            return None
+        for path in paths:
+            entry = published_generation(path, published)
+            if entry is not None:
+                imported.add(entry)
+    return imported
+
+
+def retire_published(root: Path, imported: set[Path]) -> None:
+    """Remove the module directories no managed loader imports any more.
 
     Only a regular directory carrying the published name is removed, and only
-    after the new loader replaced the old one. A device-created entry or a
-    symlink never matches, so neither is ever touched.
+    after every managed loader stopped importing it. A device-created entry or
+    a symlink never matches, so neither is ever touched.
     """
     if not root.is_dir() or root.is_symlink():
         return
     for entry in root.iterdir():
-        if entry == keep or not PUBLISHED_DIRECTORY.fullmatch(entry.name):
+        if entry in imported or not PUBLISHED_DIRECTORY.fullmatch(entry.name):
             continue
         if entry.is_symlink() or not entry.is_dir():
             continue
         shutil.rmtree(entry)
 
 
-def prepare(config: Path, nu: Path, autoload: Path | None = None) -> int:
+def validate_loader(nu: Path, text: str, directory: Path) -> None:
+    """Check a loader with the installed Nu before any managed loader switches."""
+    descriptor, name = tempfile.mkstemp(prefix=".nu-scripts-", suffix=".tmp", dir=directory)
+    temporary = Path(name)
+    os.close(descriptor)
+    try:
+        temporary.write_text(text, encoding="utf-8")
+        validate(nu, temporary)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def prepare(config: Path, nu: Path, loaders: Sequence[Path] = ()) -> int:
+    """Publish the pinned completions to every managed loader.
+
+    The canonical loader and the given extra loaders are switched to the
+    published generation. A generation is retired only after no managed loader
+    imports it, so an interrupted publication leaves every loader usable.
+    """
     home = Path(os.environ["HOME"]).absolute()
     config_root = Path(os.environ.get("XDG_CONFIG_HOME", home / ".config"))
     data_root = Path(os.environ.get("XDG_DATA_HOME", home / ".local/share"))
@@ -248,55 +408,52 @@ def prepare(config: Path, nu: Path, autoload: Path | None = None) -> int:
     safe_destination(config, home)
     catalog = read_catalog(config)
     selected = selected_modules(catalog, config_root, pixi, home)
-    autoload = safe_destination(autoload or data_root / "nushell/vendor/autoload", home)
-    target = safe_destination(autoload / "nu-scripts.nu", home)
+    managed = managed_loaders(data_root, home, loaders)
     modules_root = safe_destination(data_root / "nushell/completions/nu-scripts", home)
-    autoload.mkdir(parents=True, exist_ok=True)
-    descriptor, name = tempfile.mkstemp(prefix=".nu-scripts-", suffix=".nu", dir=autoload)
-    staged_loader = Path(name)
-    os.close(descriptor)
-    try:
-        final_directory = modules_root
-        if selected:
-            community = [module for module in selected if module["command"] not in NATIVE_GENERATORS]
-            contents = {module["path"]: generate_native(module["command"], pixi)
-                        for module in selected if module["command"] in NATIVE_GENERATORS}
-            if community:
-                cache = safe_destination(cache_root / "dotfiles/nu-scripts", home)
-                contents.update(read_modules(module_source(catalog, cache, home), catalog, community))
-            digest = hashlib.sha256()
-            for path, content in sorted(contents.items()):
-                digest.update(path.encode() + b"\0" + content)
-            final_directory = safe_destination(modules_root / (catalog["revision"] + "-" + digest.hexdigest()[:16]), home)
-            modules_root.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(prefix=".nu-scripts-", dir=modules_root) as temporary:
-                staging = Path(temporary)
+    modules_root.mkdir(parents=True, exist_ok=True)
+    final_directory = modules_root
+    if selected:
+        community = [module for module in selected if module["command"] not in NATIVE_GENERATORS]
+        contents = {module["path"]: generate_native(module["command"], pixi)
+                    for module in selected if module["command"] in NATIVE_GENERATORS}
+        if community:
+            cache = safe_destination(cache_root / "dotfiles/nu-scripts", home)
+            contents.update(read_modules(module_source(catalog, cache, home), catalog, community))
+        digest = hashlib.sha256()
+        for path, content in sorted(contents.items()):
+            digest.update(path.encode() + b"\0" + content)
+        final_directory = safe_destination(modules_root / (catalog["revision"] + "-" + digest.hexdigest()[:16]), home)
+        with tempfile.TemporaryDirectory(prefix=".nu-scripts-", dir=modules_root) as temporary:
+            staging = Path(temporary)
+            for path, content in contents.items():
+                destination = staging / path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(content)
+                destination.chmod(0o644)
+            validate_loader(nu, loader_text(staging, selected), modules_root)
+            if final_directory.exists():
                 for path, content in contents.items():
-                    destination = staging / path
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    destination.write_bytes(content)
-                    destination.chmod(0o644)
-                staged_loader.write_text(loader_text(staging, selected), encoding="utf-8")
-                validate(nu, staged_loader)
-                if final_directory.exists():
-                    for path, content in contents.items():
-                        destination = safe_destination(final_directory / path, home)
-                        if not destination.is_file() or destination.read_bytes() != content:
-                            raise CompletionError("managed Nu completion module differs from its pinned content")
-                else:
-                    os.replace(staging, final_directory)
-                    # TemporaryDirectory cleanup tolerates the moved staging tree.
-            staged_loader.write_text(loader_text(final_directory, selected), encoding="utf-8")
-        else:
-            staged_loader.write_text(loader_text(final_directory, []), encoding="utf-8")
-        validate(nu, staged_loader)
-        os.replace(staged_loader, target)
+                    destination = safe_destination(final_directory / path, home)
+                    if not destination.is_file() or destination.read_bytes() != content:
+                        raise CompletionError("managed Nu completion module differs from its pinned content")
+            else:
+                os.replace(staging, final_directory)
+                # TemporaryDirectory cleanup tolerates the moved staging tree.
+    text = loader_text(final_directory, selected)
+    # The new generation is validated before any managed loader switches.
+    validate_loader(nu, text, modules_root)
+    failures = switch_loaders(managed, text)
+    imported = imported_generations(managed, modules_root)
+    if imported is None:
+        print("dotfiles Nu completions: kept every published generation because a managed "
+              "loader could not be read", file=sys.stderr)
+    else:
         # The published directories carry a content digest, so a selection or
-        # catalog change leaves the previous bytes behind. The loader is the
-        # only reference, and it now names the new directory.
-        prune_published(modules_root, final_directory if selected else None)
-    finally:
-        staged_loader.unlink(missing_ok=True)
+        # catalog change leaves the previous bytes behind. A generation is
+        # retired once no managed loader imports it any more.
+        retire_published(modules_root, imported)
+    if failures:
+        raise CompletionError("managed Nu completion loader switch failed: " + "; ".join(failures))
     return len(selected)
 
 
@@ -305,10 +462,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=Path(os.environ.get("XDG_CONFIG_HOME", home / ".config")) / "dotfiles/nu-completions.json")
     parser.add_argument("--nu", type=Path, required=True)
-    parser.add_argument("--autoload-dir", type=Path)
+    parser.add_argument("--loader", type=Path, action="append", default=[],
+                        help="an additional managed loader file; repeat it for every active path")
     arguments = parser.parse_args()
     try:
-        count = prepare(arguments.config, arguments.nu, arguments.autoload_dir)
+        count = prepare(arguments.config, arguments.nu, arguments.loader)
     except (OSError, ValueError, KeyError, TypeError, tarfile.TarError, subprocess.SubprocessError) as error:
         print(f"dotfiles Nu completions: {error}", file=sys.stderr)
         return 1

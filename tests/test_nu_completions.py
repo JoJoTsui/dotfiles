@@ -1,4 +1,9 @@
-"""Pinned completion preparation with synthetic archives and real Nu parsing."""
+"""Pinned completion preparation with synthetic archives and real Nu parsing.
+
+The preparation module and the public preparation command are exercised
+separately: the module seam covers the publication lifecycle, and the command
+seam runs the real Nushell and Python against a disposable home.
+"""
 import hashlib
 import importlib.util
 import io
@@ -6,6 +11,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -111,6 +117,20 @@ class NuCompletionTests(unittest.TestCase):
     def prepare(self, **arguments):
         return self.module.prepare(self.catalog_path, Path(NU), **arguments)
 
+    def assert_loader_starts(self, loader):
+        """The loader must still start Nu with a complete generation."""
+        result = subprocess.run([NU, "--no-config-file", "-c",
+                                 "source " + json.dumps(str(loader))
+                                 + '; scope commands | where name == "git" | length'],
+                                env=dict(os.environ), check=False, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "1")
+
+    def published_generations(self):
+        modules = self.home / ".local/share/nushell/completions/nu-scripts"
+        return sorted(entry for entry in modules.iterdir()
+                      if self.module.PUBLISHED_DIRECTORY.fullmatch(entry.name))
+
     def test_only_declared_and_installed_managed_commands_are_loaded(self):
         self.install("git")
         self.install("bat")  # Installed but not selected by either manifest.
@@ -160,6 +180,121 @@ class NuCompletionTests(unittest.TestCase):
         self.assertTrue(linked.is_symlink())
         self.assertTrue(published[0].is_dir())
         self.assertIn(published[0].name, self.loader.read_text())
+
+    def test_every_managed_loader_imports_the_published_generation(self):
+        """The canonical loader and a native copy both import the new generation."""
+        self.install("git")
+        native = self.home / "Library/Application Support/nushell/vendor/autoload/nu-scripts.nu"
+        self.assertEqual(self.prepare(loaders=[native]), 1)
+        first = self.loader.read_text()
+        self.assertIn("git-completions.nu", first)
+        self.assertEqual(native.read_text(), first)
+        # A changed selection publishes a second generation.
+        self.install("just")
+        self.write_desired(common=("git",), bundles=("just",))
+        self.assertEqual(self.prepare(loaders=[native]), 2)
+        second = self.loader.read_text()
+        self.assertNotEqual(second, first)
+        self.assertEqual(native.read_text(), second)
+        self.assertEqual(len(self.published_generations()), 1)
+        self.assert_loader_starts(self.loader)
+        self.assert_loader_starts(native)
+
+    def test_a_refused_loader_switch_leaves_every_loader_usable(self):
+        """A loader the filesystem refuses keeps the generation it imports."""
+        self.install("git")
+        native = self.home / "Library/Application Support/nushell/vendor/autoload/nu-scripts.nu"
+        self.assertEqual(self.prepare(loaders=[native]), 1)
+        first = self.loader.read_text()
+        # A changed selection publishes a second generation.
+        self.install("just")
+        self.write_desired(common=("git",), bundles=("just",))
+        real_replace = os.replace
+        def refuse(source, destination, *arguments, **keywords):
+            if Path(destination) == native:
+                raise PermissionError("simulated refusal")
+            return real_replace(source, destination, *arguments, **keywords)
+        with mock.patch.object(self.module.os, "replace", side_effect=refuse):
+            with self.assertRaisesRegex(self.module.CompletionError, "loader switch failed"):
+                self.prepare(loaders=[native])
+        # The loader that switched imports the new generation.
+        self.assertNotEqual(self.loader.read_text(), first)
+        # The refused loader keeps the generation it imports, so both start Nu.
+        self.assertEqual(native.read_text(), first)
+        self.assert_loader_starts(self.loader)
+        self.assert_loader_starts(native)
+
+    def test_a_publication_to_another_loader_keeps_the_live_loader_usable(self):
+        """The preparation publishes into a staging autoload directory.
+
+        The live loader must keep importing a complete generation, so a
+        publication that does not reach it cannot retire the generation it
+        uses.
+        """
+        self.install("git")
+        self.assertEqual(self.prepare(), 1)
+        self.assert_loader_starts(self.loader)
+        # A changed selection publishes a second generation.
+        self.install("just")
+        self.write_desired(common=("git",), bundles=("just",))
+        stage = self.autoload / ".prepare-stage"
+        stage.mkdir()
+        self.assertEqual(self.prepare(loaders=[stage / "nu-scripts.nu"]), 2)
+        self.assert_loader_starts(self.loader)
+        self.assertEqual(len(self.published_generations()), 1)
+
+    def test_a_windows_style_import_keeps_the_generation_it_names(self):
+        """An escaped Windows import keeps the generation it names.
+
+        A loader stores every import as a JSON string, so a Windows path
+        spells every separator twice and the raw path is not part of the
+        loader. Only a decoded reference finds the generation, and this check
+        runs on every platform.
+        """
+        modules = self.home / ".local/share/nushell/completions/nu-scripts"
+        generation = modules / (self.revision + "-" + "d" * 16)
+        (generation / "custom-completions/git").mkdir(parents=True)
+        windows_module = ("C:\\Users\\device\\.local\\share\\nushell\\completions\\nu-scripts\\"
+                          + generation.name + "\\custom-completions\\git\\git-completions.nu")
+        loader = self.root / "windows-loader.nu"
+        text = ("# Managed pinned Nu completions; prepared after tool installation.\n"
+                "use " + json.dumps(windows_module) + " *\n")
+        loader.write_text(text, encoding="utf-8")
+        self.assertNotIn(str(generation), text)
+        imported = self.module.imported_generations([loader], modules)
+        self.assertEqual(imported, {generation})
+        self.module.retire_published(modules, imported)
+        self.assertTrue(generation.is_dir())
+        # A loader that names another generation leaves this one retirable.
+        other = self.root / "other-loader.nu"
+        other.write_text("use " + json.dumps(
+            "C:\\Users\\device\\.local\\share\\nushell\\completions\\nu-scripts\\"
+            + "f" * 40 + "-" + "0" * 16 + "\\custom-completions\\git\\git-completions.nu") + " *\n",
+            encoding="utf-8")
+        imported = self.module.imported_generations([other], modules)
+        self.assertEqual(imported, set())
+        self.module.retire_published(modules, imported)
+        self.assertFalse(generation.exists())
+
+    def test_a_quoted_home_name_keeps_the_generation_it_names(self):
+        """A home path with a quote keeps the generation it names.
+
+        The loader stores the import as a JSON string, so the quote in the
+        path appears escaped and the raw path is not part of the loader.
+        """
+        home = self.root / 'device "quoted"'
+        modules = home / ".local/share/nushell/completions/nu-scripts"
+        generation = modules / (self.revision + "-" + "e" * 16)
+        (generation / "custom-completions/git").mkdir(parents=True)
+        loader = self.root / "quoted-loader.nu"
+        text = self.module.loader_text(
+            generation, [{"command": "git", "path": "custom-completions/git/git-completions.nu"}])
+        loader.write_text(text, encoding="utf-8")
+        self.assertNotIn(str(generation), text)
+        imported = self.module.imported_generations([loader], modules)
+        self.assertEqual(imported, {generation})
+        self.module.retire_published(modules, imported)
+        self.assertTrue(generation.is_dir())
 
     def test_an_empty_selection_prunes_every_published_directory(self):
         modules = self.home / ".local/share/nushell/completions/nu-scripts"
@@ -334,7 +469,7 @@ class NuCompletionTests(unittest.TestCase):
         outside = self.root / "outside"
         outside.mkdir()
         with self.assertRaisesRegex(self.module.CompletionError, "parent traversal"):
-            self.prepare(autoload=self.home / ".." / "outside")
+            self.prepare(loaders=[self.home / ".." / "outside"])
         self.assertFalse(list(outside.iterdir()))
         self.autoload.parent.mkdir(parents=True)
         try:
@@ -375,6 +510,192 @@ class NuCompletionTests(unittest.TestCase):
                 self.assertEqual(foreign.read_bytes(), content)
                 manifest.unlink()
                 manifest.write_bytes(content)
+
+
+@unittest.skipUnless(NU and tomllib, "requires Nushell and Python 3.11+")
+class ShellPreparationPublicationTests(unittest.TestCase):
+    """The public preparation command publishes the pinned loader.
+
+    The command runs in a disposable home with the real Nu and Python. Every
+    other managed command is a stub that emits a parseable Nu resource, so the
+    check observes the publication the command performs and not the tools it
+    calls.
+    """
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory(prefix="dotfiles-nu-publication-")
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.home = self.root / "device"
+        self.bin = self.home / ".pixi/bin"
+        self.bin.mkdir(parents=True)
+        self.config = self.home / ".config/dotfiles"
+        self.config.mkdir(parents=True)
+        self.autoload = self.home / ".local/share/nushell/vendor/autoload"
+        self.loader = self.autoload / "nu-scripts.nu"
+        self.generations = self.home / ".local/share/nushell/completions/nu-scripts"
+        # A native discovery copy exists, so the command publishes to it.
+        self.native_autoload = self.home / "Library/Application Support/nushell/vendor/autoload"
+        self.native_autoload.mkdir(parents=True)
+        # The user autoload directory is the second path a launch without an
+        # XDG override reads.
+        self.native_user_autoload = self.home / "Library/Application Support/nushell/autoload"
+        self.native_user_autoload.mkdir(parents=True)
+        self.revision = "b" * 40
+        self.modules = [{"command": "git", "path": "custom-completions/git/git-completions.nu"}]
+        self.archive = self.root / "upstream.tgz"
+        self.environment = {
+            "HOME": str(self.home),
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "TERM": "xterm-256color",
+            "DOTFILES_NU_SCRIPTS_ARCHIVE": str(self.archive),
+        }
+        self.install_tools()
+        self.install_configuration()
+        self.write_archive()
+        self.write_desired(("git",), ())
+
+    def link(self, name, target):
+        path = self.bin / name
+        path.symlink_to(target)
+        return path
+
+    def stub(self, name, body=""):
+        path = self.bin / name
+        script = "#!/bin/sh\nexit 0\n" if not body else "#!/bin/sh\nprintf '%s\\n' '" + body + "'\n"
+        path.write_text(script)
+        path.chmod(0o755)
+        return path
+
+    def install_tools(self):
+        self.link("nu", NU)
+        self.link("python", sys.executable)
+        self.stub("starship", "let starship_stub = 1")
+        self.stub("pixi", "let pixi_stub = 1")
+        self.stub("fzf", "let fzf_stub = 1")
+        self.stub("wt", "let wt_stub = 1")
+        self.stub("zoxide")
+        self.stub("git")
+        self.stub("just", 'export extern "just" [--help(-h)]')
+
+    def install_configuration(self):
+        library = self.home / ".local/lib/dotfiles"
+        library.mkdir(parents=True)
+        shutil.copy2(SOURCE / "dot_local/lib/dotfiles/completions.py", library / "completions.py")
+        commands = self.home / ".local/bin"
+        commands.mkdir(parents=True)
+        prepare = commands / "dotfiles-shell-prepare"
+        shutil.copy2(SOURCE / "dot_local/bin/executable_dotfiles-shell-prepare", prepare)
+        prepare.chmod(0o755)
+        nushell = self.home / ".config/nushell"
+        nushell.mkdir(parents=True)
+        (nushell / "config.nu").write_text("# managed configuration\n")
+        (nushell / "env.nu").write_text("# managed environment\n")
+        (self.home / ".env_core").write_text(
+            'export XDG_CONFIG_HOME="$HOME/.config"\n'
+            'export XDG_DATA_HOME="$HOME/.local/share"\n'
+            'export XDG_CACHE_HOME="$HOME/.cache"\n'
+            'export XDG_STATE_HOME="$HOME/.local/state"\n'
+            'export PIXI_HOME="$HOME/.pixi"\n'
+            'export DOTFILES_COMMON_BIN="$PIXI_HOME/bin"\n'
+            'export DOTFILES_PLATFORM=macos\n')
+
+    def write_archive(self):
+        with tarfile.open(self.archive, "w:gz") as handle:
+            for module in self.modules:
+                content = ('export extern "' + module["command"] + '" [--help(-h)]\n').encode()
+                module["sha256"] = hashlib.sha256(content).hexdigest()
+                member = tarfile.TarInfo("nu_scripts-" + self.revision + "/" + module["path"])
+                member.size = len(content)
+                handle.addfile(member, io.BytesIO(content))
+        catalog = {
+            "version": 1, "revision": self.revision,
+            "url": "https://codeload.github.com/nushell/nu_scripts/tar.gz/" + self.revision,
+            "sha256": hashlib.sha256(self.archive.read_bytes()).hexdigest(),
+            "modules": self.modules,
+        }
+        (self.config / "nu-completions.json").write_text(json.dumps(catalog))
+
+    def write_desired(self, common=(), bundles=()):
+        for filename, names in (("pixi-global.toml", common), ("pixi-bundles.toml", bundles)):
+            contents = "version = 1\n[envs]\n"
+            for name in names:
+                contents += '[envs."' + name + '"]\nexposed = { "' + name + '" = "' + name + '" }\n'
+            (self.config / filename).write_text(contents)
+
+    def prepare(self):
+        return subprocess.run([str(self.home / ".local/bin/dotfiles-shell-prepare")],
+                              env=self.environment, capture_output=True, text=True, timeout=180)
+
+    def loader_commands(self, loader):
+        result = subprocess.run([str(self.bin / "nu"), "--no-config-file", "-c",
+                                 "source " + json.dumps(str(loader))
+                                 + '; scope commands | where name in ["git" "just"] | get name | to json --raw'],
+                                env=self.environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return set(json.loads(result.stdout))
+
+    def native_directory(self, variable, override):
+        """The directory a launch without an XDG override resolves."""
+        environment = {key: value for key, value in self.environment.items() if key != override}
+        result = subprocess.run([str(self.bin / "nu"), "-c", "print $" + variable],
+                                env=environment, capture_output=True, text=True, timeout=60)
+        if result.returncode:
+            return None
+        return Path(result.stdout.strip())
+
+    def native_loader(self):
+        """The loader a launch without an XDG override reads, when it differs."""
+        data = self.native_directory("nu.data-dir", "XDG_DATA_HOME")
+        if data is None:
+            return None
+        loader = data / "vendor/autoload/nu-scripts.nu"
+        return None if loader == self.loader else loader
+
+    def native_user_loader(self):
+        """The loader a launch without a config override reads, when it differs."""
+        config = self.native_directory("nu.default-config-dir", "XDG_CONFIG_HOME")
+        if config is None or not (config / "autoload").is_dir():
+            return None
+        loader = config / "autoload/nu-scripts.nu"
+        return None if loader == self.loader else loader
+
+    def published_generations(self):
+        return sorted(entry.name for entry in self.generations.iterdir())
+
+    def test_the_preparation_publishes_to_every_active_loader(self):
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(self.loader.is_file())
+        self.assertEqual(self.loader_commands(self.loader), {"git"})
+        for loader in (self.native_loader(), self.native_user_loader()):
+            if loader is None:
+                continue
+            self.assertTrue(loader.is_file(), str(loader))
+            self.assertEqual(loader.read_bytes(), self.loader.read_bytes())
+            self.assertEqual(self.loader_commands(loader), {"git"})
+
+    def test_a_failed_second_publication_leaves_the_loader_usable(self):
+        first = self.prepare()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        before = self.loader.read_bytes()
+        self.assertEqual(len(self.published_generations()), 1)
+        # A publication that cannot verify its pinned bytes fails and leaves
+        # the working loader and its generation alone.
+        self.archive.write_bytes(b"checksum mismatch")
+        failed = self.prepare()
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(self.loader.read_bytes(), before)
+        self.assertEqual(self.loader_commands(self.loader), {"git"})
+        self.assertEqual(len(self.published_generations()), 1)
+        # The retry publishes the next generation and retires the previous one.
+        self.write_archive()
+        self.write_desired(("git",), ("just",))
+        retry = self.prepare()
+        self.assertEqual(retry.returncode, 0, retry.stderr)
+        self.assertEqual(self.loader_commands(self.loader), {"git", "just"})
+        self.assertEqual(len(self.published_generations()), 1)
+        self.assertNotEqual(self.loader.read_bytes(), before)
 
 
 if __name__ == "__main__":

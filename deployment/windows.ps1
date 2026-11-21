@@ -1599,8 +1599,14 @@ function Prepare-Shell {
             Invoke-Tool $nu @('--config', (Join-Path $stage $filename), '--env-config', (Join-Path $roots.config 'nushell/env.nu'), '-c', 'null') -Quiet | Out-Null
         }
         Invoke-Tool $nu @('--config', (Join-Path $roots.config 'nushell/config.nu'), '--env-config', (Join-Path $roots.config 'nushell/env.nu'), '-c', 'null') -Quiet | Out-Null
-        Invoke-Tool (Join-Path $roots.pixi 'bin/python.exe') @((Join-Path $TargetHome '.local/lib/dotfiles/completions.py'), '--nu', $nu, '--autoload-dir', $stage) -Quiet | Out-Null
-        $preparedFiles = @($hooks.Keys) + @('nu-scripts.nu')
+        # The completion module owns the pinned loader: it publishes the
+        # generation to every active loader and retires a generation only after
+        # no loader imports it. Both paths are checked before it writes.
+        $nativeAutoload = Join-Path $roots.appData 'nushell/vendor/autoload'
+        Assert-SafePath (Join-Path $autoload 'nu-scripts.nu')
+        Assert-SafePath (Join-Path $nativeAutoload 'nu-scripts.nu')
+        Invoke-Tool (Join-Path $roots.pixi 'bin/python.exe') @((Join-Path $TargetHome '.local/lib/dotfiles/completions.py'), '--nu', $nu, '--loader', (Join-Path $autoload 'nu-scripts.nu'), '--loader', (Join-Path $nativeAutoload 'nu-scripts.nu')) -Quiet | Out-Null
+        $preparedFiles = @($hooks.Keys)
         foreach ($filename in $preparedFiles) {
             Assert-SafePath (Join-Path $autoload $filename)
             Assert-SafePath (Join-Path $roots.appData "nushell/vendor/autoload/$filename")

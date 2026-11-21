@@ -16,6 +16,29 @@ mkdir -p "$autoload"
 for filename in starship.nu pixi-completions.nu fzf.nu nu-scripts.nu wt.nu; do
     [ ! -L "$autoload/$filename" ] || fail "startup artifact is a symlink: $autoload/$filename"
 done
+# macOS resolves Nu's own data and config directories under Library/Application
+# Support, so a launch without an XDG override reads the vendor autoload
+# directory and the user autoload directory instead of the one prepared here.
+# The deployment mirrors the startup files during apply-source.macos-discovery;
+# a standalone preparation must leave the same bytes, or such a launch keeps
+# the previous startup. Other platforms keep the deployment's discovery adapter
+# as their only native writer. The completion module publishes the pinned
+# loader to every active path, so no native copy is left importing a retired
+# generation and the deployment's own copy never outlives its generation.
+native_data=
+native_config=
+if [ "${DOTFILES_PLATFORM:-}" = macos ]; then
+    native_data=$(env -u XDG_DATA_HOME "$DOTFILES_COMMON_BIN/nu" -c 'print $nu.data-dir' 2>/dev/null) || native_data=
+    native_config=$(env -u XDG_CONFIG_HOME "$DOTFILES_COMMON_BIN/nu" -c 'print $nu.default-config-dir' 2>/dev/null) || native_config=
+fi
+native_vendor_loader=
+native_user_loader=
+if [ -n "$native_data" ] && [ -d "$native_data/vendor/autoload" ] && [ "$native_data/vendor/autoload" != "$autoload" ]; then
+    native_vendor_loader="$native_data/vendor/autoload/nu-scripts.nu"
+fi
+if [ -n "$native_config" ] && [ -d "$native_config/autoload" ] && [ "$native_config/autoload" != "$autoload" ]; then
+    native_user_loader="$native_config/autoload/nu-scripts.nu"
+fi
 stage=$(mktemp -d "$autoload/.prepare.XXXXXX")
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 starship_temporary="$stage/starship.nu"
@@ -37,25 +60,19 @@ chmod 600 "$starship_temporary" "$pixi_temporary" "$fzf_temporary" "$wt_temporar
 "$DOTFILES_COMMON_BIN/nu" --config "$fzf_temporary" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
 "$DOTFILES_COMMON_BIN/nu" --config "$wt_temporary" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
 "$DOTFILES_COMMON_BIN/nu" --config "$XDG_CONFIG_HOME/nushell/config.nu" --env-config "$XDG_CONFIG_HOME/nushell/env.nu" -c 'null'
-"$DOTFILES_COMMON_BIN/python" "$HOME/.local/lib/dotfiles/completions.py" --nu "$DOTFILES_COMMON_BIN/nu" --autoload-dir "$stage"
+# The completion module owns the pinned loader: it publishes the generation to
+# every active loader and retires a generation only after no loader imports it.
+set --
+if [ -n "$native_vendor_loader" ]; then set -- "$@" --loader "$native_vendor_loader"; fi
+if [ -n "$native_user_loader" ]; then set -- "$@" --loader "$native_user_loader"; fi
+"$DOTFILES_COMMON_BIN/python" "$HOME/.local/lib/dotfiles/completions.py" --nu "$DOTFILES_COMMON_BIN/nu" "$@"
 mv -f "$starship_temporary" "$autoload/starship.nu"
 mv -f "$pixi_temporary" "$autoload/pixi-completions.nu"
 mv -f "$fzf_temporary" "$autoload/fzf.nu"
 mv -f "$wt_temporary" "$autoload/wt.nu"
-mv -f "$stage/nu-scripts.nu" "$autoload/nu-scripts.nu"
-# macOS resolves Nu's own data directory under Library/Application Support, so a
-# launch without an XDG override reads that autoload directory instead of the
-# one prepared here. The deployment mirrors it during
-# apply-source.macos-discovery; a standalone preparation must leave the same
-# bytes, or such a launch keeps the previous startup. Other platforms keep the
-# deployment's discovery adapter as the only writer of native copies.
-native_data=
-if [ "${DOTFILES_PLATFORM:-}" = macos ]; then
-    native_data=$(env -u XDG_DATA_HOME "$DOTFILES_COMMON_BIN/nu" -c 'print $nu.data-dir' 2>/dev/null) || native_data=
-fi
-if [ -n "$native_data" ] && [ -d "$native_data/vendor/autoload" ] && [ "$native_data/vendor/autoload" != "$autoload" ]; then
+if [ -n "$native_vendor_loader" ]; then
     native="$native_data/vendor/autoload"
-    for filename in starship.nu pixi-completions.nu fzf.nu nu-scripts.nu wt.nu; do
+    for filename in starship.nu pixi-completions.nu fzf.nu wt.nu; do
         [ ! -L "$native/$filename" ] || fail "native startup artifact is a symlink: $native/$filename"
         if ! cmp -s "$autoload/$filename" "$native/$filename"; then
             cp -p "$autoload/$filename" "$native/$filename"

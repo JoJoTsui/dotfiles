@@ -121,6 +121,15 @@ explains every changed pair.
   to whichever proxy client the device runs (Clash Verge 7897, deployment
   mihomo 7890), not to the OS. The `.bashrc` and `.zshrc` interactive blocks
   keep equivalent managed-tool hooks (Zsh adds its required `compinit`).
+- **The completion module owns the Nu loader publication**:
+  `dot_local/lib/dotfiles/completions.py` publishes one validated generation to
+  every managed loader (the canonical XDG loader plus the platform's native
+  copies) and retires a generation only after no managed loader imports it. A
+  loader stores each import as a JSON string, so the retirement check decodes
+  that reference instead of matching raw text. `dotfiles-shell-prepare` and
+  the native Windows preparation select the loaders and call the module; they
+  never write the loader themselves. Read `docs/SHARED_SHELL_SETTINGS.md`
+  before changing the loader, the generation lifecycle, or the native copies.
 - **macOS runs Zsh, not Bash**: macOS applies no Bash startup file and installs
   no managed Bash runtime. `dot_zprofile` is the Zsh login file and shares
   `~/.profile` with Bash's, because Zsh never reads `~/.profile` itself.

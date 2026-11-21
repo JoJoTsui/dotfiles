@@ -118,10 +118,20 @@ and publication boundary. Validation fails on a parse error but only reports a
 deprecation warning: a device may run a Nu newer than the pinned revision, and
 that warning belongs in the preparation output rather than in every
 interactive startup. Each published content directory carries the revision and
-a digest of its bytes, so a selection or catalog change publishes a new one;
-the preparation removes the directories it published earlier once the loader
-names the new one. A device-created entry and a symlink never match the
-published name and are left alone.
+a digest of its bytes, so a selection or catalog change publishes a new one.
+A loader is the file a Nushell startup imports: the canonical one lives in the
+vendor autoload directory of the XDG data home, and a platform adds its native
+discovery copies. The completion module owns that lifecycle. It validates a
+new generation with the installed Nu before any loader switches, replaces
+every managed loader atomically, and retires a generation only after no
+managed loader imports it any more. A loader stores each import as a JSON
+string, so the retirement check decodes that reference instead of matching raw
+text: a Windows path spells every separator twice and a quoted home name
+escapes its quote, and both keep the generation they name. A loader that
+refuses the replacement keeps the generation it imports, so an interrupted
+publication leaves every loader usable and a failed publication leaves the
+working loader and its generation alone. A device-created entry and a symlink
+never match the published name and are left alone.
 
 For an air-gapped preparation, supply `DOTFILES_NU_SCRIPTS_ARCHIVE` with a local
 copy of the pinned archive; checksum verification still applies. Updating the
@@ -144,7 +154,10 @@ generated into the directory Nu resolves without an XDG override, which on
 macOS is `~/Library/Application Support/nushell/vendor/autoload`, so a launch
 from outside the managed environment never reads an older startup. That mirror
 writes only existing entries, keeps a device file, and refuses a symlinked
-target. Generated resources and device state are not imported into git. See
+target. The pinned loader is not mirrored: the completion module publishes it
+to every active native loader path, so the deployment's own discovery copy and
+a native copy written outside a deployment never outlive the generation they
+import. Generated resources and device state are not imported into git. See
 [Nu configuration](https://www.nushell.sh/book/configuration.html).
 
 History preparation follows shell preparation. `dotfiles-history-prepare`
