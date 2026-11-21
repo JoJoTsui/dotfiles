@@ -862,37 +862,6 @@ agent_physical_path() {
     return 1
 }
 
-# The device's own command for one name, outside the managed launchers, whose
-# diagnostic reports the installer's version. The installer symlink is resolved
-# so the launchers point at the executable the device provides.
-agent_installer_command() {
-    local command=$1 version=$2 template=$3
-    local directory candidate diagnostic physical_home physical_bun
-    local search_paths=()
-    installer_native_target || return 1
-    physical_home=$(CDPATH= cd -P -- "$HOME" && pwd -P) || return 1
-    if [ -d "$BUN_INSTALL" ]; then
-        physical_bun=$(CDPATH= cd -P -- "$BUN_INSTALL" && pwd -P) || return 1
-    else
-        physical_bun=$(CDPATH= cd -P -- "$(dirname "$BUN_INSTALL")" && pwd -P) || return 1
-        physical_bun="$physical_bun/${BUN_INSTALL##*/}"
-    fi
-    IFS=: read -r -a search_paths <<< "$PATH"
-    for directory in "${search_paths[@]}"; do
-        case "$directory" in /*) ;; *) continue ;; esac
-        candidate=$(agent_physical_path "$directory/$command") || continue
-        case "$candidate" in
-            "$physical_home/.local/bin/$command"|"$physical_bun/bin/$command"|"$physical_bun/managed/"*) continue ;;
-        esac
-        if LC_ALL=C head -c 160 "$candidate" 2>/dev/null | LC_ALL=C grep -Fq '# Managed by dotfiles'; then continue; fi
-        diagnostic=$("$candidate" --version 2>/dev/null) || continue
-        agent_diagnostic_matches "$version" "$diagnostic" "$template" floor || continue
-        printf '%s' "$candidate"
-        return 0
-    done
-    return 1
-}
-
 # The Homebrew command of one agent record. The device must already provide
 # the package at or above the catalog floor, and the command must report the
 # version the package carries. The deployment adopts that command; it never
@@ -902,19 +871,49 @@ AGENT_HOME_BREW_COMMAND=''
 AGENT_HOME_BREW_VERSION=''
 agent_homebrew_command() {
     local floor=$1 kind=$2 package=$3 commands=$4 template=$5
-    local brew version command candidate
-    local exposed_commands=()
-    IFS=, read -r -a exposed_commands <<< "$commands"
-    command=${exposed_commands[0]}
+    local brew installed version command prefix package_root stable candidate target diagnostic
+    local candidates=()
+    command=${commands%%,*}
+    installer_native_target || return 1
     brew=$(installer_homebrew) || return 1
-    version=$(installer_tool_version "$brew" "$kind" "$package") || return 1
+    installed=$(installer_tool_version "$brew" "$kind" "$package") || return 1
     # A package revision is not part of the version the command reports.
-    version=${version%%_*}
+    version=${installed%%_*}
     installer_version_at_least "$version" "$floor" || return 1
-    candidate=$(agent_installer_command "$command" "$version" "$template") || return 1
-    AGENT_HOME_BREW_COMMAND=$candidate
-    AGENT_HOME_BREW_VERSION=$version
-    return 0
+    prefix=$("$brew" --prefix 2>/dev/null) || return 1
+    case "$prefix" in /*) ;; *) return 1 ;; esac
+    stable=''
+    case "$kind" in
+        formula)
+            package_root=$("$brew" --cellar "$package" 2>/dev/null) || return 1
+            stable="$prefix/opt/$package"
+            candidates=("$stable/bin/$command" "$stable/libexec/bin/$command")
+            ;;
+        cask)
+            package_root=$("$brew" --caskroom "$package" 2>/dev/null) || return 1
+            ;;
+        *) return 1 ;;
+    esac
+    candidates+=("$prefix/bin/$command")
+    case "$package_root" in /*) ;; *) return 1 ;; esac
+    package_root=$(CDPATH= cd -P -- "$package_root" 2>/dev/null && pwd -P) || return 1
+    for candidate in "${candidates[@]}"; do
+        target=$(agent_physical_path "$candidate") || continue
+        # Matching output from a PATH shadow tells us nothing about ownership.
+        # Check the installed package's versioned directory before the probe.
+        case "$target" in "$package_root/$installed/"*) ;; *) continue ;; esac
+        diagnostic=$("$target" --version 2>/dev/null) || continue
+        agent_diagnostic_matches "$version" "$diagnostic" "$template" floor || continue
+        # A formula's opt path follows its active keg without relying on a
+        # global command link that another package can claim.
+        if [ -n "$stable" ]; then
+            case "$candidate" in "$stable/"*) target=$candidate ;; esac
+        fi
+        AGENT_HOME_BREW_COMMAND=$target
+        AGENT_HOME_BREW_VERSION=$version
+        return 0
+    done
+    return 1
 }
 
 # The version of one dependency in a package manifest, read with the managed

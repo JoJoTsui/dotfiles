@@ -93,7 +93,7 @@ PY
 }
 
 update_agents() {
-    local selection bun proposal_dir proposal
+    local selection bun brew proposal_dir proposal
     need_source
     selection=$(selection_arg "$@")
     bun=${DOTFILES_BUN_BIN:-${DOTFILES_COMMON_BIN:-$HOME/.pixi/bin}/bun}
@@ -107,8 +107,10 @@ update_agents() {
     # installation up to date before the deployment adopts it again. A client
     # the operator upgraded by hand and a client this upgrade upgraded end in
     # the same place, and the deployment's launcher follows the new version.
+    brew=brew
+    if [ -x "${DOTFILES_HOMEBREW_BIN:-}" ]; then brew=$DOTFILES_HOMEBREW_BIN; fi
     "$PYTHON" "$SOURCE/deployment/update_versions.py" upgrade-homebrew \
-        --root "$SOURCE" --selection "$selection"
+        --root "$SOURCE" --selection "$selection" --brew "$brew"
     "$PYTHON" "$SOURCE/deployment/update_versions.py" propose-agents \
         --root "$SOURCE" --selection "$selection" --output "$proposal"
     if "$PYTHON" -c 'import json, sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["agents"] else 1)' "$proposal"; then
@@ -209,6 +211,33 @@ def version_matches(observed, expected, policy):
     return left > right or (left == right and "-" not in observed.split("+", 1)[0])
 
 
+def homebrew_owns(target, row):
+    package = row["package"]
+    if package not in target.parts:
+        return False
+    brew = os.environ.get("DOTFILES_HOMEBREW_BIN")
+    if not brew or not os.access(brew, os.X_OK):
+        brew = shutil.which("brew")
+    if not brew:
+        return False
+    cask = row["packageKind"] == "cask"
+    try:
+        root = subprocess.run([brew, "--caskroom" if cask else "--cellar", package],
+                              capture_output=True, text=True, check=True, timeout=30)
+        directory = Path(root.stdout.strip())
+        if not directory.is_absolute():
+            return False
+        relative = target.relative_to(directory.resolve(strict=True))
+        if len(relative.parts) < 2:
+            return False
+        args = ["list", "--versions", "--cask", package] if cask else ["list", "--versions", package]
+        listing = subprocess.run([brew, *args], capture_output=True, text=True,
+                                 check=True, timeout=30)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return False
+    return relative.parts[0] in listing.stdout.split()[1:]
+
+
 def executable_provider(path, chain):
     """Identify known managed launchers or their direct provider executables."""
     home = Path.home()
@@ -239,6 +268,9 @@ def executable_provider(path, chain):
             directory = home / ("." + row["agent"]) / "bin" / binary
             if target.parent == directory.resolve() and target.name.startswith(binary + "-"):
                 return provider
+    for row in chain:
+        if row["provider"] == "homebrew" and homebrew_owns(target, row):
+            return "homebrew"
     return "unverified"
 
 
