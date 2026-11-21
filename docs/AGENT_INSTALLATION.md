@@ -125,13 +125,16 @@ adapter forces a reinstall of that package project and verifies the launcher.
 The DSH TUI update also reconciles its DSH runtime. On Unix, the selected
 agent's existing Worktrunk and Herdr integration steps still run. A Codex
 update restores the managed Herdr hook files when Herdr is available. On
-Windows a missing `.env_core` is restored for the Git Bash launchers.
+Windows a missing `.env_core` is restored for the Git Bash launchers. If the
+existing file fails the Git Bash syntax check, update stops and preserves it.
 
 CodeGraph's independent installation and standalone registrations, configuration
 of other clients, generated skills, and shared shell drift remain for a full
 apply. The targeted client policy map under `deployment/client-settings/`
-limits which settings are merged. Existing device values within those
-settings keep the same ownership policy as a full apply. See the
+limits which settings are merged. Their defaults use the current deployment
+profile without changing the device's Chezmoi configuration. Existing device
+values within those settings keep the same ownership policy as a full apply.
+See the
 [paired timing measurements](verification/deployment-timing.md).
 
 `update` never invokes a vendor self-updater and never edits the device's
