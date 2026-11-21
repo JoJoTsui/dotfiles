@@ -9,6 +9,11 @@
 # Works in any shell, subshell, CI step, or script — it is a real executable
 # in $PATH, not a shell alias.
 #
+# This launcher owns the endpoint decision: the precedence, the health check,
+# and the fallback live here, and every other adapter (the POSIX shell helper
+# in .env_core, the Nushell adapter in proxy.nu) reads the answer from here.
+# A session in Nushell and a session in Bash therefore route the same way.
+#
 # Upper and lowercase spellings are always set together, so a command cannot
 # inherit one spelling from its parent and read the other.
 #
@@ -26,10 +31,19 @@
 #   PROXY_SOCKS  default: socks5h:// on the same host:port as PROXY_HTTP
 #   PROXY_NO     default localhost,127.0.0.1,::1
 #
+# Output modes (the interface the adapters read):
+#   --print                    export lines for the supported variables
+#   --print-env                KEY=VALUE lines for the supported variables
+#   --print-url                the endpoint, with the ordinary fallback
+#   --print-url-if-available   the endpoint, or exit 1 when none is available
+#
 # --print emits the export lines instead of exec'ing, which is how the shell
 # helper in .env_core reuses this resolution without copying the port list.
 # --print-url-if-available emits no fallback when neither a value nor a
 # listener is available, for callers that persist the chosen endpoint.
+# --print-env answers the same question in a form a non-shell adapter can
+# parse, so the Nushell session helper applies exactly the variables this
+# launcher applies.
 
 set -euo pipefail
 
@@ -41,9 +55,13 @@ case ${1:-} in
     --print) mode=print; shift ;;
     --print-url) mode=url; shift ;;
     --print-url-if-available) mode=available-url; shift ;;
+    --print-env) mode=env; shift ;;
     --if-available) if_available=1; shift ;;
 esac
 
+# The decision, in one place: an explicit endpoint wins, otherwise the ports a
+# proxy client may serve are probed in order, and a caller that asked for an
+# available endpoint gets nothing rather than the ordinary fallback.
 available=0
 if [[ -n ${PROXY_HTTP:-} ]]; then
     available=1
@@ -56,53 +74,60 @@ else
         fi
     done
 fi
-if [[ $mode == available-url && $available == 0 ]]; then
+if [[ $available == 0 && $mode == available-url ]]; then
     exit 1
 fi
 PROXY_HTTP=${PROXY_HTTP:-http://127.0.0.1:7890}
 PROXY_SOCKS=${PROXY_SOCKS:-socks5h://${PROXY_HTTP#http://}}
 
-if [[ $mode == url || $mode == available-url ]]; then
-    printf '%s\n' "$PROXY_HTTP"
-    exit 0
-fi
+# The variables the launchers own, in export order. The POSIX launcher and the
+# Nushell adapter both read this list, so a change to it reaches both.
+proxy_environment() {
+    printf 'HTTP_PROXY=%s\n' "$PROXY_HTTP"
+    printf 'HTTPS_PROXY=%s\n' "$PROXY_HTTP"
+    printf 'http_proxy=%s\n' "$PROXY_HTTP"
+    printf 'https_proxy=%s\n' "$PROXY_HTTP"
+    printf 'ALL_PROXY=%s\n' "$PROXY_SOCKS"
+    printf 'all_proxy=%s\n' "$PROXY_SOCKS"
+    printf 'NO_PROXY=%s\n' "$PROXY_NO"
+    printf 'no_proxy=%s\n' "$PROXY_NO"
+    printf 'PROXY=%s\n' "$PROXY_HTTP"
+}
 
-if [[ $mode == print ]]; then
-    printf 'export HTTP_PROXY=%q\n' "$PROXY_HTTP"
-    printf 'export HTTPS_PROXY=%q\n' "$PROXY_HTTP"
-    printf 'export http_proxy=%q\n' "$PROXY_HTTP"
-    printf 'export https_proxy=%q\n' "$PROXY_HTTP"
-    printf 'export ALL_PROXY=%q\n' "$PROXY_SOCKS"
-    printf 'export all_proxy=%q\n' "$PROXY_SOCKS"
-    printf 'export NO_PROXY=%q\n' "$PROXY_NO"
-    printf 'export no_proxy=%q\n' "$PROXY_NO"
-    printf 'export PROXY=%q\n' "$PROXY_HTTP"
-    exit 0
-fi
+case $mode in
+    url|available-url)
+        printf '%s\n' "$PROXY_HTTP"
+        exit 0
+        ;;
+    env)
+        proxy_environment
+        exit 0
+        ;;
+    print)
+        while IFS='=' read -r _key _value; do
+            printf 'export %s=%q\n' "$_key" "$_value"
+        done < <(proxy_environment)
+        exit 0
+        ;;
+esac
 
 if [[ $# -eq 0 ]]; then
-    echo "usage: with-proxy [--print|--print-url|--print-url-if-available|--if-available] command [args...]" >&2
+    echo "usage: with-proxy [--print|--print-url|--print-url-if-available|--print-env|--if-available] command [args...]" >&2
     exit 64
 fi
 
 # --if-available: a caller that only wants the proxy when one exists. Without a
 # reachable endpoint it runs direct and drops inherited variables, so a stale
 # http_proxy in the parent cannot make the command fail against a dead port.
-if [[ $mode == exec && $if_available == 1 && $available == 0 ]]; then
+if [[ $if_available == 1 && $available == 0 ]]; then
     unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
     unset ALL_PROXY all_proxy FTP_PROXY ftp_proxy
     unset NO_PROXY no_proxy PROXY
     exec -- "$@"
 fi
 
-export HTTP_PROXY="$PROXY_HTTP"
-export HTTPS_PROXY="$PROXY_HTTP"
-export http_proxy="$PROXY_HTTP"
-export https_proxy="$PROXY_HTTP"
-export ALL_PROXY="$PROXY_SOCKS"
-export all_proxy="$PROXY_SOCKS"
-export NO_PROXY="$PROXY_NO"
-export no_proxy="$PROXY_NO"
-export PROXY="$PROXY_HTTP"
+while IFS='=' read -r _key _value; do
+    export "$_key=$_value"
+done < <(proxy_environment)
 
 exec -- "$@"
