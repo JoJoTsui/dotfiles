@@ -44,6 +44,12 @@ class ProxyBootstrapHelperTests(unittest.TestCase):
     def test_fresh_helpers_build_a_real_us_profile_before_source_application(self):
         root = self.home / ".local/share/mihomo"
         root.mkdir(parents=True)
+        # The deployment installs the pinned Mihomo binary before it builds a
+        # profile, and the refresh validates the staged profile with it.
+        binary = root / "bin/mihomo"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("#!/bin/sh\nexit 0\n")
+        binary.chmod(0o755)
         self.env["MIHOMO_SUBSCRIPTION_URL"] = "https://fixture.invalid/profile"
         profile = self.home / "subscription.yaml"
         profile.write_text(

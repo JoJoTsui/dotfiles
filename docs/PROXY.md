@@ -34,6 +34,42 @@ fails there with that reason instead of installing a Linux binary. The Codex
 launcher still asks `with-proxy --if-available`, which uses whatever proxy the
 device runs (Clash Verge on macOS) and otherwise starts direct.
 
+## Refresh
+
+The refresh fetches the subscription, converts it, validates it, and publishes
+it. The replacement is staged beside the profile it replaces, so publication is
+a rename on one filesystem, and the active profile is published only after
+every step succeeds:
+
+1. The destination must be a regular file. A directory would take the staged
+   copy instead of being replaced, so the refresh stops before it fetches
+   anything.
+2. The fetch writes the subscription to a staged file.
+3. The staged profile must carry `mixed-port`, `proxies`, `proxy-groups`, and
+   `rules`; without them it is not a usable Mihomo configuration.
+4. The US restriction and the routing policy are applied to the staged copy,
+   not to the profile in use. Both transforms are required: a profile
+   published without them carries the provider's own regions and rules, so a
+   transform that is missing or is not executable stops the refresh.
+5. The converted profile is checked again and validated with the managed
+   Mihomo binary (`mihomo -t -f`), so a configuration Mihomo cannot load
+   never replaces the working one.
+6. The validated profile is renamed over the active one.
+
+A failed fetch, conversion, or validation leaves the active profile exactly as
+it was, so the last working profile keeps serving and a later refresh can
+publish a valid replacement without provisioning again. The staged file is
+removed on every exit, so a failed refresh leaves nothing behind.
+
+The deployment passes the same managed binary to both refresh call sites: the
+service refresh and the temporary deployment instance keep separate install
+roots, but both validate with the release the deployment installed.
+
+The refresh keeps its diagnostics secret-safe. The subscription URL is redacted
+from a fetch error, and the validator's own message is not relayed, because a
+parse error quotes the value it rejected and a profile carries proxy
+credentials.
+
 ## The deployment proxy
 
 The deployment has network needs of its own: manager releases, the skill

@@ -135,8 +135,12 @@ refresh_proxy_profile() {
     case "$(head -c 32 "$secret" 2>/dev/null)" in
         REPLACE_ME*) fail "proxy subscription URL is still REPLACE_ME: $secret" ;;
     esac
+    # The managed Mihomo binary validates the staged profile before the
+    # refresh publishes it. The same binary serves the deployment instance,
+    # whose profile is built in a separate install root.
     INSTALL_ROOT="$root" PROFILE_PATH="$root/profiles/config.yaml" \
-        SUBSCRIPTION_URL_FILE="$secret" "$script"
+        SUBSCRIPTION_URL_FILE="$secret" \
+        MIHOMO_VALIDATOR="$root/bin/mihomo" "$script"
 }
 
 # The deployment proxy is a process, not a service. It serves the downloads
@@ -311,6 +315,7 @@ deploy_proxy_profile() {
     mkdir -p "$root/profiles" "$root/deployment/profiles"
     INSTALL_ROOT="$root/deployment" PROFILE_PATH="$root/deployment/profiles/config.yaml" \
         SUBSCRIPTION_URL_FILE="$subscription" \
+        MIHOMO_VALIDATOR="$root/bin/mihomo" \
         "$scripts/refresh-profile.sh" >/dev/null 2>&1 || return 1
     source="$root/deployment/profiles/config.yaml"
     [ -s "$source" ] || return 1
