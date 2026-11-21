@@ -708,9 +708,10 @@ Install-Qoder $env:DOTFILES_TEST_QODER_VERSION 'https://example.invalid'
             self.skipTest('actual source apply needs Chezmoi')
         library = self.root / 'selected library'
         shutil.copytree(SOURCE / 'tests/fixtures/skill-library', library)
-        design = library / 'baoyu-diagram'
-        design.mkdir()
-        (design / 'SKILL.md').write_text('---\nname: baoyu-diagram\ndescription: mock design skill\n---\n')
+        skill_name = 'caveman-commit'
+        opt_in_skill = library / skill_name
+        opt_in_skill.mkdir()
+        (opt_in_skill / 'SKILL.md').write_text(f'---\nname: {skill_name}\ndescription: opt-in test skill\n---\n')
         for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
             device = self.home / root / 'device-only'
             device.mkdir(parents=True)
@@ -719,26 +720,24 @@ Install-Qoder $env:DOTFILES_TEST_QODER_VERSION 'https://example.invalid'
         collision.mkdir(parents=True)
         (collision / 'SKILL.md').write_text('device humanizer stays\n')
         selected = self.deploy('-ApplyOnly', env=dict(
-            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_SKILLS_DIR=str(library), DOTFILES_SKILLS='design'))
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_SKILLS_DIR=str(library), DOTFILES_SKILLS='caveman'))
         self.assertEqual(selected.returncode, 0, selected.stderr)
-        for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
-            self.assertTrue((self.home / root / 'baoyu-diagram/SKILL.md').is_file(), root)
-            self.assertTrue((self.home / root / 'device-only/SKILL.md').is_file(), root)
         inventory = (self.home / '.local/state/dotfiles/managed-skills.tsv').read_text()
-        self.assertIn('baoyu-diagram|.agents/skills', inventory)
-        self.assertIn('baoyu-diagram|.claude/skills', inventory)
-        self.assertIn('baoyu-diagram|.minimax/skills', inventory)
+        for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
+            self.assertTrue((self.home / root / skill_name / 'SKILL.md').is_file(), root)
+            self.assertTrue((self.home / root / 'device-only/SKILL.md').is_file(), root)
+            self.assertIn(f'{skill_name}|{root}', inventory)
         self.assertEqual((self.home / '.claude/skills/humanizer/SKILL.md').read_text(),
                          'device humanizer stays\n')
         self.assertNotIn('humanizer|.claude/skills', inventory)
         deselected = self.deploy('-ApplyOnly', env=dict(
             self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_SKILLS_DIR=str(library)))
         self.assertEqual(deselected.returncode, 0, deselected.stderr)
+        inventory = (self.home / '.local/state/dotfiles/managed-skills.tsv').read_text()
         for root in ('.agents/skills', '.claude/skills', '.minimax/skills'):
-            self.assertFalse((self.home / root / 'baoyu-diagram').exists(), root)
+            self.assertFalse((self.home / root / skill_name).exists(), root)
             self.assertTrue((self.home / root / 'device-only/SKILL.md').is_file(), root)
-        self.assertNotIn('baoyu-diagram|.claude/skills',
-                         (self.home / '.local/state/dotfiles/managed-skills.tsv').read_text())
+            self.assertNotIn(f'{skill_name}|{root}', inventory)
         self.assertEqual((self.home / '.claude/skills/humanizer/SKILL.md').read_text(),
                          'device humanizer stays\n')
 
@@ -1681,7 +1680,9 @@ Install-MagpieCli
         cli.write_bytes(device_binary)
         result = self.run_magpie_fixture(script, dict(environment, DOTFILES_TEST_MAGPIE_DOWNLOAD='1'))
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("does not match the pinned Magpie SHA-256", result.stderr)
+        # PowerShell 7 ConciseView wraps long diagnostics in a pipe gutter.
+        diagnostic = re.sub(r"(?m)^[ \t]*\|[ \t]*", "", result.stderr)
+        self.assertIn("does not match the pinned Magpie SHA-256", " ".join(diagnostic.split()))
         self.assertEqual(cli.read_bytes(), device_binary)
         self.assertFalse(marker.exists(), "an unverified cached binary was executed")
         self.assertFalse((self.home / ".local/bin/magpie.cmd").exists())
