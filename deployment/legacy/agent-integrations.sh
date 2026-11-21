@@ -6,18 +6,25 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P)
 TARGET_HOME=${HOME:?}
 LIVE_ROOT=$(dirname "$ROOT")
 ACTION=check
+T9K_JOBS=false
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --fetch|--apply|--check) ACTION=${1#--}; shift ;;
+        --fetch|--apply|--check|--dry-run) ACTION=${1#--}; shift ;;
+        --t9k-jobs) T9K_JOBS=true; shift ;;
         --home) TARGET_HOME=$2; shift 2 ;;
         --live-root) LIVE_ROOT=$2; shift 2 ;;
         -h|--help)
-            printf '%s\n' 'usage: agent-integrations.sh [--fetch|--apply|--check] [--home DIR] [--live-root DIR]'
+            printf '%s\n' 'usage: agent-integrations.sh [--fetch|--apply|--check] [--home DIR] [--live-root DIR]' \
+                '       agent-integrations.sh --t9k-jobs [--apply|--check|--dry-run] [--home DIR] [--live-root DIR]'
             exit 0 ;;
         *) printf 'unknown argument: %s\n' "$1" >&2; exit 2 ;;
     esac
 done
 fail() { printf 'agent-integrations: %s\n' "$*" >&2; exit 1; }
+case "$T9K_JOBS:$ACTION" in
+    true:fetch) fail '--t9k-jobs does not use --fetch' ;;
+    false:dry-run) fail '--dry-run requires --t9k-jobs' ;;
+esac
 realpath_py() { python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$1"; }
 LIVE_ROOT=$(realpath_py "$LIVE_ROOT")
 [ -d "$LIVE_ROOT" ] && [ -d "$TARGET_HOME" ] || fail 'home and live root must exist'
@@ -36,7 +43,7 @@ payload_safe_destination() {
     resolved=$(realpath_py "$1") || fail 'cannot resolve destination'
     case "$resolved" in "$LIVE_ROOT"/*) ;; *) fail "destination escapes live tree: $1" ;; esac
 }
-for path in "$HOME/.local" "$HOME/.cache" "$XDG_STATE_HOME" "$TMPDIR"; do
+for path in "$HOME/.local" "$XDG_STATE_HOME"; do
     payload_safe_destination "$path"
 done
 
@@ -126,10 +133,128 @@ policy_record_skill() {
     mv -f "$staged" "$state"
     rm -f "$previous" "$inventory"
 }
-mkdir -p "$TMPDIR"
-stage=$(mktemp -d "$TMPDIR/agent-integrations.XXXXXX")
+if "$T9K_JOBS"; then
+    stage=$(mktemp -d /tmp/dotfiles-t9k-jobs.XXXXXX)
+else
+    payload_safe_destination "$HOME/.cache"
+    payload_safe_destination "$TMPDIR"
+    mkdir -p "$TMPDIR"
+    stage=$(mktemp -d "$TMPDIR/agent-integrations.XXXXXX")
+fi
 chmod 700 "$stage"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
+plan=$stage/plan.tsv
+: > "$plan"
+plan_file() {
+    local from=$1 relative=$2 mode=$3 target="$HOME/$2" parent
+    payload_safe_destination "$target"
+    [ ! -e "$target" ] || [ -f "$target" ] || fail "file conflict: $relative"
+    if "$T9K_JOBS"; then
+        [ ! -L "$target" ] || fail "target is a symlink: $relative"
+        [ -f "$from" ] && [ ! -L "$from" ] || fail "missing or linked T9K source: $from"
+        parent=$(dirname "$(realpath_py "$target")")
+        while [ ! -d "$parent" ]; do
+            [ ! -e "$parent" ] || fail "parent is not a directory: $relative"
+            parent=${parent%/*}
+        done
+    fi
+    printf '%s|%s|%s\n' "$relative" "$from" "$mode" >> "$plan"
+}
+
+plan_t9k_jobs() {
+    local data=.local/share/dotfiles/t9k-automation overlay content operation resource relative file mode i=0
+    for resource in kubeconfig-incluster.yaml README.md; do
+        plan_file "$ROOT/dot_local/share/dotfiles/t9k-automation/$resource" "$data/$resource" 0644
+    done
+    plan_file "$ROOT/dot_local/bin/executable_t9k-run-job" .local/bin/t9k-run-job 0755
+    overlay="$ROOT/deployment/agent-payload/overlays/t9k.md"
+    content=$(cat "$overlay" && printf '.')
+    content=${content%.}
+    while IFS='|' read -r operation resource relative; do
+        [ "$operation" = block ] || continue
+        payload_safe_destination "$HOME/$relative"
+        [ ! -L "$HOME/$relative" ] || fail "target is a symlink: $relative"
+        i=$((i + 1))
+        file=$stage/t9k-instruction.$i
+        mode=0644
+        if [ -f "$HOME/$relative" ]; then
+            cp "$HOME/$relative" "$file"
+            mode=0$(stat -c '%a' "$HOME/$relative")
+        fi
+        payload_write_instruction_block "$file" "$content" \
+            '<!-- DOTFILES_T9K_JOBS_START -->' '<!-- DOTFILES_T9K_JOBS_END -->'
+        plan_file "$file" "$relative" "$mode"
+    done < "$ROOT/deployment/agent-payload/targets.tsv"
+}
+
+# The recovery batch holds the bytes the apply replaces, so every change stays reversible.
+policy_batch() {
+    [ -n "$batch" ] && return 0
+    local batch_state=$XDG_STATE_HOME/dotfiles/disabled-integrations
+    if "$T9K_JOBS"; then batch_state=$XDG_STATE_HOME/dotfiles/t9k-automation; fi
+    payload_safe_destination "$batch_state"
+    mkdir -p "$batch_state"
+    batch=$(mktemp -d "$batch_state/files.XXXXXX")
+    chmod 700 "$batch"
+}
+
+policy_backup_file() {
+    local target=$1 relative=$2 resolved=$3 original_mode
+    if [ -f "$target" ]; then
+        mkdir -p "$batch/$(dirname "$relative")"
+        cp -p "$target" "$batch/$relative"
+        chmod 600 "$batch/$relative"
+        original_mode=$(stat -c '%a' "$resolved")
+        printf '%s|%s|%s\n' "$target" "$batch/$relative" "$original_mode" >> "$batch/restore.tsv"
+    else
+        printf '%s|NEW|-\n' "$target" >> "$batch/restore.tsv"
+    fi
+}
+
+publish_plan() {
+    local relative from mode target resolved temporary
+    while IFS='|' read -r relative from mode; do
+        target=$HOME/$relative
+        if [ "$mode" = tree ]; then
+            apply_skill_tree "$relative" "$from"
+            continue
+        fi
+        if [ "$mode" = DELETE ]; then
+            [ -f "$target" ] || continue
+        elif [ -f "$target" ] && cmp -s "$from" "$target"; then
+            if ! "$T9K_JOBS" || [ "$(stat -c '%a' "$target")" = "${mode#0}" ]; then continue; fi
+        fi
+        drift=$((drift + 1))
+        if [ "$ACTION" = check ]; then printf 'DRIFT %s\n' "$relative"; continue; fi
+        if [ "$ACTION" = dry-run ]; then printf 'WOULD WRITE %s\n' "$relative"; continue; fi
+        policy_batch
+        resolved=$(realpath_py "$target")
+        payload_safe_destination "$target"
+        policy_backup_file "$target" "$relative" "$resolved"
+        if [ "$mode" = DELETE ]; then
+            rm -f "$resolved"
+            continue
+        fi
+        mkdir -p "$(dirname "$resolved")"
+        temporary=$(mktemp "$(dirname "$resolved")/.agent-policy.XXXXXX")
+        if ! cp "$from" "$temporary" || ! chmod "$mode" "$temporary" || ! mv -f "$temporary" "$resolved"; then
+            rm -f "$temporary"
+            fail "cannot install $relative"
+        fi
+    done < "$plan"
+}
+
+drift=0
+batch=''
+if "$T9K_JOBS"; then
+    plan_t9k_jobs
+    publish_plan
+    if [ "$ACTION" = check ] && [ "$drift" -ne 0 ]; then exit 1; fi
+    printf 'agent-integrations: T9K jobs %s complete\n' "$ACTION"
+    if [ -n "$batch" ]; then printf 'Recovery journal: %s/restore.tsv\n' "$batch"; fi
+    exit 0
+fi
+
 cache=$HOME/.local/share/dotfiles/agent-integrations
 payload_safe_destination "$cache"
 chezmoi=${DOTFILES_CHEZMOI_BIN:-$HOME/.local/bin/chezmoi}
@@ -172,15 +297,6 @@ payload_quarantine_disabled --validate
 # ownership read: an inventory outside the live tree never authorizes an
 # overwrite.
 policy_inventory_state
-# Build every desired file before changing a config, instruction, or skill.
-plan=$stage/plan.tsv
-: > "$plan"
-plan_file() {
-    local from=$1 relative=$2 mode=$3
-    payload_safe_destination "$HOME/$relative"
-    [ ! -e "$HOME/$relative" ] || [ -f "$HOME/$relative" ] || fail "file conflict: $relative"
-    printf '%s|%s|%s\n' "$relative" "$from" "$mode" >> "$plan"
-}
 # A selected skill is copied as a unit. The public copier's ownership policy
 # decides what happens at the destination: a device entry keeps its own bytes,
 # a directory that already holds these bytes is adopted, and a directory the
@@ -249,31 +365,6 @@ while IFS='|' read -r format relative; do
     fi
     plan_file "$file" "$relative" 0600
 done < "$ROOT/deployment/agent-payload/client-configs.tsv"
-
-# The recovery batch holds the bytes the apply replaces, so every change stays
-# reversible.
-policy_batch() {
-    [ -n "$batch" ] && return 0
-    local batch_state=$XDG_STATE_HOME/dotfiles/disabled-integrations
-    payload_safe_destination "$batch_state"
-    mkdir -p "$batch_state"
-    batch=$(mktemp -d "$batch_state/files.XXXXXX")
-    chmod 700 "$batch"
-}
-
-# Back up one replaced file and record its original mode.
-policy_backup_file() {
-    local target=$1 relative=$2 resolved=$3 original_mode
-    if [ -f "$target" ]; then
-        mkdir -p "$batch/$(dirname "$relative")"
-        cp -p "$target" "$batch/$relative"
-        chmod 600 "$batch/$relative"
-        original_mode=$(stat -c '%a' "$resolved")
-        printf '%s|%s|%s\n' "$target" "$batch/$relative" "$original_mode" >> "$batch/restore.tsv"
-    else
-        printf '%s|NEW|-\n' "$target" >> "$batch/restore.tsv"
-    fi
-}
 
 # Report a device entry the deployment preserved. A shared alias names one
 # physical entry, so the report happens once per physical path.
@@ -368,33 +459,7 @@ apply_skill_tree() {
     policy_record_skill "$name" "$root"
 }
 
-drift=0
-batch=''
-while IFS='|' read -r relative from mode; do
-    target=$HOME/$relative
-    if [ "$mode" = tree ]; then
-        apply_skill_tree "$relative" "$from"
-        continue
-    fi
-    if [ "$mode" = DELETE ]; then
-        [ -f "$target" ] || continue
-    elif [ -f "$target" ] && cmp -s "$from" "$target"; then continue; fi
-    drift=$((drift + 1))
-    if [ "$ACTION" = check ]; then printf 'DRIFT %s\n' "$relative"; continue; fi
-    policy_batch
-    resolved=$(realpath_py "$target")
-    payload_safe_destination "$target"
-    policy_backup_file "$target" "$relative" "$resolved"
-    if [ "$mode" = DELETE ]; then
-        rm -f "$resolved"
-        continue
-    fi
-    mkdir -p "$(dirname "$resolved")"
-    temporary=$(mktemp "$(dirname "$resolved")/.agent-policy.XXXXXX")
-    cp "$from" "$temporary"
-    chmod "$mode" "$temporary"
-    mv -f "$temporary" "$resolved"
-done < "$plan"
+publish_plan
 if [ "$ACTION" = apply ]; then
     payload_quarantine_disabled
 else

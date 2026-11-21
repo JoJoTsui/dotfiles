@@ -71,6 +71,8 @@ The existing T9K host's pre-chezmoi symlink layout is maintained explicitly by t
 `deployment/legacy/link-home.sh` utility; see
 [legacy home links](docs/LEGACY_HOME_LINKS.md). Ordinary bootstrap never runs
 that utility and never converts a copy-mode home to symlinks.
+Use the [incremental T9K job deployment](docs/LEGACY_APPLY.md#incremental-t9k-jobs)
+to install or update the job automation in that legacy home.
 
 WSL uses the Unix bootstrap and all three shells with Linux home/tool paths.
 Read [WSL deployment](docs/WSL_DEPLOYMENT.md) for native Windows interoperability

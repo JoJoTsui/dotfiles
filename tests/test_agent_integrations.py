@@ -122,10 +122,82 @@ class AgentIntegrationTests(unittest.TestCase):
             "exec \"$real\" \"$@\"\n")
         shim.chmod(0o755)
 
-    def run_policy(self, action):
+    def run_policy(self, action, *options):
         return subprocess.run(["bash", str(self.script), action, "--home", str(self.home),
-                               "--live-root", str(self.live)], env=self.env,
+                               "--live-root", str(self.live), *options], env=self.env,
                               capture_output=True, text=True, timeout=60)
+
+    def stage_t9k_sources(self):
+        data = Path("dot_local/share/dotfiles/t9k-automation")
+        shutil.copytree(SOURCE / data, self.source / data)
+        runner = Path("dot_local/bin/executable_t9k-run-job")
+        (self.source / runner.parent).mkdir(parents=True)
+        shutil.copy2(SOURCE / runner, self.source / runner)
+        self.env["DOTFILES_CHEZMOI_BIN"] = str(self.root / "missing-chezmoi")
+
+    def test_t9k_jobs_apply_offline_and_preserve_global_policy(self):
+        self.stage_t9k_sources()
+        runner = self.live / ".local/bin/t9k-run-job"
+        data = self.live / ".local/share/dotfiles/t9k-automation"
+        state = self.live / ".local/state/dotfiles/t9k-automation"
+        instructions = self.live / ".codex/AGENTS.md"
+        personal = "personal\n<!-- DOTFILES_AGENT_START -->\nexisting policy\n<!-- DOTFILES_AGENT_END -->\n"
+        instructions.write_text(personal)
+        instructions.chmod(0o640)
+        config = self.live / ".codex/config.toml"
+        original_config = config.read_bytes()
+        paths_before = set(self.live.rglob("*"))
+        check = self.run_policy("--check", "--t9k-jobs")
+        self.assertEqual(check.returncode, 1)
+        self.assertIn("DRIFT .local/bin/t9k-run-job", check.stdout)
+        preview = self.run_policy("--dry-run", "--t9k-jobs")
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertIn("WOULD WRITE .codex/AGENTS.md", preview.stdout)
+        self.assertEqual(set(self.live.rglob("*")), paths_before)
+        self.assertEqual(instructions.read_text(), personal)
+
+        applied = self.run_policy("--apply", "--t9k-jobs")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertTrue(runner.is_file())
+        self.assertEqual(runner.stat().st_mode & 0o777, 0o755)
+        self.assertEqual({path.name for path in data.iterdir()}, {"README.md", "kubeconfig-incluster.yaml"})
+        self.assertTrue(instructions.read_text().startswith(personal))
+        self.assertEqual(instructions.read_text().count("<!-- DOTFILES_T9K_JOBS_START -->"), 1)
+        self.assertIn("t9k-automation/README.md", instructions.read_text())
+        self.assertEqual(instructions.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(config.read_bytes(), original_config)
+        self.assertTrue((self.live / ".agents/skills/pubmed-database/SKILL.md").is_file())
+        journal, = state.glob("files.*/restore.tsv")
+        self.assertIn("t9k-run-job|NEW|-", journal.read_text())
+        self.assertEqual((journal.parent / ".codex/AGENTS.md").read_text(), personal)
+
+        clean = self.run_policy("--check", "--t9k-jobs")
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        repeated = self.run_policy("--apply", "--t9k-jobs")
+        self.assertEqual(repeated.returncode, 0, repeated.stderr)
+        self.assertEqual(list(state.glob("*/restore.tsv")), [journal])
+
+        runner.chmod(0o644)
+        drift = self.run_policy("--check", "--t9k-jobs")
+        self.assertEqual(drift.returncode, 1)
+        self.assertIn("DRIFT .local/bin/t9k-run-job", drift.stdout)
+        repair = self.run_policy("--apply", "--t9k-jobs")
+        self.assertEqual(repair.returncode, 0, repair.stderr)
+        self.assertEqual(runner.stat().st_mode & 0o777, 0o755)
+
+    def test_t9k_jobs_refuse_escaped_instructions_before_writing_files(self):
+        self.stage_t9k_sources()
+        instructions = self.live / ".qoder/AGENTS.md"
+        outside = self.root / "outside.md"
+        outside.write_text("outside live tree\n")
+        instructions.symlink_to(outside)
+        refused = self.run_policy("--apply", "--t9k-jobs")
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("destination escapes live tree", refused.stderr)
+        self.assertEqual(outside.read_text(), "outside live tree\n")
+        self.assertTrue(instructions.is_symlink())
+        self.assertFalse((self.live / ".local/bin/t9k-run-job").exists())
+        self.assertFalse((self.live / ".local/share/dotfiles/t9k-automation").exists())
 
     def fetch(self):
         result = self.run_policy("--fetch")

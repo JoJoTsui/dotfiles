@@ -100,13 +100,7 @@ validate_agent_payload() {
 }
 
 payload_instruction() {
-    local target=$1 source=$2 existing='' content prefix suffix remaining overlay
-    local start='<!-- DOTFILES_AGENT_START -->' end='<!-- DOTFILES_AGENT_END -->'
-    if [ -f "$target" ]; then
-        # The sentinel retains final newlines lost by command substitution.
-        existing=$(cat "$target"; printf '.')
-        existing=${existing%.}
-    fi
+    local target=$1 source=$2 content overlay
     content=$(cat "$source"; printf '.')
     content=${content%.}
     overlay="$DEPLOY_SOURCE/deployment/agent-payload/overlays/$DEPLOY_PLATFORM.md"
@@ -122,6 +116,17 @@ payload_instruction() {
         [ -f "$overlay" ] || fail "missing T9K overlay: $overlay"
         content="$content"$'\n\n'"$(cat "$overlay"; printf '.')"
         content=${content%.}
+    fi
+    payload_write_instruction_block "$target" "$content" \
+        '<!-- DOTFILES_AGENT_START -->' '<!-- DOTFILES_AGENT_END -->'
+}
+
+payload_write_instruction_block() {
+    local target=$1 content=$2 start=$3 end=$4 existing='' prefix suffix remaining
+    if [ -f "$target" ]; then
+        # The sentinel retains final newlines lost by command substitution.
+        existing=$(cat "$target"; printf '.')
+        existing=${existing%.}
     fi
     case "$existing" in
         *"$start"*)

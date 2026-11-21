@@ -55,6 +55,32 @@ Use the same selection with `--dry-run` or an authorized `--apply`. Keep the
 legacy `nu-login` until its shared environment is migrated: the managed wrapper
 requires `_dotfiles_can_start_nu`, which older live `.env_core` files lack.
 
+## Incremental T9K jobs
+
+Use the explicit T9K job mode on the existing symlink-managed T9K host.
+The default live root is the parent of this checkout. Use `--home` and
+`--live-root` for a disposable rehearsal or a different legacy layout.
+
+```bash
+bash deployment/legacy/agent-integrations.sh --t9k-jobs --check
+bash deployment/legacy/agent-integrations.sh --t9k-jobs --dry-run
+bash deployment/legacy/agent-integrations.sh --t9k-jobs --apply
+```
+
+`--check` reports drift and exits nonzero if updates are needed. `--dry-run`
+lists the files the adapter would write. Both leave the live tree untouched.
+With owner authorization, `--apply` installs `~/.local/bin/t9k-run-job`, the
+kubeconfig and runbook under `~/.local/share/dotfiles/t9k-automation`, and a
+separate managed T9K block in the supported clients' instruction files.
+Personal instructions and the global agent policy block stay intact.
+
+The mode uses the checkout offline and needs no Chezmoi, skill cache, or
+cluster access. It stages the plan before writing, confines destinations to
+the legacy live tree, and publishes files by atomic rename. A changed apply
+prints its private recovery journal under
+`~/.local/state/dotfiles/t9k-automation/`. The journal records each replaced
+file and its prior mode, or marks a newly installed file as `NEW`.
+
 ## Global agent integrations
 
 `deployment/legacy/agent-integrations.sh` is a separate, explicit adapter for
