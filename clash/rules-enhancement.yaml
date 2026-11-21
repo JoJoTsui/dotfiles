@@ -69,9 +69,13 @@ prepend:
   - "GEOIP,LAN,DIRECT"
   - "GEOIP,CN,DIRECT"
 
-# The vendor list ends with its own MATCH; send unmatched traffic to the owned
-# fallback group, where it can be flipped between a node and DIRECT at runtime.
-append:
-  - "MATCH,兜底"
+# The catch-all is not added here. This editor appends after the subscription's
+# own rules, and the subscription ends with its own MATCH, so an appended
+# catch-all can never match; the editor also deletes rules by their exact
+# string, so the vendor's catch-all cannot be removed by name either.
+# The final catch-all is owned by the script enhancement
+# (clash/script-enhancement.js), which runs last and replaces the vendor's
+# catch-all by rule type with the owned fallback group.
+append: []
 
 delete: []

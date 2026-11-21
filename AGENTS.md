@@ -324,6 +324,18 @@ explains every changed pair.
   deployment takes another port rather than competing for the usual one. The
   instance routes through US nodes on its own ports and its own profile, so
   the long-standing service keeps its profile and its controller.
+- **The desktop Clash Verge policy owns the final catch-all**: the rule editor
+  (`clash/rules-enhancement.yaml`) appends after the subscription's own rules
+  and deletes by exact string, so a catch-all added there sits behind the
+  vendor's own `MATCH` and can never match, and the vendor's catch-all cannot
+  be removed by name. The script enhancement
+  (`clash/script-enhancement.js`) runs last, so it replaces the catch-all by
+  rule type: the effective rules keep every specific rule in order and carry
+  exactly one catch-all, the final one, routing to the owned `兜底` group. A
+  profile without that group keeps the vendor's catch-all, because a rule
+  naming an undefined group makes Mihomo refuse the configuration. The
+  desktop app policy is separate from the headless deployment proxy. Read
+  `docs/CLASH.md` before changing the clash enhancements.
 - **Skills carry a selection**: the catalog's last column is `auto` or a tag.
   `auto` is the reviewed core; a tagged skill is not deployed automatically, and
   a host asks for it with `DOTFILES_SKILLS=<tag>` or by skill name. The tags are

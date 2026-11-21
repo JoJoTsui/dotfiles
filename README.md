@@ -135,8 +135,8 @@ dot_pixi/
 dot_vscode-server/…         # remote compute Machine settings
 system/bash.bashrc          # manual system banner payload; never auto-applied
 deployment/system/bashrc    # portable Bash defaults; installed only by --system-config
-docs/                       # CLAUDE_SETUP_T9K.md, vscode-win-settings.jsonc
-clash/                      # Clash Verge merge + rules enhancement (app config, not $HOME)
+docs/                       # CLAUDE_SETUP_T9K.md, CLASH.md, vscode-win-settings.jsonc
+clash/                      # Clash Verge merge, rules, groups, script (app config, not $HOME)
                             # reference copies of profiles/ under Application Support
 ```
 
@@ -264,6 +264,17 @@ from the device. Its installs require the real account home. Selected macOS
 commands have regular launchers under `~/.local/bin`, so existing Pixi entries
 can be retained safely during migration. See the
 [installer order](docs/adr/0008-installer-order.md).
+
+## Desktop proxy (Clash Verge)
+
+The macOS Clash Verge Rev app keeps its routing policy in reference copies
+under `clash/`: the global merge config, the per-profile rule and group
+editors, and the per-profile script enhancement. The script owns the final
+catch-all, because the rule editor appends behind the subscription's own
+catch-all and deletes rules by exact string. The owned fallback is the single
+final `MATCH` rule and routes to the `兜底` group. See
+[the desktop proxy](docs/CLASH.md) for the pipeline, the invariant, and the
+offline regression (`node --test clash/tests/`).
 
 ## Coding agents
 
