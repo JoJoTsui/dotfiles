@@ -66,3 +66,52 @@ cannot hold Atuin's SQLite WAL:
 
 The native Windows gate is deferred by the operator on 2026-11-20: this host
 has no Windows runtime and no PowerShell, so that acceptance stays unrun.
+
+## The code review of the two paths (2026-11-20)
+
+Standards: the repository's own rules (AGENTS.md, docs/DEPLOYMENT_BOUNDARY.md,
+docs/MACOS_DEPLOYMENT.md) read against the Linux code.
+
+- The step order is explicit and platform-scoped. The managers, the source
+  application, the installer tools, the common tools, the agents, the gateway
+  step and the shell preparation run in that order, and the gateway step is
+  inserted between the agents and the shell, so the gateway, the agents and
+  the client settings all exist before anything is wired. The gateway step is
+  off on native Windows and under `--apply-only` and `--agents-only`, and the
+  reason is printed when it is skipped.
+- The proxy is Linux/WSL only and is pinned with a digest; the install is
+  atomic and idempotent — an installed binary that reports the pinned
+  version is kept, and a cached archive is reused only when its digest
+  matches. **Not covered by the container gate**, which runs without a proxy:
+  the evidence is the catalog and the digest check, not a container run.
+- The agents keep their ownership rules: a Bun client is a frozen project
+  with its own lock, a Homebrew client is adopted and never installed, and a
+  native client is a verified release. The Homebrew adoption re-resolves the
+  installed path on every apply, so a client the operator upgraded by hand
+  no longer leaves a launcher pointing at a removed cellar path.
+- The incremental rules hold: the recorded state, the pending Codex profile
+  write with its interrupted-write retry, the byte-preserving client-settings
+  merge, the managed-skill inventory and its pruning are all in place, and a
+  second apply over the same home changed nothing among 2472 files.
+
+Two findings the review leaves open:
+
+1. **A tolerated native-module failure is silent in the deployment's own
+   report.** `better-sqlite3` is an optional dependency of the minimax and
+   dsh packages; on the Ubuntu 20.04 baseline its prebuilt binary needs a
+   newer glibc, so the install script falls back to a source build and fails
+   without `make`. The dependency is optional, so the deployment continues and
+   the client installs without its native module — but only Bun's own warning
+   says so. The deployment's report does not mention it.
+2. **The reapplication check is red on one managed file.** Something rewrites
+   `~/.config/git/ignore` between two applies; the next apply restores the
+   managed content, and the writer is still unidentified.
+
+Spec: the completion scope asks for a fresh Linux remote-compute deployment
+and for an incremental path on a partly deployed host. The fresh path is
+accepted by the container gate on both Ubuntu releases (bootstrap, managed
+files and pins, the fetched skill discovery, and the pinned native Magpie
+CLI), and the incremental path is accepted by the same gate's reapplication
+check except for the finding above. The account gateway is excluded from the
+gate by construction — synthetic homes have no operator accounts — so the
+gateway wiring on a real account is verified on the device instead.
