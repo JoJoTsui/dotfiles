@@ -9,7 +9,7 @@ import time
 import errno
 from urllib.parse import unquote, urlparse
 from fixtures.skill_discovery import codex_prompt, command_catalog, opencode_skills, pi_resources, resolve_skill_path
-from fixtures.skills import write_skill_library
+from fixtures.skills import skill_fixture_inventory, write_skill_library
 from fixtures.shell_env import managed_shell_environment
 
 try:
@@ -20,6 +20,74 @@ import unittest
 from unittest import mock
 
 SOURCE = Path(__file__).resolve().parents[1]
+
+
+def skill_path_is_in_home(home, value):
+    path = resolve_skill_path(value, home)
+    if path is None:
+        return False
+    try:
+        path.relative_to(home.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def verify_opencode_discovery(case, opencode, environment, expected_skills):
+    data = opencode_skills(opencode, home=case.home, cwd=case.home,
+                           env=dict(environment, OPENCODE_TEST_HOME=str(case.home)),
+                           log=case.root / "opencode.log", expected=expected_skills)
+    skills = {item["id"]: item for item in data}
+    case.assertIn("tdd", skills)
+    case.assertIn("implement-spec", skills)
+    case.assertFalse(skills["implement-spec"]["autoinvoke"])
+    case.assertFalse(skills["show-me"]["autoinvoke"])
+    managed = [skill for skill in data if skill_path_is_in_home(case.home, skill["path"])]
+    case.assertEqual({skill["id"] for skill in managed}, expected_skills)
+    case.assertTrue(skill_path_is_in_home(case.home, skills["tdd"]["path"]))
+
+
+def verify_codex_discovery(case, codex, environment):
+    text = codex_prompt(codex, cwd=case.home, env=environment, log=case.root / "codex.log")
+    case.assertIn("~/.agents/RTK.md", text)
+    case.assertIn("<!-- DOTFILES_AGENT_START -->", text)
+    case.assertIn("- tdd:", text)
+    for name in ("humanizer", "humanizer-zh"):
+        case.assertIn("- " + name + ":", text)
+    case.assertNotIn("- clinical-trials-database:", text)
+    case.assertNotIn("- show-me:", text)
+    case.assertIn("are for explicit user requests", text)
+
+
+def verify_pi_discovery(case, node, module, environment, expected_skills):
+    data = pi_resources(node, module, cwd=case.home, env=environment, log=case.root / "pi.log")
+    roots = [(case.home / relative).resolve() for relative in (".agents/skills", ".pi/agent/skills")]
+    managed = [skill for skill in data["skills"]
+               if (path := resolve_skill_path(skill["filePath"], case.home)) is not None
+               and any(path.is_relative_to(root) for root in roots)]
+    case.assertEqual((len(managed), sum(skill["disableModelInvocation"] for skill in managed)),
+                     (len(expected_skills), 2), data.get("diagnostics"))
+    case.assertTrue(next(skill for skill in managed if skill["name"] == "show-me")["disableModelInvocation"])
+    case.assertIn("<name>tdd</name>", data["prompt"])
+    for name in ("humanizer", "humanizer-zh"):
+        case.assertIn("<name>" + name + "</name>", data["prompt"])
+    case.assertNotIn("<name>implement-spec</name>", data["prompt"])
+    case.assertNotIn("<name>show-me</name>", data["prompt"])
+    case.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
+
+
+def verify_command_catalogs(case, binaries, environment, expected_skills, disabled_skills):
+    for client, binary in binaries.items():
+        with case.subTest(client=client):
+            names = command_catalog(client, binary, cwd=case.home,
+                                    env=environment, log=case.root / f"{client}.log")
+            case.assertIn("tdd" if client == "claude" else "skill:tdd", names)
+            case.assertIn("implement-spec" if client == "claude" else "skill:implement-spec", names)
+            case.assertIn("show-me" if client == "claude" else "skill:show-me", names)
+            advertised = {name.removeprefix("skill:") for name in names}
+            case.assertTrue(expected_skills.issubset(advertised), expected_skills - advertised)
+            case.assertTrue(disabled_skills.isdisjoint(advertised),
+                            disabled_skills & advertised)
 
 
 class AgentPayloadTests(unittest.TestCase):
@@ -34,14 +102,7 @@ class AgentPayloadTests(unittest.TestCase):
         if not self.chezmoi:
             self.skipTest("actual payload apply requires chezmoi")
         self.skills_fixture = write_skill_library(self.root / "skills-fixture")
-        self.disabled_skills = {
-            line.split("|")[0]
-            for line in (SOURCE / "deployment/disabled-skills.tsv").read_text().splitlines()
-            if line and not line.startswith("#")
-        }
-        self.expected_skills = {
-            path.parent.name for path in self.skills_fixture.glob("*/SKILL.md")
-        } - self.disabled_skills
+        self.expected_skills, self.disabled_skills = skill_fixture_inventory(SOURCE, self.skills_fixture)
         self.env = {"HOME": str(self.root / "original"), "PATH": "/usr/bin:/bin",
                     "DOTFILES_CHEZMOI_BIN": self.chezmoi,
                     "DOTFILES_SKILLS_DIR": str(self.skills_fixture)}
@@ -124,14 +185,7 @@ class AgentPayloadTests(unittest.TestCase):
         return resolve_skill_path(value, self.home)
 
     def skill_path_is_in_home(self, value):
-        path = self.local_skill_path(value)
-        if path is None:
-            return False
-        try:
-            path.relative_to(self.home.resolve())
-            return True
-        except ValueError:
-            return False
+        return skill_path_is_in_home(self.home, value)
 
     def skill_path_kind(self, value):
         raw_value = str(value)
@@ -472,55 +526,24 @@ class AgentPayloadTests(unittest.TestCase):
             self.skipTest("requires the pinned OpenCode CLI")
         result = self.deploy()
         self.assertEqual(result.returncode, 0, result.stderr)
-        expected = self.expected_skills
-        data = opencode_skills(opencode, home=self.home, cwd=self.home,
-                               env=dict(self.diagnostic_env(), OPENCODE_TEST_HOME=str(self.home)),
-                               log=self.root / "opencode.log", expected=expected)
-        skills = {item["id"]: item for item in data}
-        self.assertIn("tdd", skills)
-        self.assertIn("implement-spec", skills)
-        self.assertFalse(skills["implement-spec"]["autoinvoke"])
-        self.assertFalse(skills["show-me"]["autoinvoke"])
-        managed = [skill for skill in data if self.skill_path_is_in_home(skill["path"])]
-        self.assertEqual({skill["id"] for skill in managed}, expected)
-        self.assertTrue(self.skill_path_is_in_home(skills["tdd"]["path"]))
+        verify_opencode_discovery(self, opencode, self.diagnostic_env(), self.expected_skills)
 
     def test_pinned_codex_reads_shared_instructions_and_automatic_skills(self):
         codex = os.environ.get("DOTFILES_TEST_CODEX")
         if not codex:
             self.skipTest("requires the pinned Codex CLI")
-        self.assertEqual(self.deploy().returncode, 0)
-        text = codex_prompt(codex, cwd=self.home, env=self.diagnostic_env(), log=self.root / "codex.log")
-        self.assertIn("~/.agents/RTK.md", text)
-        self.assertIn("<!-- DOTFILES_AGENT_START -->", text)
-        self.assertIn("- tdd:", text)
-        for name in ("humanizer", "humanizer-zh"):
-            self.assertIn("- " + name + ":", text)
-        self.assertNotIn("- clinical-trials-database:", text)
-        self.assertNotIn("- show-me:", text)
-        self.assertIn("are for explicit user requests", text)
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        verify_codex_discovery(self, codex, self.diagnostic_env())
 
     def test_pinned_pi_resource_loader_reads_the_full_library_and_global_instructions(self):
         module = os.environ.get("DOTFILES_TEST_PI_MODULE")
         node = os.environ.get("DOTFILES_TEST_NODE")
         if not module or not node:
             self.skipTest("requires the pinned Pi SDK module and managed Node")
-        self.assertEqual(self.deploy().returncode, 0)
-        data = pi_resources(node, module, cwd=self.home, env=self.diagnostic_env(), log=self.root / "pi.log")
-        roots = [(self.home / relative).resolve() for relative in (".agents/skills", ".pi/agent/skills")]
-        managed = [skill for skill in data["skills"]
-                   if (path := self.local_skill_path(skill["filePath"])) is not None
-                   and any(path.is_relative_to(root) for root in roots)]
-        expected = self.expected_skills
-        self.assertEqual((len(managed), sum(skill["disableModelInvocation"] for skill in managed)),
-                         (len(expected), 2), data.get("diagnostics"))
-        self.assertTrue(next(skill for skill in managed if skill["name"] == "show-me")["disableModelInvocation"])
-        self.assertIn("<name>tdd</name>", data["prompt"])
-        for name in ("humanizer", "humanizer-zh"):
-            self.assertIn("<name>" + name + "</name>", data["prompt"])
-        self.assertNotIn("<name>implement-spec</name>", data["prompt"])
-        self.assertNotIn("<name>show-me</name>", data["prompt"])
-        self.assertTrue(any("~/.agents/RTK.md" in item["content"] for item in data["instructions"]))
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        verify_pi_discovery(self, node, module, self.diagnostic_env(), self.expected_skills)
 
     def test_skill_resource_names_are_copied_verbatim_without_hook_execution(self):
         source = self.root / "source"
@@ -542,22 +565,12 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertFalse((self.home / "PAYLOAD_EXECUTED").exists())
 
     def test_pinned_claude_and_kimi_advertise_manual_and_automatic_skill_commands(self):
-        for client in ("claude", "kimi"):
-            if not os.environ.get("DOTFILES_TEST_" + client.upper()):
-                self.skipTest("requires both pinned Claude and Kimi CLIs")
-        self.assertEqual(self.deploy().returncode, 0)
-        expected = self.expected_skills
-        for client in ("claude", "kimi"):
-            with self.subTest(client=client):
-                names = command_catalog(client, os.environ["DOTFILES_TEST_" + client.upper()], cwd=self.home,
-                                        env=self.diagnostic_env(), log=self.root / f"{client}.log")
-                self.assertIn("tdd" if client == "claude" else "skill:tdd", names)
-                self.assertIn("implement-spec" if client == "claude" else "skill:implement-spec", names)
-                self.assertIn("show-me" if client == "claude" else "skill:show-me", names)
-                advertised = {name.removeprefix("skill:") for name in names}
-                self.assertTrue(expected.issubset(advertised), expected - advertised)
-                self.assertTrue(self.disabled_skills.isdisjoint(advertised),
-                                self.disabled_skills & advertised)
+        binaries = {name: os.environ.get("DOTFILES_TEST_" + name.upper()) for name in ("claude", "kimi")}
+        if not all(binaries.values()):
+            self.skipTest("requires both pinned Claude and Kimi CLIs")
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        verify_command_catalogs(self, binaries, self.diagnostic_env(), self.expected_skills, self.disabled_skills)
 
 
 if __name__ == "__main__":

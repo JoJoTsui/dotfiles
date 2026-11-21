@@ -26,6 +26,74 @@ except ModuleNotFoundError:
 SOURCE = Path(__file__).resolve().parents[1]
 
 
+def home_codegraph_indexes(home):
+    metadata = home / ".codegraph"
+    return tuple(metadata.rglob("codegraph.db")) if metadata.is_dir() else ()
+
+
+def verify_codegraph_indexing(case, binary, environment, source=SOURCE):
+    project = case.root / "temporary-project"
+    project.mkdir()
+    (project / "counter.py").write_text("def increment(value: int) -> int:\n    return value + 1\n\ndef twice(value: int) -> int:\n    return increment(increment(value))\n")
+    command = json.loads((case.home / ".kimi-code/mcp.json").read_text())["mcpServers"]["codegraph"]
+    with (case.root / "mcp.log").open("w") as log:
+        process = subprocess.Popen([command["command"], *command["args"]], cwd=project,
+                                   env=environment, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=log, text=True,
+                                   start_new_session=os.name != "nt")
+        inbox = queue.Queue()
+        def collect():
+            for line in process.stdout:
+                inbox.put(json.loads(line))
+        reader = threading.Thread(target=collect, daemon=True)
+        reader.start()
+        def send(message):
+            process.stdin.write(json.dumps(message) + "\n")
+            process.stdin.flush()
+        def request(identifier, method, params):
+            send({"jsonrpc": "2.0", "id": identifier, "method": method, "params": params})
+            while True:
+                message = inbox.get(timeout=30)
+                if message.get("method") == "roots/list":
+                    send({"jsonrpc": "2.0", "id": message["id"], "result": {"roots": [{"uri": project.as_uri(), "name": "temporary-fixture"}]}})
+                elif message.get("id") == identifier:
+                    case.assertNotIn("error", message, message)
+                    return message["result"]
+        try:
+            initialized = request(1, "initialize", {"protocolVersion": "2024-11-05",
+                "capabilities": {"roots": {"listChanged": False}},
+                "clientInfo": {"name": "dotfiles-fixture", "version": "1"}, "rootUri": project.as_uri()})
+            case.assertEqual(initialized["serverInfo"]["version"], agent_pins()["codegraph"]["version"])
+            case.assertIn("built-in tools", initialized["instructions"])
+            send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+            tools = request(2, "tools/list", {})["tools"]
+            case.assertIn("codegraph_explore", {tool["name"] for tool in tools})
+            missing = request(3, "tools/call", {"name": "codegraph_explore", "arguments": {"query": "increment", "projectPath": str(project)}})
+            case.assertIn("isn't indexed", json.dumps(missing).lower())
+            case.assertIn("built-in tools", json.dumps(missing))
+            case.assertFalse((project / ".codegraph").exists())
+            case.assertFalse(home_codegraph_indexes(case.home), "an MCP probe must not index the device home")
+            indexed = subprocess.run([binary, "init", "--yes", str(project)], cwd=project,
+                                     env=environment, capture_output=True, text=True, timeout=90)
+            case.assertEqual(indexed.returncode, 0, indexed.stdout + indexed.stderr)
+            case.assertTrue((project / ".codegraph").is_dir())
+            explored = request(4, "tools/call", {"name": "codegraph_explore", "arguments": {"query": "increment twice counter.py", "projectPath": str(project)}})
+            text = "\n".join(item.get("text", "") for item in explored["content"])
+            case.assertIn("return value + 1", text)
+            case.assertIn("twice", text)
+            cli = subprocess.run([binary, "explore", "increment twice counter.py"], cwd=project,
+                                 env=environment, capture_output=True, text=True, timeout=30)
+            case.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
+            case.assertIn("return value + 1", cli.stdout)
+            case.assertFalse((source / ".codegraph").exists())
+            case.assertFalse(home_codegraph_indexes(case.home), "an explicit project index must stay in that project")
+        finally:
+            stop_client(process)
+            process.stdin.close()
+            reader.join(timeout=5)
+            process.stdout.close()
+
+
 class CodeGraphTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory(prefix="dotfiles-codegraph-")
@@ -63,9 +131,6 @@ class CodeGraphTests(unittest.TestCase):
                 "DISABLE_TELEMETRY": "1", "DISABLE_AUTOUPDATER": "1"}
         return managed_shell_environment(self.home, environment)
 
-    def home_codegraph_indexes(self):
-        metadata = self.home / ".codegraph"
-        return tuple(metadata.rglob("codegraph.db")) if metadata.is_dir() else ()
 
     def test_fresh_home_configures_managed_codegraph_even_when_agents_are_disabled(self):
         result = self.deploy("--agents", "none")
@@ -272,68 +337,9 @@ class CodeGraphTests(unittest.TestCase):
         binary = os.environ.get("DOTFILES_TEST_CODEGRAPH")
         if not binary:
             self.skipTest("requires the actual pinned CodeGraph CLI")
-        self.assertEqual(self.deploy().returncode, 0)
-        project = self.root / "temporary-project"
-        project.mkdir()
-        (project / "counter.py").write_text("def increment(value: int) -> int:\n    return value + 1\n\ndef twice(value: int) -> int:\n    return increment(increment(value))\n")
-        command = json.loads((self.home / ".kimi-code/mcp.json").read_text())["mcpServers"]["codegraph"]
-        environment = self.diagnostic_env()
-        with (self.root / "mcp.log").open("w") as log:
-            process = subprocess.Popen([command["command"], *command["args"]], cwd=project,
-                                       env=environment, stdin=subprocess.PIPE,
-                                       stdout=subprocess.PIPE, stderr=log, text=True,
-                                       start_new_session=os.name != "nt")
-            inbox = queue.Queue()
-            def collect():
-                for line in process.stdout:
-                    inbox.put(json.loads(line))
-            reader = threading.Thread(target=collect, daemon=True)
-            reader.start()
-            def send(message):
-                process.stdin.write(json.dumps(message) + "\n")
-                process.stdin.flush()
-            def request(identifier, method, params):
-                send({"jsonrpc": "2.0", "id": identifier, "method": method, "params": params})
-                while True:
-                    message = inbox.get(timeout=30)
-                    if message.get("method") == "roots/list":
-                        send({"jsonrpc": "2.0", "id": message["id"], "result": {"roots": [{"uri": project.as_uri(), "name": "temporary-fixture"}]}})
-                    elif message.get("id") == identifier:
-                        self.assertNotIn("error", message, message)
-                        return message["result"]
-            try:
-                initialized = request(1, "initialize", {"protocolVersion": "2024-11-05",
-                    "capabilities": {"roots": {"listChanged": False}},
-                    "clientInfo": {"name": "dotfiles-fixture", "version": "1"}, "rootUri": project.as_uri()})
-                self.assertEqual(initialized["serverInfo"]["version"], agent_pins()["codegraph"]["version"])
-                self.assertIn("built-in tools", initialized["instructions"])
-                send({"jsonrpc": "2.0", "method": "notifications/initialized"})
-                tools = request(2, "tools/list", {})["tools"]
-                self.assertIn("codegraph_explore", {tool["name"] for tool in tools})
-                missing = request(3, "tools/call", {"name": "codegraph_explore", "arguments": {"query": "increment", "projectPath": str(project)}})
-                self.assertIn("isn't indexed", json.dumps(missing).lower())
-                self.assertIn("built-in tools", json.dumps(missing))
-                self.assertFalse((project / ".codegraph").exists())
-                self.assertFalse(self.home_codegraph_indexes(), "an MCP probe must not index the device home")
-                indexed = subprocess.run([binary, "init", "--yes", str(project)], cwd=project,
-                                         env=environment, capture_output=True, text=True, timeout=90)
-                self.assertEqual(indexed.returncode, 0, indexed.stdout + indexed.stderr)
-                self.assertTrue((project / ".codegraph").is_dir())
-                explored = request(4, "tools/call", {"name": "codegraph_explore", "arguments": {"query": "increment twice counter.py", "projectPath": str(project)}})
-                text = "\n".join(item.get("text", "") for item in explored["content"])
-                self.assertIn("return value + 1", text)
-                self.assertIn("twice", text)
-                cli = subprocess.run([binary, "explore", "increment twice counter.py"], cwd=project,
-                                     env=environment, capture_output=True, text=True, timeout=30)
-                self.assertEqual(cli.returncode, 0, cli.stdout + cli.stderr)
-                self.assertIn("return value + 1", cli.stdout)
-                self.assertFalse((SOURCE / ".codegraph").exists())
-                self.assertFalse(self.home_codegraph_indexes(), "an explicit project index must stay in that project")
-            finally:
-                stop_client(process)
-                process.stdin.close()
-                reader.join(timeout=5)
-                process.stdout.close()
+        result = self.deploy()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        verify_codegraph_indexing(self, binary, self.diagnostic_env())
 
     def test_pinned_clients_discover_and_connect_the_managed_mcp_without_model_requests(self):
         binaries = {name: os.environ.get("DOTFILES_TEST_" + name.upper())
@@ -401,7 +407,7 @@ class CodeGraphTests(unittest.TestCase):
                     finally:
                         stop_client(process)
         self.assertFalse((project / ".codegraph").exists())
-        self.assertFalse(self.home_codegraph_indexes(), "client discovery must not index the device home")
+        self.assertFalse(home_codegraph_indexes(self.home), "client discovery must not index the device home")
         self.assertFalse((SOURCE / ".codegraph").exists())
         self.assertFalse((self.home / ".codex/auth.json").exists())
 

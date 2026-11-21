@@ -5,6 +5,24 @@ from pathlib import Path
 STATIC_LIBRARY = Path(__file__).resolve().parent / "skill-library"
 
 
+def skill_fixture_inventory(source, library, selection=""):
+    """Expected discoveries from the input fixture and source catalogs."""
+    selected = set(selection.split(","))
+    disabled = {
+        line.split("|", 1)[0]
+        for line in (source / "deployment/disabled-skills.tsv").read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    }
+    allowed = set()
+    for line in (source / "deployment/skills.tsv").read_text(encoding="utf-8").splitlines():
+        if line and not line.startswith("#"):
+            name, *_origin, tag = line.split("|")
+            if not tag or tag == "auto" or name in selected or tag in selected:
+                allowed.add(name)
+    available = {path.parent.name for path in library.glob("*/SKILL.md")}
+    return (available & allowed) - disabled, disabled
+
+
 def assert_skill_copies(case, home, fixture_root, resources):
     """Check regular, byte-identical resources in every managed discovery root."""
     for root in (".agents/skills", ".claude/skills", ".minimax/skills"):
