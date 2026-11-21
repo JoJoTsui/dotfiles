@@ -105,6 +105,12 @@ def private_client_environment(client, home, scratch, base):
         path = root / relative
         path.mkdir()
         env[variable] = str(path)
+    if client == "qoder":
+        # `qoder skills list` updates the global Git ignore under this root.
+        # Keep HOME so Qoder still discovers the installed shared skills.
+        config = root / "config"
+        config.mkdir()
+        env["XDG_CONFIG_HOME"] = str(config)
     # Preserve actual rendered configuration while isolating client migrations,
     # sessions and caches. Authentication files are intentionally never copied.
     settings = {
