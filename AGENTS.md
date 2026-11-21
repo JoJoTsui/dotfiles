@@ -251,6 +251,17 @@ explains every changed pair.
   verdict. The portable check accepts its local layer only after the catalog,
   the skill pins, and the deterministic suite passed, and a failed report keeps
   the layer failed.
+- **A native fixture states the outcome of its own scenarios**: the fixture
+  reports that a scenario started before it works on it and that the scenario
+  passed when the work succeeded, and the shared report contract owns that
+  vocabulary. A scenario the fixture started and never passed failed inside
+  it, so a broken bundle exposure, agent state, or targeted repair is a failed
+  scenario rather than a skipped one; a scenario the fixture never started was
+  never reached, and that stays visible with its reason instead of claiming a
+  failure. A runner that could not execute natively is unavailable, so its
+  report and its replacement report both answer `unavailable`; a native run
+  whose report contract failed is failed. Neither carries an acceptance. Read
+  `docs/verification/windows.md` before changing the native report.
 - Not applied to `$HOME` (ignored): `system/`, `clash/`, `docs/`, `deployment/`,
   `tests/`. Ordinary bootstrap has no system or account login-shell action.
 - **Legacy home symlinks are explicit and opt-in**:

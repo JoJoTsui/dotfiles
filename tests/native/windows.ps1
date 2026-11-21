@@ -82,16 +82,30 @@ $requiredScenarios = @('checkout identity', 'native runtime and architecture',
                         'native targeted repair and preservation')
 if ($Bundles) { $requiredScenarios += 'native bundle exposure' }
 
-# The native fixture reports the scenarios it established. The adapter reads
-# those reports instead of inferring them from the exit status.
-$fixtureScenarios = @(
-    @{ Marker = 'Native Windows full-to-narrow agent state and status passed'
-       Scenario = 'native full-to-narrow agent state and status' },
-    @{ Marker = 'Native Windows targeted repair and preservation passed'
-       Scenario = 'native targeted repair and preservation' },
-    @{ Marker = 'Native Windows bundle exposure passed'
-       Scenario = 'native bundle exposure' }
-)
+# The scenarios the native fixture states for itself. The fixture reports the
+# transition it reached for each of them, so the adapter reads what the
+# fixture observed instead of inferring an outcome from an exit status.
+$fixtureScenarios = @('native bundle exposure', 'native full-to-narrow agent state and status',
+                      'native targeted repair and preservation')
+
+# The outcome the native fixture reported for one scenario. The shared contract
+# owns the marker vocabulary and the rule that a scenario the fixture started
+# and never passed failed inside it, while a scenario it never started was
+# never reached.
+function Get-FixtureOutcome {
+    param([string]$Scenario)
+    if (-not $python) { return 'unknown' }
+    $exit = 1
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & $python (Join-Path $source 'tests/native_report.py') --fixture-outcome --log $testLogPath --scenario $Scenario 2>&1
+        $exit = $LASTEXITCODE
+    } catch {
+        return 'unknown'
+    }
+    if ($exit -ne 0) { return 'unknown' }
+    return (($output | Out-String).Trim())
+}
 
 try {
     # The ordinary native-home discovery without the XDG startup boundary needs
@@ -184,33 +198,41 @@ try {
             Add-Scenario -Name 'native windows deployment tests' -Outcome 'skipped' -Reason "the renderer preparation failed: $rendererReason"
         }
         # The native fixture states which scenarios it established. A scenario
-        # it did not report stays visible with the reason it did not run.
-        $logText = ''
-        if (Test-Path -LiteralPath $testLogPath) { $logText = Get-Content -LiteralPath $testLogPath -Raw }
-        foreach ($entry in $fixtureScenarios) {
-            if ($entry.Scenario -eq 'native bundle exposure' -and -not $Bundles) {
-                Add-Scenario -Name $entry.Scenario -Outcome 'skipped' -Reason 'no bundle selection was requested'
-            } elseif ($logText -match [regex]::Escape($entry.Marker)) {
-                Add-Scenario -Name $entry.Scenario -Outcome 'passed'
-            } elseif (-not $renderer) {
-                Add-Scenario -Name $entry.Scenario -Outcome 'skipped' -Reason "the renderer preparation failed: $rendererReason"
-            } elseif (-not $testsPassed) {
-                Add-Scenario -Name $entry.Scenario -Outcome 'skipped' -Reason 'the native deployment tests did not reach this scenario'
+        # it started and never passed failed inside it; a scenario it never
+        # started was never reached, which is not a failure of that scenario.
+        foreach ($scenario in $fixtureScenarios) {
+            if ($scenario -eq 'native bundle exposure' -and -not $Bundles) {
+                Add-Scenario -Name $scenario -Outcome 'skipped' -Reason 'no bundle selection was requested'
+                continue
+            }
+            $outcome = Get-FixtureOutcome -Scenario $scenario
+            if ($outcome -eq 'passed') {
+                Add-Scenario -Name $scenario -Outcome 'passed'
+            } elseif ($outcome -eq 'failed') {
+                Add-Scenario -Name $scenario -Outcome 'failed' -Reason 'the native fixture started this scenario and did not report it as passed'
+            } elseif ($outcome -eq 'skipped') {
+                if (-not $renderer) {
+                    Add-Scenario -Name $scenario -Outcome 'skipped' -Reason "the renderer preparation failed: $rendererReason"
+                } elseif (-not $testsPassed) {
+                    Add-Scenario -Name $scenario -Outcome 'skipped' -Reason 'the native deployment tests never reached this scenario'
+                } else {
+                    Add-Scenario -Name $scenario -Outcome 'failed' -Reason 'the native deployment test did not report this scenario'
+                }
             } else {
-                Add-Scenario -Name $entry.Scenario -Outcome 'failed' -Reason 'the native deployment test did not report this scenario'
+                Add-Scenario -Name $scenario -Outcome 'failed' -Reason 'the native fixture report could not be read'
             }
         }
     } else {
         $preflight = "the native runtime preflight did not pass: $preflightReason"
         Add-Scenario -Name 'native renderer preparation' -Outcome 'skipped' -Reason $preflight
         Add-Scenario -Name 'native windows deployment tests' -Outcome 'skipped' -Reason $preflight
-        foreach ($entry in $fixtureScenarios) {
-            $reason = if ($entry.Scenario -eq 'native bundle exposure' -and -not $Bundles) {
+        foreach ($scenario in $fixtureScenarios) {
+            $reason = if ($scenario -eq 'native bundle exposure' -and -not $Bundles) {
                 'no bundle selection was requested'
             } else {
                 $preflight
             }
-            Add-Scenario -Name $entry.Scenario -Outcome 'skipped' -Reason $reason
+            Add-Scenario -Name $scenario -Outcome 'skipped' -Reason $reason
         }
     }
     Add-Scenario -Name 'known folder fallback' -Outcome 'skipped' -Reason $knownFolderReason
@@ -245,10 +267,14 @@ try {
     } catch {
         Write-Output "::warning title=Native Windows report::$($_.Exception.Message)"
         # The canonical report must never keep a verdict from another run, so
-        # a contract that cannot assemble this report replaces it.
+        # a contract that cannot assemble this report replaces it. A runner
+        # that could not execute natively establishes nothing about the
+        # target, so its report is unavailable; a native run whose contract
+        # failed is failed.
+        $fallbackStatus = if ([bool]$fields.nativeExecution) { 'failed' } else { 'unavailable' }
         $fallback = [ordered]@{
             platform = 'windows'; role = $Role; arch = 'x86_64'; started = $started
-            nativeExecution = [bool]$fields.nativeExecution; status = 'failed'; acceptance = $false
+            nativeExecution = [bool]$fields.nativeExecution; status = $fallbackStatus; acceptance = $false
             checkout = $identity
             scenarios = @($scenarios.ToArray())
             reason = "the shared report contract could not assemble this report: $($_.Exception.Message)"

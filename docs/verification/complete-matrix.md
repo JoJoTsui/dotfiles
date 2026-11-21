@@ -73,6 +73,14 @@ in `tests/native_report.py` owns that report, and the native Windows adapter
 hands it the scenarios it observed instead of deciding the verdict itself. See
 [Windows evidence](windows.md) for the native Windows report shape.
 
+A native fixture states the transition it reached for each of its own
+scenarios, so the adapter reads what the fixture observed instead of inferring
+an outcome from an exit status. The shared contract owns that vocabulary: a
+scenario the fixture started and never passed failed inside it, and a scenario
+the fixture never started was never reached. A failed scenario withholds the
+acceptance; a scenario that was never reached stays visible with its reason and
+does not stand in for a passed one.
+
 The identity is established before the first check runs, so the report names
 the source the scenarios exercised rather than the source the run ended on. A
 run that cannot name a revision - because Git cannot answer, or because the

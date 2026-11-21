@@ -13,6 +13,7 @@ import unittest
 import zipfile
 from pins import agent_pins, common_pin, native_agent_pins, windows_assets
 from fixtures.skills import STATIC_LIBRARY, assert_skill_copies
+import native_report
 
 SOURCE = Path(__file__).resolve().parents[1]
 POWERSHELL = os.environ.get("DOTFILES_TEST_POWERSHELL") or shutil.which("pwsh") or shutil.which("powershell")
@@ -2904,11 +2905,14 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertEqual(doctor.returncode, 0, doctor.stderr)
         self.assertTrue(Path(environment['KIMI_SHELL_PATH']).is_file())
         if bundles:
-            self.assert_bundle_exposures(bundles, environment)
             # The native adapter reads this report to state what the native
             # install established, so it never infers a bundle exposure from
-            # the exit status alone.
-            print('Native Windows bundle exposure passed', flush=True)
+            # the exit status alone. The scenario states that it started
+            # before the work, so a run that stopped inside it is a failure of
+            # the scenario rather than a scenario that was never reached.
+            print(native_report.fixture_marker('native bundle exposure', native_report.FIXTURE_STARTED), flush=True)
+            self.assert_bundle_exposures(bundles, environment)
+            print(native_report.fixture_marker('native bundle exposure', native_report.PASSED), flush=True)
         # Native managed Nu discovers its configured home without --config flags.
         ordinary = environment.copy()
         # Nu's native fallback uses Known Folder APIs. Do not remove the XDG
@@ -3004,6 +3008,8 @@ class WindowsNativeInstallTests(unittest.TestCase):
         pi_row = f'pi|bun|{pi_pin}|{pi_pin}'
         self.assertIn(pi_row, before)
         self.assertIn(f"codex|bun|{agent_pins()['codex']['version']}|{agent_pins()['codex']['version']}", before)
+        print(native_report.fixture_marker('native full-to-narrow agent state and status',
+                                           native_report.FIXTURE_STARTED), flush=True)
         # Simulate a previous successful Pi install with an older version.
         ledger.write_text('\n'.join('pi|bun|0.0.0|0.0.0' if row == pi_row else row for row in before) + '\n')
         stale = ledger.read_bytes()
@@ -3030,9 +3036,12 @@ class WindowsNativeInstallTests(unittest.TestCase):
         self.assertRegex(status.stdout, r'(?m)^codex\s')
         self.assertRegex(status.stdout, r'(?m)^pi\s')
         self.assertRegex(status.stdout, r'(?m)^claude\s.*\| live: installed \| provider: bun \|')
-        print('Native Windows full-to-narrow agent state and status passed', flush=True)
+        print(native_report.fixture_marker('native full-to-narrow agent state and status',
+                                           native_report.PASSED), flush=True)
 
         pending_shell = self.home / '.env_core'
+        print(native_report.fixture_marker('native targeted repair and preservation',
+                                           native_report.FIXTURE_STARTED), flush=True)
         pending_shell.write_bytes(pending_shell.read_bytes() + b'\n# preserve shell drift\n')
         pending_config = self.home / '.codex/config.toml'
         pending_config.write_bytes(b'unrelated config drift remains for a full apply\n')
@@ -3071,7 +3080,8 @@ class WindowsNativeInstallTests(unittest.TestCase):
             self.assertNotEqual(invalid_shell.returncode, 0)
             self.assertIn('.env_core failed the Git Bash check', invalid_shell.stderr)
             self.assertEqual(pending_shell.read_bytes(), early_stop)
-        print('Native Windows targeted repair and preservation passed', flush=True)
+        print(native_report.fixture_marker('native targeted repair and preservation',
+                                           native_report.PASSED), flush=True)
 
 
 

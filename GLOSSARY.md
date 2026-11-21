@@ -189,6 +189,13 @@ outcome of every scenario it attempted. A scenario that did not run states
 its reason, and a runner that cannot execute natively is unavailable rather
 than passed.
 
+**Scenario outcome**:
+The result one verification scenario reached: passed, failed, skipped, or
+unavailable. A scenario that started and never passed failed inside it; a
+scenario that was never started was never reached, which is not a failure of
+that scenario.
+_Avoid_: Test marker, Suite result
+
 **Checkout identity**:
 The revision a verification run established before it started testing, with
 the tree it names and a digest of the source bytes. A checkout names its own
