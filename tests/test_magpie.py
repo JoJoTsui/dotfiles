@@ -860,6 +860,38 @@ class MagpieApplyTests(unittest.TestCase):
         cache = self.home / ".cache/tmp"
         cache.mkdir(parents=True, exist_ok=True)
 
+    def run_command(self, *arguments, environment=None):
+        command = self.home / ".local/bin/dotfiles-magpie"
+        if not command.exists():
+            command.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(SOURCE / "dot_local/bin/executable_dotfiles-magpie", command)
+            command.chmod(0o755)
+            # The test-only shim makes the real command accept this isolated
+            # fixture without weakening its production account/platform guard.
+            engine_dir = self.home / ".local/share/dotfiles/magpie"
+            engine_dir.mkdir(parents=True, exist_ok=True)
+            install_engine_shim(engine_dir, name="engine.sh")
+            catalogs = self.home / ".config/dotfiles/magpie"
+            catalogs.mkdir(parents=True, exist_ok=True)
+            for name in CATALOGS:
+                shutil.copy2(CATALOG / name, catalogs / name)
+        environ = {
+            "HOME": str(self.home),
+            "PATH": f"{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
+            "MAGPIE_BIN": str(self.fake),
+            "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
+            "FAKE_MAGPIE_STATE": str(self.state),
+            "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
+            "MAGPIE_APP": str(self.fake),
+            "DEPLOY_PLATFORM": "macos",
+            "XDG_STATE_HOME": str(self.home / ".local/state"),
+            "XDG_CONFIG_HOME": str(self.home / ".config"),
+            "TMPDIR": str(self.tmp),
+        }
+        environ.update(environment or {})
+        return subprocess.run([str(command), *arguments], env=environ,
+                              capture_output=True, text=True, timeout=120)
+
     def commands(self):
         """Every command the fake Magpie recorded."""
         log = self.state / "argv.log"
@@ -903,6 +935,11 @@ class MagpieApplyTests(unittest.TestCase):
             "visible claude ", "pi ", "dsh ", "codex ")) for command in self.commands()),
             self.commands())
         self.assertFalse(self.state_file().exists())
+        status = self.run_command("status")
+        self.assertNotEqual(status.returncode, 0)
+        self.assertIn("wiring|codex|blocked", status.stdout)
+        self.assertIn("symlink" if link else "unrecorded Codex profile", status.stdout)
+        self.assertEqual(target.read_text(encoding="utf-8"), "device-owned\n")
 
     def test_an_existing_device_codex_profile_is_not_adopted_or_overwritten(self):
         self.assert_codex_profile_collision_preserved("magpie.config.toml")
@@ -973,9 +1010,11 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(self.apply().returncode, 0)
         profile = self.home / ".codex/magpie.config.toml"
         alias = self.home / "device-profile.toml"
-        profile.unlink()
+        os.link(profile, alias)
+        status = self.run_command("status")
+        self.assertNotEqual(status.returncode, 0)
+        self.assertIn("wiring|codex|blocked (the Codex profile path has other names", status.stdout)
         alias.write_text('model = "device-model"\n', encoding="utf-8")
-        os.link(alias, profile)
         commands = len(self.commands())
 
         result = self.apply()
@@ -1229,11 +1268,19 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertFalse(self.state_file().exists())
         self.assertEqual((self.home / ".codex/config.toml").read_text(encoding="utf-8"),
                          'model = "gpt-6-luna"\n')
+        status = self.run_command("status")
+        self.assertNotEqual(status.returncode, 0)
+        self.assertIn("wiring|codex|recoverable", status.stdout)
+        self.assertIn("pending fingerprints match", status.stdout)
 
         result = self.apply()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("codex scope profile", self.commands())
         self.assertTrue(self.state_file().is_file())
+        self.assertFalse(self.state_file().with_name("codex-profile.pending").exists())
+        status = self.run_command("status")
+        self.assertIn("wiring|codex|group/openai-stack", status.stdout)
+        self.assertNotIn("wiring|codex|recoverable", status.stdout)
 
     def test_an_excluded_codex_selection_preserves_profile_and_gateway_lists(self):
         profile = self.home / ".codex/magpie.config.toml"
@@ -1257,6 +1304,23 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertFalse(any(command.startswith(("codex ", "visible codex "))
                              for command in self.commands()), self.commands())
         self.assertIn("selection|codex|excluded", self.state_file().read_text(encoding="utf-8"))
+
+    def test_excluding_then_reselecting_codex_keeps_profile_ownership(self):
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        profile = self.home / ".codex/magpie.config.toml"
+        before = profile.read_bytes()
+
+        result = self.apply(shell=["DEPLOY_AGENTS=(claude pi dsh)"])
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(profile.read_bytes(), before)
+        status = self.run_command("status")
+        self.assertIn("wiring|codex|excluded", status.stdout)
+
+        result = self.apply()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(profile.read_bytes(), before)
+        self.assertEqual(self.commands().count("codex group/openai-stack"), 1)
 
     def test_reapplication_repairs_codex_profile_drift(self):
         self.assertEqual(self.apply().returncode, 0)
@@ -1301,6 +1365,11 @@ class MagpieApplyTests(unittest.TestCase):
         profile = self.home / ".codex/magpie.config.toml"
         profile.write_text(profile.read_text(encoding="utf-8") + "\n# device edit\n")
         before = profile.read_bytes()
+        status = self.run_command("status")
+        self.assertNotEqual(status.returncode, 0)
+        self.assertIn("wiring|codex|blocked", status.stdout)
+        self.assertIn("do not match their pending record", status.stdout)
+        self.assertEqual(profile.read_bytes(), before)
         command_count = len(self.commands())
         result = self.apply()
         self.assertNotEqual(result.returncode, 0)
@@ -1308,6 +1377,20 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertEqual(profile.read_bytes(), before)
         self.assertFalse(any(command.startswith("codex ")
                              for command in self.commands()[command_count:]))
+
+    def test_a_mislabeled_pending_fingerprint_does_not_authorize_retry(self):
+        self.assertNotEqual(self.apply(environment={"FAKE_MAGPIE_FAIL_CODEX_PROFILE": "1"}).returncode, 0)
+        record = self.state_file().with_name("codex-profile.pending")
+        changed = record.read_text(encoding="utf-8").replace("profile|", "unexpected|", 1)
+        record.write_text(changed, encoding="utf-8")
+
+        status = self.run_command("status")
+        self.assertIn("wiring|codex|blocked", status.stdout)
+        result = self.apply()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("pending record", result.stderr)
+        self.assertEqual(record.read_text(encoding="utf-8"), changed)
+        self.assertFalse(self.state_file().exists())
 
     def test_the_apply_preserves_existing_providers_and_wires_clients(self):
         result = self.apply()
@@ -2458,42 +2541,6 @@ class MagpieSwitchTests(unittest.TestCase):
 class MagpieCommandTests(MagpieApplyTests):
     """The managed command runs the same engine the deployment step runs."""
 
-    def setUp(self):
-        super().setUp()
-        self.command = self.home / ".local/bin/dotfiles-magpie"
-        self.command.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(SOURCE / "dot_local/bin/executable_dotfiles-magpie", self.command)
-        self.command.chmod(0o755)
-        # The command resolves the platform and the account home natively, so
-        # its guard rejects a synthetic HOME. Install the test-only shim at the
-        # engine path the command loads by default; it sources the real engine
-        # and neutralizes only the two guard inputs.
-        engine_dir = self.home / ".local/share/dotfiles/magpie"
-        engine_dir.mkdir(parents=True, exist_ok=True)
-        install_engine_shim(engine_dir, name="engine.sh")
-        catalogs = self.home / ".config/dotfiles/magpie"
-        catalogs.mkdir(parents=True, exist_ok=True)
-        for name in CATALOGS:
-            shutil.copy2(CATALOG / name, catalogs / name)
-
-    def run_command(self, *arguments, environment=None):
-        environ = {
-            "HOME": str(self.home),
-            "PATH": f"{self.tools}:/usr/bin:/bin:/usr/sbin:/sbin",
-            "MAGPIE_BIN": str(self.fake),
-            "MAGPIE_PROXY_URL": "http://127.0.0.1:7897",
-            "FAKE_MAGPIE_STATE": str(self.state),
-            "FAKE_MAGPIE_GATEWAY": "http://127.0.0.1:%d" % self.server.server_address[1],
-            "MAGPIE_APP": str(self.fake),
-            "DEPLOY_PLATFORM": "macos",
-            "XDG_STATE_HOME": str(self.home / ".local/state"),
-            "XDG_CONFIG_HOME": str(self.home / ".config"),
-            "TMPDIR": str(self.tmp),
-        }
-        environ.update(environment or {})
-        return subprocess.run([str(self.command), *arguments], env=environ,
-                              capture_output=True, text=True, timeout=120)
-
     def catalog_column(self, name, column):
         values = {}
         for line in (CATALOG / name).read_text(encoding="utf-8").splitlines():
@@ -2506,6 +2553,10 @@ class MagpieCommandTests(MagpieApplyTests):
     def healthy_gateway(self):
         """A gateway that answers with every provider, group, visibility and pick."""
         self.healthy_client_wiring()
+        recorded = self.state_file()
+        if not recorded.exists():
+            recorded.parent.mkdir(parents=True, exist_ok=True)
+            recorded.write_text("wiring|codex|group/openai-stack\n", encoding="utf-8")
         self.state.mkdir(parents=True, exist_ok=True)
         (self.state / "providers.json").write_text(
             json.dumps(["codex", "opencode-go", "kimi-code-cn", "minimax-cn", "openai", "zed"]),
