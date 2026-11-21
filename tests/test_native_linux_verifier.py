@@ -140,6 +140,35 @@ class LinuxDshAdapterProbeTests(unittest.TestCase):
                         home, "0.2.2-rc.1", run_probe)["status"], expected)
 
 
+class LinuxGitIgnoreEvidenceTests(unittest.TestCase):
+    def test_first_mutation_remains_visible_when_reapply_restores_the_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            relative = ".config/git/ignore"
+            evidence = {"path": relative, "checkpoints": [], "first_divergence": None}
+            file = home / relative
+            native_linux.record_git_ignore(home, evidence, "before-fresh-apply")
+            file.parent.mkdir(parents=True)
+            file.write_bytes(b"synthetic source")
+            file.chmod(0o600)
+            native_linux.record_git_ignore(home, evidence, "after-fresh-apply")
+            native_linux.record_git_ignore(home, evidence, "before-fresh-discovery")
+            file.write_bytes(b"synthetic mutation")
+            native_linux.record_git_ignore(home, evidence, "after-fresh-discovery")
+            file.write_bytes(b"synthetic source")
+            native_linux.record_git_ignore(home, evidence, "after-reapply")
+
+            self.assertEqual(evidence["first_divergence"],
+                             {"after": "before-fresh-discovery", "at": "after-fresh-discovery"})
+            states = [point["file"] for point in evidence["checkpoints"]]
+            self.assertFalse(states[0]["exists"])
+            self.assertEqual(states[1], {"exists": True, "mode": 0o600,
+                                         "sha256": hashlib.sha256(b"synthetic source").hexdigest()})
+            self.assertNotEqual(states[3]["sha256"], states[1]["sha256"])
+            self.assertEqual(states[-1], states[1])
+            self.assertNotIn("synthetic mutation", json.dumps(evidence))
+
+
 class LinuxSuiteAuditTests(unittest.TestCase):
     def test_native_history_exclusions_are_named_and_other_required_skips_fail(self):
         summary = {"tests_run": 8, "successful": True, "skipped": [{
