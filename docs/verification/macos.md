@@ -13,10 +13,11 @@ commit `81857d6`, 2026-10-14. Each cell uploads only a JSON result report.
 | macOS Apple silicon remote compute | passed | passed (292.463s) |
 
 All four cells report `status: passed` and `native_execution: true`. Each passes
-the same checks: native runtime and architecture, profile detection, two default
+the same scenarios: native runtime and architecture, profile detection, two default
 installations, pinned commands and pending history, ordinary native configuration
 discovery, and native shell, instruction, CodeGraph and encrypted-history
-behavior.
+behavior. The report also names the checkout it verified and records each
+scenario's outcome; a scenario that did not run states why.
 
 Local public-boundary checks established canonical regular copies at native
 Nu/pip paths, early source/destination symlink rejection, unrelated state/history/
@@ -51,7 +52,7 @@ passed at commit `b64fedb` in run
 covering Apple silicon workstation only; the Intel and role cells are not
 claimed by it.
 Foreign execution fails with `native_execution: false` and `status: unavailable`
-rather than a pass.
+rather than a pass, and it reports `acceptance: false`.
 
 The final public-boundary gate passed all 14 checks in 25.942 seconds, including
 both legacy copy-mode/idempotent applies, the complete profile planning matrix,

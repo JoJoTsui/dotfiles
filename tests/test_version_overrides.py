@@ -20,8 +20,21 @@ try:
 except ImportError:
     tomllib = None
 
+from pins import agent_default_pin, common_pin, distinct_version, installer_floor_pin
+
 SOURCE = Path(__file__).resolve().parents[1]
 MERGE = SOURCE / "deployment/merge_pixi.py"
+
+# The repository catalogs own every default version. The fixtures read the
+# catalog instead of repeating a pin, so an unrelated catalog move does not
+# invalidate the verification, and a device override always differs from the
+# default it replaces.
+PI_DEFAULT = agent_default_pin("pi")
+PI_OVERRIDE = distinct_version(PI_DEFAULT)
+RUFF_DEFAULT = common_pin("ruff")
+RUFF_OVERRIDE = distinct_version(RUFF_DEFAULT)
+GH_DEFAULT = installer_floor_pin("gh")
+GH_OVERRIDE = distinct_version(GH_DEFAULT)
 
 
 @unittest.skipUnless(os.name == "posix", "Unix plans; native Windows has a separate boundary suite")
@@ -51,32 +64,32 @@ class OverridePlanTests(unittest.TestCase):
                               cwd=SOURCE, env=self.env, capture_output=True, text=True, timeout=30)
 
     def test_plan_reports_the_override_and_the_effective_versions(self):
-        self.overrides("# device owned versions\nagent|pi|1.5.3\ntool|ruff|0.18.0\n")
+        self.overrides(f"# device owned versions\nagent|pi|{PI_OVERRIDE}\ntool|ruff|{RUFF_OVERRIDE}\n")
         result = self.deploy("--plan")
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
         self.assertEqual(plan["overrides"], [
-            {"kind": "agent", "name": "pi", "version": "1.5.3", "default": "1.5.2"},
-            {"kind": "tool", "name": "ruff", "version": "0.18.0", "default": "0.17.3"},
+            {"kind": "agent", "name": "pi", "version": PI_OVERRIDE, "default": PI_DEFAULT},
+            {"kind": "tool", "name": "ruff", "version": RUFF_OVERRIDE, "default": RUFF_DEFAULT},
         ])
         agents = {item["name"]: item for item in plan["agentPackages"]}
-        self.assertEqual(agents["pi"]["version"], "1.5.3")
-        self.assertEqual(agents["codex"]["version"], "0.169.0")
+        self.assertEqual(agents["pi"]["version"], PI_OVERRIDE)
+        self.assertEqual(agents["codex"]["version"], agent_default_pin("codex"))
         packages = {item["environment"]: item for item in plan["packages"]}
-        self.assertEqual(packages["ruff"]["dependencies"], {"ruff": "==0.18.0"})
-        self.assertEqual(packages["git"]["dependencies"], {"git": "==2.56.0"})
+        self.assertEqual(packages["ruff"]["dependencies"], {"ruff": "==" + RUFF_OVERRIDE})
+        self.assertEqual(packages["git"]["dependencies"], {"git": "==" + common_pin("git")})
 
     def test_plan_reports_the_installer_floor_override(self):
-        self.overrides("cli|gh|2.104.0\n")
+        self.overrides(f"cli|gh|{GH_OVERRIDE}\n")
         result = self.deploy("--plan", "--platform", "macos")
         self.assertEqual(result.returncode, 0, result.stderr)
         plan = json.loads(result.stdout)
         self.assertEqual(plan["overrides"], [
-            {"kind": "cli", "name": "gh", "version": "2.104.0", "default": "2.103.3"},
+            {"kind": "cli", "name": "gh", "version": GH_OVERRIDE, "default": GH_DEFAULT},
         ])
         floors = {item["name"]: item["minimum"] for item in plan["installerTools"]}
-        self.assertEqual(floors["gh"], "2.104.0")
-        self.assertEqual(floors["git"], "2.56.0")
+        self.assertEqual(floors["gh"], GH_OVERRIDE)
+        self.assertEqual(floors["git"], installer_floor_pin("git"))
 
     def test_invalid_overrides_are_rejected_before_state_creation(self):
         cases = (
@@ -124,7 +137,8 @@ class OverrideResolutionTests(unittest.TestCase):
         self.home = self.root / "home"
         (self.home / ".config/dotfiles").mkdir(parents=True)
         (self.home / ".config/dotfiles/versions.tsv").write_text(
-            "agent|pi|1.5.3\ntool|ruff|0.18.0\ncli|gh|2.104.0\n", encoding="utf-8")
+            f"agent|pi|{PI_OVERRIDE}\ntool|ruff|{RUFF_OVERRIDE}\ncli|gh|{GH_OVERRIDE}\n",
+            encoding="utf-8")
 
     def resolve(self, body):
         script = self.root / "run.sh"
@@ -145,21 +159,24 @@ class OverrideResolutionTests(unittest.TestCase):
 
     def test_catalog_pins_follow_the_device_override(self):
         result = self.resolve(
-            "printf 'agent=%s\\n' \"$(agent_effective_version pi 1.5.2)\"\n"
+            f"printf 'agent=%s\\n' \"$(agent_effective_version pi {PI_DEFAULT})\"\n"
             "printf 'tool=%s\\n' \"$(common_package_pin ruff)\"\n"
             "printf 'floor=%s\\n' \"$(installer_common_minimum gh)\"\n"
             "printf 'runtime=%s\\n' \"$(agent_runtime_pin nodejs)\"\n")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "agent=1.5.3\ntool=0.18.0\nfloor=2.104.0\nruntime=26.12.1\n")
+        self.assertEqual(result.stdout,
+                         f"agent={PI_OVERRIDE}\ntool={RUFF_OVERRIDE}\nfloor={GH_OVERRIDE}\n"
+                         f"runtime={common_pin('nodejs')}\n")
 
     def test_without_an_override_the_catalog_pins_remain(self):
         (self.home / ".config/dotfiles/versions.tsv").unlink()
         result = self.resolve(
-            "printf 'agent=%s\\n' \"$(agent_effective_version pi 1.5.2)\"\n"
+            f"printf 'agent=%s\\n' \"$(agent_effective_version pi {PI_DEFAULT})\"\n"
             "printf 'tool=%s\\n' \"$(common_package_pin ruff)\"\n"
             "printf 'floor=%s\\n' \"$(installer_common_minimum gh)\"\n")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "agent=1.5.2\ntool=0.17.3\nfloor=2.103.3\n")
+        self.assertEqual(result.stdout,
+                         f"agent={PI_DEFAULT}\ntool={RUFF_DEFAULT}\nfloor={GH_DEFAULT}\n")
 
 
 @unittest.skipUnless(tomllib, "registry assertions require Python 3.11 or newer")
@@ -169,14 +186,14 @@ class OverrideRegistryTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.desired = self.root / "desired.toml"
-        self.desired.write_text('''version = 1
+        self.desired.write_text(f'''version = 1
 [envs.ruff]
 channels = ["conda-forge"]
-dependencies = { ruff = "==0.17.3" }
-exposed = { ruff = "ruff" }
+dependencies = {{ ruff = "=={RUFF_DEFAULT}" }}
+exposed = {{ ruff = "ruff" }}
 [envs.git]
-dependencies = { git = "==2.56.0" }
-exposed = { git = "git" }
+dependencies = {{ git = "=={common_pin('git')}" }}
+exposed = {{ git = "git" }}
 ''', encoding="utf-8")
         self.overrides = self.root / "overrides.json"
         self.registry = self.root / "pixi-global.toml"
@@ -192,18 +209,20 @@ exposed = { git = "git" }
         return tomllib.loads(self.registry.read_text())["envs"]
 
     def test_the_registry_installs_the_overridden_tool_version(self):
-        self.overrides.write_text('{"agents":{},"tools":{"ruff":"0.18.0"},"clis":{}}\n', encoding="utf-8")
+        self.overrides.write_text(
+            '{"agents":{},"tools":{"ruff":"' + RUFF_OVERRIDE + '"},"clis":{}}\n', encoding="utf-8")
         result = self.merge(self.overrides)
         self.assertEqual(result.returncode, 0, result.stderr)
         environments = self.read()
-        self.assertEqual(environments["ruff"]["dependencies"], {"ruff": "==0.18.0"})
-        self.assertEqual(environments["git"]["dependencies"], {"git": "==2.56.0"})
+        self.assertEqual(environments["ruff"]["dependencies"], {"ruff": "==" + RUFF_OVERRIDE})
+        self.assertEqual(environments["git"]["dependencies"], {"git": "==" + common_pin("git")})
 
     def test_removing_the_override_restores_the_catalog_pin(self):
-        self.overrides.write_text('{"agents":{},"tools":{"ruff":"0.18.0"},"clis":{}}\n', encoding="utf-8")
+        self.overrides.write_text(
+            '{"agents":{},"tools":{"ruff":"' + RUFF_OVERRIDE + '"},"clis":{}}\n', encoding="utf-8")
         self.assertEqual(self.merge(self.overrides).returncode, 0)
         self.assertEqual(self.merge().returncode, 0)
-        self.assertEqual(self.read()["ruff"]["dependencies"], {"ruff": "==0.17.3"})
+        self.assertEqual(self.read()["ruff"]["dependencies"], {"ruff": "==" + RUFF_DEFAULT})
 
     def test_an_unknown_merge_option_is_rejected(self):
         result = self.merge()

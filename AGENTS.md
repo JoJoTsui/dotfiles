@@ -203,6 +203,14 @@ explains every changed pair.
   bootstrap), `dot_vscode-server/data/Machine/settings.json.tmpl`,
   `docs/vscode-win-settings.jsonc` — validate as JSON-with-comments, not shell
   (historical `.sh` naming retired).
+- **Every platform plan is read from its own public adapter**: the portable
+  check calls `bootstrap.sh` for Linux, macOS, and WSL and `bootstrap.ps1` for
+  native Windows, compares the fields the two adapters share, and asserts the
+  tool and step selections in the adapter that owns them. A native
+  verification report names the checkout it verified and the outcome of every
+  scenario; a skip states its reason, and an unavailable runner never counts
+  as acceptance. Read `docs/verification/complete-matrix.md` before changing
+  the verification boundary.
 - Not applied to `$HOME` (ignored): `system/`, `clash/`, `docs/`, `deployment/`,
   `tests/`. Ordinary bootstrap has no system or account login-shell action.
 - **Legacy home symlinks are explicit and opt-in**:

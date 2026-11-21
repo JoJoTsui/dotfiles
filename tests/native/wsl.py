@@ -9,6 +9,10 @@ import subprocess
 import sys
 import time
 
+# The shared report contract lives beside the other verification modules.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import native_report
+
 SOURCE = Path(__file__).resolve().parents[2]
 
 
@@ -29,10 +33,11 @@ def main():
     parser.add_argument("--run-url", default="")
     arguments = parser.parse_args()
     report = {"platform": "wsl", "role": arguments.role, "architecture": arguments.arch,
-              "phase": "native-preflight", "nativePass": False,
+              "phase": "native-preflight", "nativePass": False, "status": "running",
               "commit": arguments.commit, "runUrl": arguments.run_url,
               "runtime": {"system": platform.system(), "kernel": platform.release(),
-                          "architecture": platform.machine()}, "checks": []}
+                          "architecture": platform.machine()}, "scenarios": []}
+    log = native_report.ScenarioLog()
     environment = {"HOME": str(arguments.home), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color",
                    "LANG": "C.UTF-8", "CODEGRAPH_NO_DOWNLOAD": "1", "DO_NOT_TRACK": "1",
                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "DISABLE_TELEMETRY": "1",
@@ -51,13 +56,9 @@ def main():
 
     def check(name, operation):
         started = time.monotonic()
-        try:
-            details = operation()
-        except Exception:
-            report["checks"].append({"name": name, "passed": False})
-            raise
-        report["checks"].append({"name": name, "passed": True,
-                                 "seconds": round(time.monotonic() - started, 3), "details": details})
+        details = operation()
+        log.passed(name, seconds=time.monotonic() - started, details=details)
+        report["scenarios"] = log.records
         print(f"native-wsl: passed {name}", flush=True)
 
     def require(condition, message):
@@ -98,7 +99,11 @@ def main():
             return 0
         kernel = platform.release().lower()
         if platform.system() != "Linux" or "microsoft" not in kernel or "wsl2" not in kernel:
-            raise RuntimeError("Native WSL2 kernel required; ordinary Linux and WSL1 are not a WSL2 pass")
+            # Without a WSL2 kernel this runner establishes nothing about the
+            # native target, so the preflight is unavailable rather than failed.
+            report["reason"] = "Native WSL2 kernel required; ordinary Linux and WSL1 are not a WSL2 pass"
+            log.unavailable(report["phase"], report["reason"])
+            raise RuntimeError(report["reason"])
         require(platform.machine() == arguments.arch, "WSL architecture differs from the requested native target")
         require(os.geteuid() != 0, "Native acceptance must run as the disposable unprivileged Linux user")
         home = arguments.home.resolve()
@@ -298,9 +303,18 @@ def main():
         report["failure"] = str(error)
         print(f"native-wsl: {error}", file=sys.stderr)
         phase = report.get("phase", "unknown phase")
+        if not any(record["name"] == phase and record["outcome"] == native_report.UNAVAILABLE
+                   for record in log.records):
+            log.failed(phase, report["failure"])
         print(f"::error title=Native WSL2 acceptance failed::{phase}", file=sys.stderr, flush=True)
         return 1
     finally:
+        report["scenarios"] = log.records
+        # The native WSL2 gate establishes acceptance only when it reached its
+        # end; a probe or a stopped run does not.
+        report["acceptance"] = (bool(report["nativePass"])
+                                 and native_report.acceptance(log.records, native_execution=True))
+        report["status"] = native_report.status(log.records)
         arguments.report.parent.mkdir(parents=True, exist_ok=True)
         arguments.report.write_text(json.dumps(report, indent=2) + "\n")
     return 0

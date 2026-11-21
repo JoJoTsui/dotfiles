@@ -20,6 +20,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+import native_report
+
 SOURCE = Path(__file__).resolve().parents[1]
 MATRIX = (
     ("linux", "x86_64"),
@@ -36,6 +38,20 @@ COMMON_TOOLS = {
     "pixi", "uv", "uvx", "bun", "bunx", "node", "nu", "rtk", "atuin",
     "zoxide", "tspin", "less", "python", "pip", "codegraph",
 }
+# Every platform has its own public deployment adapter. The Unix adapter is
+# bootstrap.sh; the native Windows adapter is bootstrap.ps1. A platform plan
+# is read from the adapter that owns it, so one adapter cannot stand in for
+# another.
+ADAPTERS = {"linux": "bash", "wsl": "bash", "macos": "bash", "windows": "powershell"}
+BASH_STEPS = ("install-managers", "apply-source", "install-common", "install-agents", "prepare-shell")
+POWERSHELL_STEPS = ("install-managers", "apply-source", "install-common", "install-agents",
+                    "install-magpie-cli", "prepare-shell")
+# The deployment steps only one adapter owns. A plan that carries another
+# adapter's step came from the wrong interface.
+BASH_ONLY_STEPS = ("apply-source.skills", "apply-source.agent-payload", "apply-source.skills-prune",
+                   "apply-source.client-settings", "apply-source.macos-discovery",
+                   "install-installer-tools", "magpie-apply")
+POWERSHELL_ONLY_STEPS = ("install-magpie-cli",)
 NATIVE_WORKFLOWS = {
     "macOS": ".github/workflows/native-macos.yml (Intel and Apple silicon; both roles)",
     "WSL2 x86-64": ".github/workflows/native-wsl.yml (Windows 2025; both roles)",
@@ -80,6 +96,13 @@ def read_rows(path: Path) -> list[list[str]]:
             if line and not line.startswith("#")]
 
 
+def checkout_identity() -> dict[str, Any]:
+    """The checkout this verification ran against."""
+    identity = native_report.checkout_identity_or_unknown(SOURCE)
+    return {"commit": identity["commit"], "tree": identity["tree"],
+            "working_tree_dirty": identity["working_tree_dirty"]}
+
+
 def invoke(command: list[str], *, environment: dict[str, str], timeout: int = 1800,
            cwd: Path = SOURCE) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, cwd=cwd, env=environment, capture_output=True,
@@ -91,57 +114,103 @@ def require(condition: bool, message: str) -> None:
         raise VerificationError(message)
 
 
-def matrix_plan(root: Path, platform: str, arch: str, role: str,
-                selection: tuple[str, ...] = ()) -> dict[str, Any]:
-    index = len(list(root.glob("case-*")))
-    case = root / f"case-{index:03d}"
+def powershell_executable():
+    """The PowerShell runtime that renders the native Windows plan.
+
+    The native Windows adapter is a separate public interface. The portable
+    check calls it directly instead of reading a Windows plan through the
+    Unix adapter, and it records a skipped scenario when the host provides no
+    PowerShell runtime.
+    """
+    for variable in ("DOTFILES_TEST_POWERSHELL", "DOTFILES_TEST_PWSH"):
+        value = os.environ.get(variable)
+        if value and Path(value).is_file():
+            return str(Path(value).resolve())
+    found = shutil.which("pwsh") or shutil.which("powershell")
+    return str(Path(found).resolve()) if found else None
+
+
+def case_directory(root: Path) -> Path:
+    """A fresh isolated case directory for one plan."""
+    return root / f"case-{len(list(root.glob('case-*'))):03d}"
+
+
+def parse_plan(result: subprocess.CompletedProcess[str], platform: str, arch: str,
+               role: str) -> dict[str, Any]:
+    if result.returncode:
+        raise VerificationError(
+            f"plan failed for {platform}-{arch}-{role}:\n{result.stderr[-5000:]}")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise VerificationError(f"invalid plan JSON for {platform}-{arch}-{role}: {error}") from error
+
+
+def bash_plan(case: Path, platform: str, arch: str, role: str,
+              selection: tuple[tuple[str, str], ...] = ()) -> dict[str, Any]:
+    """Render a plan through the public Unix adapter."""
     home = case / "target-home"
     environment = clean_environment(case / "control")
     command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
-               "--home", str(home), "--platform", platform, "--arch", arch,
-               "--role", role, *selection, "--plan"]
-    result = invoke(command, environment=environment, timeout=60)
-    if result.returncode:
-        raise VerificationError(
-            f"plan failed for {platform}-{arch}-{role} {selection}:\n{result.stderr[-5000:]}"
-        )
-    try:
-        plan = json.loads(result.stdout)
-    except json.JSONDecodeError as error:
-        raise VerificationError(f"invalid plan JSON for {platform}-{arch}-{role}: {error}") from error
+               "--home", str(home), "--platform", platform, "--arch", arch, "--role", role]
+    for option, value in selection:
+        command += [option, value]
+    command.append("--plan")
+    plan = parse_plan(invoke(command, environment=environment, timeout=60), platform, arch, role)
     require(not home.exists(), f"plan created target home {home}")
+    require(plan.get("home") == str(home), "plan target home does not match the isolated path")
+    return plan
+
+
+def powershell_plan(case: Path, platform: str, arch: str, role: str,
+                    selection: tuple[tuple[str, str], ...] = ()) -> dict[str, Any]:
+    """Render a plan through the public native Windows adapter."""
+    executable = powershell_executable()
+    require(executable is not None, "the native Windows adapter needs a PowerShell runtime")
+    home = case / "target-home"
+    environment = clean_environment(case / "control")
+    command = [executable, "-NoLogo", "-NoProfile", "-NonInteractive", "-File",
+               str(SOURCE / "bootstrap.ps1"), "-Plan", "-Source", str(SOURCE),
+               "-TargetHome", str(home), "-Platform", platform, "-Role", role, "-Arch", arch]
+    for option, value in selection:
+        command += [option, value]
+    plan = parse_plan(invoke(command, environment=environment, timeout=120), platform, arch, role)
+    require(not home.exists(), f"plan created target home {home}")
+    require(plan.get("home") == str(home), "plan target home does not match the isolated path")
+    return plan
+
+
+def public_plan(root: Path, platform: str, arch: str, role: str,
+                selection: tuple[tuple[str, str], ...] = ()) -> dict[str, Any]:
+    """The plan the platform's own public adapter produces."""
+    case = case_directory(root)
+    if ADAPTERS[platform] == "powershell":
+        return powershell_plan(case, platform, arch, role, selection)
+    return bash_plan(case, platform, arch, role, selection)
+
+
+def require_shared_plan(plan: dict[str, Any], platform: str, arch: str, role: str) -> None:
+    """The plan fields every adapter agrees on."""
     require(plan.get("platform") == platform and plan.get("arch") == arch and plan.get("role") == role,
             f"plan selected the wrong target for {platform}-{arch}-{role}")
     require(plan.get("profile") == f"{platform}-{role}", f"profile preset mismatch for {platform}-{role}")
-    require(plan.get("home") == str(home), "plan target home does not match the isolated path")
     require(plan.get("settings", {}).get("mode") == "copy", "deployment must use copy mode")
     settings = plan.get("settings", {})
     require(settings.get("primaryShell") == "nu", "Nushell is not the preferred managed shell")
     require(not settings.get("systemChanges") and not settings.get("loginShellChanges"),
             "ordinary deployment plan includes a system or account login-shell change")
+    home = plan.get("home", "")
     roots = plan.get("roots", {})
     for key, relative in (("config", ".config"), ("data", ".local/share"), ("state", ".local/state"),
                           ("cache", ".cache"), ("pixi", ".pixi"), ("bun", ".bun")):
-        require(roots.get(key) == str(home / relative), f"{key} state escapes the isolated target home")
-
-    exposed_tools = set(plan.get("tools", ()))
-    require(COMMON_TOOLS <= exposed_tools,
-            f"common defaults are missing on {platform}-{arch}: {sorted(COMMON_TOOLS - exposed_tools)}")
-    if platform == "windows":
-        require("zsh" not in exposed_tools, "native Windows must not claim a managed Zsh")
-    elif platform == "macos":
-        require("zsh" in exposed_tools, "macOS must expose the managed Zsh")
-        require("bash" not in exposed_tools, "macOS must not claim a managed Bash")
-    else:
-        require({"bash", "zsh"} <= exposed_tools, f"Unix shell trio is incomplete on {platform}-{arch}")
+        require(roots.get(key) == str(Path(home) / relative),
+                f"{key} state escapes the isolated target home")
 
     selected_agents = list(plan.get("agents", ()))
     packages = {entry["name"]: entry for entry in plan.get("agentPackages", ())}
     expected_agent_names = set(selected_agents) | {"codegraph"}
     require(set(packages) == expected_agent_names,
             f"agent packages do not match selection on {platform}-{arch}-{role}: {sorted(packages)}")
-    require(set(AGENTS) <= set(selected_agents) if not selection else True,
-            f"default agent selection is incomplete on {platform}-{arch}-{role}")
     require(all(item.get("manager") in ("bun", "native", "homebrew") for item in packages.values()),
             "an agent or CodeGraph package has an unknown installation manager")
     require(packages["codegraph"]["manager"] == "bun", "CodeGraph is not assigned to Bun")
@@ -160,61 +229,174 @@ def matrix_plan(root: Path, platform: str, arch: str, role: str,
         require(packages["qoder"]["manager"] == "native", "Qoder is not assigned to its native installer")
     else:
         require("qoder" not in packages, "Qoder leaked into an unselected plan")
-    require(not plan.get("bundles"), "optional bundles must be absent from the default plan")
-    return plan
 
 
-def verify_local_matrix(root: Path) -> dict[str, int]:
+def require_platform_tools(plan: dict[str, Any], platform: str) -> None:
+    """The tool selection the platform's own adapter makes."""
+    exposed = set(plan.get("tools", ()))
+    require(COMMON_TOOLS <= exposed,
+            f"common defaults are missing on {platform}: {sorted(COMMON_TOOLS - exposed)}")
+    if platform == "windows":
+        require("zsh" not in exposed, "native Windows must not claim a managed Zsh")
+        require({"bash", "sh"} <= exposed, "native Windows must expose its Git Bash runtime")
+    elif platform == "macos":
+        require("zsh" in exposed, "macOS must expose the managed Zsh")
+        require("bash" not in exposed, "macOS must not claim a managed Bash")
+    else:
+        require({"bash", "zsh"} <= exposed, f"Unix shell trio is incomplete on {platform}")
+
+
+def require_platform_steps(plan: dict[str, Any], platform: str) -> None:
+    """The deployment steps the platform's own adapter runs."""
+    steps = list(plan.get("steps", ()))
+    expected = BASH_STEPS if ADAPTERS[platform] == "bash" else POWERSHELL_STEPS
+    missing = [step for step in expected if step not in steps]
+    require(not missing, f"the {platform} plan is missing deployment steps: {missing}")
+    foreign = BASH_ONLY_STEPS if ADAPTERS[platform] == "powershell" else POWERSHELL_ONLY_STEPS
+    borrowed = [step for step in foreign if step in steps]
+    require(not borrowed, f"the {platform} plan carries another adapter's steps: {borrowed}")
+
+
+def shared_plan_differences(first: dict[str, Any], second: dict[str, Any]) -> list[str]:
+    """The shared plan fields two public adapters disagree on.
+
+    The comparison covers the fields both adapters own. The tool list, the
+    deployment steps, the manager pins, and the platform-only metadata stay
+    with the adapter that owns them.
+    """
+    differences = []
+    for field in ("platform", "role", "arch", "profile", "mirror"):
+        if first.get(field) != second.get(field):
+            differences.append(f"{field}: {first.get(field)!r} != {second.get(field)!r}")
+    for field in ("source", "home"):
+        left = os.path.realpath(first.get(field, "") or ".")
+        right = os.path.realpath(second.get(field, "") or ".")
+        if left != right:
+            differences.append(f"{field}: {first.get(field)!r} != {second.get(field)!r}")
+    for field in ("agents", "bundles"):
+        if sorted(first.get(field, ())) != sorted(second.get(field, ())):
+            differences.append(f"{field}: {first.get(field)} != {second.get(field)}")
+    for field, key in (("packages", "environment"), ("bundlePackages", "environment"),
+                       ("agentPackages", "name")):
+        left = {entry[key]: entry for entry in first.get(field, ())}
+        right = {entry[key]: entry for entry in second.get(field, ())}
+        for name in sorted(set(left) | set(right)):
+            if left.get(name) != right.get(name):
+                differences.append(f"{field}.{name}: {left.get(name)} != {right.get(name)}")
+    for field in ("mode", "primaryShell", "systemChanges", "loginShellChanges"):
+        left = first.get("settings", {}).get(field)
+        right = second.get("settings", {}).get(field)
+        if left != right:
+            differences.append(f"settings.{field}: {left!r} != {right!r}")
+    for field in ("config", "data", "state", "cache", "pixi", "bun"):
+        left = os.path.realpath(first.get("roots", {}).get(field, "") or ".")
+        right = os.path.realpath(second.get("roots", {}).get(field, "") or ".")
+        if left != right:
+            differences.append(f"roots.{field}: {left!r} != {right!r}")
+    return differences
+
+
+def verify_local_matrix(root: Path) -> dict[str, Any]:
     cells = 0
     plans = 0
     bundle_outcomes = 0
+    scenarios: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
     declarations = {
         bundle: set(supported.split(","))
         for bundle, supported, _prerequisites in read_rows(SOURCE / "deployment/bundles.tsv")
     }
     for platform, arch in MATRIX:
         for role in ROLES:
-            base = matrix_plan(root, platform, arch, role)
+            if ADAPTERS[platform] == "powershell" and not powershell_executable():
+                # The native Windows adapter needs a PowerShell runtime. Its
+                # absence leaves the cell unrun, not passed.
+                skipped.append({
+                    "scenario": f"{platform}-{arch}-{role} public plan",
+                    "reason": "the native Windows adapter needs a PowerShell runtime, which this host does not provide",
+                })
+                continue
+            base = public_plan(root, platform, arch, role)
+            require_shared_plan(base, platform, arch, role)
+            require_platform_tools(base, platform)
+            require_platform_steps(base, platform)
             cells += 1
             plans += 1
             require(base["agents"] == list(AGENTS), f"default agents changed on {platform}-{arch}-{role}")
-            none = matrix_plan(root, platform, arch, role, ("--agents", "none"))
+            require(not base.get("bundles"), "optional bundles must be absent from the default plan")
+            none = public_plan(root, platform, arch, role, (("--agents", "none"),))
+            require_shared_plan(none, platform, arch, role)
             require(none["agents"] == [] and {item["name"] for item in none["agentPackages"]} == {"codegraph"},
                     f"--agents none did not retain only CodeGraph on {platform}-{arch}-{role}")
             plans += 1
-            selected = matrix_plan(root, platform, arch, role, ("--agents", "codex,kimi"))
+            selected = public_plan(root, platform, arch, role, (("--agents", "codex,kimi"),))
+            require_shared_plan(selected, platform, arch, role)
             require(selected["agents"] == ["kimi", "codex"],
                     f"named agent selection changed on {platform}-{arch}-{role}")
             plans += 1
             pair = f"{platform}-{arch}"
             for bundle, supported_targets in declarations.items():
-                case = root / f"case-{len(list(root.glob('case-*'))):03d}"
-                home = case / "target-home"
-                environment = clean_environment(case / "control")
-                command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
-                           "--home", str(home), "--platform", platform, "--arch", arch,
-                           "--role", role, "--bundles", bundle, "--plan"]
-                result = invoke(command, environment=environment, timeout=60)
                 supported = pair in supported_targets
+                option = ("--bundles", bundle) if ADAPTERS[platform] == "bash" else ("-Bundles", bundle)
                 if supported:
-                    if result.returncode:
-                        raise VerificationError(
-                            f"declared {bundle} plan failed for {platform}-{arch}-{role}: {result.stderr[-5000:]}"
-                        )
-                    selected_plan = json.loads(result.stdout)
+                    selected_plan = public_plan(root, platform, arch, role, (option,))
+                    require_shared_plan(selected_plan, platform, arch, role)
                     require(selected_plan.get("bundles") == [bundle],
                             f"supported {bundle} bundle missing from {platform}-{arch}-{role} plan")
                     require(bool(selected_plan.get("bundlePackages")),
                             f"supported {bundle} bundle has no declared packages on {platform}-{arch}")
-                    require(not home.exists(), f"bundle plan created target home {home}")
                 else:
-                    require(result.returncode != 0, f"unsupported {bundle} bundle unexpectedly passed for {platform}-{arch}")
+                    case = case_directory(root)
+                    home = case / "target-home"
+                    environment = clean_environment(case / "control")
+                    if ADAPTERS[platform] == "bash":
+                        command = ["/bin/bash", str(SOURCE / "bootstrap.sh"), "--source", str(SOURCE),
+                                   "--home", str(home), "--platform", platform, "--arch", arch,
+                                   "--role", role, "--bundles", bundle, "--plan"]
+                    else:
+                        command = [powershell_executable(), "-NoLogo", "-NoProfile", "-NonInteractive",
+                                   "-File", str(SOURCE / "bootstrap.ps1"), "-Plan", "-Source", str(SOURCE),
+                                   "-TargetHome", str(home), "-Platform", platform, "-Role", role,
+                                   "-Arch", arch, "-Bundles", bundle]
+                    result = invoke(command, environment=environment, timeout=120)
+                    require(result.returncode != 0,
+                            f"unsupported {bundle} bundle unexpectedly passed for {platform}-{arch}")
                     require("unsupported bundle" in result.stderr,
                             f"unsupported {bundle} rejection was not explicit for {platform}-{arch}: {result.stderr}")
                     require(not home.exists(), f"rejected bundle plan created target home {home}")
                 plans += 1
                 bundle_outcomes += 1
-    return {"matrixCells": cells, "plans": plans, "bundleOutcomes": bundle_outcomes}
+            scenarios.append({"name": f"{platform}-{arch}-{role} public plan", "outcome": "passed"})
+    scenarios.extend({"name": entry["scenario"], "outcome": "skipped", "reason": entry["reason"]}
+                     for entry in skipped)
+    return {"matrixCells": cells, "plans": plans, "bundleOutcomes": bundle_outcomes,
+            "scenarios": scenarios, "skipped": skipped}
+
+
+def compare_public_adapters(root: Path) -> dict[str, Any]:
+    """Compare the shared plan fields of the two public adapters.
+
+    Both adapters describe the same deployment target, so the fields they
+    share have to agree. The tool list, the deployment steps, and the
+    platform-only metadata stay with the adapter that owns them and are
+    checked in that adapter's own scenario.
+    """
+    if not powershell_executable():
+        return {"name": "public adapter comparison", "outcome": "skipped",
+                "reason": "the native Windows adapter needs a PowerShell runtime, which this host does not provide"}
+    case = case_directory(root)
+    # Both adapters describe the same target home, so the comparison covers
+    # the plan itself and not two different targets.
+    unix_plan = bash_plan(case, "windows", "x86_64", "workstation")
+    windows_plan = powershell_plan(case, "windows", "x86_64", "workstation")
+    differences = shared_plan_differences(unix_plan, windows_plan)
+    require(not differences,
+            "the public adapters disagree on the shared plan fields: " + "; ".join(differences))
+    return {"name": "public adapter comparison", "outcome": "passed",
+            "target": "windows-x86_64-workstation", "compared": ["platform", "role", "arch", "profile",
+                                                               "mirror", "source", "home", "agents",
+                                                               "bundles", "packages", "bundlePackages",
+                                                               "agentPackages", "settings", "roots"]}
 
 
 def run_suite(label: str, *, pattern: str | None = None, environment: dict[str, str],
@@ -247,8 +429,16 @@ def verify_local(report: dict[str, Any], *, require_runtime: bool = False) -> No
         environment = clean_environment(root / "control")
         matrix = verify_local_matrix(root / "matrix")
         report["local"] = {"status": "passed", **matrix}
+        report["local"]["scenarios"].append(compare_public_adapters(root / "comparison"))
+        # A cell that could not run leaves the local layer without full
+        # coverage, so acceptance needs every planned scenario to have run.
+        report["local"]["acceptance"] = not any(
+            scenario["outcome"] != "passed" for scenario in report["local"]["scenarios"])
         print(f"local matrix: passed {matrix['matrixCells']} cells, {matrix['plans']} read-only plans, "
               f"{matrix['bundleOutcomes']} declared bundle outcomes")
+        for entry in report["local"]["scenarios"]:
+            if entry["outcome"] != "passed":
+                print(f"local matrix: {entry['outcome']} {entry['name']}: {entry.get('reason', '')}")
         update = invoke([sys.executable, "deployment/update_versions.py", "check"], environment=environment)
         print(update.stdout + update.stderr, end="" if (update.stdout + update.stderr).endswith("\n") else "\n")
         require(update.returncode == 0, "version catalog consistency check failed")
@@ -261,6 +451,7 @@ def verify_local(report: dict[str, Any], *, require_runtime: bool = False) -> No
         report["local"]["testSuite"] = "passed"
     report["native"] = {
         "status": "pending native CI",
+        "acceptance": False,
         "targets": {name: {"status": "pending", "runner": runner}
                     for name, runner in NATIVE_WORKFLOWS.items()},
         "limit": "Foreign plan/render and package resolution do not count as native execution.",
@@ -340,7 +531,8 @@ def main() -> int:
                         help="require Python 3.11+, Chezmoi, Nu, Micromamba and PowerShell; fail if core runtime checks skip")
     parser.add_argument("--report", type=Path, help="write a JSON summary to this path")
     arguments = parser.parse_args()
-    report: dict[str, Any] = {"schemaVersion": 1, "source": str(SOURCE), "layers": {}}
+    report: dict[str, Any] = {"schemaVersion": 1, "source": str(SOURCE),
+                              "checkout": checkout_identity(), "layers": {}}
     try:
         verify_local(report, require_runtime=arguments.require_runtime)
         report["layers"]["local"] = "passed"

@@ -173,7 +173,8 @@ class WSLDeploymentTests(unittest.TestCase):
                 self.assertEqual(probe.returncode, 0, probe.stderr)
                 observed = json.loads(report.read_text())
                 self.assertFalse(observed["nativePass"], "a Linux configuration probe cannot claim WSL2 native acceptance")
-                startup = observed["checks"][0]["details"]
+                self.assertFalse(observed["acceptance"], "a configuration probe is not native acceptance")
+                startup = observed["scenarios"][0]["details"]
                 self.assertEqual(startup["editor"], "hx")
                 self.assertEqual(startup["polling"], "1" if role == "remote-compute" else "0")
                 self.assertEqual(startup["prompt"], "nu")
@@ -236,6 +237,11 @@ class WSLNativeBoundaryTests(unittest.TestCase):
         evidence = json.loads(report.read_text())
         self.assertFalse(evidence["nativePass"])
         self.assertEqual(evidence["phase"], "native-preflight")
+        self.assertEqual(evidence["status"], "unavailable")
+        self.assertFalse(evidence["acceptance"],
+                         "an ordinary Linux host cannot establish WSL2 acceptance")
+        self.assertEqual(evidence["scenarios"][0]["outcome"], "unavailable")
+        self.assertIn("WSL2", evidence["scenarios"][0]["reason"])
         self.assertFalse(home.exists(), "a simulated Linux run must stop before package installation")
 
 

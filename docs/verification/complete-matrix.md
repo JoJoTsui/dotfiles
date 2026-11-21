@@ -23,7 +23,7 @@ the current catalog adds `developer-portable` and its target checks.
 
 | Layer | Command or runner | What it establishes |
 | --- | --- | --- |
-| Local matrix | `python3 tests/verify_portable.py` (Linux host; its unittest suite asserts native Linux detection) | Fourteen profile/architecture/role cells, defaults, agent selection, all declared bundle support/rejection outcomes, source pin consistency, and deterministic acceptance tests. |
+| Local matrix | `python3 tests/verify_portable.py` (Linux host; its unittest suite asserts native Linux detection) | Fourteen profile/architecture/role cells read from each platform's own public adapter, defaults, agent selection, all declared bundle support/rejection outcomes, the shared-field comparison of the two public adapters, source pin consistency, and deterministic acceptance tests. |
 | Network install and diagnostics | `python3 tests/verify_portable.py --network` | Isolated Linux common-tool install/reapply and CLI checks; all selected Bun-managed agents plus native Qoder installed/diagnosed; actual Nushell/Bash/Zsh and synthetic history behavior; common and bundle dependency resolution for every declared target. |
 | Native macOS | [native-macos.yml](../../.github/workflows/native-macos.yml) | Intel and Apple silicon, workstation and remote-compute; native install and startup checks. Passed in run 38524061897 at commit `81857d6`. |
 | Native Windows | [native-windows.yml](../../.github/workflows/native-windows.yml) | Windows x86-64, both roles; PowerShell, Nu/Git Bash, Windows paths, installers, clients, and history boundary. Passed in run 38524061998 at commit `81857d6`. |
@@ -44,6 +44,34 @@ macOS Intel/Apple silicon, and native Windows x86-64, each as workstation and
 remote compute. For each cell it checks defaults, `--agents none`, a named
 agent selection, and every declared bundle. Unsupported bundle choices must
 fail explicitly without creating their target home.
+
+## Public adapters and the report contract
+
+Every platform has its own public deployment adapter: `bootstrap.sh` for
+Linux, macOS, and WSL, and `bootstrap.ps1` for native Windows. The portable
+check reads each platform's plan from the adapter that owns it, so a native
+Windows plan is no longer asserted through the Unix adapter. The fields the
+two adapters share - the target selection, the source and target home, the
+agent and bundle selection, the common package and agent package inventories,
+the copy-mode settings, and the state roots - are compared between the two
+adapters for the same target. The tool list and the deployment steps stay with
+the adapter that owns them and are asserted in that adapter's own scenario; a
+plan that carries another adapter's steps is rejected.
+
+A host without a PowerShell runtime cannot run the native Windows adapter. The
+Windows cells and the adapter comparison are then recorded as skipped
+scenarios with that reason, and the local layer reports no acceptance for
+them. `--require-runtime` treats the missing runtime as a failed prerequisite
+instead of a skip.
+
+A native verification report names the checkout it verified - the commit, the
+tree, and a digest of the source bytes - and records the outcome of every
+scenario it attempted. A scenario that did not run states why. A runner that
+cannot execute natively reports `status: unavailable` with `acceptance: false`,
+so an unavailable runner never counts as native acceptance. The shared contract
+in `tests/native_report.py` owns that report, and the native Windows adapter
+hands it the scenarios it observed instead of deciding the verdict itself. See
+[Windows evidence](windows.md) for the native Windows report shape.
 
 ## Original requests
 

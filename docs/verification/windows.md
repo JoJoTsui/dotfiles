@@ -27,6 +27,35 @@ together and is not counted as execution.
 | Unredirected Known Folder fallback | Ordinary native-home discovery with XDG absent | Deferred; see the deferred-gates note below |
 | Console cancellation/TOTP browser flow | Public wrapper terminates/waits in cancellation and masks all console input; fixture targets normal and failed child restoration | Deferred; see the deferred-gates note below |
 
+## Native report
+
+`tests/native/windows.ps1` writes `windows.json` next to its test log. The
+report names the checkout it verified and the outcome of every scenario the
+run attempted:
+
+- `checkout` holds the commit, the tree it names, whether the working tree
+  carried uncommitted changes, and a digest of the source bytes.
+- `scenarios` holds one record per scenario: the native runtime and
+  architecture, the renderer preparation, the selected bundle exposure, the
+  native deployment tests, and the known folder fallback. Every record carries
+  an outcome of `passed`, `failed`, `skipped`, or `unavailable`, and every
+  record that did not pass carries the reason why.
+- `status`, `acceptance`, and `counts` come from the shared contract in
+  `tests/native_report.py`, the same module the macOS, Linux, and WSL2
+  adapters use, so one owner decides the verdict.
+
+A runner that is not native Windows x86-64 cannot execute the target, so the
+preflight records `unavailable` and the report answers `status: unavailable`
+with `acceptance: false`; the script still fails its step. The known folder
+fallback stays a skipped scenario with its reason, because the disposable-home
+contract forbids the Windows host it needs.
+
+On a non-Windows host the adapter was exercised with PowerShell 7.6.10 to
+establish that the preflight, the skipped scenarios, the checkout identity, and
+the missing acceptance behave as described. That evidence covers the report
+contract only; the native Windows install, the client discovery, and the
+console behavior above still need a Windows runner.
+
 The native rows above were verified by the GitHub-hosted Windows runner, not by
 this Linux session. A separate `desktop` job also runs the native install with
 `--bundles desktop` and passed at commit `b64fedb` in run

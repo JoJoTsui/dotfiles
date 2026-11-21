@@ -17,6 +17,42 @@ def common_pin(package):
     raise AssertionError(f"missing common version pin: {package}")
 
 
+def agent_default_pin(name):
+    """The catalog default of one agent.
+
+    The repository catalog owns the default version of every agent. The
+    deployment-owned provider record (Bun or native) carries it; an
+    installer-owned record carries only the floor the device accepts.
+    """
+    for record in (agent_pins(), native_agent_pins()):
+        if name in record:
+            return record[name]["version"]
+    raise AssertionError(f"missing agent version pin: {name}")
+
+
+def installer_floor_pin(name):
+    """The catalog version floor of one installer-owned command."""
+    for line in (SOURCE / "deployment/installer-tools.tsv").read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("|")
+        if fields[0] == name:
+            return fields[4]
+    raise AssertionError(f"missing installer version floor: {name}")
+
+
+def distinct_version(default):
+    """A version that differs from the catalog default.
+
+    A device override replaces the repository default, so the fixture needs a
+    version of its own that stays different when the catalog moves.
+    """
+    parts = default.rsplit(".", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return f"{parts[0]}.{int(parts[1]) + 1}"
+    return default + ".1"
+
+
 def agent_pins():
     result = {}
     for line in (SOURCE / "deployment/agents/providers.tsv").read_text(encoding="utf-8").splitlines():
