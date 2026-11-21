@@ -16,6 +16,7 @@ instead of inferring an outcome from an exit status.
 from __future__ import annotations
 
 import argparse
+import codecs
 import hashlib
 import json
 import os
@@ -234,6 +235,34 @@ def fixture_scenario_outcome(text: str, name: str) -> str | None:
     return FAILED if started else None
 
 
+def decode_fixture_report(data: bytes) -> str:
+    """The text of a native fixture report, in the encoding it was written in.
+
+    Windows PowerShell 5.1 writes the log its Tee-Object command keeps as
+    UTF-16LE with a byte order mark, and a modern runner writes UTF-8,
+    optionally with a mark of its own. The mark decides the encoding, so the
+    report is read in the encoding it carries instead of the one the reader
+    expects; a report read in the wrong encoding hides every transition the
+    fixture stated.
+    """
+    if data.startswith(codecs.BOM_UTF16_LE) or data.startswith(codecs.BOM_UTF16_BE):
+        return data.decode("utf-16", errors="replace")
+    return data.decode("utf-8-sig", errors="replace")
+
+
+def read_fixture_report(path) -> str:
+    """The text of the native fixture report at a path.
+
+    A report that cannot be read is an empty report, so a missing file leaves
+    the scenario it named unreached instead of failing the read.
+    """
+    try:
+        data = Path(path).read_bytes()
+    except OSError:
+        return ""
+    return decode_fixture_report(data)
+
+
 def counts(records):
     """The number of scenarios per outcome."""
     counted = {outcome: 0 for outcome in OUTCOMES}
@@ -347,10 +376,7 @@ def main(argv=None) -> int:
         if not (arguments.log and arguments.scenario):
             print("native report: the fixture report and the scenario are required", file=sys.stderr)
             return 1
-        try:
-            reported = Path(arguments.log).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            reported = ""
+        reported = read_fixture_report(arguments.log)
         outcome = fixture_scenario_outcome(reported, arguments.scenario)
         # A scenario the fixture never started did not run, so it answers with
         # the outcome vocabulary instead of a word of its own.

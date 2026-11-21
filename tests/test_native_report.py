@@ -1,4 +1,5 @@
 """The native report contract: checkout identity and scenario outcomes."""
+import codecs
 import json
 import os
 from pathlib import Path
@@ -117,6 +118,65 @@ class FixtureScenarioOutcomeTests(unittest.TestCase):
                                     capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), native_report.SKIPPED)
+
+
+class FixtureReportEncodingTests(unittest.TestCase):
+    """The encoding a native runner wrote its fixture report in.
+
+    Windows PowerShell 5.1 writes its Tee-Object log as UTF-16LE with a byte
+    order mark, while a modern runner writes UTF-8. The report has to be read
+    in the encoding it carries, or the fixture's own transitions stay
+    unreadable and every scenario it reported looks like one it never
+    reached.
+    """
+
+    def report(self, *transitions):
+        return "\n".join(native_report.fixture_marker('native bundle exposure', transition)
+                         for transition in transitions) + "\n"
+
+    def query(self, log, scenario='native bundle exposure'):
+        command = [sys.executable, str(SOURCE / "tests" / "native_report.py"),
+                   "--fixture-outcome", "--log", str(log)]
+        return subprocess.run(command + ["--scenario", scenario],
+                              capture_output=True, text=True, timeout=30)
+
+    def test_a_powershell_5_1_report_keeps_the_transition_it_states(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-fixture-encoding-") as temporary:
+            log = Path(temporary) / "fixture.log"
+            log.write_bytes(codecs.BOM_UTF16_LE +
+                            self.report(native_report.FIXTURE_STARTED,
+                                        native_report.PASSED).encode("utf-16-le"))
+            passed = self.query(log)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        self.assertEqual(passed.stdout.strip(), native_report.PASSED)
+
+    def test_a_powershell_5_1_report_states_a_scenario_it_started_and_never_passed(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-fixture-encoding-") as temporary:
+            log = Path(temporary) / "fixture.log"
+            log.write_bytes(codecs.BOM_UTF16_LE +
+                            self.report(native_report.FIXTURE_STARTED).encode("utf-16-le"))
+            started = self.query(log)
+        self.assertEqual(started.returncode, 0, started.stderr)
+        self.assertEqual(started.stdout.strip(), native_report.FAILED)
+
+    def test_a_modern_report_keeps_the_transition_it_states(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-fixture-encoding-") as temporary:
+            log = Path(temporary) / "fixture.log"
+            log.write_bytes(self.report(native_report.FIXTURE_STARTED,
+                                        native_report.PASSED).encode("utf-8"))
+            passed = self.query(log)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        self.assertEqual(passed.stdout.strip(), native_report.PASSED)
+
+    def test_a_report_with_a_utf_8_mark_keeps_the_transition_it_states(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-fixture-encoding-") as temporary:
+            log = Path(temporary) / "fixture.log"
+            log.write_bytes(codecs.BOM_UTF8 +
+                            self.report(native_report.FIXTURE_STARTED,
+                                        native_report.PASSED).encode("utf-8"))
+            passed = self.query(log)
+        self.assertEqual(passed.returncode, 0, passed.stderr)
+        self.assertEqual(passed.stdout.strip(), native_report.PASSED)
 
 
 class ReportStatusTests(unittest.TestCase):
