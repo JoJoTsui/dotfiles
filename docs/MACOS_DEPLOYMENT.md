@@ -52,7 +52,11 @@ Shell and history preparation mirror the artifacts they generated into an
 existing native autoload directory, so a preparation run outside a deployment
 cannot leave that launch reading an older startup; the catalog copy above
 remains the deployment's own write. The pinned completion loader is published
-by the completion module to the canonical native copy above. The native vendor
+by the completion module to the canonical native copy above, and the catalog
+does not copy it, so the discovery adapter is not a second publisher for the
+loader. The preparation falls back to the documented macOS directories when
+the Nu discovery command fails, so a required loader path is never omitted.
+The native vendor
 autoload directory is not the deployment's own, so the module takes a mirrored
 loader there over only when the file is demonstrably managed, preserves a
 device loader of the same name, and never creates a loader in an existing

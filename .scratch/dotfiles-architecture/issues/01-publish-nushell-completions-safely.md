@@ -104,3 +104,33 @@ stay with the coordinator.
 The second publisher and the alias destination guard reported above are not
 addressed by this fix and stay open for the Codex review. The ticket stays
 open.
+
+Pi finished the second publisher and the discovery failure.
+
+The macOS catalog mapped the pinned loader, so `deploy_macos_config` copied
+the XDG loader over the active native loader after the publication and after
+the generation retirement. The catalog no longer maps it: the completion
+module is the only writer of the pinned loader, and the deployment's
+discovery adapter is no longer a second publisher for it.
+
+The macOS preparation now derives the native paths from the Nu discovery
+command and falls back to the documented macOS directories when that command
+fails. A discovery failure previously omitted the canonical native user
+autoload path: the module stopped managing that loader, retired the
+generation it imported, and left the native loader with missing imports. The
+fallback keeps the path, so the loader stays published, its generation stays
+complete, and the cleanup never removes a generation under a live loader.
+
+The command seam now models a macOS home on every host: the canonical XDG
+roots and the native autoload directories the catalog names. Regressions cover
+the deployment's discovery adapter leaving the published loader alone, and a
+discovery failure keeping the canonical native loader published across two
+publications. Both fail against the previous behavior.
+
+Checks on this Mac (Python 3.15.2, nu 0.117.0):
+`python3 -m unittest tests.test_nu_completions` (30 tests, OK),
+`git diff --check` (clean), and `sh -n dot_local/bin/executable_dotfiles-shell-prepare`
+(ok). The full unittest discovery loop, the native deployment gate, the
+Windows acceptance (this host has no PowerShell), and the package downloads
+stay with the coordinator. The alias destination guard reported above stays
+open for the Codex review. The ticket stays open.

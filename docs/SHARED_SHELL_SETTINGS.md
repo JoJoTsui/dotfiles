@@ -136,14 +136,21 @@ never match the published name and are left alone.
 Ownership decides which loader a publication may write. A canonical loader is
 owned by declaration: the XDG loader the deployment writes, plus the native
 copy the platform's catalog names, such as the macOS user autoload directory
-`~/Library/Application Support/nushell/autoload`. A legacy loader is a path an
+`~/Library/Application Support/nushell/autoload`. The catalog names that
+directory for the other startup resources; it does not copy the pinned loader,
+so the deployment's discovery adapter is not a second publisher for it. A
+legacy loader is a path an
 earlier publication may have written, such as the macOS vendor autoload
 directory `~/Library/Application Support/nushell/vendor/autoload`, which an
 earlier preparation mirrored into. The publication takes a legacy loader over
 only when the file on disk carries the managed marker. A device file of the
 same name is preserved, and an existing native directory is no reason to
 create a duplicate loader in it. A preserved loader keeps the generation it
-names, so the cleanup never removes a generation under a live loader.
+names, so the cleanup never removes a generation under a live loader. The macOS
+preparation selects the native paths from the Nu discovery command and falls
+back to the documented macOS directories when that command fails, so a
+required loader path is never omitted and the generation that loader imports
+stays published.
 
 For an air-gapped preparation, supply `DOTFILES_NU_SCRIPTS_ARCHIVE` with a local
 copy of the pinned archive; checksum verification still applies. Updating the
@@ -166,8 +173,9 @@ generated into the directory Nu resolves without an XDG override, which on
 macOS is `~/Library/Application Support/nushell/vendor/autoload`, so a launch
 from outside the managed environment never reads an older startup. That mirror
 writes only existing entries, keeps a device file, and refuses a symlinked
-target. The pinned loader is not mirrored: the completion module publishes it
-to the canonical native loader path and takes over a mirrored copy only when
+target. The pinned loader is neither mirrored nor copied: the completion
+module publishes it to the canonical native loader path and takes over a
+mirrored copy only when
 that file is demonstrably managed, so the deployment's own discovery copy
 never outlives the generation it imports and a device loader of the same name
 is preserved. Generated resources and device state are not imported into git. See

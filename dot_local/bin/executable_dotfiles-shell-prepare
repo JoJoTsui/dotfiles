@@ -24,24 +24,36 @@ done
 # the previous startup. Other platforms keep the deployment's discovery adapter
 # as their only native writer.
 #
-# The deployment's catalog owns the user autoload copy, so the completion
-# module publishes the pinned loader there. The vendor autoload directory is
-# not the deployment's own: an earlier preparation mirrored the loader into it,
-# so the module takes that copy over only when the file is demonstrably
-# managed and preserves a device file of the same name.
-native_data=
-native_config=
-if [ "${DOTFILES_PLATFORM:-}" = macos ]; then
-    native_data=$(env -u XDG_DATA_HOME "$DOTFILES_COMMON_BIN/nu" -c 'print $nu.data-dir' 2>/dev/null) || native_data=
-    native_config=$(env -u XDG_CONFIG_HOME "$DOTFILES_COMMON_BIN/nu" -c 'print $nu.default-config-dir' 2>/dev/null) || native_config=
-fi
+# The completion module owns the pinned loader: the deployment's catalog does
+# not copy it, and the module publishes it to the native user autoload
+# directory the catalog names. The vendor autoload directory is not the
+# deployment's own: an earlier preparation mirrored the loader into it, so the
+# module takes that copy over only when the file is demonstrably managed and
+# preserves a device file of the same name.
+#
+# A Nu that cannot answer the discovery command must not omit a path: the
+# documented macOS directories keep the publication complete, so the module
+# keeps managing the canonical loader and never retires the generation that
+# loader imports.
 native_vendor_dir=
 native_user_loader=
-if [ -n "$native_data" ] && [ "$native_data/vendor/autoload" != "$autoload" ]; then
-    native_vendor_dir="$native_data/vendor/autoload"
-fi
-if [ -n "$native_config" ] && [ "$native_config/autoload" != "$autoload" ]; then
-    native_user_loader="$native_config/autoload/nu-scripts.nu"
+if [ "${DOTFILES_PLATFORM:-}" = macos ]; then
+    native_user_dir="$HOME/Library/Application Support/nushell/autoload"
+    native_vendor_default="$HOME/Library/Application Support/nushell/vendor/autoload"
+    native_data=$(env -u XDG_DATA_HOME "$DOTFILES_COMMON_BIN/nu" -c 'print $nu.data-dir' 2>/dev/null) || native_data=
+    native_config=$(env -u XDG_CONFIG_HOME "$DOTFILES_COMMON_BIN/nu" -c 'print $nu.default-config-dir' 2>/dev/null) || native_config=
+    if [ -n "$native_config" ]; then
+        native_user_dir="$native_config/autoload"
+    fi
+    if [ -n "$native_data" ]; then
+        native_vendor_default="$native_data/vendor/autoload"
+    fi
+    if [ "$native_user_dir" != "$autoload" ]; then
+        native_user_loader="$native_user_dir/nu-scripts.nu"
+    fi
+    if [ "$native_vendor_default" != "$autoload" ]; then
+        native_vendor_dir="$native_vendor_default"
+    fi
 fi
 stage=$(mktemp -d "$autoload/.prepare.XXXXXX")
 trap 'rm -rf "$stage"' EXIT HUP INT TERM

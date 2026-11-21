@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -567,9 +568,9 @@ class ShellPreparationPublicationTests(unittest.TestCase):
     The command runs in a disposable home with the real Nu and Python. Every
     other managed command is a stub that emits a parseable Nu resource, so the
     check observes the publication the command performs and not the tools it
-    calls. The fixture keeps its XDG data root away from the directory Nu
-    resolves without an XDG override, so the native vendor and user autoload
-    directories are distinct on every host, as they are on macOS.
+    calls. The fixture models a macOS home: the canonical XDG roots and the
+    native autoload directories the macOS catalog names, so the native copies
+    are distinct on every host.
     """
 
     def setUp(self):
@@ -581,10 +582,17 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         self.bin.mkdir(parents=True)
         self.config = self.home / ".config/dotfiles"
         self.config.mkdir(parents=True)
-        self.data = self.home / "xdg/data"
+        self.data = self.home / ".local/share"
         self.autoload = self.data / "nushell/vendor/autoload"
         self.loader = self.autoload / "nu-scripts.nu"
         self.generations = self.data / "nushell/completions/nu-scripts"
+        # The macOS catalog names the native autoload directories, so the
+        # fixture uses them on every host. The vendor directory is not the
+        # deployment's own; the user autoload directory is the canonical
+        # native copy.
+        self.native = self.home / "Library/Application Support/nushell"
+        self.native_autoload = self.native / "vendor/autoload"
+        self.native_user_autoload = self.native / "autoload"
         self.revision = "b" * 40
         self.modules = [{"command": "git", "path": "custom-completions/git/git-completions.nu"}]
         self.archive = self.root / "upstream.tgz"
@@ -596,19 +604,9 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         }
         self.install_tools()
         self.install_configuration()
-        # The fixture keeps its XDG data root away from the directory a launch
-        # without an XDG override resolves, so the native vendor directory is
-        # distinct on every host, as it is on macOS.
-        native_data = self.native_directory("nu.data-dir", "XDG_DATA_HOME")
-        native_config = self.native_directory("nu.default-config-dir", "XDG_CONFIG_HOME")
-        self.assertIsNotNone(native_data, "the fixture needs a resolvable Nu data directory")
-        self.assertIsNotNone(native_config, "the fixture needs a resolvable Nu config directory")
         # A native vendor directory exists, so a launch without an XDG
         # override reads it. It is not the deployment's own directory.
-        self.native_autoload = native_data / "vendor/autoload"
         self.native_autoload.mkdir(parents=True, exist_ok=True)
-        # The user autoload directory is the canonical native copy.
-        self.native_user_autoload = native_config / "autoload"
         self.native_user_autoload.mkdir(parents=True, exist_ok=True)
         self.write_archive()
         self.write_desired(("git",), ())
@@ -626,7 +624,7 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         return path
 
     def install_tools(self):
-        self.link("nu", NU)
+        self.write_nu()
         self.link("python", sys.executable)
         self.stub("starship", "let starship_stub = 1")
         self.stub("pixi", "let pixi_stub = 1")
@@ -649,14 +647,45 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         nushell.mkdir(parents=True)
         (nushell / "config.nu").write_text("# managed configuration\n")
         (nushell / "env.nu").write_text("# managed environment\n")
+        # The macOS catalog names the canonical sources it copies into the
+        # native discovery directories.
+        for name in ("proxy.nu", "zoxide.nu", "micromamba.nu", "direnv.nu"):
+            (nushell / name).write_text(f"# managed {name}\n")
+        pip = self.home / ".config/pip"
+        pip.mkdir(parents=True)
+        (pip / "pip.conf").write_text("# managed pip configuration\n")
         (self.home / ".env_core").write_text(
             'export XDG_CONFIG_HOME="$HOME/.config"\n'
-            'export XDG_DATA_HOME="$HOME/xdg/data"\n'
+            'export XDG_DATA_HOME="$HOME/.local/share"\n'
             'export XDG_CACHE_HOME="$HOME/.cache"\n'
             'export XDG_STATE_HOME="$HOME/.local/state"\n'
             'export PIXI_HOME="$HOME/.pixi"\n'
             'export DOTFILES_COMMON_BIN="$PIXI_HOME/bin"\n'
             'export DOTFILES_PLATFORM=macos\n')
+
+    def write_nu(self, *, discovery=True):
+        """The Nu the preparation calls.
+
+        The real Nu parses and runs every command. The discovery commands
+        answer with the macOS native directory, so the fixture models a
+        macOS home on every host; a Nu that cannot answer them models a
+        discovery failure.
+        """
+        real = self.bin / "nu.real"
+        if not real.exists():
+            real.symlink_to(NU)
+        answer = ("printf '%s\\n' " + shlex.quote(str(self.native)) + "; exit 0") if discovery else "exit 1"
+        wrapper = self.bin / "nu"
+        wrapper.write_text(
+            "#!/bin/sh\n"
+            'for argument in "$@"; do\n'
+            '  case "$argument" in\n'
+            "    *'print $nu.data-dir'*) " + answer + " ;;\n"
+            "    *'print $nu.default-config-dir'*) " + answer + " ;;\n"
+            "  esac\n"
+            "done\n"
+            'exec "' + str(real) + '" "$@"\n')
+        wrapper.chmod(0o755)
 
     def write_archive(self):
         with tarfile.open(self.archive, "w:gz") as handle:
@@ -693,24 +722,25 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return set(json.loads(result.stdout))
 
-    def native_directory(self, variable, override):
-        """The directory a launch without an XDG override resolves."""
-        environment = {key: value for key, value in self.environment.items() if key != override}
-        result = subprocess.run([str(self.bin / "nu"), "-c", "print $" + variable],
-                                env=environment, capture_output=True, text=True, timeout=60)
-        if result.returncode:
-            return None
-        return Path(result.stdout.strip())
-
     def native_loader(self):
-        """The loader in the native vendor directory, when it differs."""
-        loader = self.native_autoload / "nu-scripts.nu"
-        return None if loader == self.loader else loader
+        """The loader in the native vendor directory."""
+        return self.native_autoload / "nu-scripts.nu"
 
     def native_user_loader(self):
-        """The loader a launch without a config override reads, when it differs."""
-        loader = self.native_user_autoload / "nu-scripts.nu"
-        return None if loader == self.loader else loader
+        """The loader a launch without a config override reads."""
+        return self.native_user_autoload / "nu-scripts.nu"
+
+    def run_discovery(self):
+        """Run the deployment's macOS discovery adapter."""
+        script = ('DEPLOY_HOME="$HOME"\n'
+                  'DEPLOY_SOURCE=' + shlex.quote(str(SOURCE)) + '\n'
+                  'DEPLOY_PLATFORM=macos\n'
+                  'fail() { printf "fail: %s\\n" "$*" >&2; exit 1; }\n'
+                  '. "$DEPLOY_SOURCE/deployment/payload.sh"\n'
+                  '. "$DEPLOY_SOURCE/deployment/macos.sh"\n'
+                  'deploy_macos_config\n')
+        return subprocess.run(["/bin/bash", "-c", script], env=self.environment,
+                              capture_output=True, text=True, timeout=60)
 
     def published_generations(self):
         return sorted(entry.name for entry in self.generations.iterdir())
@@ -721,21 +751,16 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         self.assertTrue(self.loader.is_file())
         self.assertEqual(self.loader_commands(self.loader), {"git"})
         native_user = self.native_user_loader()
-        if native_user is not None:
-            self.assertTrue(native_user.is_file(), str(native_user))
-            self.assertEqual(native_user.read_bytes(), self.loader.read_bytes())
-            self.assertEqual(self.loader_commands(native_user), {"git"})
+        self.assertTrue(native_user.is_file(), str(native_user))
+        self.assertEqual(native_user.read_bytes(), self.loader.read_bytes())
+        self.assertEqual(self.loader_commands(native_user), {"git"})
         # The native vendor directory is not the deployment's own directory,
         # so an existing one is no reason to create a loader in it.
-        native_vendor = self.native_loader()
-        if native_vendor is not None:
-            self.assertFalse(native_vendor.exists(), str(native_vendor))
+        self.assertFalse(self.native_loader().exists())
 
     def test_the_preparation_preserves_a_device_loader_of_the_same_name(self):
         """A device loader in the native vendor directory is never taken over."""
         legacy = self.native_loader()
-        if legacy is None:
-            self.skipTest("this host resolves no native vendor directory")
         legacy.write_text("# device completions\n")
         result = self.prepare()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -746,8 +771,6 @@ class ShellPreparationPublicationTests(unittest.TestCase):
     def test_the_preparation_takes_over_a_previously_managed_native_loader(self):
         """A loader an earlier publication wrote follows the live generation."""
         legacy = self.native_loader()
-        if legacy is None:
-            self.skipTest("this host resolves no native vendor directory")
         first = self.prepare()
         self.assertEqual(first.returncode, 0, first.stderr)
         shutil.copy2(self.loader, legacy)
@@ -780,6 +803,47 @@ class ShellPreparationPublicationTests(unittest.TestCase):
         self.assertEqual(self.loader_commands(self.loader), {"git", "just"})
         self.assertEqual(len(self.published_generations()), 1)
         self.assertNotEqual(self.loader.read_bytes(), before)
+
+    def test_the_discovery_adapter_does_not_overwrite_the_published_loader(self):
+        """The deployment's macOS discovery step is not a second publisher.
+
+        The deployment copies prepared startup resources into the native
+        autoload directory after the publication. The pinned loader belongs
+        to the completion module, so that copy must never replace the loader
+        the module published.
+        """
+        first = self.prepare()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        native = self.native_user_loader()
+        published = native.read_bytes()
+        # A loader the publication could not switch keeps the generation it
+        # imports, so a later copy would publish a stale generation.
+        self.loader.write_text("# stale managed imports\n")
+        discovery = self.run_discovery()
+        self.assertEqual(discovery.returncode, 0, discovery.stderr)
+        self.assertEqual(native.read_bytes(), published)
+        self.assertEqual(self.loader_commands(native), {"git"})
+
+    def test_a_discovery_failure_keeps_the_canonical_native_loader(self):
+        """A Nu that cannot answer the discovery command keeps the native copy.
+
+        The canonical native loader is the path the macOS catalog names. A
+        discovery failure must not omit that path: the loader stays
+        published, and a later publication keeps the generation it imports.
+        """
+        self.write_nu(discovery=False)
+        first = self.prepare()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        native = self.native_user_loader()
+        self.assertTrue(native.is_file(), str(native))
+        self.assertEqual(self.loader_commands(native), {"git"})
+        # A changed selection publishes a second generation. The canonical
+        # loader must keep importing a complete one.
+        self.write_desired(("git",), ("just",))
+        second = self.prepare()
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(self.loader_commands(native), {"git", "just"})
+        self.assertEqual(len(self.published_generations()), 1)
 
 
 if __name__ == "__main__":
