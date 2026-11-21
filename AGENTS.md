@@ -163,9 +163,11 @@ explains every changed pair.
   the deployment with nothing to do. Every codex install or reinstall is
   followed by `dotfiles-codex-herdr install`, so the managed resume hook stays
   last. That registration reconciles the owned command at command granularity:
-  the owned command is the exact invocation of the managed hook script, so a
-  device command that only mentions the script, or that runs a file beside it,
-  is a device command; a device command beside the owned one in a mixed
+  the owned command is the exact invocation of the managed hook script of this
+  home — the script alone, or the script under `bash` or `sh`, with no extra
+  argument and no operator — so a device command that names another home's
+  copy, that only mentions the script, or that runs a file beside it, is a
+  device command; a device command beside the owned one in a mixed
   SessionStart group keeps its own commands and its own metadata, Herdr's
   entries are never written, and `dotfiles-codex-herdr remove` takes the owned
   command out again. A Herdr restore reaches the thread through

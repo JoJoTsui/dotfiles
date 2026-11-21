@@ -4,13 +4,15 @@
 #
 # The hook script is managed by the dotfiles source, but ~/.codex/hooks.json is
 # device-owned. The reconciliation works at command granularity: the managed
-# command is the one that runs the managed hook script, and only that command
-# is removed or replaced. A command that only mentions the script, or that
-# runs a file beside it, is a device command and stays. A group that carries
-# a device command beside the managed one keeps its own commands, its own
-# metadata, and its place in the list; only a group that held nothing but the
-# managed command disappears. Herdr owns its own entries, and the managed
-# entry is placed last so its resume argv wins.
+# command is the one that runs the managed hook script of this home in one
+# complete invocation, and only that command is removed or replaced. A command
+# that names another home's copy, that only mentions the script, that runs a
+# file beside it, or that passes the script an extra argument, is a device
+# command and stays. A group that carries a device command beside the managed
+# one keeps its own commands, its own metadata, and its place in the list;
+# only a group that held nothing but the managed command disappears. Herdr
+# owns its own entries, and the managed entry is placed last so its resume
+# argv wins.
 set -uo pipefail
 
 hooks=${DOTFILES_CODEX_HOOKS:-$HOME/.codex/hooks.json}
@@ -50,19 +52,23 @@ import time
 action = sys.argv[1]
 path = sys.argv[2]
 
-# The managed command is the one that runs the managed hook script. It is the
-# only command this command owns: every other command in the file belongs to
-# the device or to Herdr.
+# The managed command is the one that runs the managed hook script of this
+# home. It is the only command this command owns: every other command in the
+# file belongs to the device or to Herdr.
 #
-# The stored form of the path varies: the deployment writes
+# The location is the deployed script of this home, and the stored form of
+# that location varies: the deployment writes
 # bash "$HOME/.codex/herdr-codex-resume.sh", and a device may store the same
 # script as ~/.codex/herdr-codex-resume.sh or as the expanded path of its own
-# home. The directory and the file name decide what a command runs, so a
-# command that only mentions the name, or that runs a file beside the script
-# (herdr-codex-resume.sh.backup), is a device command and stays.
+# home. A path that names another home, a command that only mentions the
+# name, a command that runs a file beside the script
+# (herdr-codex-resume.sh.backup), and a command that passes the script an
+# extra argument are device commands, and they stay.
 SCRIPT_DIRECTORY = ".codex"
 SCRIPT_NAME = "herdr-codex-resume.sh"
+SCRIPT_RELATIVE = SCRIPT_DIRECTORY + "/" + SCRIPT_NAME
 SHELLS = ("bash", "sh")
+HOME = os.path.expanduser("~")
 MANAGED = {
     "hooks": [
         {
@@ -102,15 +108,34 @@ def session_groups(data):
     return session
 
 
+def managed_paths():
+    """The stored forms of the deployed script location of this home.
+
+    The literal "$HOME" form is the one the deployment writes. A device may
+    store the same location as a tilde or as the expanded path of its own
+    home; those three forms are the managed location, and no other path is.
+    """
+    forms = ["$HOME/" + SCRIPT_RELATIVE, "~/" + SCRIPT_RELATIVE]
+    if os.path.isabs(HOME):
+        forms.append(os.path.join(HOME, SCRIPT_DIRECTORY, SCRIPT_NAME))
+    return {os.path.normpath(form) for form in forms}
+
+
+MANAGED_PATHS = managed_paths()
+
+
 def is_managed_script(candidate):
-    """Whether a path is the managed hook script of a Codex home."""
-    parts = [part for part in candidate.split("/") if part]
-    return (len(parts) >= 2 and parts[-1] == SCRIPT_NAME
-            and parts[-2] == SCRIPT_DIRECTORY)
+    """Whether a path is the deployed hook script of this home."""
+    return os.path.normpath(candidate) in MANAGED_PATHS
 
 
 def runs_managed_script(command):
-    """Whether a stored command runs the managed hook script."""
+    """Whether a stored command runs the deployed hook script of this home.
+
+    The invocation has to be complete and simple: the script alone, or the
+    script under bash or sh. An extra argument, an operator, or a path that
+    names another home is a device command.
+    """
     try:
         words = shlex.split(command)
     except ValueError:
@@ -118,9 +143,9 @@ def runs_managed_script(command):
     if not words:
         return False
     if os.path.basename(words[0]) in SHELLS:
-        return len(words) > 1 and is_managed_script(words[1])
+        return len(words) == 2 and is_managed_script(words[1])
     # The script is executable, so it may also be the command itself.
-    return is_managed_script(words[0])
+    return len(words) == 1 and is_managed_script(words[0])
 
 
 def owned(hook):

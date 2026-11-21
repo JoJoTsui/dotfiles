@@ -183,13 +183,17 @@ metadata, and its place in the list, and only a group that held nothing but
 the managed command disappears. Herdr's own entry and every other hook event
 are untouched. The managed entry is placed last so its resume argv wins, and
 a registration that finds it there already writes nothing. The managed
-command is the exact invocation of the managed script: the directory and the
-file name decide what a stored command runs, so a command that only mentions
-the script, or that runs a file beside it
-(`herdr-codex-resume.sh.backup`), is a device command and stays. A device may
-store the same script with the path spelled another way — `$HOME/.codex/…`,
-`~/.codex/…`, or the expanded path of its own home — and that is the managed
-command too. For reference, the entry is:
+command is the exact invocation of the managed script of this home: the
+location decides what a stored command runs, so a command that names another
+home's copy, that only mentions the script, or that runs a file beside it
+(`herdr-codex-resume.sh.backup`), is a device command and stays. The
+invocation has to be complete and simple — the script alone, or the script
+under `bash` or `sh`, with no extra argument and no operator — so
+`bash "$HOME/.codex/herdr-codex-resume.sh" --resume-all` is a device command
+too. A device may store the location of that same script with the path
+spelled another way — `$HOME/.codex/…`, `~/.codex/…`, or the expanded path
+of its own home — and those are the managed command. For reference, the entry
+is:
 
 ```json
 {"hooks":[{"type":"command","command":"bash \"$HOME/.codex/herdr-codex-resume.sh\"","timeout":5}]}

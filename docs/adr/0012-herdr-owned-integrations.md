@@ -41,11 +41,15 @@ managed command disappears. Herdr's own entries and the other hook events are
 never written by the deployment. The managed entry stays last, because its
 resume argv has to win.
 
-The managed command is the exact invocation of the managed script, not a
-command that mentions it. The directory and the file name decide what a stored
-command runs, so a device command that only names the script, or that runs a
-file beside it, keeps its place in the group. A device may store the same
-script with the path spelled another way, and that is the managed command.
+The managed command is the exact invocation of the managed script of this
+home, not a command that mentions it. The location decides what a stored
+command runs, so a device command that names another home's copy, that only
+names the script, or that runs a file beside it, keeps its place in the
+group. The invocation has to be complete and simple — the script alone, or
+the script under `bash` or `sh`, with no extra argument and no operator — so
+a command that passes the managed script an argument keeps its place too. A
+device may store the location of that same script with the path spelled
+another way, and those forms are the managed command.
 
 MiniMax Code has no Herdr kind and stays a pane command. `dotfiles-agents
 status` reports each selected agent's Herdr state
