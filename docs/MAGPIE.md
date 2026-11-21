@@ -333,7 +333,9 @@ Before its first write, apply refuses an existing unrecorded profile/catalog
 or a symlink target. A successful apply records ownership; subsequent applies
 validate the live provider, model, catalog reference, gateway URL, JSON
 readability, and private profile mode rather than trusting recorded intent.
-Excluding Codex leaves its files and gateway lists alone.
+Excluding Codex leaves its files and gateway lists alone and retains its
+last recorded ownership, so selecting it on a later apply does not make the
+generated profile look like an unrecorded device file.
 
 The preflight refuses a Codex home that is a symlink or not a directory, a
 profile or catalog path that is a symlink or not a regular file, and a
@@ -367,9 +369,13 @@ ordinary configuration itself.
 
 An interrupted write leaves `codex-profile.pending` under the Magpie state
 root. Its fingerprints permit retry only while the generated files match
-exactly. A later edit or deletion is preserved and blocks automatic retry;
-inspect the files and protected backup rather than clearing the record to
-force adoption.
+exactly and both targets still pass the ownership checks. Status shows
+`wiring|codex|recoverable` with an instruction to rerun apply, even when
+the interrupted run left a valid profile on disk. An unexplained edit or
+deletion, an unrecorded collision, or an aliased target is reported as
+`wiring|codex|blocked`. Inspect the protected backup and the reported
+paths before resolving a block. Both states make status nonzero because
+the apply has not established current ownership and wiring.
 
 ### Resume without switching a thread's provider
 
