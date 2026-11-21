@@ -71,6 +71,18 @@ function Assert-InstallerDirectory([string]$Path) {
 }
 # The launchers a usable PortableGit runtime exposes.
 function Get-PortableGitLaunchers { return @('bin/git.exe', 'bin/bash.exe', 'git-bash.exe') }
+# Whether every launcher is a regular file. A runtime is usable only when
+# all of them are there: the staged tree and the installed runtime are both
+# checked, so an incomplete runtime is never reported as verified. A launcher
+# that is a link is not a regular file either.
+function Test-PortableGitLaunchers([string]$Path) {
+    foreach ($entry in (Get-PortableGitLaunchers)) {
+        $launcher = Join-Path $Path $entry
+        if (Test-ReparsePath $launcher) { return $false }
+        if (-not [IO.File]::Exists($launcher)) { return $false }
+    }
+    return $true
+}
 # The installation destination and its launcher paths must not be links: a
 # substituted destination or parent is refused before anything is written.
 # The launcher files themselves are absent before the first install, so only
@@ -1038,25 +1050,41 @@ function Test-AssetVersion($Asset, [string]$Diagnostic) {
 # deleted and never restored as a runtime.
 $script:PortableGitRecoveryMarker = '.dotfiles-portablegit-recovery'
 $script:PortableGitRecoveryToken = 'dotfiles portablegit recovery v1'
-function Test-PortableGitRecovery([string]$Path) {
-    if (-not [IO.Directory]::Exists($Path)) { return $false }
-    if (Test-ReparsePath $Path) { return $false }
+# Whether the marker inside the directory is the deployment's own. A link is
+# never followed: reading through it would read a device file and claim a
+# recovery tree the deployment does not own.
+function Test-PortableGitRecoveryMarker([string]$Path) {
     $marker = Join-Path $Path $script:PortableGitRecoveryMarker
+    if (Test-ReparsePath $marker) { return $false }
     if (-not [IO.File]::Exists($marker)) { return $false }
     try { return ([IO.File]::ReadAllText($marker).Trim() -eq $script:PortableGitRecoveryToken) }
     catch { return $false }
+}
+function Test-PortableGitRecovery([string]$Path) {
+    if (-not [IO.Directory]::Exists($Path)) { return $false }
+    if (Test-ReparsePath $Path) { return $false }
+    return (Test-PortableGitRecoveryMarker $Path)
 }
 # Mark the runtime that is about to move aside, so an interrupted
 # publication leaves a recovery directory the deployment owns.
 function Set-PortableGitRecovery([string]$Path) {
     $marker = Join-Path $Path $script:PortableGitRecoveryMarker
     if (Test-ReparsePath $marker) { Stop-Deployment "the PortableGit recovery marker is a symlink or reparse point: $marker" }
+    # A device entry that carries the marker's name is never overwritten:
+    # the deployment could no longer prove it owns the recovery tree, so it
+    # stops and leaves the entry alone.
+    if ((Test-Path -LiteralPath $marker) -and -not (Test-PortableGitRecoveryMarker $Path)) {
+        Stop-Deployment "the PortableGit recovery marker is occupied by an entry the deployment does not own: $marker"
+    }
     [IO.File]::WriteAllText($marker, $script:PortableGitRecoveryToken)
 }
-# The marker belongs to the recovery directory, not to an active runtime.
+# The marker belongs to the recovery directory, not to an active runtime. Only
+# an owned marker is removed: a device file that carries the marker's name
+# is left alone.
 function Clear-PortableGitRecovery([string]$Path) {
-    $marker = Join-Path $Path $script:PortableGitRecoveryMarker
-    if ([IO.File]::Exists($marker)) { Remove-Item -LiteralPath $marker -Force }
+    if (-not (Test-PortableGitRecoveryMarker $Path)) { return $false }
+    Remove-Item -LiteralPath (Join-Path $Path $script:PortableGitRecoveryMarker) -Force
+    return $true
 }
 # Remove a recovery directory the deployment owns. An entry it cannot prove
 # it owns is preserved and reported by the caller.
@@ -1071,7 +1099,18 @@ function Remove-OwnedPortableGitRecovery([string]$Path) {
 function Restore-PortableGitRecovery([string]$Previous, [string]$Target) {
     if (-not (Test-PortableGitRecovery $Previous)) { return $false }
     Move-Item -LiteralPath $Previous -Destination $Target
-    Clear-PortableGitRecovery $Target
+    Clear-PortableGitRecovery $Target | Out-Null
+    return $true
+}
+# Recover the last runtime the deployment verified. The marked recovery
+# directory becomes the active runtime again, and an unverified candidate at
+# the installation path is discarded, so the device keeps a usable Git Bash
+# while the new runtime is staged. An entry the deployment does not own is
+# left alone.
+function Recover-PortableGitRecovery([string]$Previous, [string]$Target) {
+    if (-not (Test-PortableGitRecovery $Previous)) { return $false }
+    if ([IO.Directory]::Exists($Target)) { Remove-ReplacedTree $Target }
+    Restore-PortableGitRecovery $Previous $Target | Out-Null
     return $true
 }
 # PortableGit is a 7-Zip SFX archive. It extracts into a clean directory, so
@@ -1084,10 +1123,13 @@ function Expand-PortableGitArchive([string]$Archive, [string]$Destination) {
     if ($process.ExitCode) { $script:FailureCode = $process.ExitCode; Stop-Deployment 'required command failed' }
 }
 # Whether the installation at the path is the verified runtime of this pin.
-# A probe that cannot run is not a reuse: the staged install replaces it.
+# Every launcher must be a regular file and git must report the pinned
+# version: an incomplete runtime is not a reuse, so it is replaced and the
+# recovery backup it holds is not discarded. A probe that cannot run is not
+# a reuse either: the staged install replaces it.
 function Test-PortableGitRuntime($Asset, [string]$Target) {
+    if (-not (Test-PortableGitLaunchers $Target)) { return $false }
     $diagnostic = Join-Path $Target 'bin/git.exe'
-    if (-not [IO.File]::Exists($diagnostic)) { return $false }
     $savedFailureCode = $script:FailureCode
     try { $version = Invoke-Tool $diagnostic @('--version') -Quiet }
     catch { $version = '' }
@@ -1098,20 +1140,32 @@ function Test-PortableGitRuntime($Asset, [string]$Target) {
 # runtime moves aside first, so a failed publication restores it instead of
 # leaving the device without a usable Git Bash.
 function Publish-PortableGit($Asset, [string]$Staging, [string]$Target, [string]$Previous) {
-    $retained = [IO.Directory]::Exists($Target)
-    if ($retained) {
+    # The recovery path holds a runtime the deployment moved aside, or
+    # nothing. A device entry there is never deleted and never restored.
+    $owned = Test-PortableGitRecovery $Previous
+    if ([IO.Directory]::Exists($Target)) {
         # The recovery path must be free or owned. An unknown sibling entry
         # belongs to the device, so it is preserved and the publication
         # stops instead of deleting it.
-        if ((Test-Path -LiteralPath $Previous) -and -not (Test-PortableGitRecovery $Previous)) {
+        if ((Test-Path -LiteralPath $Previous) -and -not $owned) {
             Stop-Deployment "the PortableGit recovery path is occupied by an entry the deployment does not own: $Previous; move it aside to upgrade"
         }
-        Remove-OwnedPortableGitRecovery $Previous | Out-Null
-        # The runtime is marked before it moves aside, so an interrupted
-        # publication leaves a recovery directory the deployment owns.
-        Set-PortableGitRecovery $Target
-        Move-Item -LiteralPath $Target -Destination $Previous
+        if ($owned) {
+            # The marked recovery is the last runtime the deployment
+            # verified. It stays the rollback source until the new runtime
+            # is verified, so the known-good tree is never deleted before
+            # its replacement is proven, and the unverified candidate at
+            # the installation path is the one that is replaced.
+            Remove-ReplacedTree $Target
+        } else {
+            # The runtime is marked before it moves aside, so an interrupted
+            # publication leaves a recovery directory the deployment owns.
+            Set-PortableGitRecovery $Target
+            Move-Item -LiteralPath $Target -Destination $Previous
+        }
     }
+    # The rollback source is the marked recovery directory, if there is one.
+    $rollback = Test-PortableGitRecovery $Previous
     try {
         Move-Item -LiteralPath $Staging -Destination $Target
         Assert-PortableGitLaunchers $Target
@@ -1121,10 +1175,10 @@ function Publish-PortableGit($Asset, [string]$Staging, [string]$Target, [string]
         # The previous runtime is restored, so the device keeps a usable Git
         # Bash and a retry starts from a known state.
         if (Test-Path -LiteralPath $Target) { Remove-ReplacedTree $Target }
-        if ($retained) { Restore-PortableGitRecovery $Previous $Target | Out-Null }
+        if ($rollback) { Restore-PortableGitRecovery $Previous $Target | Out-Null }
         throw
     }
-    if ($retained) { Remove-ReplacedTree $Previous }
+    if ($rollback) { Remove-ReplacedTree $Previous }
 }
 # The PortableGit lifecycle. The same pin reuses the verified installation.
 # Another pin is staged, verified, and published with a recovery to the
@@ -1136,8 +1190,9 @@ function Install-PortableGit($Asset, [string]$Target) {
     Assert-PortableGitLauncherPaths $Target
     if ([IO.File]::Exists($Target)) { Stop-Deployment 'a file occupies the PortableGit installation path' }
     # The marker belongs to a recovery directory. An active runtime that
-    # still carries one was interrupted before it moved aside.
-    if ([IO.Directory]::Exists($Target)) { Clear-PortableGitRecovery $Target }
+    # still carries an owned one was interrupted before it moved aside; a
+    # device file that carries the marker's name is left alone.
+    if ([IO.Directory]::Exists($Target)) { Clear-PortableGitRecovery $Target | Out-Null }
     $previous = Join-Path ([IO.Path]::GetDirectoryName($Target)) '.git-bash.previous'
     if (Test-PortableGitRuntime $Asset $Target) {
         # The same pin reuses its verified installation. A retained recovery
@@ -1147,11 +1202,14 @@ function Install-PortableGit($Asset, [string]$Target) {
         return
     }
     # An interrupted publication left the recovery directory beside the
-    # installation path. It is restored first, so the device keeps a usable
-    # Git Bash while the new runtime is staged. Only an owned recovery
-    # directory is restored; an unknown sibling entry is preserved.
-    if (-not [IO.Directory]::Exists($Target)) {
-        Restore-PortableGitRecovery $previous $Target | Out-Null
+    # installation path. It is recovered first, so the device keeps a usable
+    # Git Bash while the new runtime is staged and a failed publication
+    # restores it again. Only an owned recovery directory is recovered; an
+    # unknown sibling entry is preserved.
+    Recover-PortableGitRecovery $previous $Target | Out-Null
+    if (Test-PortableGitRuntime $Asset $Target) {
+        # The recovered runtime is the pinned one: it is reused as it is.
+        return
     }
     $scratch = Get-Scratch 'git-bash'
     try {
