@@ -43,6 +43,11 @@ download is SHA-256 verified before extraction or execution. Rustup installs its
 manager with no default compiler toolchain. Windows build SDKs and graphical
 session prerequisites remain explicit, on-use dependencies.
 
+PortableGit ships internal filesystem links. A repeat apply preserves those
+vendor files and checks the installation root and launchers for reparse points.
+Before extracting the pinned installer over an existing tree, the adapter
+checks the entire destination tree and refuses links there.
+
 The eight Bun-managed agents and CodeGraph use the same manifests and frozen Bun
 locks as Unix. Qoder uses its pinned native Windows release manifest with the
 same SHA-256 verification. The verified executable is copied directly to

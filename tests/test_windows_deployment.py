@@ -286,11 +286,20 @@ $checks | ConvertTo-Json -Compress
         self.assertIn('live: installed | provider: bun | version: 8.8.8', result.stdout)
         self.assertIn(f'path: {managed}', result.stdout)
 
-    def asset_version_fixture(self, name, *, cached=None, downloaded=None):
+    def asset_version_fixture(self, name, *, cached=None, downloaded=None, vendor_link=False):
         asset = windows_assets()[name]
         target = self.home / asset['target']
         diagnostic = target / 'bin/git.exe' if name == 'git-bash' else target / 'hx.exe' if name == 'helix' else target
         diagnostic.parent.mkdir(parents=True, exist_ok=True)
+        if vendor_link:
+            files = target / 'ucrt64/bin'
+            files.mkdir(parents=True)
+            payload = files / 'Bitbucket.dll'
+            payload.write_bytes(b'fixture DLL')
+            try:
+                (files / 'Atlassian.Bitbucket.dll').symlink_to(payload.name)
+            except OSError:
+                self.skipTest('OS policy prohibits creating the test symlink')
 
         def payload(output):
             return (f'import sys\nassert sys.argv[1:] == ["--version"]\nprint({output!r})\n').encode()
@@ -363,6 +372,21 @@ Install-Asset $env:DOTFILES_TEST_ASSET
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(json.loads(result.stdout)['downloads'], 1)
                 self.assertEqual(target.read_bytes(), replacement)
+
+    def test_portablegit_reuses_vendor_links_but_will_not_extract_over_them(self):
+        pin = windows_assets()['git-bash']['version']
+        result, git, _ = self.asset_version_fixture('git-bash', cached=f'git version {pin}', vendor_link=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['downloads'], 0)
+        link = git.parents[1] / 'ucrt64/bin/Atlassian.Bitbucket.dll'
+        self.assertTrue(link.is_symlink())
+        previous = git.parents[1] / 'ucrt64/bin/Bitbucket.dll'
+        result, _, _ = self.asset_version_fixture('git-bash', cached='git version 0.0.0',
+                                                   downloaded=f'git version {pin}')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('symlink or reparse point', result.stderr)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(previous.read_bytes(), b'fixture DLL')
 
     def test_asset_rejects_downloaded_version_prefix_and_tool_name_collisions(self):
         pin = windows_assets()['jq']['version']
@@ -2136,6 +2160,24 @@ else { Assert-OwnedState }
         self.assertIn('symlink or reparse', result.stderr)
         self.assert_original_profile_unchanged()
         self.assertFalse((self.home / '.config').exists())
+
+    def test_apply_only_preserves_portablegit_vendor_link_outside_launcher_paths(self):
+        chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
+        if not chezmoi:
+            self.skipTest('actual source preservation requires Chezmoi')
+        directory = self.home / '.local/share/dotfiles/git-bash/ucrt64/bin'
+        directory.mkdir(parents=True)
+        dll = directory / 'Bitbucket.dll'
+        dll.write_bytes(b'fixture DLL')
+        link = directory / 'Atlassian.Bitbucket.dll'
+        try:
+            link.symlink_to(dll.name)
+        except OSError:
+            self.skipTest('OS policy prohibits creating the test symlink')
+        result = self.deploy('-ApplyOnly', env=dict(self.env, DOTFILES_CHEZMOI_BIN=chezmoi))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(link.is_symlink())
+        self.assertEqual(dll.read_bytes(), b'fixture DLL')
 
     def test_unchanged_codex_hooks_keep_exact_bytes_and_modification_time(self):
         chezmoi = os.environ.get('DOTFILES_TEST_CHEZMOI') or shutil.which('chezmoi')
