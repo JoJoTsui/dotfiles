@@ -125,6 +125,11 @@ seam.
 The architecture decisions and review evidence are in the
 [deployment architecture plan](../../docs/DEPLOYMENT_ARCHITECTURE_PLAN.md).
 The reviewed baseline was `c06dc29`. Recheck findings against the
-implementation base. Work the ticket frontier. Preserve prior review
-evidence, distinguish open and unrun checks, and keep changes scoped to
-their tickets. Planning approval does not authorize implementation.
+implementation base. The integration branch implements all nine tickets
+and records their results in the local tracker. The native Windows parity
+criterion remains open until the existing workflow runs on the published
+integration revision. Portable PowerShell results do not establish native
+parity. The measured scope and the post-review comparisons are in the
+[deployment timing report](../../docs/verification/deployment-timing.md).
+Real account-home verification still requires separate authorization and the
+applicable native and rehearsal gates.
