@@ -101,6 +101,13 @@ update_agents() {
     proposal_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-agents.XXXXXX")
     proposal="$proposal_dir/proposal.json"
     trap 'rm -rf "$proposal_dir"' EXIT
+    # Homebrew owns the installed formulas and casks: the deployment only
+    # adopts what is installed, so the update brings the device's own
+    # installation up to date before the deployment adopts it again. A client
+    # the operator upgraded by hand and a client this upgrade upgraded end in
+    # the same place, and the deployment's launcher follows the new version.
+    "$PYTHON" "$SOURCE/deployment/update_versions.py" upgrade-homebrew \
+        --root "$SOURCE" --selection "$selection"
     "$PYTHON" "$SOURCE/deployment/update_versions.py" propose-agents \
         --root "$SOURCE" --selection "$selection" --output "$proposal"
     if "$PYTHON" -c 'import json, sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["agents"] else 1)' "$proposal"; then

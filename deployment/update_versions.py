@@ -1025,14 +1025,51 @@ def run_schema_tests(root: Path) -> None:
                 raise VersionError(f"version-dependent integration checks failed for {pattern}")
 
 
+def brew_installed(brew: str, package: str) -> bool:
+    """Whether Homebrew has the formula or cask installed."""
+    result = subprocess.run([brew, "list", "--versions", package],
+                            capture_output=True, text=True, timeout=180)
+    return result.returncode == 0 and bool(result.stdout.strip())
+
+
+def homebrew_upgrade(root: Path, selection: str, brew: str) -> list[str]:
+    """Bring the Homebrew-managed clients of the selection up to date.
+
+    Homebrew owns an installed formula or cask: the catalog states a floor
+    and the deployment adopts what is installed without installing it. The
+    update upgrades the device's own installation first, so a client the
+    operator upgraded by hand and a client this upgrade upgraded end in the
+    same place, and the deployment's launcher follows the new version.
+    """
+    catalog = provider_rows(root)
+    names = selected_agents(root, selection)
+    upgraded: list[str] = []
+    for name in names:
+        for row in catalog:
+            if row["agent"] != name or row["provider"] != "homebrew":
+                continue
+            package = row["package"]
+            kind = row["packageKind"]
+            if kind not in ("formula", "cask"):
+                raise VersionError(f"unknown Homebrew package kind for {name}: {kind}")
+            action = "upgrade" if brew_installed(brew, package) else "install"
+            command = [brew, action] + (["--cask"] if kind == "cask" else []) + [package]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=3600)
+            if result.returncode:
+                raise VersionError(f"cannot {action} the Homebrew {kind} {package}: {tool_diagnostic(result)}")
+            upgraded.append(f"{name} ({package})")
+    return upgraded
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("check", "refresh", "verify", "propose-agents"))
+    parser.add_argument("command", choices=("check", "refresh", "verify", "propose-agents", "upgrade-homebrew"))
     parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
     parser.add_argument("--proposal", type=Path, help="reviewed JSON pin proposal (refresh only)")
     parser.add_argument("--selection", default="all", help="agent selection for propose-agents")
     parser.add_argument("--output", type=Path, help="proposal JSON destination (propose-agents only)")
     parser.add_argument("--bun", type=Path, help="absolute path to the currently pinned Bun binary")
+    parser.add_argument("--brew", default="brew", help="the Homebrew executable (upgrade-homebrew only)")
     parser.add_argument("--pixi", type=Path, help="absolute path to the currently pinned Pixi binary")
     parser.add_argument("--resolve", action="store_true", help="also resolve all common and supported bundle targets")
     arguments = parser.parse_args(argv)
@@ -1060,6 +1097,17 @@ def main(argv: list[str] | None = None) -> int:
             for path in changed:
                 print(path.as_posix())
             print("Run deployment/update_versions.py verify before applying this version set.")
+        elif arguments.command == "upgrade-homebrew":
+            if not shutil.which(arguments.brew):
+                print("Homebrew is not available on this host; no Homebrew client was upgraded")
+            else:
+                upgraded = homebrew_upgrade(root, arguments.selection, arguments.brew)
+                if upgraded:
+                    print(f"upgraded {len(upgraded)} Homebrew-managed client(s):")
+                    for entry in upgraded:
+                        print(f"  {entry}")
+                else:
+                    print("the selection has no Homebrew-managed client")
         elif arguments.command == "propose-agents":
             if not arguments.output:
                 raise VersionError("propose-agents requires --output FILE")

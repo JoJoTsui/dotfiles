@@ -55,7 +55,9 @@ class AgentUpdateTests(unittest.TestCase):
             "from deployment.update_versions import agent_rows, common_versions\n"
             "args = sys.argv[1:]\n"
             f"with Path({str(self.actions)!r}).open('a') as log: log.write(json.dumps(args) + '\\n')\n"
-            "if args[0] == 'propose-agents':\n"
+            "if args[0] == 'upgrade-homebrew':\n"
+            "    pass\n"
+            "elif args[0] == 'propose-agents':\n"
             "    import os\n"
             "    name = 'qoder' if os.environ.get('NATIVE_PROPOSAL') else 'pi'\n"
             "    proposal = {'agents': {} if os.environ.get('EMPTY_PROPOSAL') else {name: '99.0.0'}}\n"
@@ -115,7 +117,8 @@ class AgentUpdateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(self.pixi_log.read_text()),
                          ["exec", "--spec", f"bun=={self.pin}", "sh", "-c", "command -v bun"])
-        refresh = self.recorded_actions()[1]
+        self.assertEqual(self.recorded_actions()[0][0], "upgrade-homebrew")
+        refresh = self.recorded_actions()[2]
         self.assertEqual(refresh[refresh.index("--bun") + 1], str(self.cached_bun))
         self.assertEqual(self.pins.read_text(), "refreshed pins\n")
         self.assertEqual(subprocess.check_output([str(self.selected_bun), "--version"], text=True).strip(),
@@ -127,7 +130,7 @@ class AgentUpdateTests(unittest.TestCase):
         self.pixi.unlink()
         result = self.update()
         self.assertEqual(result.returncode, 0, result.stderr)
-        refresh = self.recorded_actions()[1]
+        refresh = self.recorded_actions()[2]
         self.assertEqual(refresh[refresh.index("--bun") + 1], str(self.selected_bun))
         self.assertFalse(self.pixi_log.exists())
         self.assert_reinstalled()
@@ -137,7 +140,7 @@ class AgentUpdateTests(unittest.TestCase):
         self.pixi.unlink()
         result = self.update(EMPTY_PROPOSAL="1")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.recorded_actions()), 1)
+        self.assertEqual(len(self.recorded_actions()), 2)
         self.assertFalse(self.pixi_log.exists())
         self.assertEqual(self.pins.read_text(), self.original_pins)
         self.assert_reinstalled()
@@ -146,8 +149,8 @@ class AgentUpdateTests(unittest.TestCase):
         self.pixi.unlink()
         result = self.update("qoder", NATIVE_PROPOSAL="1")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(len(self.recorded_actions()), 2)
-        refresh = self.recorded_actions()[1]
+        self.assertEqual(len(self.recorded_actions()), 3)
+        refresh = self.recorded_actions()[2]
         self.assertEqual(refresh[refresh.index("--bun") + 1], str(self.selected_bun))
         self.assertFalse(self.pixi_log.exists())
         self.assertEqual(self.pins.read_text(), "refreshed pins\n")
@@ -193,6 +196,55 @@ class AgentUpdateTests(unittest.TestCase):
             updater.refresh(root, proposal, self.selected_bun)
         self.assertIn("dropped the linux amd64-baseline build", str(raised.exception))
 
+    def test_the_homebrew_upgrade_brings_the_selected_clients_up_to_date(self):
+        # Homebrew owns an installed formula or cask. The update upgrades it
+        # before the deployment adopts it, so the launcher follows.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "dotfiles_update_versions", SOURCE / "deployment/update_versions.py")
+        updater = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(updater)
+
+        calls = []
+        original = subprocess.run
+
+        def fake_run(command, **kwargs):
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, stdout="opencode-v2 2.3.2\n", stderr="")
+
+        updater.subprocess.run = fake_run
+        try:
+            upgraded = updater.homebrew_upgrade(SOURCE, "opencode", "brew")
+        finally:
+            updater.subprocess.run = original
+        self.assertEqual(upgraded, ["opencode (opencode-v2)"])
+        self.assertEqual(calls, [["brew", "list", "--versions", "opencode-v2"],
+                                  ["brew", "upgrade", "opencode-v2"]])
+
+    def test_a_failing_homebrew_upgrade_is_reported(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "dotfiles_update_versions", SOURCE / "deployment/update_versions.py")
+        updater = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(updater)
+
+        original = subprocess.run
+
+        def fake_run(command, **kwargs):
+            if command[:3] == ["brew", "list", "--versions"]:
+                return subprocess.CompletedProcess(command, 0, stdout="opencode-v2 2.3.2\n", stderr="")
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="brew refused")
+
+        updater.subprocess.run = fake_run
+        try:
+            with self.assertRaises(Exception) as raised:
+                updater.homebrew_upgrade(SOURCE, "opencode", "brew")
+        finally:
+            updater.subprocess.run = original
+        self.assertIn("cannot upgrade the Homebrew formula opencode-v2", str(raised.exception))
+
     def test_status_reports_a_shadowed_bun_global_copy(self):
         registry = self.home / ".bun/install/global/node_modules/@earendil-works/pi-coding-agent"
         registry.mkdir(parents=True)
@@ -226,7 +278,7 @@ class AgentUpdateTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("managed Pixi", result.stderr)
         self.assertIn(self.pin, result.stderr)
-        self.assertEqual(len(self.recorded_actions()), 1)
+        self.assertEqual(len(self.recorded_actions()), 2)
         self.assertEqual(self.pins.read_text(), self.original_pins)
         self.assertFalse(self.bootstrap_log.exists())
 
@@ -242,7 +294,8 @@ class AgentUpdateTests(unittest.TestCase):
                 self.assertIn("lock refresh", result.stderr)
                 self.assertEqual(self.pins.read_text(), self.original_pins)
                 self.assertFalse(self.bootstrap_log.exists())
-                self.assertTrue(all(action[0] == "propose-agents" for action in self.recorded_actions()))
+                self.assertTrue(all(action[0] in ("propose-agents", "upgrade-homebrew")
+                                    for action in self.recorded_actions()))
 
 
 if __name__ == "__main__":

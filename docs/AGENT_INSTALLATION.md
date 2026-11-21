@@ -88,6 +88,16 @@ never run: the managed launcher keeps the command. Remove such a leftover with
 `dotfiles-agents status` lists each copy with its version, the commands it
 would provide, and the command that removes it.
 
+The Homebrew-managed clients are the other half of the same rule. Homebrew
+owns an installed formula or cask: the catalog states a floor, and the
+deployment adopts what is installed without installing it. The update brings
+the device's own installation up to date first, so a client the operator
+upgraded by hand and a client the update upgraded end in the same place, and
+the deployment's launcher follows the new version. A client upgraded by hand
+without the update keeps a launcher that points at the removed cellar path
+until the next apply re-adopts it; the apply resolves the installed path
+again and rewrites the launcher.
+
 Update a client through the wrapper instead. It resolves the upstream version,
 rewrites the pin and its Bun lock, and reinstalls the selected clients:
 
