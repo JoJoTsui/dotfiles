@@ -108,14 +108,17 @@ prepare_agent_update() {
         initialize_source
     fi
     if [ "$DEPLOY_TARGET_AGENT" = codex ] && command -v herdr >/dev/null 2>&1; then
+        # The launcher and the resume command it reaches are refreshed
+        # together: the launcher passes --no-daemon, and a command that
+        # predates that option refuses it, so a restore through a stale
+        # command fails. The command belongs to codex alone, so refreshing it
+        # here touches no other agent.
         local target targets=("$HOME/.local/bin/dotfiles-codex-herdr"
-            "$HOME/.local/bin/codex-herdr" "$HOME/.codex/herdr-codex-resume.sh")
+            "$HOME/.local/bin/codex-herdr" "$HOME/.codex/herdr-codex-resume.sh"
+            "$HOME/.local/bin/dotfiles-codex-resume")
         # These shared commands are dependencies of codex-herdr. Restore
         # missing copies while leaving existing shared configuration alone.
-        # The resume command is one of them: a Herdr restore runs through it,
-        # so a launcher without it cannot resume a thread.
-        for target in "$HOME/.local/bin/dotfiles-agent-health" "$HOME/.local/bin/with-proxy" \
-                      "$HOME/.local/bin/dotfiles-codex-resume"; do
+        for target in "$HOME/.local/bin/dotfiles-agent-health" "$HOME/.local/bin/with-proxy"; do
             if [ ! -e "$target" ]; then targets+=("$target"); fi
         done
         for target in "${targets[@]}"; do payload_safe_destination "$target"; done

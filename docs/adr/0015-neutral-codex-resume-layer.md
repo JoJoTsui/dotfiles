@@ -85,6 +85,12 @@ configuration selects. The health gate, the proxy gate, and the in-process app
 server stay on both routes, so a restored session keeps the pane identity its
 hooks report to.
 
+The launcher and the command are refreshed together. The launcher passes
+`--no-daemon`, and a command that predates that option refuses it, so a
+targeted codex update repairs the launcher, the hook script, and the resume
+command in one step; a launcher that reaches an older command would refuse
+every restore it started.
+
 The command is the only resume interface the deployment owns. `codex exec
 resume` is not a substitute: it always sends resolved settings.
 

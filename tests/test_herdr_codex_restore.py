@@ -316,6 +316,50 @@ class HerdrHookCommandTests(unittest.TestCase):
         for group in session:
             self.assertTrue(group.get("hooks"), "a group was left without a command")
 
+    def test_a_command_that_only_mentions_the_managed_script_is_not_the_managed_command(self):
+        # The managed command runs the managed script. A device command that
+        # only mentions its name, and a device command that runs a file
+        # beside it, are device commands: they stay.
+        data = json.loads(self.hooks.read_text(encoding="utf-8"))
+        group = data["hooks"]["SessionStart"][0]
+        group["hooks"].append({"type": "command", "command": "echo herdr-codex-resume.sh",
+                               "timeout": 30})
+        group["hooks"].append({"type": "command",
+                               "command": 'bash "$HOME/.codex/herdr-codex-resume.sh.backup"',
+                               "timeout": 30})
+        self.hooks.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        removed = self.command("remove")
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        session, _ = self.session()
+        commands = self.commands(session)
+        self.assertIn("echo herdr-codex-resume.sh", commands)
+        self.assertIn('bash "$HOME/.codex/herdr-codex-resume.sh.backup"', commands)
+        self.assertNotIn(MANAGED_COMMAND, commands)
+        # An install keeps them beside the managed command.
+        installed = self.command("install")
+        self.assertEqual(installed.returncode, 0, installed.stderr)
+        session, _ = self.session()
+        commands = self.commands(session)
+        self.assertIn("echo herdr-codex-resume.sh", commands)
+        self.assertIn('bash "$HOME/.codex/herdr-codex-resume.sh.backup"', commands)
+        self.assertEqual(commands[-1], MANAGED_COMMAND)
+
+    def test_a_stored_path_of_the_managed_script_is_the_managed_command(self):
+        # The device may store the same script as the expanded path of its
+        # own home. That is the managed command, not a device command.
+        expanded = 'bash "%s/.codex/herdr-codex-resume.sh"' % self.home
+        data = json.loads(self.hooks.read_text(encoding="utf-8"))
+        data["hooks"]["SessionStart"][0]["hooks"].append(
+            {"type": "command", "command": expanded, "timeout": 5})
+        self.hooks.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        status = self.command("status")
+        self.assertEqual(status.returncode, 0, status.stderr)
+        removed = self.command("remove")
+        self.assertEqual(removed.returncode, 0, removed.stderr)
+        session, _ = self.session()
+        self.assertNotIn(expanded, self.commands(session))
+        self.assertNotIn(MANAGED_COMMAND, self.commands(session))
+
     def test_status_reports_the_managed_registration(self):
         status = self.command("status")
         self.assertEqual(status.returncode, 0, status.stderr)

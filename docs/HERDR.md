@@ -153,9 +153,13 @@ restored them. See
 the command carries.
 
 The restore route needs the managed resume command, so the launcher and that
-command are restored together: a targeted codex update brings back a missing
-`dotfiles-codex-resume` with the other shared prerequisites of the launcher,
-because a launcher without it cannot resume a thread.
+command are refreshed together: a targeted codex update restores the launcher,
+the hook script, and `dotfiles-codex-resume` itself, because a launcher
+without it cannot resume a thread and a command that predates the
+`--no-daemon` passthrough refuses the option the launcher passes. The update
+reaches those managed files only: the device's own Codex settings keep their
+own values, its own credentials are never written, and its own hook commands
+keep their place in the group.
 
 `~/.codex/herdr-codex-resume.sh` is a custom SessionStart hook beside the
 Herdr-installed `herdr-agent-state.sh`. It reports `codex-herdr resume <id>` as
@@ -178,8 +182,14 @@ group that carries a device command beside it keeps its own commands, its own
 metadata, and its place in the list, and only a group that held nothing but
 the managed command disappears. Herdr's own entry and every other hook event
 are untouched. The managed entry is placed last so its resume argv wins, and
-a registration that finds it there already writes nothing. For reference, the
-entry is:
+a registration that finds it there already writes nothing. The managed
+command is the exact invocation of the managed script: the directory and the
+file name decide what a stored command runs, so a command that only mentions
+the script, or that runs a file beside it
+(`herdr-codex-resume.sh.backup`), is a device command and stays. A device may
+store the same script with the path spelled another way — `$HOME/.codex/…`,
+`~/.codex/…`, or the expanded path of its own home — and that is the managed
+command too. For reference, the entry is:
 
 ```json
 {"hooks":[{"type":"command","command":"bash \"$HOME/.codex/herdr-codex-resume.sh\"","timeout":5}]}
