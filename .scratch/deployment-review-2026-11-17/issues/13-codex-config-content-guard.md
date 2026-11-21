@@ -220,4 +220,3 @@ Committed as `7b8bd31` on `fix/codex-content-guard` and integrated as
 `2386c99` on `fix/deployment-review`. The merge touched one file,
 `tests/test_magpie.py`, where the two branches each imported `tomllib`; the
 resolution keeps both spellings (`tomllib = None` and `HAS_TOMLLIB`).
-

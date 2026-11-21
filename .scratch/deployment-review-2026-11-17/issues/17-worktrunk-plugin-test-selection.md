@@ -119,4 +119,3 @@ The re-run is still owed:
   stub directory, so the step resolves `wt` from the stub and never from the
   device's own CLI, and it asks for the clients the way the bootstrap asks
   for them. Committed as `7ce7b90` on `fix/deployment-review`.
-

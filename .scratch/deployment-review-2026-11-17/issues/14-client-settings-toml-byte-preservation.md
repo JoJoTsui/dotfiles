@@ -160,4 +160,3 @@ so the device's Kimi configurations stop being rewritten as well.
 
 Merged as `cb880df` on `fix/client-settings-toml-bytes` and integrated as
 `78ffcc7` on `fix/deployment-review`.
-

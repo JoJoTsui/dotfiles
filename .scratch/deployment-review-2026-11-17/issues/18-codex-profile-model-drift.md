@@ -123,4 +123,3 @@ before it belongs to the apply.
   profile, but the artifacts carry no audit trail, so this is the
   best-supported cause and not a proven one. Nothing in the deployment needs
   to change either way, because the apply re-asserts the wired group.
-
