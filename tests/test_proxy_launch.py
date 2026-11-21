@@ -205,6 +205,26 @@ class ProxyLauncherTests(unittest.TestCase):
             env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, timeout=30)
         self.assertEqual(evaluated.stdout.strip(), endpoint)
 
+    def test_the_export_output_round_trips_through_a_posix_shell(self):
+        """A POSIX shell must read the export lines and keep the value intact."""
+        shell = shutil.which("dash") or shutil.which("sh")
+        if not shell:
+            self.skipTest("no POSIX shell on this host")
+        value = "http://proxy.example.invalid:8080/o'k\tvalue"
+        printed = self.fixture.run(["--print"], {"PROXY_HTTP": value})
+        self.assertEqual(printed.returncode, 0, printed.stderr)
+        # A POSIX single-quoted literal, not bash's ANSI-C $'...' quote: a
+        # POSIX shell reads the latter as ordinary characters and keeps them.
+        self.assertNotIn("$'", printed.stdout)
+        self.assertIn("export HTTP_PROXY='", printed.stdout)
+        script = self.fixture.root / "exports.sh"
+        script.write_text(printed.stdout, encoding="utf-8")
+        sourced = subprocess.run(
+            [shell, "-c", '. "$1"; printf "%s" "$HTTP_PROXY"', "sh", str(script)],
+            env={"PATH": "/usr/bin:/bin"}, capture_output=True, text=True, timeout=30)
+        self.assertEqual(sourced.returncode, 0, sourced.stderr)
+        self.assertEqual(sourced.stdout, value)
+
     def test_the_launcher_preserves_the_arguments_and_the_exit_status(self):
         result = self.fixture.run(["/bin/sh", "-c", 'printf "%s|" "$@"', "sh", "one", "two three"])
         self.assertEqual(result.returncode, 0, result.stderr)
