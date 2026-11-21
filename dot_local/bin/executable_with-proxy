@@ -39,6 +39,8 @@
 #
 # --print emits the export lines instead of exec'ing, which is how the shell
 # helper in .env_core reuses this resolution without copying the port list.
+# The export lines carry POSIX single-quoted literals, so every shell reads
+# the same value out of them.
 # --print-url-if-available emits no fallback when neither a value nor a
 # listener is available, for callers that persist the chosen endpoint.
 # --print-env answers the same question in a form a non-shell adapter can
@@ -117,6 +119,29 @@ proxy_value() {
     esac
 }
 
+# Render a value as a POSIX single-quoted shell literal. Bash's %q answers
+# with an ANSI-C $'...' quote, which is a bash extension: a POSIX shell reads
+# the '$' and the escape sequences as ordinary characters, so a tab or a quote
+# in an override reaches the session altered. The single-quoted form reads the
+# same in every shell, and an embedded quote is closed, escaped, and reopened.
+posix_quote() {
+    local value=$1 literal="" head=""
+    while :; do
+        case $value in
+            *"'"*)
+                head=${value%%"'"*}
+                literal="$literal$head'\\''"
+                value=${value#*"'"}
+                ;;
+            *)
+                literal="$literal$value"
+                break
+                ;;
+        esac
+    done
+    printf "'%s'" "$literal"
+}
+
 # Emit or apply the owned variables.
 #   env     KEY=VALUE lines, for an adapter that reads them
 #   export  export lines, for a POSIX session that evaluates them
@@ -127,7 +152,7 @@ proxy_bindings() {
         value=$(proxy_value "$name")
         case $form in
             env) printf '%s=%s\n' "$name" "$value" ;;
-            export) printf 'export %s=%q\n' "$name" "$value" ;;
+            export) printf 'export %s=%s\n' "$name" "$(posix_quote "$value")" ;;
             apply) export "$name=$value" ;;
         esac
     done < <(proxy_names)
