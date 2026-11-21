@@ -1,6 +1,6 @@
 # Trustworthy and faster dotfiles deployment
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
@@ -124,12 +124,14 @@ seam.
 
 The architecture decisions and review evidence are in the
 [deployment architecture plan](../../docs/DEPLOYMENT_ARCHITECTURE_PLAN.md).
-The reviewed baseline was `c06dc29`. Recheck findings against the
-implementation base. The integration branch implements all nine tickets
-and records their results in the local tracker. The native Windows parity
-criterion remains open until the existing workflow runs on the published
-integration revision. Portable PowerShell results do not establish native
-parity. The measured scope and the post-review comparisons are in the
+The reviewed baseline was `c06dc29`. The integration branch implements
+all nine tickets and records their results in the local tracker.
+Native Windows acceptance passed for the workstation, remote-compute, and
+desktop plus developer-portable jobs at `9352f8a`. All three verified
+full-to-narrow state preservation and targeted repair.
+[Native Windows run](https://github.com/JoJoTsui/dotfiles/actions/runs/44874276890).
+
+The measured scope and the post-review comparisons are in the
 [deployment timing report](../../docs/verification/deployment-timing.md).
 Real account-home verification still requires separate authorization and the
 applicable native and rehearsal gates.
