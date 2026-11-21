@@ -1066,13 +1066,14 @@ Copy-AgentPayload
         javascript = ('const args=process.argv.slice(2);\n'
                       'if (JSON.stringify(args)===\'["--version"]\') console.log("1.2.3");\n'
                       'else { console.log(JSON.stringify(args)); process.exit(37); }\n')
-        bun_script.write_text('import json, pathlib, sys\n'
+        bun_script.write_text('import json, os, pathlib, sys\n'
                               'if sys.argv[1:] == ["--version"]:\n'
                               f'    print({common_pin("bun")!r}); raise SystemExit(0)\n'
+                              'if os.environ.get("DOTFILES_TEST_FAIL_INSTALL") == "1": raise SystemExit(37)\n'
                               'project = pathlib.Path(sys.argv[sys.argv.index("--cwd") + 1])\n'
                               'native = project.name == "codex"\n'
                               'package = project / "node_modules" / ("fixture-native" if native else "fixture-js")\n'
-                              'package.mkdir(parents=True)\n'
+                              'package.mkdir(parents=True, exist_ok=True)\n'
                               'entry = "native entry.exe" if native else "javascript entry.js"\n'
                               '(package / "package.json").write_text(json.dumps({"bin":entry}))\n'
                               f'(package / entry).write_text({native_payload!r} if native else {javascript!r})\n'
@@ -1095,7 +1096,7 @@ function Get-Input([string]$Name, [string]$Fallback) {
 $TargetHome = $env:DOTFILES_TEST_TARGET_HOME
 $Source = $env:DOTFILES_TEST_SOURCE
 $roots = @{ bun = (Join-Path $TargetHome '.bun'); pixi = (Join-Path $TargetHome '.pixi') }
-$selectedAgents = @('codex')
+$selectedAgents = if ($env:DOTFILES_TEST_SKIP_CODEX -eq '1') { @('codegraph') } else { @('codex') }
 . (Join-Path $Source 'deployment/windows.ps1')
 function Read-Catalog([string]$Relative) {
     if ($Relative -eq 'deployment/common-tools.tsv') {
@@ -1165,9 +1166,23 @@ Install-Agents
                 self.assertEqual(json.loads(probe.stdout), arguments)
             self.assertEqual(log.read_bytes(), before_native)
         self.assertEqual(len(log.read_text().splitlines()), 4)
-        state = (self.home / '.local/state/dotfiles/agents.lock.tsv').read_text()
+        ledger = self.home / '.local/state/dotfiles/agents.lock.tsv'
+        state = ledger.read_text()
         self.assertIn('codex|bun|4.5.6|4.5.6', state)
         self.assertIn('codegraph|bun|1.2.3|1.2.3', state)
+        ledger.write_text(state.replace('codegraph|bun|1.2.3|1.2.3', 'codegraph|bun|0.0.0|0.0.0'))
+        narrow_env = dict(environment, DOTFILES_TEST_SKIP_CODEX='1')
+        stale = ledger.read_bytes()
+        failed = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=dict(narrow_env, DOTFILES_TEST_FAIL_INSTALL='1'),
+                                capture_output=True, text=True, timeout=30)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn('required command failed', failed.stderr)
+        self.assertEqual(ledger.read_bytes(), stale)
+        narrow = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=narrow_env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(narrow.returncode, 0, narrow.stderr)
+        self.assertEqual(ledger.read_text(), state)
 
     def test_retirement_preserves_device_content_and_rejects_malformed_markers(self):
         script = self.root / 'retire.ps1'
@@ -2288,10 +2303,37 @@ class WindowsNativeInstallTests(unittest.TestCase):
                     os.environ[name] = value
         protected = self.home / '.codex/auth.json'
         protected.write_text('{"synthetic":"native-preserve"}')
-        again = self.deploy('-Role', role, '-Agents', 'none')
+        ledger = self.home / '.local/state/dotfiles/agents.lock.tsv'
+        before = ledger.read_text().splitlines()
+        pi_pin = agent_pins()['pi']['version']
+        pi_row = f'pi|bun|{pi_pin}|{pi_pin}'
+        self.assertIn(pi_row, before)
+        self.assertIn(f"codex|bun|{agent_pins()['codex']['version']}|{agent_pins()['codex']['version']}", before)
+        # Simulate a previous successful Pi install with an older version.
+        ledger.write_text('\n'.join('pi|bun|0.0.0|0.0.0' if row == pi_row else row for row in before) + '\n')
+        stale = ledger.read_bytes()
+        failing_bun = self.root / 'failing-bun.cmd'
+        failing_bun.write_bytes(
+            b'@echo off\r\n'
+            + f'if "%~1"=="--version" (echo {common_pin("bun")} & exit /b 0)\r\n'.encode('ascii')
+            + b'exit /b 37\r\n'
+        )
+        failed = self.deploy('-Role', role, '-AgentsOnly', '-Agents', 'pi',
+                             env=dict(self.env, DOTFILES_BUN_BIN=str(failing_bun)))
+        self.assertEqual(failed.returncode, 37, failed.stderr)
+        self.assertIn('install-agents.', failed.stderr)
+        self.assertEqual(ledger.read_bytes(), stale)
+
+        again = self.deploy('-Role', role, '-Agents', 'pi')
         self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertCountEqual(ledger.read_text().splitlines(), before)
         self.assertEqual(protected.read_text(), '{"synthetic":"native-preserve"}')
         self.assertTrue((self.home / '.bun/bin/codex.cmd').exists())
+        status = subprocess.run([str(self.home / '.local/bin/dotfiles-agents.cmd'), 'status', 'codex,pi'],
+                                env=environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(status.returncode, 0, status.stderr)
+        self.assertRegex(status.stdout, r'(?m)^codex\s')
+        self.assertRegex(status.stdout, r'(?m)^pi\s')
 
 
 

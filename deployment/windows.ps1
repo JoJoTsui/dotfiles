@@ -1039,12 +1039,15 @@ function Install-Qoder([string]$Version, [string]$ManifestBase) {
 
 function Install-Agents {
     $script:Step = 'install-agents.runtime'
+    $statePath = Join-Path (Get-DotfilesStateRoot) 'dotfiles/agents.lock.tsv'
+    Assert-SafePath $statePath
+    if ([IO.Directory]::Exists($statePath)) { Stop-Deployment 'agent state file is a directory' }
     $bun = Get-Input 'DOTFILES_BUN_BIN' (Join-Path $roots.bun 'bin/bun.exe')
     $node = Get-Input 'DOTFILES_NODE_BIN' (Join-Path $roots.pixi 'bin/node.exe')
     if ((Invoke-Tool $bun @('--version') -Quiet).Trim() -ne (Get-Pin 'bun')) { Stop-Deployment 'Bun must match the common runtime pin' }
     if ((Invoke-Tool $node @('--version') -Quiet).Trim() -ne ('v' + (Get-Pin 'nodejs'))) { Stop-Deployment 'Node must match the common runtime pin' }
     $env:PATH = [IO.Path]::GetDirectoryName($node) + ';' + [IO.Path]::GetDirectoryName($bun) + ';' + $env:PATH
-    $stateRows = @()
+    $installedRows = @{}
     foreach ($row in (Get-AgentCatalog)) {
         if (-not (Test-AgentPlatform $row.platforms)) { continue }
         $name = $row.agent
@@ -1109,14 +1112,28 @@ function Install-Agents {
         } else {
             Stop-Deployment "unsupported agent provider '$($row.provider)' for $name"
         }
-        $stateRows += ($name + '|' + $row.provider + '|' + $row.version + '|' + $row.version)
+        $installedRows[$name] = $name + '|' + $row.provider + '|' + $row.version + '|' + $row.version
     }
-    $statePath = Join-Path (Get-DotfilesStateRoot) 'dotfiles/agents.lock.tsv'
-    $stateText = (($stateRows | Sort-Object -Unique) -join "`n")
+    $script:Step = 'install-agents.record-state'
+    # Publish successful results only. This run has no new observation for
+    # an agent it skipped, so keep that agent's previous record.
+    $stateRows = @()
+    if ([IO.File]::Exists($statePath)) {
+        foreach ($line in [IO.File]::ReadAllLines($statePath)) {
+            $name = ($line -split '\|', 2)[0]
+            if (-not $installedRows.ContainsKey($name)) { $stateRows += $line }
+        }
+    }
+    $stateRows += @($installedRows.Values)
+    $stateText = (($stateRows | Sort-Object) -join "`n")
     if ($stateText) { $stateText += "`n" }
     $temporary = $statePath + '.tmp-' + [Guid]::NewGuid().ToString('N')
-    Write-Utf8 $temporary $stateText
-    Move-Item -LiteralPath $temporary -Destination $statePath -Force
+    try {
+        Write-Utf8 $temporary $stateText
+        Move-Item -LiteralPath $temporary -Destination $statePath -Force
+    } finally {
+        Remove-Item -LiteralPath $temporary -ErrorAction SilentlyContinue
+    }
 }
 function Get-MagpieRelease {
     # The shared release catalog owns the Magpie CLI version every target
