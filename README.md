@@ -324,7 +324,10 @@ default set, and `find-skills` is disabled. Claude and MiniMax receive filtered
 copies, the shared-tree
 clients read the same profile, and a managed inventory prunes only what the
 deployment wrote. The measured review gate and the client matrix are in
-[skill review](docs/SKILL_REVIEW.md). See
+[skill review](docs/SKILL_REVIEW.md). The filtered research analysis subset —
+17 K-Dense skills for single-cell, variant interpretation, and bioinformatics
+deep learning, with three isolated environments — is in
+[research analysis skills](docs/RESEARCH_SKILLS.md). See
 [ADR 0012](docs/adr/0012-herdr-owned-integrations.md) and
 [ADR 0013](docs/adr/0013-single-owner-skill-library.md). Legacy clients and
 optional integrations remain documented under `deployment/inventory`.

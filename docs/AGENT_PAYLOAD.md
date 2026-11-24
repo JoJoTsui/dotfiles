@@ -46,6 +46,12 @@ upstream installer is not run: its optional search-reminder plugins, project
 instruction edits, hooks, and index creation are outside this global integration.
 Shared guidance retains CodeGraph priority and explicit project initialization.
 
+The filtered research analysis subset adds 17 K-Dense catalog rows for
+single-cell, variant interpretation, and bioinformatics deep learning. Its three
+Python environments cannot share one interpreter and are created by
+`deployment/kdense/ensure_envs.sh`; [research analysis skills](RESEARCH_SKILLS.md)
+records the selection, the routing rules, and the gaps.
+
 HumanLayer's `show-me` deploys through the same catalog and pinned lock, with
 its upstream `SKILL.md` and `agents/openai.yaml` unchanged. It is installed by
 default but requires explicit invocation: ask to use `show-me` to explain a
