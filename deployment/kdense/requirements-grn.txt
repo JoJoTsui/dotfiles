@@ -1,0 +1,13 @@
+# Arboreto GRN stack. Python 3.11.
+#
+# Arboreto 0.1.6 is a bounded compatibility recipe: its PyPI build produces an
+# empty metadata graph that newer Dask rejects, so Dask is pinned to 2024.7.1
+# and the legacy dataframe backend must be selected before importing Arboreto.
+# This is why the environment cannot share Python 3.13 with the core stack.
+arboreto==0.1.6
+dask[complete]==2024.7.1
+distributed==2024.7.1
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.5.2
+scipy==1.13.1

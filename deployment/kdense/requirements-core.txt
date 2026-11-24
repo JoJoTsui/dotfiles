@@ -1,0 +1,19 @@
+# Filtered K-Dense core stack. Python 3.13.
+#
+# Reviewed 2026-11-24 against K-Dense scientific-agent-skills
+# c21d13b3cc2894680229ba9959a53281acb9200e. Every version is the one the
+# corresponding SKILL.md declares as tested; alphagenome stays at 0.9.0 even
+# though PyPI resolves newer, because that is the reviewed upstream version.
+scanpy[leiden]==1.12.4
+anndata==0.13.4
+scvi-tools==1.5.1
+pysam==0.24.1
+gtars==0.10.0
+shap==0.52.0
+lightning==2.6.6
+gget==0.30.8
+alphagenome==0.9.0
+cellxgene-census==1.18.0
+tiledbsoma==2.3.0
+pyzotero==1.15.2
+requests==2.34.2
