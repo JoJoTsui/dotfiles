@@ -21,13 +21,21 @@
 academic-paper|1003|683|yes|the upstream description lists the modes, paper types, citation formats, and multilingual triggers; the root ships references and the bytes are upstream's
 academic-paper-reviewer|878|562|yes|the upstream description lists the review modes, panel roles, and multilingual triggers; the root ships references and the bytes are upstream's
 academic-pipeline|783|777|yes|the upstream description names the pipeline stages and multilingual triggers; the root ships references and the bytes are upstream's
+alphagenome|845|297|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+anndata|274|474|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+arboreto|268|203|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
 baoyu-diagram|586|307|yes|the upstream description names every diagram type and trigger; the bytes are upstream's and are not rewritten
 caveman-explore|246|42|no|the upstream description names the situations to skip and the one to use; the bytes are upstream's and are not rewritten
 caveman-learn|293|176|yes|the upstream description names every trigger and the per-edit consent flow; the bytes are upstream's and are not rewritten
 caveman-setup|170|222|no|the root document carries the upstream gateway guide and the skill ships no reference file; the bytes are upstream's and are not rewritten
+cellxgene-census|447|334|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
 code-review|419|89|no|the upstream description names both review axes and the parallel reviews; the bytes are upstream's and are not rewritten
 codebase-design|265|114|yes|the upstream description lists the design questions the vocabulary answers; the bytes are upstream's and are not rewritten
 deep-research|1021|729|yes|the upstream description names the research modes, methods, and multilingual triggers; the root ships references and the bytes are upstream's
+folklore-variant-evidence|595|267|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+genomic-coordinates|924|243|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+genomic-intelligence|698|416|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+gget|436|185|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
 git-guardrails-claude-code|243|95|no|the upstream description names the commands the hooks block; the bytes are upstream's and are not rewritten
 graphify|353|795|yes|the upstream description names the query path and the graph tools; the root document is long and the skill ships eight reference files
 guizang-ppt-skill|247|636|yes|the upstream description names both visual styles and the web-PPT routes; the bytes are upstream's and are not rewritten
@@ -41,6 +49,12 @@ lark-event|265|158|yes|the upstream description names the event stream and the r
 lark-sheets|464|139|yes|the upstream description names the sheet operations, formulas, and hand-offs; the bytes are upstream's and are not rewritten
 lark-slides|265|310|yes|the upstream description names the slide operations and the routing rules; the bytes are upstream's and are not rewritten
 lark-wiki|303|118|yes|the upstream description names the wiki spaces, members, and nodes; the bytes are upstream's and are not rewritten
+pacsomatic|387|114|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+pytorch-lightning|303|208|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+pyzotero|433|158|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+scanpy|398|360|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+scvelo|410|219|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
+scvi-tools|349|194|yes|the upstream description enumerates the package workflows, modes, and triggers; the root ships references and the bytes are upstream's
 sr-screener|1015|516|yes|the upstream description names the screening modes, inputs, and multilingual triggers; the root ships references and the bytes are upstream's
 to-tickets|247|105|no|the upstream description names the ticket shape and the tracker the tickets reach; the bytes are upstream's and are not rewritten
 wizard|313|44|no|the upstream description names the steps only a human can perform; the bytes are upstream's and are not rewritten
