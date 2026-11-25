@@ -339,6 +339,14 @@ explains every changed pair.
   naming an undefined group makes Mihomo refuse the configuration. The
   desktop app policy is separate from the headless deployment proxy. Read
   `docs/CLASH.md` before changing the clash enhancements.
+- **Derived skills keep one upstream pin and one smoke gate**:
+  `skill-layouts.tsv` may mark a row `repo` for a discovery document or helper
+  under `deployment/skill-overlays/<name>/`; all runtime bytes still come from
+  the catalog's pinned upstream commit. Repo overlays reject symlinks and are
+  copied without executing helpers. `skill-smoke.tsv` names an offline staged
+  check, and both the fetch adapter and `update_skills.py refresh` must pass it
+  before publishing a library or moving the pin. `archify-figures` uses this
+  path to track Archify while deploying only the workflow runtime.
 - **Skills carry a selection**: the catalog's last column is `auto` or a tag.
   `auto` is the reviewed core; a tagged skill is not deployed automatically, and
   a host asks for it with `DOTFILES_SKILLS=<tag>` or by skill name. The tags are

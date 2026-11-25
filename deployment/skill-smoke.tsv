@@ -1,0 +1,4 @@
+# name|script relative to staged skill|argument
+# A smoke check runs after the pinned skill is staged and before publication.
+# It must be offline and must not modify the staged skill directory.
+archify-figures|bin/archify-figure.mjs|smoke

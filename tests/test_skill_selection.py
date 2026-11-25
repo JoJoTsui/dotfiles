@@ -19,7 +19,7 @@ CAVEMAN_GROUP = (
 # Keep the distinct diagnosis, migration, and behavior-preservation workflows.
 GENERIC_ENGINEERING = ("investigate-first", "migration", "safe-refactor")
 OPTIONAL_WORKFLOWS = (
-    "grill-me", "migrate-to-shoehorn", "scaffold-exercises", "setup-pre-commit",
+    "archify-figures", "grill-me", "migrate-to-shoehorn", "scaffold-exercises", "setup-pre-commit",
     "setup-ts-deep-modules", "git-guardrails-claude-code", "chief-of-staff",
     "claude-handoff", "loop-me", "writing-fragments", "writing-shape",
     "writing-beats", "lean-build", "surgical-patch", "verify-and-stop",
@@ -67,6 +67,29 @@ class CatalogTaggingTests(unittest.TestCase):
         selections = catalog_selections()
         self.assertEqual({name for name, tag in selections.items() if tag == "optional"},
                          set(OPTIONAL_WORKFLOWS))
+
+    def test_archify_figures_is_opt_in_and_tracks_archify(self):
+        rows = {}
+        for line in (SOURCE / "deployment/skills.tsv").read_text().splitlines():
+            if line and not line.startswith("#"):
+                fields = line.split("|")
+                rows[fields[0]] = fields
+        row = rows["archify-figures"]
+        self.assertEqual(row[1:], ["git", "https://github.com/tt-a1i/archify", "main", ".", "optional"])
+        pins = {}
+        for line in (SOURCE / "deployment/skills.lock.tsv").read_text().splitlines():
+            if line and not line.startswith("#"):
+                fields = line.split("|")
+                pins[fields[0]] = fields
+        self.assertEqual(pins["archify-figures"][1:3], ["git", "https://github.com/tt-a1i/archify"])
+        self.assertRegex(pins["archify-figures"][3], r"^[a-f0-9]{40}$")
+        self.assertIn("archify-figures|bin/archify-figure.mjs|smoke",
+                      (SOURCE / "deployment/skill-smoke.tsv").read_text())
+        overlay = SOURCE / "deployment/skill-overlays/archify-figures"
+        self.assertEqual((overlay / "agents/openai.yaml").read_text(),
+                         "policy:\n  allow_implicit_invocation: false\n")
+        self.assertIn("archify-figures|agents/openai.yaml|agents/openai.yaml|repo",
+                      (SOURCE / "deployment/skill-layouts.tsv").read_text())
 
     def test_the_generic_engineering_skills_stay_automatic(self):
         selections = catalog_selections()

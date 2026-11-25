@@ -3,6 +3,7 @@ import os
 import hashlib
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -120,6 +121,77 @@ class SkillFetchTests(unittest.TestCase):
                                  f'cmp "{refs}/query.md" "$PAYLOAD_SKILLS_DIR/graphify/references/query.md"\n'
                                  'test ! -e "$PAYLOAD_SKILLS_DIR/graphify/note.md"\n')
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_repo_overlay_and_smoke_check_complete_a_derived_skill(self):
+        repo = self.make_git_repo("figures-repo", "archify")
+        package = repo / "archify"
+        (package / "bin").mkdir()
+        (package / "bin/core.mjs").write_text("export const core = true;\n")
+        (package / "LICENSE").write_text("upstream license\n")
+        (package / "note.md").write_text("do not deploy\n")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "commit", "-qm", "runtime"], check=True)
+        overlay = self.source / "deployment/skill-overlays/figures"
+        (overlay / "bin").mkdir(parents=True)
+        (overlay / "SKILL.md").write_text("---\nname: figures\ndescription: fixture\n---\nbody\n")
+        (overlay / "bin/smoke.mjs").write_text(
+            "import fs from 'node:fs';\n"
+            "if (process.argv[2] !== 'smoke' || !fs.existsSync(new URL('./core.mjs', import.meta.url))) process.exit(1);\n"
+            "console.log('ok');\n")
+        (self.catalog.parent / "skill-layouts.tsv").write_text(
+            "figures|SKILL.md|SKILL.md|repo\n"
+            "figures|bin/smoke.mjs|bin/smoke.mjs|repo\n"
+            "figures|bin/core.mjs|bin/core.mjs|upstream\n"
+            "figures|LICENSE|LICENSE|upstream\n")
+        (self.catalog.parent / "skill-smoke.tsv").write_text("figures|bin/smoke.mjs|smoke\n")
+        self.write_catalog("figures|git|" + str(repo) + "|main|archify|optional",
+                           "plain|git|" + str(repo) + "|main|archify|auto")
+        result = self.run_script('prepare_skill_library && printf "%s" "$PAYLOAD_SKILLS_DIR"',
+                                 env={"DOTFILES_SKILLS": "figures"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        copied = Path(result.stdout) / "figures"
+        self.assertTrue((Path(result.stdout) / "plain/SKILL.md").is_file())
+        self.assertEqual((copied / "SKILL.md").read_bytes(), (overlay / "SKILL.md").read_bytes())
+        self.assertEqual((copied / "bin/core.mjs").read_bytes(), (package / "bin/core.mjs").read_bytes())
+        self.assertEqual((copied / "LICENSE").read_bytes(), (package / "LICENSE").read_bytes())
+        self.assertFalse((copied / "note.md").exists())
+
+    def test_failed_derived_skill_smoke_does_not_publish_state(self):
+        repo = self.make_git_repo("broken-figures", "archify")
+        (repo / "archify/bin").mkdir()
+        (repo / "archify/bin/core.mjs").write_text("core\n")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "commit", "-qm", "runtime"], check=True)
+        overlay = self.source / "deployment/skill-overlays/figures"
+        (overlay / "bin").mkdir(parents=True)
+        (overlay / "SKILL.md").write_text("---\nname: figures\ndescription: fixture\n---\nbody\n")
+        (overlay / "bin/smoke.mjs").write_text("process.exit(1);\n")
+        (self.catalog.parent / "skill-layouts.tsv").write_text(
+            "figures|SKILL.md|SKILL.md|repo\n"
+            "figures|bin/smoke.mjs|bin/smoke.mjs|repo\n"
+            "figures|bin/core.mjs|bin/core.mjs|upstream\n")
+        (self.catalog.parent / "skill-smoke.tsv").write_text("figures|bin/smoke.mjs|smoke\n")
+        self.write_catalog("figures|git|" + str(repo) + "|main|archify|optional")
+        result = self.run_script('prepare_skill_library', env={"DOTFILES_SKILLS": "figures"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("skill smoke check failed", result.stderr)
+        self.assertFalse((self.root / "xdg-state/dotfiles/skills.lock.tsv").exists())
+
+    def test_repo_overlay_rejects_symlinks(self):
+        repo = self.make_git_repo("linked-figures", "archify")
+        overlay = self.source / "deployment/skill-overlays/figures"
+        overlay.mkdir(parents=True)
+        outside = self.root / "outside-skill.md"
+        outside.write_text("device bytes\n")
+        (overlay / "SKILL.md").symlink_to(outside)
+        (self.catalog.parent / "skill-layouts.tsv").write_text("figures|SKILL.md|SKILL.md|repo\n")
+        self.write_catalog("figures|git|" + str(repo) + "|main|archify|optional")
+        result = self.run_script('prepare_skill_library', env={"DOTFILES_SKILLS": "figures"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink", result.stderr)
+        self.assertEqual(outside.read_text(), "device bytes\n")
 
     def test_layout_cannot_escape_its_destination(self):
         repo = self.make_git_repo("unsafe-layout")
@@ -420,6 +492,44 @@ class SkillFetchTests(unittest.TestCase):
         result = subprocess.run(command, capture_output=True, text=True, timeout=60)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(lock.read_bytes(), old)
+
+    def test_refresh_smokes_a_derived_skill_before_moving_its_pin(self):
+        repo = self.make_git_repo("refresh-figures", "archify")
+        (repo / "archify/bin").mkdir()
+        (repo / "archify/bin/core.mjs").write_text("core\n")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "commit", "-qm", "runtime"], check=True)
+        overlay = self.source / "deployment/skill-overlays/figures"
+        (overlay / "bin").mkdir(parents=True)
+        (overlay / "SKILL.md").write_text("---\nname: figures\ndescription: fixture\n---\nbody\n")
+        (overlay / "bin/smoke.mjs").write_text(
+            "import fs from 'node:fs';\n"
+            "fs.writeFileSync(process.env.DOTFILES_TEST_SMOKE_MARKER, 'ok');\n")
+        (self.catalog.parent / "skill-layouts.tsv").write_text(
+            "figures|SKILL.md|SKILL.md|repo\n"
+            "figures|bin/smoke.mjs|bin/smoke.mjs|repo\n"
+            "figures|bin/core.mjs|bin/core.mjs|upstream\n")
+        (self.catalog.parent / "skill-smoke.tsv").write_text("figures|bin/smoke.mjs|smoke\n")
+        self.write_catalog("figures|git|" + str(repo) + "|main|archify|optional")
+        lock = self.catalog.parent / "skills.lock.tsv"
+        marker = self.root / "smoke.marker"
+        command = [sys.executable, str(SOURCE / "deployment/update_skills.py"), "refresh",
+                   "--catalog", str(self.catalog), "--lock", str(lock)]
+        environment = dict(os.environ, DOTFILES_TEST_SMOKE_MARKER=str(marker))
+        result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(marker.read_text(), "ok")
+        before = lock.read_bytes()
+        (overlay / "bin/smoke.mjs").write_text("process.exit(1);\n")
+        (repo / "archify/bin/core.mjs").write_text("changed\n")
+        subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+        subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+                        "commit", "-qm", "update"], check=True)
+        result = subprocess.run(command, env=environment, capture_output=True, text=True, timeout=60)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("skill smoke check failed", result.stderr)
+        self.assertEqual(lock.read_bytes(), before)
 
     def test_archive_with_links_or_absolute_members_is_rejected(self):
         unsafe = self.root / "unsafe.tar.gz"

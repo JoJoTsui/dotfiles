@@ -289,6 +289,22 @@ function Copy-RegularTree([string]$From, [string]$To) {
         [IO.File]::Copy($From, $To, $true)
     }
 }
+function Assert-SourceTree([string]$From) {
+    if (Test-ReparsePath $From) { Stop-Deployment "skill overlay is a symlink or reparse point: $From" }
+    if ([IO.Directory]::Exists($From)) {
+        foreach ($item in (Get-ChildItem -LiteralPath $From -Force)) { Assert-SourceTree $item.FullName }
+    } elseif (-not [IO.File]::Exists($From)) { Stop-Deployment "unsupported skill overlay resource: $From" }
+}
+function Copy-StagedRegularTree([string]$From, [string]$To) {
+    Assert-SourceTree $From
+    if ([IO.Directory]::Exists($From)) {
+        [IO.Directory]::CreateDirectory($To) | Out-Null
+        foreach ($item in (Get-ChildItem -LiteralPath $From -Force)) { Copy-StagedRegularTree $item.FullName (Join-Path $To $item.Name) }
+    } else {
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($To)) | Out-Null
+        [IO.File]::Copy($From, $To, $true)
+    }
+}
 function Test-SkillLink([string]$Path) {
     # A link is recognized even when its target is missing: the deployment
     # preserves it and never writes through it.
@@ -728,13 +744,20 @@ function Import-SkillLibrary {
                 [IO.Directory]::CreateDirectory($mapped) | Out-Null
                 foreach ($layout in $layouts) {
                     $from = [string]$layout.columns[1]; $to = [string]$layout.columns[2]
+                    $origin = if ($layout.columns.Count -ge 4 -and $layout.columns[3]) { [string]$layout.columns[3] } else { 'upstream' }
                     foreach ($relative in @($from, $to)) {
                         if (-not $relative -or [IO.Path]::IsPathRooted($relative) -or ($relative -split '[/\\]') -contains '..') { Stop-Deployment "unsafe skill layout: $name" }
                     }
-                    $inputPath = Join-Path $destination $from
                     $outputPath = Join-Path $mapped $to
                     [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($outputPath)) | Out-Null
-                    Copy-Item -LiteralPath $inputPath -Destination $outputPath -Recurse
+                    if ($origin -eq 'repo') {
+                        $inputPath = Join-Path $Source "deployment/skill-overlays/$name/$from"
+                        Assert-SafePath $inputPath -SourcePath
+                        Copy-StagedRegularTree $inputPath $outputPath
+                    } elseif ($origin -eq 'upstream') {
+                        $inputPath = Join-Path $destination $from
+                        Copy-Item -LiteralPath $inputPath -Destination $outputPath -Recurse
+                    } else { Stop-Deployment "unknown skill layout origin: $name" }
                 }
                 Remove-Item -LiteralPath $destination -Recurse -Force
                 Move-Item -LiteralPath $mapped -Destination $destination
@@ -771,6 +794,16 @@ function Import-SkillLibrary {
             if (-not (Test-Path -LiteralPath (Join-Path $destination 'SKILL.md'))) { Stop-Deployment "skill $name has no SKILL.md" }
             $lockRows += "$name|tarball|$sourceUrl|$digest"
         } else { Stop-Deployment "unknown skill kind: $kind" }
+        $smokeRelative = 'deployment/skill-smoke.tsv'
+        if (Test-Path -LiteralPath (Join-Path $Source $smokeRelative)) {
+            foreach ($smoke in (Read-Catalog $smokeRelative | Where-Object { $_.columns[0] -eq $name })) {
+                if ($smoke.columns.Count -ne 3) { Stop-Deployment "malformed skill smoke row: $name" }
+                $smokeScript = [string]$smoke.columns[1]; $smokeArgument = [string]$smoke.columns[2]
+                Assert-Relative $smokeScript
+                if (-not $smokeArgument -or $smokeArgument -match '\s') { Stop-Deployment "unsafe skill smoke argument: $name" }
+                Invoke-Tool node @((Join-Path $destination $smokeScript), $smokeArgument) -Quiet -ShowFailureOutput | Out-Null
+            }
+        }
     }
     if ($refresh -and $refreshSucceeded) {
         Set-Content -LiteralPath $marker -Value ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())

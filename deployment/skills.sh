@@ -108,16 +108,71 @@ skill_catalog_selection() {
 }
 
 # Some upstreams publish a portable skill under another filename. Map only
-# declared resources, keeping their bytes and relative references unchanged.
+# declared resources, keeping upstream bytes and relative references unchanged.
+# A repo row overlays a small discovery document or helper owned by this repo;
+# its source is relative to deployment/skill-overlays/<name>/.
 skill_layout_rows() {
     local file="$DEPLOY_SOURCE/deployment/skill-layouts.tsv"
     if [ -f "$file" ]; then
-        awk -F '|' -v name="$1" '$1 == name { print $2 "|" $3 }' "$file"
+        awk -F '|' -v name="$1" '
+            $1 == name {
+                origin = (NF >= 4 && $4 != "" ? $4 : "upstream")
+                print $2 "|" $3 "|" origin
+            }' "$file"
     fi
 }
 
 skill_layout_path_safe() {
     case "$1" in ''|/*|..|../*|*/../*|*/..) return 1 ;; esac
+}
+
+skill_validate_overlay_source() {
+    local source=$1 entry
+    [ ! -L "$source" ] || fail "skill overlay source is a symlink: $source"
+    if [ -d "$source" ]; then
+        for entry in "$source"/* "$source"/.[!.]* "$source"/..?*; do
+            [ -e "$entry" ] || [ -L "$entry" ] || continue
+            skill_validate_overlay_source "$entry"
+        done
+        return 0
+    fi
+    [ -f "$source" ] || fail "unsupported skill overlay resource: $source"
+}
+
+skill_copy_overlay_entry() {
+    local source=$1 target=$2 entry
+    skill_validate_overlay_source "$source"
+    if [ -d "$source" ]; then
+        mkdir -p "$target"
+        for entry in "$source"/* "$source"/.[!.]* "$source"/..?*; do
+            [ -e "$entry" ] || [ -L "$entry" ] || continue
+            skill_copy_overlay_entry "$entry" "$target/${entry##*/}"
+        done
+    else
+        mkdir -p "${target%/*}"
+        cp -p "$source" "$target" || fail "cannot copy skill overlay into $target"
+    fi
+}
+
+skill_smoke_row() {
+    local file="$DEPLOY_SOURCE/deployment/skill-smoke.tsv" name=$1
+    [ -f "$file" ] || return 1
+    awk -F '|' -v name="$name" '$1 == name { print $2 "|" $3; found = 1 } END { exit !found }' "$file"
+}
+
+skill_run_smoke() {
+    local name=$1 destination=$2 row script argument output node
+    row=$(skill_smoke_row "$name") || return 0
+    IFS='|' read -r script argument <<EOF
+$row
+EOF
+    skill_layout_path_safe "$script" || fail "unsafe smoke script for skill $name"
+    case "$argument" in ''|*[[:space:]]*) fail "unsafe smoke argument for skill $name" ;; esac
+    node=$(command -v node) || fail "skill smoke check needs Node: $name"
+    if ! output=$(ARCHIFY_UPDATE_CHECK_DISABLED=1 "$node" "$destination/$script" "$argument" 2>&1); then
+        printf 'dotfiles: skill smoke check failed for %s: %s\n' "$name" "$output" >&2
+        return 1
+    fi
 }
 
 validate_skill_catalog() {
@@ -235,7 +290,8 @@ skill_retry() {
 
 skill_fetch_git() {
     local name=$1 source=$2 ref=$3 path=$4 cache=$5 destination=$6 index=$7
-    local slug repo resolved depth mappings from to object archive prefix
+    local slug repo resolved depth mappings from to origin object archive prefix
+    local overlay
     slug=$(skill_slug "$source")
     repo="$cache/git/$slug"
     if [ -n "$SKILL_PIN" ]; then
@@ -259,8 +315,17 @@ skill_fetch_git() {
     mkdir -p "$destination/$name"
     mappings=$(skill_layout_rows "$name")
     if [ -n "$mappings" ]; then
-        while IFS='|' read -r from to; do
+        while IFS='|' read -r from to origin; do
             skill_layout_path_safe "$from" && skill_layout_path_safe "$to" || return 1
+            case "$origin" in
+                upstream) ;;
+                repo)
+                    overlay="$DEPLOY_SOURCE/deployment/skill-overlays/$name/$from"
+                    skill_copy_overlay_entry "$overlay" "$destination/$name/$to" || return 1
+                    continue
+                    ;;
+                *) return 1 ;;
+            esac
             object=$(git -C "$repo" cat-file -t "$resolved:$path/$from") || return 1
             case "$object" in
                 blob)
@@ -376,6 +441,7 @@ prepare_skill_library() {
                     fail "cannot fetch skill $name from $source"
                 ;;
         esac
+        skill_run_smoke "$name" "$root/$name" || fail "skill smoke check failed: $name"
     done < "$catalog"
     mkdir -p "$XDG_STATE_HOME/dotfiles"
     validate_skill_state "$state"

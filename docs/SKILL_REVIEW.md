@@ -102,9 +102,10 @@ in the default set. These fifteen candidates carry the `optional` tag:
 | `chief-of-staff`, `claude-handoff`, `loop-me` | In-progress orchestration outside the daily workflow |
 | `writing-fragments`, `writing-shape`, `writing-beats` | Separate writing workshop stages |
 | `lean-build`, `surgical-patch`, `verify-and-stop` | Overlap with the shared completion and scope rules |
+| `archify-figures` | Derived Archify workflow runtime for presentation and journal figures; large optional renderer with an offline smoke gate |
 
 Use `DOTFILES_SKILLS=<name>` for one skill, comma-separated names for a subset,
-or `DOTFILES_SKILLS=optional` for all fifteen. The catalog still pins their
+or `DOTFILES_SKILLS=optional` for all sixteen. The catalog still pins their
 upstream bytes. Reapplying without an opt-in prunes recorded managed copies;
 device-owned and generated entries retain the existing preservation rules.
 
@@ -136,6 +137,13 @@ An entry added that way is reported as drift and named for removal.
 Upstream prose is not rewritten. The lock's value is that the deployed bytes
 are upstream's, so a skill that is too long is recorded as a reviewed
 exception rather than edited.
+
+A derived skill may add repo-owned discovery files without rewriting upstream
+bytes. `skill-layouts.tsv` marks each row `upstream` or `repo`; repo rows are
+relative to `deployment/skill-overlays/<name>/`, reject symlinks, and preserve
+permissions. `skill-smoke.tsv` declares an offline check that runs against the
+staged skill before fetch publication and before a refreshed pin is committed.
+The check must not modify the skill directory.
 
 ## The review checklist
 

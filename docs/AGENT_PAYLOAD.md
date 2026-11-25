@@ -75,6 +75,20 @@ same paths. Client discovery and explicit-only behavior are covered by the
 shared diagnostics where available; MiniMax's native discovery remains
 unverified, as recorded in the client table.
 
+`archify-figures` is an optional, explicit-only workflow skill derived from
+Archify. Its catalog row pins the Archify repository; `skill-layouts.tsv`
+copies only the workflow renderer, validator, SVG exporter, schemas, and
+authoring references. Repo-owned layout rows add the short discovery document,
+the Nature-figure wrapper, and the publication recipe. The other Archify
+renderers, Code Analysis, explainer pages, stories, video, and PR tooling stay
+out of the deployed skill.
+
+The derived skill is smoke-tested after staging and before a refreshed lock is
+published. `skill-smoke.tsv` names the offline check; it validates and exports
+the bundled Nature workflow without a browser. A failed check leaves the old
+pin and managed copies intact. Select it with `DOTFILES_SKILLS=archify-figures`
+and invoke it explicitly. `show-me` remains the default quick-explanation skill.
+
 `humanizer` (English prose) and `humanizer-zh` (Chinese prose) use the same
 default deployment on all four platforms and all seven coding agents. Both
 publish their skill at the repository root. Their layout rows copy only
@@ -122,7 +136,8 @@ general entries. The caveman mode and its compress skill stay in that core,
 as do `investigate-first`, `migration`, and `safe-refactor`. The fifteen
 specialist or overlapping workflows reviewed in [skill review](SKILL_REVIEW.md)
 carry `optional`; select one by name or the whole group with
-`DOTFILES_SKILLS=optional`. The other fourteen caveman-branded skills carry
+`DOTFILES_SKILLS=optional`. `archify-figures` is a sixteenth opt-in derived
+skill for presentation and journal workflow figures. The other fourteen caveman-branded skills carry
 the `caveman` tag. The four diagram, slide-deck, PPT, and front-end design
 skills and the lark
 documentation cluster are in the default set; the remaining Feishu skills,

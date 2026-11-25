@@ -925,6 +925,8 @@ function Read-Catalog([string]$Relative) {
         @{ columns = @('demo', 'SKILL.md', 'SKILL.md') }
         @{ columns = @('demo', 'agents/openai.yaml', 'agents/openai.yaml') }
         @{ columns = @('demo', 'LICENSE', 'LICENSE') }
+    } elseif ($Relative -eq 'deployment/skill-smoke.tsv') {
+        @()
     } else { throw 'unexpected catalog' }
 }
 # PowerShell 5.1 can turn Git's stderr into a terminating error even when
@@ -956,6 +958,70 @@ Import-SkillLibrary
                         self.assertEqual((copied / 'SKILL.md').read_bytes(), locked_skill)
                         for relative in ('agents/openai.yaml', 'LICENSE'):
                             self.assertEqual((copied / relative).read_bytes(), (package / relative).read_bytes())
+
+    def test_git_skill_repo_overlay_and_smoke_check(self):
+        home = self.root / 'overlay device'
+        repo = self.root / 'overlay origin'
+        package = repo / 'archify'
+        package.mkdir(parents=True)
+        (package / 'runtime.mjs').write_text('export const runtime = true;\n')
+        subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+        subprocess.run(['git', '-C', str(repo), 'config', 'core.autocrlf', 'false'], check=True)
+        subprocess.run(['git', '-C', str(repo), 'add', '.'], check=True)
+        subprocess.run(['git', '-C', str(repo), '-c', 'user.name=t', '-c', 'user.email=t@example.invalid',
+                        'commit', '-qm', 'fixture'], check=True)
+        pin = subprocess.check_output(['git', '-C', str(repo), 'rev-parse', 'HEAD'], text=True).strip()
+        source = self.root / 'overlay source'
+        (source / 'deployment').mkdir(parents=True)
+        shutil.copy2(SOURCE / 'deployment/windows.ps1', source / 'deployment/windows.ps1')
+        overlay = source / 'deployment/skill-overlays/figures'
+        (overlay / 'bin').mkdir(parents=True)
+        (overlay / 'SKILL.md').write_text('---\nname: figures\ndescription: fixture\n---\nbody\n')
+        (overlay / 'bin/smoke.mjs').write_text(
+            "import fs from 'node:fs';\n"
+            "fs.writeFileSync(process.env.DOTFILES_TEST_SMOKE_MARKER, 'ok');\n")
+        (source / 'deployment/skill-layouts.tsv').write_text(
+            'figures|SKILL.md|SKILL.md|repo\n'
+            'figures|bin/smoke.mjs|bin/smoke.mjs|repo\n'
+            'figures|runtime.mjs|runtime.mjs|upstream\n')
+        (source / 'deployment/skill-smoke.tsv').write_text('figures|bin/smoke.mjs|smoke\n')
+        marker = self.root / 'windows-smoke.marker'
+        temporary = home / '.cache/tmp'
+        temporary.mkdir(parents=True)
+        script = self.root / 'git-skill-overlay.ps1'
+        script.write_text(r'''$ErrorActionPreference = 'Stop'
+function Stop-Deployment([string]$Message) { throw $Message }
+$Source = $env:DOTFILES_TEST_SOURCE
+$TargetHome = $env:DOTFILES_TEST_TARGET_HOME
+$roots = @{ cache = (Join-Path $TargetHome '.cache'); state = (Join-Path $TargetHome '.local/state') }
+. (Join-Path $Source 'deployment/windows.ps1')
+function Read-Catalog([string]$Relative) {
+    if ($Relative -eq 'deployment/skills.lock.tsv') {
+        @{ columns = @('figures', 'git', $env:DOTFILES_TEST_ORIGIN, $env:DOTFILES_TEST_PIN, 'optional') }
+    } elseif ($Relative -eq 'deployment/skills.tsv') {
+        @{ columns = @('figures', 'git', $env:DOTFILES_TEST_ORIGIN, 'main', 'archify', 'optional') }
+    } elseif ($Relative -eq 'deployment/skill-layouts.tsv') {
+        @{ columns = @('figures', 'SKILL.md', 'SKILL.md', 'repo') }
+        @{ columns = @('figures', 'bin/smoke.mjs', 'bin/smoke.mjs', 'repo') }
+        @{ columns = @('figures', 'runtime.mjs', 'runtime.mjs', 'upstream') }
+    } elseif ($Relative -eq 'deployment/skill-smoke.tsv') {
+        @{ columns = @('figures', 'bin/smoke.mjs', 'smoke') }
+    } else { throw 'unexpected catalog' }
+}
+Import-SkillLibrary
+[Console]::Out.Write($script:SkillLibrary)
+''')
+        environment = dict(self.env, DOTFILES_TEST_SOURCE=str(source), DOTFILES_TEST_TARGET_HOME=str(home),
+                           DOTFILES_TEST_PIN=pin, DOTFILES_TEST_ORIGIN=repo.resolve().as_uri(),
+                           DOTFILES_TEST_SMOKE_MARKER=str(marker), DOTFILES_SKILLS='figures',
+                           DOTFILES_SKILLS_DIR='', DOTFILES_SKILLS_REFRESH='0', TEMP=str(temporary))
+        result = subprocess.run([POWERSHELL, '-NoProfile', '-NonInteractive', '-File', str(script)],
+                                env=environment, capture_output=True, text=True, timeout=60)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        copied = Path(result.stdout) / 'figures'
+        self.assertEqual((copied / 'SKILL.md').read_bytes(), (overlay / 'SKILL.md').read_bytes())
+        self.assertEqual((copied / 'runtime.mjs').read_bytes(), (package / 'runtime.mjs').read_bytes())
+        self.assertEqual(marker.read_text(), 'ok')
 
     def skill_lock_gate_fixture(self, name):
         # A fixture source decouples the lock under test from the repo's real

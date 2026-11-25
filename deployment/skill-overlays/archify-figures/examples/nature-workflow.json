@@ -1,0 +1,33 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Sequencing workflow",
+    "output": ".archify/nature/compact-workflow.html",
+    "visual_preset": "editorial",
+    "quality_profile": "showcase",
+    "feedback_links": false,
+    "legend": { "mode": "hidden" }
+  },
+  "lanes": [
+    { "id": "prep", "label": "Preparation" },
+    { "id": "assay", "label": "Assay" },
+    { "id": "analysis", "label": "Analysis" }
+  ],
+  "mainPath": ["sample", "extract", "library", "sequence", "align", "call"],
+  "nodes": [
+    { "id": "sample", "lane": "prep", "col": 0, "type": "external", "label": "Sample", "width": 180 },
+    { "id": "extract", "lane": "prep", "col": 1, "type": "backend", "label": "DNA extraction", "width": 180 },
+    { "id": "library", "lane": "assay", "col": 1, "type": "backend", "label": "Library preparation", "width": 180 },
+    { "id": "sequence", "lane": "assay", "col": 2, "type": "cloud", "label": "Sequencing", "width": 180 },
+    { "id": "align", "lane": "analysis", "col": 2, "type": "database", "label": "Read alignment", "width": 180 },
+    { "id": "call", "lane": "analysis", "col": 3, "type": "security", "label": "Variant calling", "width": 180 }
+  ],
+  "edges": [
+    { "id": "e1", "from": "sample", "to": "extract" },
+    { "id": "e2", "from": "extract", "to": "library" },
+    { "id": "e3", "from": "library", "to": "sequence" },
+    { "id": "e4", "from": "sequence", "to": "align" },
+    { "id": "e5", "from": "align", "to": "call" }
+  ]
+}

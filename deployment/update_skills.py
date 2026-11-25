@@ -7,8 +7,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
+import os
 from pathlib import Path, PurePosixPath
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -57,6 +60,7 @@ def check(catalog: Path, lock: Path) -> dict[str, list[str]]:
         pattern = r"[a-f0-9]{40}" if pin[1] == "git" else r"[a-f0-9]{64}"
         if pin[1] not in ("git", "tarball") or not re.fullmatch(pattern, pin[3]):
             raise ValueError(f"invalid skill pin: {name}")
+    validate_skill_assets(catalog)
     return declarations
 
 
@@ -82,21 +86,212 @@ def report_review(library: Path, catalog: Path, exceptions: Path, clients: Path,
     return result.failures
 
 
-def layout_paths(catalog: Path, name: str, path: str) -> list[str]:
+def safe_relative(value: str, label: str) -> PurePosixPath:
+    location = PurePosixPath(value)
+    if not value or location.is_absolute() or ".." in location.parts:
+        raise ValueError(f"unsafe {label}: {value}")
+    return location
+
+
+def layout_rows(catalog: Path, name: str) -> list[tuple[str, str, str]]:
     layout = catalog.with_name("skill-layouts.tsv")
-    mapped = []
-    if layout.is_file():
-        for line in layout.read_text().splitlines():
+    result = []
+    if not layout.is_file():
+        return result
+    for line in layout.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("|")
+        if len(fields) not in (3, 4):
+            raise ValueError(f"malformed skill layout: {line}")
+        skill, source, target = fields[:3]
+        if skill != name:
+            continue
+        origin = fields[3] if len(fields) == 4 and fields[3] else "upstream"
+        if origin not in ("upstream", "repo"):
+            raise ValueError(f"unknown skill layout origin: {name} ({origin})")
+        safe_relative(source, "skill layout source")
+        safe_relative(target, "skill layout target")
+        result.append((source, target, origin))
+    return result
+
+
+def overlay_source(catalog: Path, name: str, source: str) -> Path:
+    root = catalog.parent / "skill-overlays" / name
+    current = root
+    while True:
+        if current.is_symlink():
+            raise ValueError(f"skill overlay is a symlink: {current}")
+        if current == catalog.parent:
+            break
+        current = current.parent
+    resolved_root = root.resolve()
+    candidate = root / source
+    if not candidate.resolve().is_relative_to(resolved_root):
+        raise ValueError(f"unsafe skill overlay: {name}/{source}")
+    current = candidate
+    while True:
+        if current.is_symlink():
+            raise ValueError(f"skill overlay is a symlink: {current}")
+        if current == root:
+            break
+        current = current.parent
+    if not candidate.exists():
+        raise ValueError(f"skill overlay is missing: {name}/{source}")
+
+    def validate_tree(entry: Path) -> None:
+        if entry.is_symlink():
+            raise ValueError(f"skill overlay is a symlink: {entry}")
+        if entry.is_dir():
+            for child in entry.iterdir():
+                validate_tree(child)
+        elif not entry.is_file():
+            raise ValueError(f"unsupported skill overlay resource: {entry}")
+
+    validate_tree(candidate)
+    return candidate
+
+
+def smoke_rows(catalog: Path) -> dict[str, tuple[str, str]]:
+    smoke = catalog.with_name("skill-smoke.tsv")
+    result = {}
+    if not smoke.is_file():
+        return result
+    for line in smoke.read_text(encoding="utf-8").splitlines():
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split("|")
+        if len(fields) != 3 or fields[0] in result:
+            raise ValueError(f"malformed or duplicate skill smoke row: {line}")
+        name, script, argument = fields
+        safe_relative(script, "skill smoke script")
+        if not argument or any(character.isspace() for character in argument):
+            raise ValueError(f"unsafe skill smoke argument: {name}")
+        result[name] = (script, argument)
+    return result
+
+
+def validate_skill_assets(catalog: Path) -> None:
+    declarations = {row[0] for row in rows(catalog, 6)}
+    seen = set()
+    if catalog.with_name("skill-layouts.tsv").is_file():
+        for line in catalog.with_name("skill-layouts.tsv").read_text(encoding="utf-8").splitlines():
             if not line or line.startswith("#"):
                 continue
-            skill, source, target = line.split("|")
-            if skill != name:
+            name = line.split("|", 1)[0]
+            if name in seen:
                 continue
-            for value in (source, target):
-                if not value or PurePosixPath(value).is_absolute() or ".." in PurePosixPath(value).parts:
-                    raise ValueError(f"unsafe skill layout: {name}")
-            mapped.append(f"{path}/{source}")
-    return mapped or [f"{path}/SKILL.md"]
+            seen.add(name)
+            if name not in declarations:
+                raise ValueError(f"skill layout names a row the catalog does not own: {name}")
+            mapped = layout_rows(catalog, name)
+            if not any(target == "SKILL.md" for _, target, _ in mapped):
+                raise ValueError(f"skill layout has no SKILL.md: {name}")
+            for source, _, origin in mapped:
+                if origin == "repo":
+                    overlay_source(catalog, name, source)
+    for name in smoke_rows(catalog):
+        if name not in declarations:
+            raise ValueError(f"skill smoke names a row the catalog does not own: {name}")
+
+
+def git_object_path(path: str, source: str) -> str:
+    prefix = "" if path in ("", ".") else path.rstrip("/") + "/"
+    return prefix + source
+
+
+def layout_paths(catalog: Path, name: str, path: str) -> list[str]:
+    mapped = layout_rows(catalog, name)
+    if mapped:
+        return [git_object_path(path, source) for source, _, origin in mapped if origin == "upstream"]
+    return [git_object_path(path, "SKILL.md")]
+
+
+def extract_git_tree(archive: bytes, object_path: str, destination: Path) -> None:
+    prefix = len(PurePosixPath(object_path).parts)
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as handle:
+        for member in handle.getmembers():
+            location = PurePosixPath(member.name)
+            if location.is_absolute() or ".." in location.parts:
+                raise ValueError(f"unsafe skill archive member: {member.name}")
+            if len(location.parts) <= prefix:
+                continue
+            relative = PurePosixPath(*location.parts[prefix:])
+            target = destination / relative
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+            elif member.isfile():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = handle.extractfile(member)
+                if source is None:
+                    raise ValueError(f"cannot read skill archive member: {member.name}")
+                target.write_bytes(source.read())
+                target.chmod(member.mode & 0o777)
+            else:
+                raise ValueError(f"unsupported skill archive member: {member.name}")
+
+
+def stage_git_skill(catalog: Path, name: str, repo: Path, revision: str,
+                    path: str, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    mappings = layout_rows(catalog, name)
+    if not mappings:
+        archive = subprocess.check_output(
+            ["git", "-C", str(repo), "archive", "--format=tar.gz", revision, path],
+            timeout=60,
+        )
+        extract_git_tree(archive, "" if path in ("", ".") else path, destination)
+    else:
+        for source, target, origin in mappings:
+            output = destination / target
+            if origin == "repo":
+                incoming = overlay_source(catalog, name, source)
+                if incoming.is_dir():
+                    shutil.copytree(incoming, output, dirs_exist_ok=True)
+                else:
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(incoming, output)
+                continue
+            object_path = git_object_path(path, source)
+            kind = subprocess.check_output(
+                ["git", "-C", str(repo), "cat-file", "-t", f"{revision}:{object_path}"],
+                text=True, timeout=30,
+            ).strip()
+            if kind == "blob":
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_bytes(subprocess.check_output(
+                    ["git", "-C", str(repo), "show", f"{revision}:{object_path}"],
+                    timeout=60,
+                ))
+            elif kind == "tree":
+                archive = subprocess.check_output(
+                    ["git", "-C", str(repo), "archive", "--format=tar.gz", revision, object_path],
+                    timeout=60,
+                )
+                output.mkdir(parents=True, exist_ok=True)
+                extract_git_tree(archive, object_path, output)
+            else:
+                raise ValueError(f"unsupported skill object: {name}/{source}")
+    if not (destination / "SKILL.md").is_file():
+        raise ValueError(f"staged skill has no SKILL.md: {name}")
+
+
+def run_skill_smoke(catalog: Path, name: str, destination: Path) -> None:
+    row = smoke_rows(catalog).get(name)
+    if row is None:
+        return
+    node = shutil.which("node")
+    if node is None:
+        raise ValueError(f"skill smoke check needs Node: {name}")
+    script, argument = row
+    result = subprocess.run(
+        [node, str(destination / script), argument],
+        env={**os.environ, "ARCHIFY_UPDATE_CHECK_DISABLED": "1"},
+        capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode != 0:
+        detail = (result.stdout + result.stderr).strip()[-4000:]
+        raise ValueError(f"skill smoke check failed: {name}: {detail}")
 
 
 def refresh(catalog: Path, lock: Path) -> None:
@@ -104,13 +299,17 @@ def refresh(catalog: Path, lock: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="dotfiles-skills-update-") as temporary:
         root = Path(temporary)
         repositories = {}
+        smokes = smoke_rows(catalog)
         for name, kind, source, ref, path, selection in rows(catalog, 6):
             if kind == "git":
                 key = (source, ref)
                 if key not in repositories:
                     repo = root / f"repo-{len(repositories)}"
-                    subprocess.run(["git", "clone", "--quiet", "--no-checkout", "--depth", "1",
-                                    "--branch", ref, source, str(repo)], check=True, timeout=180)
+                    command = ["git", "clone", "--quiet", "--no-checkout", "--depth", "1",
+                               "--branch", ref]
+                    if source.startswith(("http://", "https://")):
+                        command.append("--filter=blob:none")
+                    subprocess.run([*command, source, str(repo)], check=True, timeout=180)
                     revision = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
                     repositories[key] = (repo, revision)
                 repo, revision = repositories[key]
@@ -120,10 +319,13 @@ def refresh(catalog: Path, lock: Path) -> None:
                 for resource in layout_paths(catalog, name, path):
                     subprocess.run(["git", "-C", str(repo), "cat-file", "-e", f"{revision}:{resource}"],
                                    check=True, timeout=30)
+                if name in smokes:
+                    staged = root / f"smoke-{name}"
+                    stage_git_skill(catalog, name, repo, revision, path, staged)
+                    run_skill_smoke(catalog, name, staged)
             elif kind == "tarball":
                 archive = root / "download.tgz"
                 with urllib.request.urlopen(source, timeout=90) as response, archive.open("wb") as output:
-                    import shutil
                     shutil.copyfileobj(response, output)
                 with tarfile.open(archive) as handle:
                     members = handle.getmembers()
@@ -134,6 +336,11 @@ def refresh(catalog: Path, lock: Path) -> None:
                     if not any(PurePosixPath(m.name).as_posix() == "SKILL.md" and m.isfile() for m in members):
                         raise ValueError(f"skill archive has no SKILL.md: {name}")
                 revision = hashlib.sha256(archive.read_bytes()).hexdigest()
+                if name in smokes:
+                    staged = root / f"smoke-{name}"
+                    staged.mkdir(parents=True, exist_ok=True)
+                    extract_git_tree(archive.read_bytes(), "", staged)
+                    run_skill_smoke(catalog, name, staged)
             else:
                 raise ValueError(f"unknown skill kind: {kind}")
             lines.append("|".join((name, kind, source, revision, selection)))

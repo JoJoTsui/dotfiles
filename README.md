@@ -327,7 +327,10 @@ deployment wrote. The measured review gate and the client matrix are in
 [skill review](docs/SKILL_REVIEW.md). The filtered research analysis subset —
 17 K-Dense skills for single-cell, variant interpretation, and bioinformatics
 deep learning, with three isolated environments — is in
-[research analysis skills](docs/RESEARCH_SKILLS.md). See
+[research analysis skills](docs/RESEARCH_SKILLS.md). The optional
+`archify-figures` skill deploys only Archify's workflow renderer for
+presentation and Nature-style journal figures; it tracks Archify's pinned
+upstream commit and passes an offline export smoke check on refresh. See
 [ADR 0012](docs/adr/0012-herdr-owned-integrations.md) and
 [ADR 0013](docs/adr/0013-single-owner-skill-library.md). Legacy clients and
 optional integrations remain documented under `deployment/inventory`.
