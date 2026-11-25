@@ -52,6 +52,8 @@ agents|.qoder
 agents|.minimax
 agents|.minimax-code
 agents|.minimax-code-install-logs
+agents|.dsh
+agents|.dsh-tui
 agents|.caveman
 agents|.herdr
 agents|.lark-cli

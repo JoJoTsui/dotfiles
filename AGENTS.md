@@ -179,6 +179,17 @@ explains every changed pair.
   deployment-owned record keeps an exact pin. Read
   `docs/AGENT_INSTALLATION.md` before changing an agent's provider, pin,
   command, or Herdr kind.
+- **Managed agent launchers retire recognized legacy links reversibly**:
+  before replacing any selected launcher, the Unix installer validates the
+  complete target set. An unmarked regular file or foreign symlink remains a
+  collision. A Bun-global link into the same package or its platform-specific
+  companion package is moved into a private recovery batch on every host. A
+  targeted agent run on a complete legacy symlink home may also move selected
+  vendor links after bootstrap validates that every managed top-level state
+  root resolves under one canonical live tree. Full deployments and explicit
+  `--home` targets still use the strict copy-mode boundary. The global package
+  stays installed, and `agent-launchers/<batch>/restore.tsv` records each
+  original link for deliberate rollback.
 - **Herdr owns its integration bytes**: the deployment triggers
   `herdr integration install <kind>` for the selected managed agents, after
   the agent step and before the final client-settings merge, and never writes

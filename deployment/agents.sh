@@ -525,12 +525,72 @@ manifest_string() {
         sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" | head -n1
 }
 
+AGENT_LAUNCHER_RECOVERY=''
+
+agent_launcher_recovery_dir() {
+    local state batch
+    [ -z "$AGENT_LAUNCHER_RECOVERY" ] || return 0
+    state="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/agent-launchers"
+    [ ! -L "${state%/*}" ] || fail 'the agent launcher recovery parent is a symlink'
+    [ ! -L "$state" ] || fail 'the agent launcher recovery directory is a symlink'
+    mkdir -p "$state" || fail 'cannot create the agent launcher recovery directory'
+    batch=$(mktemp -d "$state/$(date -u +%Y%m%dT%H%M%SZ).XXXXXX") ||
+        fail 'cannot create the agent launcher recovery batch'
+    chmod 700 "$batch" || fail 'cannot protect the agent launcher recovery batch'
+    printf '# path|backup\n' > "$batch/restore.tsv" ||
+        fail 'cannot create the agent launcher recovery journal'
+    chmod 600 "$batch/restore.tsv" || fail 'cannot protect the agent launcher recovery journal'
+    AGENT_LAUNCHER_RECOVERY=$batch
+    printf 'dotfiles: agent launcher recovery batch: %s\n' "$batch" >&2
+}
+
+agent_backup_launcher() {
+    local launcher=$1 relative batch backup
+    relative=${launcher#"$HOME"/}
+    [ "$relative" != "$launcher" ] || fail "agent launcher is outside the home: $launcher"
+    agent_launcher_recovery_dir
+    batch=$AGENT_LAUNCHER_RECOVERY
+    backup=$batch/$relative
+    mkdir -p "$(dirname "$backup")" || fail "cannot prepare launcher recovery for $relative"
+    mv "$launcher" "$backup" || fail "cannot back up agent launcher $relative"
+    printf '%s|%s\n' "$relative" "$backup" >> "$batch/restore.tsv" ||
+        fail "cannot record agent launcher recovery for $relative"
+    printf 'dotfiles: backed up legacy agent launcher %s\n' "$relative"
+}
+
+# Bun's global installer owns these links before the managed frozen projects
+# take over. A link into the same package is therefore safe to retire into the
+# recovery batch. A link into any other package remains device-owned.
+agent_launcher_needs_adoption() {
+    local launcher=$1 package=${2:-} target root
+    [ -L "$launcher" ] || return 1
+    [ "${DEPLOY_LEGACY_AGENT_HOME:-false}" = true ] && return 0
+    [ -n "$package" ] && [ "$package" != '-' ] || return 1
+    target=$(agent_physical_path "$launcher") || return 1
+    root=$(CDPATH='' cd -P -- "$BUN_INSTALL" 2>/dev/null && pwd -P) || return 1
+    case "$target" in
+        "$root/install/global/node_modules/$package/"*|\
+        "$root/install/global/node_modules/$package-"*) return 0 ;;
+    esac
+    return 1
+}
+
 agent_validate_launcher() {
-    local launcher=$1
-    [ ! -L "$launcher" ] || fail "agent launcher is a symlink: $launcher"
+    local launcher=$1 package=${2:-}
+    if [ -L "$launcher" ]; then
+        agent_launcher_needs_adoption "$launcher" "$package" && return 0
+        fail "agent launcher is a symlink: $launcher"
+    fi
     if [ -e "$launcher" ] && { [ ! -f "$launcher" ] ||
         ! LC_ALL=C head -c 160 "$launcher" 2>/dev/null | LC_ALL=C grep -Fq '# Managed by dotfiles;'; }; then
         fail "agent launcher would replace a device file: $launcher"
+    fi
+}
+
+agent_adopt_launcher() {
+    local launcher=$1 package=${2:-}
+    if agent_launcher_needs_adoption "$launcher" "$package"; then
+        agent_backup_launcher "$launcher"
     fi
 }
 
@@ -556,7 +616,7 @@ install_native_release() {
     done
     IFS=, read -r -a exposed_commands <<< "$commands"
     for command in "${exposed_commands[@]}"; do
-        agent_validate_launcher "$HOME/.local/bin/$command"
+        agent_validate_launcher "$HOME/.local/bin/$command" '-'
     done
     if [ ! -x "$cli" ] || ! diagnostic=$("$cli" --version 2>/dev/null) ||
         ! agent_diagnostic_matches "$version" "$diagnostic" "$template"; then
@@ -609,6 +669,11 @@ install_native_release() {
         rm -rf "$scratch"
     fi
     mkdir -p "$HOME/.local/bin"
+    # Targets were validated before the release work; retire adoptable links
+    # only after the pinned binary is installed and verified.
+    for command in "${exposed_commands[@]}"; do
+        agent_adopt_launcher "$HOME/.local/bin/$command" '-'
+    done
     # A vendor dispatcher may select another installed release. Both managed
     # commands use the verified pin while the device-owned dispatcher survives.
     for command in "${exposed_commands[@]}"; do
@@ -1031,7 +1096,7 @@ agent_global_copy_warning() {
     if [ -n "$extra" ]; then
         printf 'dotfiles: the global copy also provides%s, which no managed launcher owns\n' "$extra"
     fi
-    printf 'dotfiles: remove the leftover copy with: bun remove -g %s\n' "$package"
+    printf 'dotfiles: optional cleanup after reviewing extra commands: bun remove -g %s\n' "$package"
 }
 
 # The two managed launchers of one provider. The same selected executable is
@@ -1039,13 +1104,20 @@ agent_global_copy_warning() {
 agent_install_launchers() {
     local name=$1 version=$2 commands=$3 entrypoint_dir=$4 entrypoint_file=$5
     local comment=$6 node=$7 bun=$8 template=$9 policy=${10:-exact} prepend_path=${11:-}
+    local package=${12:-}
     local command launcher diagnostic entrypoint path_prefix exposed_commands=()
     IFS=, read -r -a exposed_commands <<< "$commands"
     for command in "${exposed_commands[@]}"; do
-        agent_validate_launcher "$BUN_INSTALL/bin/$command"
-        agent_validate_launcher "$HOME/.local/bin/$command"
+        agent_validate_launcher "$BUN_INSTALL/bin/$command" "$package"
+        agent_validate_launcher "$HOME/.local/bin/$command" "$package"
     done
     mkdir -p "$BUN_INSTALL/bin" "$HOME/.local/bin"
+    # All targets are valid before any link moves. A later collision therefore
+    # cannot leave an earlier launcher backed up without its replacement.
+    for command in "${exposed_commands[@]}"; do
+        agent_adopt_launcher "$BUN_INSTALL/bin/$command" "$package"
+        agent_adopt_launcher "$HOME/.local/bin/$command" "$package"
+    done
     path_prefix="$(dirname "$node"):$(dirname "$bun")"
     [ -z "$prepend_path" ] || path_prefix="$prepend_path:$path_prefix"
     for command in "${exposed_commands[@]}"; do
@@ -1129,7 +1201,7 @@ install_bun_agent() {
         done
     fi
     agent_install_launchers "$name" "$version" "$commands" "$project/node_modules/.bin" '' \
-        "Bun installs the frozen project" "$node" "$bun" "-" exact "$prepend_path"
+        "Bun installs the frozen project" "$node" "$bun" "-" exact "$prepend_path" "$package"
     agent_global_copy_warning "$package" "$node" "${exposed_commands[0]}"
 }
 
@@ -1183,7 +1255,7 @@ install_agents() {
     if [ -z "${DOTFILES_NODE_BIN:-}" ] && [ ! -x "$node" ]; then node="$PIXI_HOME/bin/node"; fi
     local bun_pin node_pin node_version name row provider commands package version catalog_version
     local minimum template installed claude_keep_plain_opus=0 package_kind=''
-    local observed=''
+    local observed='' owned_row bun_package=''
     DEPLOY_STEP=install-agents.runtime
     case "$bun" in /*) ;; *) fail 'Bun binary override must be absolute' ;; esac
     case "$node" in /*) ;; *) fail 'Node binary override must be absolute' ;; esac
@@ -1237,8 +1309,11 @@ install_agents() {
                     # never installs or upgrades one.
                     if agent_homebrew_command "$version" "$package_kind" "$package" "$commands" "$template"; then
                         printf 'dotfiles: adopted %s %s from %s\n' "$name" "$AGENT_HOME_BREW_VERSION" "$AGENT_HOME_BREW_COMMAND"
+                        owned_row=$(agent_owned_row "$name")
+                        agent_row_split "$owned_row"
+                        bun_package=${AGENT_ROW[2]}
                         agent_install_launchers "$name" "$AGENT_HOME_BREW_VERSION" "$commands" '' "$AGENT_HOME_BREW_COMMAND" \
-                            "Homebrew provides the command" "$node" "$bun" "$template" floor
+                            "Homebrew provides the command" "$node" "$bun" "$template" floor '' "$bun_package"
                         observed=$AGENT_HOME_BREW_VERSION
                         installed=1
                     fi ;;

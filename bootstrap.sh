@@ -4,6 +4,8 @@ set -euo pipefail
 
 DEPLOY_SOURCE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 DEPLOY_HOME="${HOME:?HOME must be set}"
+DEPLOY_HOME_SET=false
+DEPLOY_LEGACY_AGENT_HOME=false
 DEPLOY_PLAN=false
 DEPLOY_APPLY_ONLY=false
 DEPLOY_AGENTS_ONLY=false
@@ -82,6 +84,44 @@ run_step() {
 
 snapshot_magpie_clients() {
     DEPLOY_MAGPIE_BACKUP_SOURCE=$(magpie_snapshot_clients) || fail 'cannot snapshot the client settings before deployment'
+}
+
+# The legacy T9K account home is a set of top-level links into one persistent
+# live tree. A targeted agent update may use that canonical tree as its home;
+# a full deployment and an explicitly named --home still use the public
+# copy-mode boundary and refuse these links. Require the complete managed
+# topology so an update can never split state between the account home and the
+# live tree.
+adopt_legacy_agent_home() {
+    "$DEPLOY_AGENTS_ONLY" || return 0
+    "$DEPLOY_HOME_SET" && return 0
+    [ ! -L "$DEPLOY_HOME" ] || return 0
+    local original=$DEPLOY_HOME relative path target candidate=''
+    local -a roots=(.local .config .cache .pixi .bun .codex .claude .kimi-code .pi
+        .qoder .minimax .minimax-code .minimax-code-install-logs .cargo .rustup
+        .agents .opencode .codegraph .herdr .dsh .dsh-tui)
+    for relative in .local .config .cache .pixi .bun; do
+        [ -L "$original/$relative" ] || return 0
+    done
+    for relative in "${roots[@]}"; do
+        path=$original/$relative
+        [ -L "$path" ] || fail "legacy agent home is not fully linked: $relative"
+        target=$(CDPATH='' cd -P -- "$path" 2>/dev/null && pwd -P) ||
+            fail "cannot resolve legacy agent state root: $relative"
+        [ "${target##*/}" = "$relative" ] ||
+            fail "legacy agent state root does not keep its name: $relative"
+        if [ -z "$candidate" ]; then
+            candidate=${target%/*}
+        else
+            [ "$candidate" = "${target%/*}" ] ||
+                fail "legacy agent state roots do not share one live tree: $relative"
+        fi
+    done
+    [ -n "$candidate" ] && [ "$candidate" != / ] || fail 'legacy agent live tree is invalid'
+    [ "$candidate" != "$DEPLOY_SOURCE" ] || fail 'legacy agent live tree cannot equal the source'
+    DEPLOY_HOME=$candidate
+    DEPLOY_LEGACY_AGENT_HOME=true
+    printf 'dotfiles: using legacy agent home %s for symlinked %s\n' "$DEPLOY_HOME" "$original" >&2
 }
 
 initialize_source() {
@@ -191,6 +231,9 @@ DOTFILES_CLASS, DOTFILES_ARCH, DOTFILES_AGENTS, DOTFILES_BUNDLES, DOTFILES_PROXY
 DOTFILES_MAGPIE, DOTFILES_MIRROR (tuna or upstream).
 Explicit flags override environment selectors.
 Conflicting explicit preset/component flags are errors.
+A targeted --agents-only/--agent-update run on a complete legacy symlink home
+uses the canonical live tree; full deployments and explicit --home targets
+still require the copy-mode boundary.
 Every state root is scoped to the target home. System Bash configuration and
 the account login shell change only with their explicit options; auth, history
 imports, and project indexes remain separate actions.
@@ -209,7 +252,7 @@ HELP
         --home|--platform|--role|--profile|--class|--arch|--source|--agents|--bundles)
             [ "$#" -ge 2 ] || fail "$1 requires a value"
             case "$1" in
-                --home) DEPLOY_HOME="$2" ;;
+                --home) DEPLOY_HOME="$2"; DEPLOY_HOME_SET=true ;;
                 --platform) CLI_PLATFORM="$2" ;;
                 --role) CLI_ROLE="$2" ;;
                 --profile) CLI_PROFILE="$2" ;;
@@ -241,6 +284,7 @@ DEPLOY_HOME=${DEPLOY_HOME%/}
 DEPLOY_SOURCE="$(cd "$DEPLOY_SOURCE" 2>/dev/null && pwd -P)" || fail '--source must be an existing source directory'
 [ -f "$DEPLOY_SOURCE/.chezmoi.toml.tmpl" ] || fail '--source must contain the chezmoi source template'
 [ "$DEPLOY_HOME" != "$DEPLOY_SOURCE" ] || fail '--home cannot equal --source'
+adopt_legacy_agent_home
 # shellcheck source=deployment/profile.sh
 source "$DEPLOY_SOURCE/deployment/profile.sh"
 resolve_profile

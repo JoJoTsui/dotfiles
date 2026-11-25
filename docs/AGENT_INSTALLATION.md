@@ -74,6 +74,9 @@ proposal exists, and then reinstalls through the same boundary. A single-agent
 update uses the narrower dispatch described below. Vendor
 self-updaters are not invoked. The working checkout remains the source of
 truth, so the refreshed manifests and locks can be reviewed and committed.
+On Unix, neither command requires manually removing Bun-global launcher links;
+recognized links are backed up automatically, and a complete legacy symlink
+home is routed to its canonical live tree.
 
 The update report distinguishes changed Homebrew versions from packages that
 were already current or not installed. Repository proposals likewise show
@@ -85,16 +88,31 @@ and reinstall that agent through the targeted boundary.
 ## Updating a client CLI
 
 The managed launchers own `~/.bun/bin/<command>` and `~/.local/bin/<command>`.
-Before writing a selected agent's launchers, the installer checks every target:
-it refuses symlinks and regular files without its managed marker, preserving
-the device entry. Resolve a collision with a protected backup before retrying.
-Bun's global installer links into the same directory and refuses to replace an
-existing file, so `bun add -g @anthropic-ai/claude-code` fails with `EEXIST`.
-The package still lands in `~/.bun/install/global/node_modules`, where it can
-never run: the managed launcher keeps the command. Remove such a leftover with
-`bun remove -g <package>`. The deployment reports every leftover it finds, and
-`dotfiles-agents status` lists each copy with its version, the commands it
-would provide, and the command that removes it.
+Before writing a selected agent's launchers, the installer checks every target.
+An unmarked regular file and a foreign symlink are still preserved and stop the
+update. A Bun-global symlink into the selected package (including its
+platform-specific companion package) is a previous installation of the same
+client: the installer moves the link, not its target, into a private recovery
+batch and then writes the managed regular launchers. The global package itself
+stays device-owned, so an extra binary it provides remains available; removing
+that package is optional cleanup, not a prerequisite. Bun's global installer
+links into the same directory and refuses to replace an existing file, so
+`bun add -g @anthropic-ai/claude-code` fails with `EEXIST`. The package still
+lands in `~/.bun/install/global/node_modules`, where it can never run: the
+managed launcher keeps the command. The deployment reports every leftover it
+finds, and `dotfiles-agents status` lists each copy with its version, the
+commands it would provide, and the optional command that removes it.
+
+On the legacy T9K symlink home, a targeted `--agents-only` or `--agent-update`
+run made through `dotfiles-agents` first validates the complete top-level state
+link topology. When every managed root points at the same persistent live tree,
+the run uses that canonical tree as its home and may retire selected launcher
+symlinks into the same recovery batch. A full deployment, an explicit `--home`,
+an incomplete topology, or roots that resolve to different trees still fail at
+the public copy-mode boundary. Each changed link is recorded in
+`~/.local/state/dotfiles/agent-launchers/<batch>/restore.tsv` as `path|backup`;
+the backup is the original symlink and can be moved back after removing the
+managed launcher.
 
 The Homebrew-managed clients are the other half of the same rule. Homebrew
 owns an installed formula or cask: the catalog states a floor, and the
@@ -210,16 +228,19 @@ strings and foreign optional native payloads. Bun's
 [frozen installation](https://bun.sh/docs/pm/cli/install) are the supported
 mechanism; a filtered monolithic manifest is not used.
 
-| Selection | Exact package | CLI |
+| Selection | Package | CLI |
 | --- | --- | --- |
-| kimi | `@moonshot-ai/kimi-code` 2.4.1 | `kimi` |
-| pi | `@earendil-works/pi-coding-agent` 1.5.2 | `pi` |
-| opencode | `@opencode/cli` 2.2.5 | `opencode`, `opencode2` |
-| claude | `@anthropic-ai/claude-code` 2.1.325 | `claude` |
-| codex | `@openai/codex` 0.169.0 | `codex` |
-| minimax | `@minimax-ai/code` 0.7.0 | `mcode` |
-| qoder (native) | release manifest pin 1.1.82 | `qoder`, `qodercli` |
-| independent default | `@colbymchenry/codegraph` 1.6.2 | `codegraph` |
+| kimi | `@moonshot-ai/kimi-code` | `kimi` |
+| pi | `@earendil-works/pi-coding-agent` | `pi` |
+| opencode | `@opencode/cli` | `opencode`, `opencode2` |
+| claude | `@anthropic-ai/claude-code` | `claude` |
+| codex | `@openai/codex` | `codex` |
+| minimax | `@minimax-ai/code` | `mcode` |
+| qoder (native) | verified release manifest | `qoder`, `qodercli` |
+| independent default | `@colbymchenry/codegraph` | `codegraph` |
+
+Exact versions and floors have one owner: `deployment/agents/providers.tsv`.
+The table above names packages and commands, not a second version catalog.
 
 On native macOS, the provider chain resolves Homebrew first and the frozen Bun
 project second. The catalog declares the Homebrew package of every agent

@@ -109,6 +109,36 @@ Two constraints belong to this host:
   rehearsed shell migration replaces them with the rendered resources it
   prepares. Linking them is the last step, not a repair.
 
+## Agent package updates on the legacy home
+
+The managed `dotfiles-agents install` and `dotfiles-agents update` commands can
+target the legacy home without manually deleting its Bun-global or vendor
+launcher links. They still call the public bootstrap, but only in the targeted
+`--agents-only` / `--agent-update` modes. Before the public state-root guard,
+bootstrap validates that `.local`, `.config`, `.cache`, `.pixi`, `.bun`,
+`.codex`, `.claude`, `.kimi-code`, `.pi`, `.qoder`, `.minimax`,
+`.minimax-code`, `.minimax-code-install-logs`, `.cargo`, `.rustup`, `.agents`,
+`.opencode`, `.codegraph`, `.herdr`, `.dsh`, and `.dsh-tui` are all
+symlinks to the same entry names under one live tree. It then uses that tree as
+the deployment home. A full deployment, an explicitly supplied `--home`, a
+missing link, or a root that resolves elsewhere remains a failure; the adapter
+never creates links or splits state between the account home and the live tree.
+
+Selected launcher symlinks are validated as a set before any of them move.
+Recognized links are moved, not copied or followed, into a private batch under
+`<live-root>/.local/state/dotfiles/agent-launchers/`. The batch's `restore.tsv`
+records `path|backup`; the backup preserves the original link text. On a fresh
+home the automatic adoption is narrower: only a Bun-global link into the same
+package or its platform-specific companion package is retired. An unmarked
+regular file or any other symlink still stops the update. The Bun-global package
+is left installed, so commands it provides beyond the managed launcher (for
+example `mcode-tools`) keep working. `bun remove -g <package>` is optional
+cleanup after reviewing those extra commands.
+
+To roll back one link deliberately, remove the managed regular launcher and
+move its recorded backup back to the original path. Keep the recovery batch
+until the updated agents and their integrations have been exercised.
+
 ## Incremental T9K jobs
 
 Use the explicit T9K job mode on the existing symlink-managed T9K host.

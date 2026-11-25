@@ -168,6 +168,32 @@ install_native_release qoder "$2" 'qoder,qodercli' 'qodercli' 'https://qoder.inv
         self.assertEqual(target.read_bytes(), original)
         self.assertFalse((self.home / ".local/bin/qoder").exists())
 
+    def test_legacy_mode_retires_vendor_launcher_symlinks(self):
+        self.write_release(self.version)
+        targets = {}
+        for command in ("qoder", "qodercli"):
+            target = self.root / ("vendor-" + command)
+            self.write_executable(target, b"#!/bin/sh\necho vendor-launcher\n")
+            launcher = self.home / ".local/bin" / command
+            launcher.parent.mkdir(parents=True, exist_ok=True)
+            launcher.symlink_to(target)
+            targets[command] = target
+
+        result = self.install(DEPLOY_LEGACY_AGENT_HOME="true",
+                              XDG_STATE_HOME=str(self.home / ".local/state"))
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assert_launchers_use_pin()
+        journals = list((self.home / ".local/state/dotfiles/agent-launchers").glob("*/restore.tsv"))
+        self.assertEqual(len(journals), 1)
+        rows = [line.split("|") for line in journals[0].read_text().splitlines()
+                if line and not line.startswith("#")]
+        self.assertEqual([row[0] for row in rows], [".local/bin/qoder", ".local/bin/qodercli"])
+        for row in rows:
+            self.assertTrue(Path(row[1]).is_symlink())
+        for target in targets.values():
+            self.assertEqual(target.read_bytes(), b"#!/bin/sh\necho vendor-launcher\n")
+
     def test_versioned_binary_symlink_is_not_executed_or_overwritten(self):
         target = self.root / "device-executable"
         original = self.cli_bytes("0.0.1")

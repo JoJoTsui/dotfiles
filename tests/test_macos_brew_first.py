@@ -331,6 +331,28 @@ class MacosBrewFirstTests(unittest.TestCase):
         self.assertEqual(target.read_text(), original)
         self.assertEqual(managed.read_text(), previous)
 
+    def test_adopted_agent_retires_a_same_package_bun_global_link(self):
+        record = homebrew_record("kimi")
+        self.write_package(record, record["floor"])
+        self.write_command("kimi", record["floor"])
+        package = "@moonshot-ai/kimi-code"
+        target = self.home / ".bun/install/global/node_modules" / package / "dist/main.mjs"
+        target.parent.mkdir(parents=True)
+        target.write_text("#!/bin/sh\necho global-kimi\n")
+        target.chmod(0o755)
+        launcher = self.home / ".bun/bin/kimi"
+        launcher.parent.mkdir(parents=True, exist_ok=True)
+        launcher.symlink_to("../install/global/node_modules/@moonshot-ai/kimi-code/dist/main.mjs")
+
+        result = self.install()
+
+        self.assertIn("backed up legacy agent launcher .bun/bin/kimi", result.stdout)
+        self.assertTrue(launcher.is_file())
+        self.assertFalse(launcher.is_symlink())
+        self.assertTrue(target.is_file())
+        journals = list((self.home / ".local/state/dotfiles/agent-launchers").glob("*/restore.tsv"))
+        self.assertEqual(len(journals), 1)
+
     def test_a_package_at_the_floor_is_adopted_without_a_bun_project(self):
         record = homebrew_record("kimi")
         self.write_package(record, record["floor"])

@@ -31,6 +31,238 @@ class AgentTests(unittest.TestCase):
                               cwd=SOURCE, env=env or self.env, capture_output=True,
                               text=True, timeout=30)
 
+    def fake_runtime(self):
+        tools = self.root / "tools"
+        tools.mkdir(exist_ok=True)
+        pins = agent_pins()
+        bun = tools / "bun"
+        bun.write_text(
+            "#!/usr/bin/env python3\n"
+            "import pathlib, sys\n"
+            f"pins = {pins!r}\n"
+            "if sys.argv[1:] == ['--version']:\n"
+            f"    print({common_pin('bun')!r}); raise SystemExit\n"
+            "project = pathlib.Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
+            "for command in pins[project.name]['commands'].split(','):\n"
+            "    target = project / 'node_modules/.bin' / command\n"
+            "    target.parent.mkdir(parents=True, exist_ok=True)\n"
+            "    target.write_text('#!/bin/sh\\necho ' + pins[project.name]['version'] + '\\n')\n"
+            "    target.chmod(0o755)\n",
+            encoding="utf-8")
+        bun.chmod(0o755)
+        node = tools / "node"
+        node.write_text(f"#!/bin/sh\necho v{common_pin('nodejs')}\n", encoding="utf-8")
+        node.chmod(0o755)
+        return bun, node
+
+    def legacy_home(self):
+        legacy = self.root / "legacy-home"
+        live = self.root / "live-tree"
+        roots = (".local", ".config", ".cache", ".pixi", ".bun", ".codex", ".claude",
+                 ".kimi-code", ".pi", ".qoder", ".minimax", ".minimax-code",
+                 ".minimax-code-install-logs", ".cargo", ".rustup", ".agents",
+                 ".opencode", ".codegraph", ".herdr", ".dsh", ".dsh-tui")
+        for relative in roots:
+            target = live / relative
+            target.mkdir(parents=True, exist_ok=True)
+            (legacy / relative).parent.mkdir(parents=True, exist_ok=True)
+            (legacy / relative).symlink_to(target, target_is_directory=True)
+        return legacy, live
+
+    def launcher_recovery(self, home):
+        journals = sorted((home / ".local/state/dotfiles/agent-launchers").glob("*/restore.tsv"))
+        self.assertEqual(len(journals), 1)
+        return journals[0], [line.split("|") for line in journals[0].read_text().splitlines()
+                             if line and not line.startswith("#")]
+
+    def test_bun_global_launcher_is_backed_up_and_replaced(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent install requires Chezmoi")
+        bun, node = self.fake_runtime()
+        package = "@earendil-works/pi-coding-agent"
+        target = self.home / ".bun/install/global/node_modules" / package / "dist/cli.js"
+        target.parent.mkdir(parents=True)
+        original = b"#!/bin/sh\necho device-global-pi\n"
+        target.write_bytes(original)
+        target.chmod(0o755)
+        launcher = self.home / ".bun/bin/pi"
+        launcher.parent.mkdir(parents=True)
+        link = "../install/global/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+        launcher.symlink_to(link)
+
+        result = self.deploy("--agents-only", "--agents", "pi", env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_BUN_BIN=str(bun),
+            DOTFILES_NODE_BIN=str(node)))
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("backed up legacy agent launcher .bun/bin/pi", result.stdout)
+        self.assertTrue(launcher.is_file())
+        self.assertFalse(launcher.is_symlink())
+        self.assertEqual(target.read_bytes(), original)
+        journal, rows = self.launcher_recovery(self.home)
+        self.assertEqual([row[0] for row in rows], [".bun/bin/pi"])
+        backup = Path(rows[0][1])
+        self.assertTrue(backup.is_symlink())
+        self.assertEqual(os.readlink(backup), link)
+        self.assertEqual(journal.stat().st_mode & 0o777, 0o600)
+
+    def test_bun_global_platform_package_launcher_is_backed_up_and_replaced(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent install requires Chezmoi")
+        bun, node = self.fake_runtime()
+        target = self.home / ".bun/install/global/node_modules/@anthropic-ai/claude-code-linux-x64/claude"
+        target.parent.mkdir(parents=True)
+        target.write_text("#!/bin/sh\necho device-global-claude\n")
+        target.chmod(0o755)
+        launcher = self.home / ".bun/bin/claude"
+        launcher.parent.mkdir(parents=True)
+        launcher.symlink_to("../install/global/node_modules/@anthropic-ai/claude-code-linux-x64/claude")
+
+        result = self.deploy("--agents-only", "--agents", "claude", env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_BUN_BIN=str(bun),
+            DOTFILES_NODE_BIN=str(node)))
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(launcher.is_file())
+        self.assertFalse(launcher.is_symlink())
+        self.assertTrue(target.is_file())
+        _journal, rows = self.launcher_recovery(self.home)
+        self.assertEqual([row[0] for row in rows], [".bun/bin/claude"])
+
+    def test_foreign_launcher_symlink_is_preserved_on_a_fresh_home(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent install requires Chezmoi")
+        bun, node = self.fake_runtime()
+        target = self.root / "device-pi"
+        target.write_text("#!/bin/sh\necho device-pi\n")
+        target.chmod(0o755)
+        global_target = self.home / ".bun/install/global/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+        global_target.parent.mkdir(parents=True)
+        global_target.write_text("#!/bin/sh\necho global-pi\n")
+        global_target.chmod(0o755)
+        global_link = "../install/global/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+        bun_launcher = self.home / ".bun/bin/pi"
+        bun_launcher.parent.mkdir(parents=True)
+        bun_launcher.symlink_to(global_link)
+        launcher = self.home / ".local/bin/pi"
+        launcher.parent.mkdir(parents=True)
+        launcher.symlink_to(target)
+
+        result = self.deploy("--agents-only", "--agents", "pi", env=dict(
+            self.env, DOTFILES_CHEZMOI_BIN=chezmoi, DOTFILES_BUN_BIN=str(bun),
+            DOTFILES_NODE_BIN=str(node)))
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("agent launcher is a symlink", result.stderr)
+        self.assertTrue(launcher.is_symlink())
+        self.assertEqual(target.read_text(), "#!/bin/sh\necho device-pi\n")
+        self.assertTrue(bun_launcher.is_symlink())
+        self.assertEqual(os.readlink(bun_launcher), global_link)
+        self.assertFalse((self.home / ".local/state/dotfiles/agent-launchers").exists())
+
+    def test_dotfiles_agents_update_routes_a_legacy_home_to_its_live_tree(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent update requires Chezmoi")
+        bun, node = self.fake_runtime()
+        legacy, live = self.legacy_home()
+        package = "@earendil-works/pi-coding-agent"
+        target = live / ".bun/install/global/node_modules" / package / "dist/cli.js"
+        target.parent.mkdir(parents=True)
+        target.write_text("#!/bin/sh\necho device-global-pi\n")
+        launcher = live / ".bun/bin/pi"
+        launcher.parent.mkdir(parents=True)
+        launcher.symlink_to("../install/global/node_modules/@earendil-works/pi-coding-agent/dist/cli.js")
+        wrapper = self.root / "dotfiles-agents"
+        template = (SOURCE / "dot_local/bin/executable_dotfiles-agents.tmpl").read_text()
+        wrapper.write_text(template.replace("{{ .chezmoi.sourceDir }}", str(SOURCE)))
+        wrapper.chmod(0o755)
+        offline_python = self.root / "offline-python"
+        offline_python.write_text(
+            "#!/usr/bin/env python3\nimport os, pathlib, sys\n"
+            "args = sys.argv[1:]\n"
+            "if args[1] == 'upgrade-homebrew': raise SystemExit\n"
+            "if args[1] == 'propose-agents':\n"
+            "    pathlib.Path(args[args.index('--output') + 1]).write_text('{\"agents\": {}}')\n"
+            "    raise SystemExit\n"
+            "os.execv(sys.executable, [sys.executable, *args])\n")
+        offline_python.chmod(0o755)
+        environment = dict(self.env, HOME=str(legacy), DOTFILES_SOURCE=str(SOURCE),
+                           DOTFILES_PYTHON=str(offline_python), DOTFILES_CHEZMOI_BIN=chezmoi,
+                           DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node),
+                           PATH=os.pathsep.join((str(bun.parent), "/usr/bin", "/bin")))
+
+        result = subprocess.run(["/bin/bash", str(wrapper), "update", "pi"], cwd=self.root,
+                                env=environment, capture_output=True, text=True, timeout=60,
+                                check=False)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"using legacy agent home {live}", result.stderr)
+        self.assertTrue((live / ".bun/bin/pi").is_file())
+        self.assertFalse((live / ".bun/bin/pi").is_symlink())
+        self.assertTrue((live / ".local/bin/pi").is_file())
+        self.assertTrue((legacy / ".bun").is_symlink())
+        self.launcher_recovery(live)
+
+    def test_legacy_agent_home_rejects_a_foreign_state_root(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent install requires Chezmoi")
+        bun, node = self.fake_runtime()
+        legacy, live = self.legacy_home()
+        foreign = self.root / "foreign-bun"
+        (foreign / ".bun").mkdir(parents=True)
+        (legacy / ".bun").unlink()
+        (legacy / ".bun").symlink_to(foreign / ".bun", target_is_directory=True)
+
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--platform", "linux",
+                                 "--role", "workstation", "--agents-only", "--agents", "pi"],
+                                cwd=SOURCE, env=dict(
+                                    self.env, HOME=str(legacy), DOTFILES_CHEZMOI_BIN=chezmoi,
+                                    DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node),
+                                    PATH=os.pathsep.join((str(bun.parent), "/usr/bin", "/bin"))),
+                                capture_output=True, text=True, timeout=60,
+                                check=False)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("legacy agent state roots do not share one live tree", result.stderr)
+        self.assertFalse((live / ".bun/bin/pi").exists())
+        self.assertFalse((foreign / ".bun/bin/pi").exists())
+
+    def test_legacy_agent_home_adopts_a_vendor_launcher_symlink(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent install requires Chezmoi")
+        bun, node = self.fake_runtime()
+        legacy, live = self.legacy_home()
+        target = live / ".codex/packages/standalone/current/bin/codex"
+        target.parent.mkdir(parents=True)
+        target.write_text("#!/bin/sh\necho vendor-codex\n")
+        target.chmod(0o755)
+        launcher = live / ".local/bin/codex"
+        launcher.parent.mkdir(parents=True)
+        launcher.symlink_to(target)
+
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--platform", "linux",
+                                 "--role", "workstation", "--agents-only", "--agents", "codex"],
+                                cwd=SOURCE, env=dict(
+                                    self.env, HOME=str(legacy), DOTFILES_CHEZMOI_BIN=chezmoi,
+                                    DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node),
+                                    PATH=os.pathsep.join((str(bun.parent), "/usr/bin", "/bin"))),
+                                capture_output=True, text=True, timeout=60,
+                                check=False)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(f"using legacy agent home {live}", result.stderr)
+        self.assertTrue(launcher.is_file())
+        self.assertFalse(launcher.is_symlink())
+        _journal, rows = self.launcher_recovery(live)
+        self.assertEqual([row[0] for row in rows], [".local/bin/codex"])
+        self.assertTrue(Path(rows[0][1]).is_symlink())
+
     def test_targeted_update_repairs_pi_and_preserves_unrelated_state(self):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not chezmoi:
