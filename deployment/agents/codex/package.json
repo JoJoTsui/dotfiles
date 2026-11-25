@@ -2,7 +2,7 @@
   "name": "dotfiles-managed-codex",
   "private": true,
   "dependencies": {
-    "@openai/codex": "0.171.0"
+    "@openai/codex": "0.172.0"
   },
   "trustedDependencies": []
 }
