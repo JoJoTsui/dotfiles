@@ -1,14 +1,15 @@
 """Normal agent maintenance selects an exact Bun only for lock refresh."""
 import json
-from pathlib import Path
 import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[1]
+BASH = shutil.which("bash") or "/bin/bash"
 
 
 class AgentUpdateTests(unittest.TestCase):
@@ -50,7 +51,7 @@ class AgentUpdateTests(unittest.TestCase):
         # updater CLI operations, so pin lookup exercises the production owner.
         guard = self.root / "update_guard.py"
         guard.write_text(
-            "import json, subprocess, sys\nfrom pathlib import Path\n"
+            "import json, os, subprocess, sys\nfrom pathlib import Path\n"
             f"sys.path.insert(0, {str(self.source)!r})\n"
             "from deployment.update_versions import agent_rows, common_versions\n"
             "args = sys.argv[1:]\n"
@@ -58,11 +59,13 @@ class AgentUpdateTests(unittest.TestCase):
             "if args[0] == 'upgrade-homebrew':\n"
             "    pass\n"
             "elif args[0] == 'propose-agents':\n"
-            "    import os\n"
             "    name = 'qoder' if os.environ.get('NATIVE_PROPOSAL') else 'pi'\n"
             "    proposal = {'agents': {} if os.environ.get('EMPTY_PROPOSAL') else {name: '99.0.0'}}\n"
             "    Path(args[args.index('--output') + 1]).write_text(json.dumps(proposal))\n"
             "elif args[0] == 'refresh':\n"
+            "    if os.environ.get('REFRESH_FAILURE'):\n"
+            "        print(os.environ['REFRESH_FAILURE'], file=sys.stderr)\n"
+            "        raise SystemExit(23)\n"
             "    bun = Path(args[args.index('--bun') + 1])\n"
             "    root = Path(args[args.index('--root') + 1])\n"
             "    assert bun.is_absolute()\n"
@@ -101,7 +104,7 @@ class AgentUpdateTests(unittest.TestCase):
         self.pixi.chmod(0o755)
 
     def update(self, selection="pi", **overrides):
-        return subprocess.run(["/bin/bash", str(self.command), "update", selection],
+        return subprocess.run([BASH, str(self.command), "update", selection],
                               cwd=self.root, env=dict(self.env, **overrides),
                               capture_output=True, text=True, timeout=30)
 
@@ -140,7 +143,11 @@ class AgentUpdateTests(unittest.TestCase):
         self.pixi.unlink()
         result = self.update(EMPTY_PROPOSAL="1")
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("no repository pin changes; reinstalling selected agents", result.stdout)
         self.assertEqual(len(self.recorded_actions()), 2)
+        propose = self.recorded_actions()[1]
+        self.assertEqual(propose[propose.index("--overrides") + 1],
+                         str(self.home / ".config/dotfiles/versions.tsv"))
         self.assertFalse(self.pixi_log.exists())
         self.assertEqual(self.pins.read_text(), self.original_pins)
         self.assert_reinstalled()
@@ -196,6 +203,18 @@ class AgentUpdateTests(unittest.TestCase):
             updater.refresh(root, proposal, self.selected_bun)
         self.assertIn("dropped the linux amd64-baseline build", str(raised.exception))
 
+    def test_failed_refresh_preserves_its_error_and_cleans_the_proposal(self):
+        failure = ("dotfiles: version update: native manifest for qoder 99.0.0 dropped "
+                   "the linux amd64-baseline build the installer fallback needs; "
+                   "keep the pin at 1.1.82")
+        result = self.update("qoder", NATIVE_PROPOSAL="1", REFRESH_FAILURE=failure)
+        self.assertEqual(result.returncode, 23, result.stderr)
+        self.assertIn(failure, result.stderr)
+        self.assertNotIn("proposal_dir", result.stderr)
+        self.assertEqual(self.pins.read_text(), self.original_pins)
+        self.assertFalse(self.bootstrap_log.exists())
+        self.assertEqual(list(self.root.glob("dotfiles-agents.*")), [])
+
     def test_the_homebrew_upgrade_brings_the_selected_clients_up_to_date(self):
         # Homebrew owns an installed formula or cask. The update upgrades it
         # before the deployment adopts it, so the launcher follows.
@@ -208,19 +227,54 @@ class AgentUpdateTests(unittest.TestCase):
 
         calls = []
         original = subprocess.run
+        results = iter([
+            subprocess.CompletedProcess([], 0, stdout="opencode-v2 2.3.1\n", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="", stderr=""),
+            subprocess.CompletedProcess([], 0, stdout="opencode-v2 2.3.2\n", stderr=""),
+        ])
 
         def fake_run(command, **kwargs):
             calls.append(command)
+            return next(results)
+
+        updater.subprocess.run = fake_run
+        try:
+            report = updater.homebrew_upgrade(SOURCE, "opencode", "brew")
+        finally:
+            updater.subprocess.run = original
+        self.assertEqual(report, {
+            "upgraded": ["opencode (opencode-v2) 2.3.1 -> 2.3.2"],
+            "current": [],
+            "notInstalled": [],
+        })
+        self.assertEqual(calls, [["brew", "list", "--versions", "opencode-v2"],
+                                  ["brew", "upgrade", "opencode-v2"],
+                                  ["brew", "list", "--versions", "opencode-v2"]])
+
+    def test_a_current_homebrew_client_is_reported_without_an_upgrade(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "dotfiles_update_versions", SOURCE / "deployment/update_versions.py")
+        updater = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(updater)
+        original = subprocess.run
+
+        def fake_run(command, **kwargs):
+            if command[1] == "upgrade":
+                return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
             return subprocess.CompletedProcess(command, 0, stdout="opencode-v2 2.3.2\n", stderr="")
 
         updater.subprocess.run = fake_run
         try:
-            upgraded = updater.homebrew_upgrade(SOURCE, "opencode", "brew")
+            report = updater.homebrew_upgrade(SOURCE, "opencode", "brew")
         finally:
             updater.subprocess.run = original
-        self.assertEqual(upgraded, ["opencode (opencode-v2)"])
-        self.assertEqual(calls, [["brew", "list", "--versions", "opencode-v2"],
-                                  ["brew", "upgrade", "opencode-v2"]])
+        self.assertEqual(report, {
+            "upgraded": [],
+            "current": ["opencode (opencode-v2) 2.3.2"],
+            "notInstalled": [],
+        })
 
     def test_a_homebrew_client_that_is_not_installed_is_not_installed(self):
         # The deployment adopts a Homebrew client and never installs one, so
@@ -244,7 +298,11 @@ class AgentUpdateTests(unittest.TestCase):
             upgraded = updater.homebrew_upgrade(SOURCE, "opencode", "brew")
         finally:
             updater.subprocess.run = original
-        self.assertEqual(upgraded, [])
+        self.assertEqual(upgraded, {
+            "upgraded": [],
+            "current": [],
+            "notInstalled": ["opencode (opencode-v2)"],
+        })
         self.assertEqual(calls, [["brew", "list", "--versions", "opencode-v2"]])
 
     def test_a_failing_homebrew_upgrade_is_reported(self):

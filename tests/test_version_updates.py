@@ -6,6 +6,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,8 +15,10 @@ from deployment.update_versions import (
     MANAGER_DIGEST_SOURCES,
     VersionError,
     agent_rows,
+    agent_version_overrides,
     check,
     common_versions,
+    main,
     manager_digest_rows,
     native_agent_rows,
     node_satisfies,
@@ -231,6 +235,85 @@ class VersionUpdateTests(unittest.TestCase):
         with patch("deployment.update_versions.npm_latest", return_value="1.0.0"), \
                 patch("deployment.update_versions.native_latest", return_value="1.0.0"):
             self.assertEqual(propose_agents(self.root, "none"), {"agents": {}})
+
+    def test_propose_agents_skips_device_owned_versions(self):
+        with patch("deployment.update_versions.npm_latest", return_value="99.0.0"), \
+                patch("deployment.update_versions.native_latest", return_value="99.0.0") as native:
+            proposal = propose_agents(self.root, "kimi,qoder", {"qoder": "1.1.97"})
+        self.assertEqual(proposal, {"agents": {"kimi": "99.0.0"}})
+        native.assert_not_called()
+
+    def test_agent_version_overrides_reads_the_device_manifest(self):
+        path = Path(self.temporary.name) / "versions.tsv"
+        path.write_text(
+            "# device versions\n"
+            "agent|qoder|1.1.97\n"
+            "tool|ruff|0.14.0\n"
+            "cli|gh|2.80.0\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(agent_version_overrides(path), {"qoder": "1.1.97"})
+        path.write_text("agent|qoder|1.1.97\nagent|qoder|1.1.98\n", encoding="utf-8")
+        with self.assertRaisesRegex(VersionError, "duplicate agent version override"):
+            agent_version_overrides(path)
+
+    def test_propose_cli_reports_updates_current_and_device_owned_agents(self):
+        output = StringIO()
+        proposal_path = Path(self.temporary.name) / "proposal.json"
+        override_path = Path(self.temporary.name) / "versions.tsv"
+        with patch("deployment.update_versions.agent_version_overrides", return_value={"qoder": "1.1.97"}), \
+                patch("deployment.update_versions.propose_agents", return_value={"agents": {"kimi": "99.0.0"}}), \
+                redirect_stdout(output):
+            status = main([
+                "propose-agents", "--root", str(self.root), "--selection", "kimi,pi,qoder",
+                "--overrides", str(override_path), "--output", str(proposal_path),
+            ])
+        self.assertEqual(status, 0)
+        report = output.getvalue()
+        current_kimi = agent_rows(self.root)["kimi"]["version"]
+        current_pi = agent_rows(self.root)["pi"]["version"]
+        self.assertIn("resolved 1 repository agent update(s):", report)
+        self.assertIn(f"kimi {current_kimi} -> 99.0.0", report)
+        self.assertIn(f"already up-to-date: pi {current_pi}", report)
+        self.assertIn("no repository update: qoder 1.1.97 (device-owned)", report)
+        self.assertNotIn("dropped the linux", report)
+
+    def test_propose_cli_does_not_infer_device_overrides_without_an_explicit_path(self):
+        output = StringIO()
+        proposal_path = Path(self.temporary.name) / "proposal.json"
+        with patch("deployment.update_versions.agent_version_overrides") as overrides, \
+                patch("deployment.update_versions.propose_agents", return_value={"agents": {}}) as propose, \
+                redirect_stdout(output):
+            status = main([
+                "propose-agents", "--root", str(self.root), "--selection", "none",
+                "--output", str(proposal_path),
+            ])
+        self.assertEqual(status, 0)
+        overrides.assert_not_called()
+        propose.assert_called_once_with(self.root.resolve(), "none", {})
+
+    def test_homebrew_cli_reports_changed_current_and_uninstalled_packages(self):
+        output = StringIO()
+        report = {
+            "upgraded": ["opencode (opencode-v2) 2.3.1 -> 2.3.2"],
+            "current": ["pi (pi-coding-agent) 1.6.0"],
+            "notInstalled": ["claude (claude-code)"],
+        }
+        with patch("deployment.update_versions.shutil.which", return_value="/opt/homebrew/bin/brew"), \
+                patch("deployment.update_versions.homebrew_upgrade", return_value=report), \
+                redirect_stdout(output):
+            status = main([
+                "upgrade-homebrew", "--root", str(self.root),
+                "--selection", "opencode,pi,claude", "--brew", "brew",
+            ])
+        self.assertEqual(status, 0)
+        text = output.getvalue()
+        self.assertIn("upgraded 1 Homebrew-managed client(s):", text)
+        self.assertIn("opencode (opencode-v2) 2.3.1 -> 2.3.2", text)
+        self.assertIn("already up-to-date 1 Homebrew-managed client(s):", text)
+        self.assertIn("pi (pi-coding-agent) 1.6.0", text)
+        self.assertIn("no Homebrew update (package not installed):", text)
+        self.assertIn("claude (claude-code)", text)
 
     def test_windows_manager_refresh_keeps_exception_and_bootstrap_pins_in_sync(self):
         proposal = self.proposal({

@@ -75,6 +75,13 @@ update uses the narrower dispatch described below. Vendor
 self-updaters are not invoked. The working checkout remains the source of
 truth, so the refreshed manifests and locks can be reviewed and committed.
 
+The update report distinguishes changed Homebrew versions from packages that
+were already current or not installed. Repository proposals likewise show
+old and new pins, agents already at their catalog pin, and device-owned agents
+as `no repository update`. A device override is never advanced implicitly: to
+run a newer overridden native release, change `~/.config/dotfiles/versions.tsv`
+and reinstall that agent through the targeted boundary.
+
 ## Updating a client CLI
 
 The managed launchers own `~/.bun/bin/<command>` and `~/.local/bin/<command>`.

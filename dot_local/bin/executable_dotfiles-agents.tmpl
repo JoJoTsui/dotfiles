@@ -93,7 +93,7 @@ PY
 }
 
 update_agents() {
-    local selection bun brew proposal_dir proposal
+    local selection bun brew proposal_dir proposal cleanup
     need_source
     selection=$(selection_arg "$@")
     bun=${DOTFILES_BUN_BIN:-${DOTFILES_COMMON_BIN:-$HOME/.pixi/bin}/bun}
@@ -101,7 +101,10 @@ update_agents() {
         { printf 'dotfiles-agents: %s is required for pin resolution\n' "$PYTHON" >&2; exit 1; }
     proposal_dir=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-agents.XXXXXX")
     proposal="$proposal_dir/proposal.json"
-    trap 'rm -rf "$proposal_dir"' EXIT
+    # Bash 5 unwinds function locals before running an EXIT trap. Bind the
+    # quoted path now so a failed update keeps its status and still cleans up.
+    printf -v cleanup 'rm -rf -- %q' "$proposal_dir"
+    trap "$cleanup" EXIT
     # Homebrew owns the installed formulas and casks: the deployment only
     # adopts what is installed, so the update brings the device's own
     # installation up to date before the deployment adopts it again. A client
@@ -112,13 +115,14 @@ update_agents() {
     "$PYTHON" "$SOURCE/deployment/update_versions.py" upgrade-homebrew \
         --root "$SOURCE" --selection "$selection" --brew "$brew"
     "$PYTHON" "$SOURCE/deployment/update_versions.py" propose-agents \
-        --root "$SOURCE" --selection "$selection" --output "$proposal"
+        --root "$SOURCE" --selection "$selection" \
+        --overrides "$HOME/.config/dotfiles/versions.tsv" --output "$proposal"
     if "$PYTHON" -c 'import json, sys; raise SystemExit(0 if json.load(open(sys.argv[1]))["agents"] else 1)' "$proposal"; then
         bun=$(lock_refresh_bun "$bun" "$proposal")
         "$PYTHON" "$SOURCE/deployment/update_versions.py" refresh \
             --root "$SOURCE" --proposal "$proposal" --bun "$bun"
     else
-        printf 'dotfiles-agents: selected pins are current; reinstalling without pin changes\n'
+        printf 'dotfiles-agents: no repository pin changes; reinstalling selected agents\n'
     fi
     rm -rf "$proposal_dir"
     trap - EXIT

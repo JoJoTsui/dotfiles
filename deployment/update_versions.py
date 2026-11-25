@@ -928,6 +928,42 @@ def refresh(root: Path, proposal_path: Path, bun: Path) -> list[Path]:
         return changed
 
 
+def agent_version_overrides(path: Path | None = None) -> dict[str, str]:
+    """Read exact agent versions owned by one device.
+
+    Other override kinds belong to their own deployment readers. The update
+    proposal needs only agent entries so it can leave those versions untouched.
+    """
+    path = path or Path.home() / ".config" / "dotfiles" / "versions.tsv"
+    if path.is_symlink():
+        raise VersionError(f"device version override is a symlink: {path}")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return {}
+    except OSError as error:
+        raise VersionError(f"cannot read device version overrides: {type(error).__name__}") from error
+    result: dict[str, str] = {}
+    for number, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        fields = [field.strip() for field in stripped.split("|")]
+        if len(fields) != 3:
+            raise VersionError(f"{path}:{number}: invalid version override (expected kind|name|version)")
+        kind, name, version = fields
+        if kind != "agent":
+            continue
+        if not re.fullmatch(r"[0-9A-Za-z._-]+", name):
+            raise VersionError(f"{path}:{number}: invalid agent override name")
+        if not VERSION_RE.fullmatch(version):
+            raise VersionError(f"{path}:{number}: invalid agent override version")
+        if name in result:
+            raise VersionError(f"duplicate agent version override for {name}")
+        result[name] = version
+    return result
+
+
 def selected_agents(root: Path, selection: str) -> list[str]:
     agents = agent_rows(root)
     native = native_agent_rows(root)
@@ -952,11 +988,17 @@ def selected_agents(root: Path, selection: str) -> list[str]:
     return [name for name in ordered if name in requested]
 
 
-def propose_agents(root: Path, selection: str) -> dict[str, dict[str, str]]:
+def propose_agents(root: Path, selection: str,
+                   overrides: dict[str, str] | None = None) -> dict[str, dict[str, str]]:
     agents = agent_rows(root)
     native = native_agent_rows(root)
+    overrides = overrides or {}
     updates: dict[str, str] = {}
     for name in selected_agents(root, selection):
+        # A device-owned exact version is not a repository pin. Advancing the
+        # shared catalog here would ignore the device's ownership decision.
+        if name in overrides:
+            continue
         if name in agents:
             latest = npm_latest(agents[name]["package"])
             current = agents[name]["version"]
@@ -1041,18 +1083,17 @@ def brew_installed_version(brew: str, package: str, kind: str) -> str:
     return version.split("_")[0]
 
 
-def homebrew_upgrade(root: Path, selection: str, brew: str) -> list[str]:
-    """Bring the Homebrew-managed clients of the selection up to date.
+def homebrew_upgrade(root: Path, selection: str, brew: str) -> dict[str, list[str]]:
+    """Bring installed Homebrew clients up to date and classify the outcome.
 
     Homebrew owns an installed formula or cask: the catalog states a floor
-    and the deployment adopts what is installed without installing it. The
-    update upgrades the device's own installation first, so a client the
-    operator upgraded by hand and a client this upgrade upgraded end in the
-    same place, and the deployment's launcher follows the new version.
+    and the deployment adopts what is installed without installing it. A
+    successful no-op is current, not an upgrade, so compare the observed
+    version on both sides of Homebrew's command.
     """
     catalog = provider_rows(root)
     names = selected_agents(root, selection)
-    upgraded: list[str] = []
+    report: dict[str, list[str]] = {"upgraded": [], "current": [], "notInstalled": []}
     for name in names:
         for row in catalog:
             if row["agent"] != name or row["provider"] != "homebrew":
@@ -1061,19 +1102,27 @@ def homebrew_upgrade(root: Path, selection: str, brew: str) -> list[str]:
             kind = row["packageKind"]
             if kind not in ("formula", "cask"):
                 raise VersionError(f"unknown Homebrew package kind for {name}: {kind}")
+            label = f"{name} ({package})"
             installed = brew_installed_version(brew, package, kind)
             if not installed:
                 # The deployment adopts a Homebrew client and never installs
                 # one, so a client that is not installed is not upgraded
                 # either: the chain falls through to the deployment-owned
                 # provider.
+                report["notInstalled"].append(label)
                 continue
             command = [brew, "upgrade"] + (["--cask"] if kind == "cask" else []) + [package]
-            result = subprocess.run(command, capture_output=True, text=True, timeout=3600)
+            result = subprocess.run(command, check=False, capture_output=True, text=True, timeout=3600)
             if result.returncode:
                 raise VersionError(f"cannot upgrade the Homebrew {kind} {package}: {tool_diagnostic(result)}")
-            upgraded.append(f"{name} ({package})")
-    return upgraded
+            observed = brew_installed_version(brew, package, kind)
+            if not observed:
+                raise VersionError(f"cannot verify the Homebrew {kind} {package} after its upgrade command")
+            if observed != installed:
+                report["upgraded"].append(f"{label} {installed} -> {observed}")
+            else:
+                report["current"].append(f"{label} {observed}")
+    return report
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1082,6 +1131,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
     parser.add_argument("--proposal", type=Path, help="reviewed JSON pin proposal (refresh only)")
     parser.add_argument("--selection", default="all", help="agent selection for propose-agents")
+    parser.add_argument("--overrides", type=Path, help="device-owned version manifest (propose-agents only)")
     parser.add_argument("--output", type=Path, help="proposal JSON destination (propose-agents only)")
     parser.add_argument("--bun", type=Path, help="absolute path to the currently pinned Bun binary")
     parser.add_argument("--brew", default="brew", help="the Homebrew executable (upgrade-homebrew only)")
@@ -1116,25 +1166,48 @@ def main(argv: list[str] | None = None) -> int:
             if not shutil.which(arguments.brew):
                 print("Homebrew is not available on this host; no Homebrew client was upgraded")
             else:
-                upgraded = homebrew_upgrade(root, arguments.selection, arguments.brew)
-                if upgraded:
-                    print(f"upgraded {len(upgraded)} Homebrew-managed client(s):")
-                    for entry in upgraded:
+                report = homebrew_upgrade(root, arguments.selection, arguments.brew)
+                if report["upgraded"]:
+                    print(f"upgraded {len(report['upgraded'])} Homebrew-managed client(s):")
+                    for entry in report["upgraded"]:
                         print(f"  {entry}")
-                else:
+                if report["current"]:
+                    print(f"already up-to-date {len(report['current'])} Homebrew-managed client(s):")
+                    for entry in report["current"]:
+                        print(f"  {entry}")
+                if report["notInstalled"]:
+                    print("no Homebrew update (package not installed):")
+                    for entry in report["notInstalled"]:
+                        print(f"  {entry}")
+                if not any(report.values()):
                     print("the selection has no Homebrew-managed client")
         elif arguments.command == "propose-agents":
             if not arguments.output:
                 raise VersionError("propose-agents requires --output FILE")
-            proposal = propose_agents(root, arguments.selection)
+            overrides = agent_version_overrides(arguments.overrides) if arguments.overrides else {}
+            proposal = propose_agents(root, arguments.selection, overrides)
             arguments.output.parent.mkdir(parents=True, exist_ok=True)
             arguments.output.write_text(json.dumps(proposal, indent=2) + "\n", encoding="utf-8")
-            if proposal["agents"]:
-                print(f"resolved {len(proposal['agents'])} agent update(s):")
-                for name, version in proposal["agents"].items():
-                    print(f"  {name} {version}")
+            updates = proposal["agents"]
+            if updates:
+                print(f"resolved {len(updates)} repository agent update(s):")
+                agents = agent_rows(root)
+                native = native_agent_rows(root)
+                for name, version in updates.items():
+                    current = agents[name]["version"] if name in agents else native[name]["version"]
+                    print(f"  {name} {current} -> {version}")
             else:
-                print("selected agent pins are current")
+                print("no repository agent updates")
+            agents = agent_rows(root)
+            native = native_agent_rows(root)
+            for name in selected_agents(root, arguments.selection):
+                if name in updates:
+                    continue
+                if name in overrides:
+                    print(f"no repository update: {name} {overrides[name]} (device-owned)")
+                else:
+                    current = agents[name]["version"] if name in agents else native[name]["version"]
+                    print(f"already up-to-date: {name} {current}")
         else:
             check(root)
             if not arguments.bun:
