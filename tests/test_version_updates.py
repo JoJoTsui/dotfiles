@@ -6,13 +6,14 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
 from deployment.update_versions import (
     MANAGER_DIGEST_SOURCES,
+    NativeBaselineUnavailable,
     VersionError,
     agent_rows,
     agent_version_overrides,
@@ -235,6 +236,24 @@ class VersionUpdateTests(unittest.TestCase):
         with patch("deployment.update_versions.npm_latest", return_value="1.0.0"), \
                 patch("deployment.update_versions.native_latest", return_value="1.0.0"):
             self.assertEqual(propose_agents(self.root, "none"), {"agents": {}})
+
+    def test_propose_agents_skips_a_native_release_without_the_baseline_build(self):
+        def latest(package):
+            if package == "@moonshot-ai/kimi-code":
+                return "99.0.0"
+            return next(item["version"] for item in agent_rows(self.root).values()
+                        if item["package"] == package)
+
+        errors = StringIO()
+        with patch("deployment.update_versions.npm_latest", side_effect=latest), \
+                patch("deployment.update_versions.native_latest",
+                      side_effect=NativeBaselineUnavailable("99.0.0")), \
+                redirect_stderr(errors):
+            proposal = propose_agents(self.root, "kimi,qoder")
+
+        self.assertEqual(proposal, {"agents": {"kimi": "99.0.0"}})
+        self.assertIn("qoder 99.0.0 dropped the linux amd64-baseline build", errors.getvalue())
+        self.assertIn("keeping the repository pin", errors.getvalue())
 
     def test_propose_agents_skips_device_owned_versions(self):
         with patch("deployment.update_versions.npm_latest", return_value="99.0.0"), \

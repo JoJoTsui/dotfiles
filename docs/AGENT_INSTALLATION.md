@@ -315,9 +315,10 @@ reports Apple silicon under Rosetta so the native archive is selected.
 
 A native release that drops the baseline Linux archive cannot be pinned: the
 fallback has nothing to install on a host without AVX and AVX2. The update
-refuses such a bump and keeps the pin, and a device that runs a newer release
-owns that version in its own `~/.config/dotfiles/versions.tsv`. The qoder pin
-is 1.1.82 for that reason: the 1.1.94 manifest no longer carries the baseline
+refuses such a bump, keeps that agent's pin, reports the skipped release, and
+continues proposing or applying the other selected agents. A device that runs
+a newer release owns that version in its own `~/.config/dotfiles/versions.tsv`.
+The qoder pin is 1.1.82 for that reason: the 1.1.94 manifest no longer carries the baseline
 archive.
 
 The common toolchain supplies Bun 1.4.2 and Node 26.12.1. Bootstrap checks both

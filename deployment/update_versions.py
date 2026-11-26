@@ -63,6 +63,16 @@ class VersionError(ValueError):
     pass
 
 
+class NativeBaselineUnavailable(VersionError):
+    """The latest native release cannot serve Linux hosts without AVX/AVX2."""
+
+    def __init__(self, version: str):
+        self.version = version
+        super().__init__(
+            f"native release {version} dropped the linux amd64-baseline build"
+        )
+
+
 def rows(path: Path, minimum_fields: int) -> list[list[str]]:
     result = []
     for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -721,6 +731,8 @@ def native_latest(manifest_base: str) -> str:
     version = manifest.get("latest")
     if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
         raise VersionError("native manifest returned an invalid latest version")
+    if not native_has_baseline(manifest):
+        raise NativeBaselineUnavailable(version)
     return version
 
 
@@ -1003,7 +1015,15 @@ def propose_agents(root: Path, selection: str,
             latest = npm_latest(agents[name]["package"])
             current = agents[name]["version"]
         else:
-            latest = native_latest(native[name]["manifest"])
+            try:
+                latest = native_latest(native[name]["manifest"])
+            except NativeBaselineUnavailable as error:
+                print(
+                    f"dotfiles: version update: {name} {error.version} dropped the "
+                    "linux amd64-baseline build; keeping the repository pin",
+                    file=sys.stderr,
+                )
+                continue
             current = native[name]["version"]
         if latest != current:
             updates[name] = latest
