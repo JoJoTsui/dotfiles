@@ -64,6 +64,15 @@ fi
 # shellcheck source=/dev/null
 source "$engine"
 
+# A legacy account home can alias its managed .local directory to the persistent
+# install tree. Resolve that tree from this command's physical location; the
+# account-home guard below still runs against the inherited HOME first.
+canonical_install_home=''
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P) || script_dir=''
+case "$script_dir" in
+    */.local/bin) canonical_install_home=${script_dir%/.local/bin} ;;
+esac
+
 # Direct gateway commands probe the device's shared loopback port and can
 # start, stop, or reconfigure a gateway. The bootstrap step guards the
 # deployment path; this is the matching boundary for the command. Both inputs
@@ -86,6 +95,17 @@ case "$command" in
         fi
         ;;
 esac
+
+# Only a proven account-home alias may change HOME. An unrelated .local link,
+# a missing link, or a command copied elsewhere leaves the guarded home intact.
+if [ -n "$canonical_install_home" ] && [ "$HOME" != "$canonical_install_home" ] &&
+   [ -L "$HOME/.local" ]; then
+    aliased_local=$(CDPATH='' cd -- "$HOME/.local" 2>/dev/null && pwd -P) || aliased_local=''
+    if [ "$aliased_local" = "$canonical_install_home/.local" ]; then
+        HOME=$canonical_install_home
+        export HOME
+    fi
+fi
 
 case "$command" in
     apply) magpie_apply "$@" ;;

@@ -98,7 +98,10 @@ The direct command requires the native account home for gateway operations:
 platform selector that does not match the native OS. `install` remains available
 in a synthetic home; gateway commands refuse that home rather than probing the
 shared loopback port. This boundary does not isolate an independently invoked
-Magpie CLI.
+Magpie CLI. After the guard, a legacy account home whose `.local` symlink
+resolves exactly to the command's physical install root uses that canonical
+root for engine state and client files. An unrelated or missing `.local` link
+does not change `HOME`.
 
 The gateway the deployment starts does not inherit the deployment's proxy
 environment: that instance is temporary, and a gateway that kept it would

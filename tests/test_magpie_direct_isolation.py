@@ -166,6 +166,40 @@ class MagpieDirectIsolationTests(unittest.TestCase):
                          "start reached the gateway with a foreign platform selector: " +
                          result.stdout + result.stderr)
 
+    def alias_command(self, local_target):
+        live = self.root / "live"
+        command = live / ".local/bin/dotfiles-magpie"
+        command.parent.mkdir(parents=True)
+        command.write_bytes(COMMAND.read_bytes())
+        command.chmod(0o755)
+        (self.home / ".local").symlink_to(local_target, target_is_directory=True)
+        shim = self.root / "alias-engine.sh"
+        shim.write_text(
+            '. "$MAGPIE_REAL_ENGINE"\n'
+            'magpie_real_account_home() { return 0; }\n'
+            'magpie_status() { printf "HOME=%s\\n" "$HOME"; }\n',
+            encoding="utf-8",
+        )
+        environment = dict(self.env, DOTFILES_MAGPIE_ENGINE=str(shim),
+                           MAGPIE_REAL_ENGINE=str(ENGINE))
+        return subprocess.run([str(command), "status"], cwd=SOURCE,
+                              env=environment, capture_output=True, text=True,
+                              timeout=30, check=False)
+
+    def test_a_proven_local_alias_uses_the_canonical_install_home(self):
+        live = self.root / "live"
+        (live / ".local").mkdir(parents=True)
+        result = self.alias_command(live / ".local")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), f"HOME={live}")
+
+    def test_an_unrelated_local_symlink_does_not_change_home(self):
+        other = self.root / "other/.local"
+        other.mkdir(parents=True)
+        result = self.alias_command(other)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.strip(), f"HOME={self.home}")
+
     def test_install_is_not_blocked_by_the_direct_command_guard(self):
         # Install reaches its own release-catalog validation despite the fake
         # home; the new gateway guard must not apply to it. Its real operation is
