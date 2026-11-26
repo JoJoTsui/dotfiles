@@ -3747,6 +3747,10 @@ magpie_status() {
     local known guard='' missing='' state credential version name plugin_state current desired count
     local enabled report keys recovery dsh_compact_state dsh_excluded=no codex_excluded=no
     local state_dir state_file state_readable=no
+    # A failed readiness probe leaves MAGPIE_GATEWAY unset. Status still has to
+    # report the missing gateway and the remaining catalog state without tripping
+    # nounset while it fetches the model list.
+    MAGPIE_GATEWAY=$MAGPIE_GATEWAY_DEFAULT
     state_dir=$(magpie_state_dir)
     state_file="$state_dir/state.tsv"
     if [ ! -L "$state_dir" ] && [ ! -L "$state_file" ] && [ -f "$state_file" ]; then

@@ -2634,6 +2634,13 @@ class MagpieCommandTests(MagpieApplyTests):
         self.assertNotIn("dsh-compact|drift", result.stdout)
         self.assertNotIn("picked dsh", result.stderr)
 
+    def test_status_reports_a_missing_gateway_without_crashing(self):
+        self.seed_home()
+        result = self.run_command("status", environment={"FAKE_MAGPIE_FAIL_STATUS": "1"})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("gateway|http://127.0.0.1:3425|does not answer", result.stdout)
+        self.assertNotIn("unbound variable", result.stderr)
+
     def test_the_status_exits_zero_on_a_healthy_gateway(self):
         self.seed_home()
         self.healthy_gateway()

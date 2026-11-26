@@ -63,7 +63,7 @@ with_proxy=${DOTFILES_WITH_PROXY:-$HOME/.local/bin/with-proxy}
 curl_bin=${DOTFILES_CURL:-$(command -v curl 2>/dev/null || true)}
 health=${DOTFILES_AGENT_HEALTH:-$HOME/.local/bin/dotfiles-agent-health}
 link_home=${DOTFILES_LINK_HOME:-$source_dir/deployment/legacy/link-home.sh}
-magpie=${DOTFILES_MAGPIE_BIN:-$source_dir/dot_local/bin/executable_dotfiles-magpie}
+magpie_engine=${DOTFILES_MAGPIE_ENGINE:-$source_dir/deployment/magpie.sh}
 codex=${DOTFILES_CODEX_BIN:-$(command -v codex 2>/dev/null || true)}
 herdr=${DOTFILES_HERDR_BIN:-$(command -v herdr 2>/dev/null || true)}
 
@@ -184,16 +184,26 @@ ensure_agent_integrations() {
 }
 
 run_magpie() {
-    local -a command=("$magpie")
-    [ -f "$magpie" ] || return 0
-    [ ! -x "$with_proxy" ] || command=("$with_proxy" "$magpie")
-    env DOTFILES_MAGPIE_ENGINE="$source_dir/deployment/magpie.sh" \
+    [ -f "$magpie_engine" ] || return 0
+    local -a command=(env HOME="$live_root" \
         MAGPIE_CATALOG_DIR="$source_dir/deployment/magpie" \
-        "${command[@]}" "$@"
+        bash -c '
+            source "$1"
+            shift
+            command=$1
+            shift
+            case "$command" in
+                apply) magpie_apply "$@" ;;
+                status) magpie_status "$@" ;;
+                *) exit 64 ;;
+            esac
+        ' bash "$magpie_engine" "$@")
+    [ ! -x "$with_proxy" ] || command=("$with_proxy" "${command[@]}")
+    "${command[@]}"
 }
 
 ensure_magpie() {
-    [ -f "$magpie" ] || return 0
+    [ -f "$magpie_engine" ] || return 0
     if run_magpie apply; then
         ok "magpie gateway and agent wiring"
     else
@@ -203,7 +213,7 @@ ensure_magpie() {
 }
 
 check_magpie() {
-    [ -f "$magpie" ] || return 0
+    [ -f "$magpie_engine" ] || return 0
     if run_magpie status >/dev/null; then
         ok "magpie"
     else

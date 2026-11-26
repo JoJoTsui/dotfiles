@@ -22,6 +22,12 @@ class HostUpTests(unittest.TestCase):
         self.repo = self.root / "repo"
         for directory in (self.bin, self.home, self.live, self.repo):
             directory.mkdir()
+        self.magpie_engine = self.repo / "deployment/magpie.sh"
+        self.magpie_engine.parent.mkdir()
+        self.magpie_engine.write_text(
+            "magpie_apply() { :; }\nmagpie_status() { :; }\n",
+            encoding="utf-8",
+        )
         config = self.home / ".config/herdr/config.toml"
         config.parent.mkdir(parents=True)
         config.write_text("[session]\nresume_agents_on_restore = true\n")
@@ -73,7 +79,7 @@ exit ${HEALTH_EXIT:-0}
             "DOTFILES_CURL": str(self.bin / "curl"),
             "DOTFILES_AGENT_HEALTH": str(self.bin / "health"),
             "DOTFILES_LINK_HOME": str(self.bin / "link-home"),
-            "DOTFILES_MAGPIE_BIN": str(self.bin / "magpie"),
+            "DOTFILES_MAGPIE_ENGINE": str(self.magpie_engine),
             "DOTFILES_MIHOMO_SUPERVISOR": str(self.bin / "mihomo"),
             "HERDR_STATE": str(self.herdr_state),
             "HERDR_LOG": str(self.herdr_log),
@@ -104,13 +110,20 @@ exit ${HEALTH_EXIT:-0}
         self.assertIn("host stack ready", result.stdout)
         self.assertFalse((self.home / ".caveman/run").exists())
 
-    def test_up_applies_magpie_before_codex_with_current_source(self):
+    def test_up_sources_magpie_engine_in_live_home_before_codex(self):
         events = self.root / "magpie-order"
-        self.write_stub("magpie", f'''#!/bin/sh
-[ "$DOTFILES_MAGPIE_ENGINE" = "{self.repo}/deployment/magpie.sh" ] || exit 91
-[ "$MAGPIE_CATALOG_DIR" = "{self.repo}/deployment/magpie" ] || exit 92
-printf 'magpie %s\\n' "$*" >> "{events}"
+        proxy_log = self.root / "magpie-proxy"
+        self.write_stub("with-proxy", f'''#!/bin/sh
+printf '%s\\n' "$*" >> "{proxy_log}"
+exec "$@"
 ''')
+        self.magpie_engine.write_text(f'''magpie_apply() {{
+    [ "$HOME" = "{self.live}" ] || exit 91
+    [ "$MAGPIE_CATALOG_DIR" = "{self.repo}/deployment/magpie" ] || exit 92
+    printf 'magpie apply\\n' >> "{events}"
+}}
+''', encoding="utf-8")
+        self.magpie_engine.chmod(0o644)
         self.write_stub("codex", f'''#!/bin/sh
 case "$*" in
     "app-server daemon version") [ -f "{self.root}/codex-ready" ] ;;
@@ -129,11 +142,13 @@ printf 'health %s\\n' "$*" >> "{events}"
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("ok   magpie gateway and agent wiring", result.stdout)
+        self.assertTrue(proxy_log.read_text().splitlines()[0].startswith(
+            f"env HOME={self.live} MAGPIE_CATALOG_DIR={self.repo}/deployment/magpie "))
         self.assertEqual(events.read_text().splitlines(),
                          ["magpie apply", "codex", "health --before-restore"])
 
     def test_failed_magpie_stops_before_codex(self):
-        self.write_stub("magpie", "#!/bin/sh\nexit 1\n")
+        self.magpie_engine.write_text("magpie_apply() { exit 1; }\n", encoding="utf-8")
         self.write_stub("codex", "#!/bin/sh\necho unexpected >&2\nexit 0\n")
 
         result = self.run_host_up("up")
@@ -144,9 +159,11 @@ printf 'health %s\\n' "$*" >> "{events}"
 
     def test_status_checks_magpie_without_applying(self):
         log = self.root / "magpie-status"
-        self.write_stub("magpie", f'''#!/bin/sh
-printf '%s\\n' "$*" > "{log}"
-''')
+        self.magpie_engine.write_text(f'''magpie_apply() {{ exit 95; }}
+magpie_status() {{
+    printf 'status\\n' > "{log}"
+}}
+''', encoding="utf-8")
 
         result = self.run_host_up("status")
 

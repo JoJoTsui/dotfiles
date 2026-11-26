@@ -257,7 +257,10 @@ deliberately to take the new bytes.
 `dotfiles-host-up up` invokes the adapter after Mihomo, then applies the Magpie
 catalogs and starts the gateway before the Codex daemon or Herdr restore. The
 Magpie step reads the current checkout's engine and catalogs directly, so an
-incremental source update does not depend on stale rendered copies. Missing
+incremental source update does not depend on stale rendered copies. It sources
+the engine in a child shell with `HOME` set to the canonical live root, which
+keeps the direct command's account-home guard while using the legacy tree's
+real managed directories. Missing
 cached skill source or a policy/gateway failure stops preparation. Running
 clients retain their existing skill catalogs until they restart; the adapter
 never restarts them.
