@@ -2,7 +2,7 @@
   "name": "dotfiles-managed-opencode",
   "private": true,
   "dependencies": {
-    "@opencode/cli": "2.4.1"
+    "@opencode/cli": "2.4.2"
   },
   "trustedDependencies": [
     "@opencode/cli"

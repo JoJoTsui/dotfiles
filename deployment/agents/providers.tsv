@@ -33,11 +33,11 @@
 # the deployment adopts a package at or above the floor without installing or
 # upgrading it. A deployment-owned record keeps an exact pin and its lock.
 kimi|homebrew|kimi-code|formula|2.4.1|floor|kimi|macos|1|selectable|kimi|-|-|-|-
-kimi|bun|@moonshot-ai/kimi-code|-|2.7.3|exact|kimi|all|2|selectable|kimi|22.19.0|@moonshot-ai/kimi-code|deployment/agents/kimi/bun.lock|-
+kimi|bun|@moonshot-ai/kimi-code|-|2.8.0|exact|kimi|all|2|selectable|kimi|22.19.0|@moonshot-ai/kimi-code|deployment/agents/kimi/bun.lock|-
 pi|homebrew|pi-coding-agent|formula|1.5.2|floor|pi|macos|1|selectable|pi|-|-|-|-
-pi|bun|@earendil-works/pi-coding-agent|-|1.6.0|exact|pi|all|2|selectable|pi|22.19.0|-|deployment/agents/pi/bun.lock|-
+pi|bun|@earendil-works/pi-coding-agent|-|1.6.1|exact|pi|all|2|selectable|pi|22.19.0|-|deployment/agents/pi/bun.lock|-
 opencode|homebrew|opencode-v2|formula|2.2.5|floor|opencode,opencode2|macos|1|selectable|opencode|-|-|-|-
-opencode|bun|@opencode/cli|-|2.4.1|exact|opencode,opencode2|all|2|selectable|opencode|22.0.0|@opencode/cli|deployment/agents/opencode/bun.lock|-
+opencode|bun|@opencode/cli|-|2.4.2|exact|opencode,opencode2|all|2|selectable|opencode|22.0.0|@opencode/cli|deployment/agents/opencode/bun.lock|-
 claude|homebrew|claude-code|cask|2.1.325|floor|claude|macos|1|selectable|claude|-|-|-|-
 claude|bun|@anthropic-ai/claude-code|-|2.1.332|exact|claude|all|2|selectable|claude|22.0.0|@anthropic-ai/claude-code|deployment/agents/claude/bun.lock|-
 codex|homebrew|codex|cask|0.169.0|floor|codex|macos|1|selectable|codex|-|-|-|codex-cli {version}
