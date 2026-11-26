@@ -42,10 +42,11 @@ guizang-ppt-skill|247|636|yes|the upstream description names both visual styles 
 humanizer|341|397|no|the upstream description lists the writing tells the skill removes and the root document carries the full guide without a reference file
 humanizer-zh|82|408|no|the root document carries the upstream Chinese guide and the skill ships no reference file; the bytes are upstream's and are not rewritten
 impeccable|589|88|yes|the upstream description names the interface surfaces and the design operations; the pinned root gained two lines and the bytes are upstream's
+lark-apps|619|164|yes|the upstream description enumerates the app lifecycle, local and cloud development, design, observability, permissions, automation triggers, and routing exclusions; the root ships references and the bytes are upstream's
 lark-base|241|286|yes|the upstream description names the Base objects and the hand-offs to the other lark skills; the pinned root gained one line
 lark-doc|241|49|yes|the upstream description names the Docx and Wiki operations and the routing exceptions; the bytes are upstream's and are not rewritten
 lark-drive|419|216|yes|the upstream description names the Drive operations and the hand-offs to the other lark skills; the bytes are upstream's and are not rewritten
-lark-event|265|158|yes|the upstream description names the event stream and the route for one-off queries; the bytes are upstream's and are not rewritten
+lark-event|561|160|yes|the upstream description names the covered event domains, NDJSON consume command, bounded runs, and ready-marker contract; the root ships references and the bytes are upstream's
 lark-sheets|464|139|yes|the upstream description names the sheet operations, formulas, and hand-offs; the bytes are upstream's and are not rewritten
 lark-slides|265|310|yes|the upstream description names the slide operations and the routing rules; the bytes are upstream's and are not rewritten
 lark-wiki|303|118|yes|the upstream description names the wiki spaces, members, and nodes; the bytes are upstream's and are not rewritten
