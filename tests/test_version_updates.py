@@ -127,10 +127,9 @@ class VersionUpdateTests(unittest.TestCase):
             "project = pathlib.Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
             "manifest = json.loads((project / 'package.json').read_text())\n"
             "path = project / 'bun.lock'\n"
-            "lock = json.loads(re.sub(r',(?=\\s*[}\\]])', '', path.read_text()))\n"
+            "if path.exists(): raise SystemExit(92)\n"
             "package, version = next(iter(manifest['dependencies'].items()))\n"
-            "lock['workspaces']['']['dependencies'] = manifest['dependencies']\n"
-            "lock['packages'][package][0] = f'{package}@{version}'\n"
+            "lock = {'lockfileVersion': 1, 'workspaces': {'': {'dependencies': manifest['dependencies']}}, 'packages': {package: [f'{package}@{version}', '', {}]}}\n"
             "path.write_text(json.dumps(lock) + '\\n')\n"
         , encoding="utf-8")
         fake_bun.chmod(0o755)
@@ -161,10 +160,9 @@ class VersionUpdateTests(unittest.TestCase):
             "project = pathlib.Path(sys.argv[sys.argv.index('--cwd') + 1])\n"
             "manifest = json.loads((project / 'package.json').read_text())\n"
             "path = project / 'bun.lock'\n"
-            "lock = json.loads(re.sub(r',(?=\\s*[}\\]])', '', path.read_text()))\n"
+            "if path.exists(): raise SystemExit(92)\n"
             "package, version = next(iter(manifest['dependencies'].items()))\n"
-            "lock['workspaces']['']['dependencies'] = manifest['dependencies']\n"
-            "lock['packages'][package][0] = f'{package}@{version}'\n"
+            "lock = {'lockfileVersion': 1, 'workspaces': {'': {'dependencies': manifest['dependencies']}}, 'packages': {package: [f'{package}@{version}', '', {}]}}\n"
             "path.write_text(json.dumps(lock) + '\\n')\n"
         , encoding="utf-8")
         fake_bun.chmod(0o755)

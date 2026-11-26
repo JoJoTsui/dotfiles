@@ -181,7 +181,10 @@ is unverified, while an observed policy mismatch or difference from the
 last apply is drift.
 
 Lock generation requires the exact Bun pin from the common catalog. When a
-proposal changes Bun-managed pins, `update` reuses the selected Bun only at that
+proposal changes Bun-managed pins, `update` resolves each candidate from its
+`package.json` without seeding the previous `bun.lock`; stale peer resolutions
+from an older package graph must not survive a version bump. `update` reuses
+the selected Bun only at that
 version; otherwise managed Pixi supplies a separate cached runtime through
 `pixi exec --spec bun==<pin>`. The command verifies that runtime before refresh
 and leaves device Bun intact. Empty and native-only proposals need no lock

@@ -160,7 +160,9 @@ explains every changed pair.
   digests that verify it move with it. `deployment/update_versions.py` refreshes
   the manager digests when it bumps a manager version, and `check` fails when a
   pinned target is missing. A version bump that leaves a digest, a runtime
-  version check, or a second catalog behind breaks the deployment.
+  version check, or a second catalog behind breaks the deployment. Bun lock
+  refresh resolves from the candidate manifest without seeding the previous
+  lock, so stale peer versions cannot survive a package-graph change.
 - **A device may own the version it runs**: `~/.config/dotfiles/versions.tsv`
   is device state that the deployment reads and never writes. An `agent` entry
   replaces a client pin, a `tool` entry a Pixi specification, and a `cli` entry

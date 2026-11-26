@@ -797,7 +797,9 @@ def _regenerate_bun_locks(root: Path, changed_agents: set[str], bun: Path,
             project = Path(temporary) / "projects" / name
             project.mkdir(parents=True)
             shutil.copy2(source / "package.json", project / "package.json")
-            shutil.copy2(source / "bun.lock", project / "bun.lock")
+            # Resolve from the manifest, never from the previous lock. A lock
+            # produced by an older Bun or package graph can retain stale peer
+            # versions that satisfy the new direct pin but break runtime imports.
             result = subprocess.run([str(bun), "install", "--cwd", str(project),
                                      "--lockfile-only", "--ignore-scripts"],
                                    check=False, env=environment, capture_output=True, text=True, timeout=900)
