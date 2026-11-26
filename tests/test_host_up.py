@@ -73,15 +73,18 @@ exit ${HEALTH_EXIT:-0}
             "DOTFILES_CURL": str(self.bin / "curl"),
             "DOTFILES_AGENT_HEALTH": str(self.bin / "health"),
             "DOTFILES_LINK_HOME": str(self.bin / "link-home"),
+            "DOTFILES_MAGPIE_BIN": str(self.bin / "magpie"),
             "DOTFILES_MIHOMO_SUPERVISOR": str(self.bin / "mihomo"),
             "HERDR_STATE": str(self.herdr_state),
             "HERDR_LOG": str(self.herdr_log),
         }
 
-    def run_host_up(self, *arguments):
+    def run_host_up(self, *arguments, env=None):
+        environment = self.environment()
+        environment.update(env or {})
         return subprocess.run(
             ["/bin/bash", str(SCRIPT), *arguments],
-            env=self.environment(),
+            env=environment,
             cwd=SOURCE,
             capture_output=True,
             text=True,
@@ -100,6 +103,56 @@ exit ${HEALTH_EXIT:-0}
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("host stack ready", result.stdout)
         self.assertFalse((self.home / ".caveman/run").exists())
+
+    def test_up_applies_magpie_before_codex_with_current_source(self):
+        events = self.root / "magpie-order"
+        self.write_stub("magpie", f'''#!/bin/sh
+[ "$DOTFILES_MAGPIE_ENGINE" = "{self.repo}/deployment/magpie.sh" ] || exit 91
+[ "$MAGPIE_CATALOG_DIR" = "{self.repo}/deployment/magpie" ] || exit 92
+printf 'magpie %s\\n' "$*" >> "{events}"
+''')
+        self.write_stub("codex", f'''#!/bin/sh
+case "$*" in
+    "app-server daemon version") [ -f "{self.root}/codex-ready" ] ;;
+    "app-server daemon start")
+        grep -q '^magpie apply$' "{events}" || exit 93
+        printf 'codex\\n' >> "{events}"
+        touch "{self.root}/codex-ready" ;;
+    *) exit 1 ;;
+esac
+''')
+        self.write_stub("health", f'''#!/bin/sh
+printf 'health %s\\n' "$*" >> "{events}"
+''')
+
+        result = self.run_host_up("up")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok   magpie gateway and agent wiring", result.stdout)
+        self.assertEqual(events.read_text().splitlines(),
+                         ["magpie apply", "codex", "health --before-restore"])
+
+    def test_failed_magpie_stops_before_codex(self):
+        self.write_stub("magpie", "#!/bin/sh\nexit 1\n")
+        self.write_stub("codex", "#!/bin/sh\necho unexpected >&2\nexit 0\n")
+
+        result = self.run_host_up("up")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stopped at ensure_magpie", result.stderr)
+        self.assertNotIn("unexpected", result.stderr)
+
+    def test_status_checks_magpie_without_applying(self):
+        log = self.root / "magpie-status"
+        self.write_stub("magpie", f'''#!/bin/sh
+printf '%s\\n' "$*" > "{log}"
+''')
+
+        result = self.run_host_up("status")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok   magpie", result.stdout)
+        self.assertEqual(log.read_text().strip(), "status")
 
     def test_restore_does_not_restart_a_running_herdr(self):
         result = self.run_host_up("up", "--restore")

@@ -129,6 +129,12 @@ every ordinary client-settings merge renders without them. A device that was
 wired by an earlier deployment keeps its working settings when a later run
 disables or skips the step.
 
+The legacy incremental path is explicit: `dotfiles-host-up up` runs
+`dotfiles-magpie apply` with the current checkout's engine and catalogs after
+Mihomo and the global integration adapter, before the Codex daemon and Herdr
+restore. `dotfiles-host-up status` reports the same gateway and wiring contract
+without applying it.
+
 ## The catalogs
 
 The catalogs live in `deployment/magpie/` and are the only place the model

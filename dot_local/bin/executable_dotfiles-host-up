@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # dotfiles-host-up — bring the local agent stack up after a reboot.
 #
-# It checks/repairs the legacy links, starts Mihomo and the Codex
-# app-server daemon, then runs the health preflight. Herdr is started only with
-# --restore; it is never restarted here, because that would tear down panes.
+# It checks/repairs the legacy links, starts Mihomo and the Magpie gateway,
+# applies the model-provider wiring, starts the Codex app-server daemon, then
+# runs the health preflight. Herdr is started only with --restore; it is never
+# restarted here, because that would tear down panes.
 set -uo pipefail
 
 action=status
@@ -20,8 +21,9 @@ for argument in "$@"; do
             cat <<'EOF'
 usage: dotfiles-host-up [status|up] [--restore] [--restart] [--quiet]
 
-  status      report links, Mihomo, Codex daemon, Herdr, and health
-  up          repair links and start Mihomo and the Codex daemon
+  status      report links, Mihomo, Magpie, Codex daemon, Herdr, and health
+  up          repair links, start Mihomo and Magpie, apply agent wiring,
+              and start the Codex daemon
   --restore   also start Herdr and let its saved workspace/agents restore;
               attach afterwards with `herdr`. A running Herdr is never restarted.
   --restart   recycle Mihomo and the Codex daemon when they are running
@@ -61,6 +63,7 @@ with_proxy=${DOTFILES_WITH_PROXY:-$HOME/.local/bin/with-proxy}
 curl_bin=${DOTFILES_CURL:-$(command -v curl 2>/dev/null || true)}
 health=${DOTFILES_AGENT_HEALTH:-$HOME/.local/bin/dotfiles-agent-health}
 link_home=${DOTFILES_LINK_HOME:-$source_dir/deployment/legacy/link-home.sh}
+magpie=${DOTFILES_MAGPIE_BIN:-$source_dir/dot_local/bin/executable_dotfiles-magpie}
 codex=${DOTFILES_CODEX_BIN:-$(command -v codex 2>/dev/null || true)}
 herdr=${DOTFILES_HERDR_BIN:-$(command -v herdr 2>/dev/null || true)}
 
@@ -177,6 +180,34 @@ ensure_agent_integrations() {
     else
         fail "global agent integrations; run the approved adapter --fetch before reboot"
         return 1
+    fi
+}
+
+run_magpie() {
+    local -a command=("$magpie")
+    [ -f "$magpie" ] || return 0
+    [ ! -x "$with_proxy" ] || command=("$with_proxy" "$magpie")
+    env DOTFILES_MAGPIE_ENGINE="$source_dir/deployment/magpie.sh" \
+        MAGPIE_CATALOG_DIR="$source_dir/deployment/magpie" \
+        "${command[@]}" "$@"
+}
+
+ensure_magpie() {
+    [ -f "$magpie" ] || return 0
+    if run_magpie apply; then
+        ok "magpie gateway and agent wiring"
+    else
+        fail "magpie gateway and agent wiring"
+        return 1
+    fi
+}
+
+check_magpie() {
+    [ -f "$magpie" ] || return 0
+    if run_magpie status >/dev/null; then
+        ok "magpie"
+    else
+        fail "magpie"
     fi
 }
 
@@ -320,6 +351,7 @@ show_status() {
         fail "links drift"
     fi
     if mihomo_running; then ok "mihomo"; else fail "mihomo"; fi
+    check_magpie
     if codex_running; then
         if codex_proxy_ok; then ok "codex app-server daemon (proxy)"; else warn "codex daemon lacks HTTPS_PROXY"; fi
     else
@@ -340,7 +372,7 @@ case "$action" in
     up)
         # Some helpers accumulate failures; inspect both status and that count.
         # No later dependency (especially Herdr) may start after a failure.
-        for step in ensure_links ensure_mihomo ensure_history ensure_agent_integrations ensure_codex; do
+        for step in ensure_links ensure_mihomo ensure_history ensure_agent_integrations ensure_magpie ensure_codex; do
             if ! "$step" || [ "$failures" -ne 0 ]; then
                 printf 'host bring-up stopped at %s; Herdr restore withheld\n' "$step" >&2
                 exit 1

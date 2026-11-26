@@ -456,7 +456,9 @@ explains every changed pair.
   starts `magpie serve`, writes no systemd unit, no login item, and no
   registry key, and never writes its temporary proxy into the gateway's own
   settings. Native Windows currently installs only the CLI; it does not wire a
-  gateway or clients. Magpie owns the provider keys,
+  gateway or clients. The legacy `dotfiles-host-up up` path applies the current
+  checkout's Magpie engine and catalogs before starting agent daemons; `status`
+  checks the same contract read-only. Magpie owns the provider keys,
   the accounts, the usage store, Pi's generated `~/.pi/agent/models.json`, and
   DSH's Magpie route and compaction field; none of them is ever committed.
   Magpie's CLI owns the compaction field: the apply reads and sets it only

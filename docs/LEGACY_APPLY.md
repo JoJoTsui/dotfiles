@@ -254,10 +254,13 @@ replaced. When it already holds the pinned bytes it is adopted, so a later
 apply owns it; when the pinned bytes moved on, remove that directory
 deliberately to take the new bytes.
 
-`dotfiles-host-up up` invokes the adapter after Mihomo and before agent daemons.
-Thus `link-home` reasserts the policy before the laptop starts Herdr. Missing
-cached source or a policy failure stops preparation. Running clients retain
-their existing skill catalogs until they restart; this adapter never restarts them.
+`dotfiles-host-up up` invokes the adapter after Mihomo, then applies the Magpie
+catalogs and starts the gateway before the Codex daemon or Herdr restore. The
+Magpie step reads the current checkout's engine and catalogs directly, so an
+incremental source update does not depend on stale rendered copies. Missing
+cached skill source or a policy/gateway failure stops preparation. Running
+clients retain their existing skill catalogs until they restart; the adapter
+never restarts them.
 
 The same adapter enforces the source-owned Claude, Codex and Kimi updater
 controls without applying provider defaults or replacing device authentication.
