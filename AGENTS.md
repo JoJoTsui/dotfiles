@@ -380,7 +380,8 @@ explains every changed pair.
   `~/.local/state/dotfiles/managed-skills.tsv`, and the prune step removes a
   recorded directory that leaves the selection. A device-created skill, a
   generated skill, and a symlinked entry are preserved and reported, never
-  removed.
+  removed. Disabled-skill quarantine skips symlinked client-owned discovery
+  roots instead of following them; managed copy roots remain strict.
 - **A copy root is inspected before a skill is written there**: a device entry
   that carries the name of a selected skill is preserved and reported, and the
   copy never follows a link or writes through it. An unrecorded directory that

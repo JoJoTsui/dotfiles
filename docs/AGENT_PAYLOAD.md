@@ -110,10 +110,11 @@ outcome.
 `deployment/disabled-skills.tsv` excludes the complete Google DeepMind group:
 36 catalog skills and the installed `scienceskillscommon` helper. They cannot
 be selected from the active catalog, even by name. Deployment moves installed
-entries from known discovery roots into private recovery directories under
-`~/.local/state/dotfiles/disabled-integrations/`. Override libraries are filtered
-too. Packages and unrelated skills remain installed; the `uv` executable is
-independent of its disabled DeepMind skill.
+entries from known real discovery roots into private recovery directories under
+`~/.local/state/dotfiles/disabled-integrations/`. A symlinked client-owned root
+is preserved and skipped rather than followed; managed copy roots are validated
+separately. Override libraries are filtered too. Packages and unrelated skills remain installed; the
+`uv` executable is independent of its disabled DeepMind skill.
 
 On the legacy T9K home, use the explicit
 [agent integration adapter](LEGACY_APPLY.md#global-agent-integrations). It reuses

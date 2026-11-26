@@ -531,6 +531,10 @@ payload_quarantine_disabled() {
     while IFS= read -r root; do
         case "$root" in ''|\#*) continue ;; /*|..|../*|*/../*|*/..) fail 'unsafe skill discovery root' ;; esac
         [ -e "$HOME/$root" ] || [ -L "$HOME/$root" ] || continue
+        # A client-owned discovery root may be a legacy alias. The deployment
+        # neither owns it nor writes through it; managed copy roots are checked
+        # separately by the payload catalog.
+        [ -L "$HOME/$root" ] && continue
         payload_safe_destination "$HOME/$root"
     done < "$roots"
     payload_safe_destination "$state"
@@ -541,6 +545,10 @@ payload_quarantine_disabled() {
     while IFS= read -r root; do
         case "$root" in ''|\#*) continue ;; esac
         [ -e "$HOME/$root" ] || [ -L "$HOME/$root" ] || continue
+        if [ -L "$HOME/$root" ]; then
+            printf 'dotfiles: preserved symlinked skill discovery root %s\n' "$root" >&2
+            continue
+        fi
         while IFS='|' read -r name source; do
             case "$name" in ''|\#*) continue ;; */*|*..*) fail 'unsafe disabled skill name' ;; esac
             target="$HOME/$root/$name"

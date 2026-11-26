@@ -382,6 +382,28 @@ class AgentPayloadTests(unittest.TestCase):
         state = self.home / ".local/state/dotfiles/disabled-integrations"
         self.assertEqual(len(list(state.glob("skills.*"))), 1)
 
+    def test_symlinked_device_discovery_root_is_preserved(self):
+        outside = self.root / "outside-skills"
+        linked = outside / "pubmed-database/SKILL.md"
+        linked.parent.mkdir(parents=True)
+        linked.write_text("linked device bytes\n")
+        qoder = self.home / ".qoder/skills"
+        qoder.parent.mkdir(parents=True)
+        qoder.symlink_to(outside, target_is_directory=True)
+        real = self.home / ".codex/skills/pubmed-database/SKILL.md"
+        real.parent.mkdir(parents=True)
+        real.write_text("real device bytes\n")
+
+        result = self.deploy("--agents", "none")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue(qoder.is_symlink())
+        self.assertEqual(linked.read_text(), "linked device bytes\n")
+        self.assertFalse(real.exists())
+        backups = list((self.home / ".local/state/dotfiles/disabled-integrations").glob(
+            "skills.*/.codex/skills/pubmed-database/SKILL.md"))
+        self.assertEqual([p.read_text() for p in backups], ["real device bytes\n"])
+
     def test_platform_overlay_replaces_only_the_managed_instruction_block(self):
         target = self.home / ".claude/CLAUDE.md"
         target.parent.mkdir(parents=True)
