@@ -35,6 +35,35 @@ legacy_agent_link_journal() {
     printf 'dotfiles: legacy agent link recovery batch: %s\n' "$batch" >&2
 }
 
+legacy_agent_prepare_skill_roots() {
+    local relative path parent physical backup
+    local -a roots=(.agents/skills .claude/skills .minimax/skills)
+    for relative in "${roots[@]}"; do
+        path=$DEPLOY_HOME/$relative
+        parent=${path%/*}
+        physical=$(CDPATH='' cd -P -- "$parent" 2>/dev/null && pwd -P) ||
+            fail "cannot resolve legacy skill-root parent: $relative"
+        [ "$physical" = "$parent" ] ||
+            fail "legacy skill-root parent is a symlink: $relative"
+        if [ -d "$path" ] && [ ! -L "$path" ]; then
+            continue
+        fi
+        legacy_agent_link_journal
+        backup=NEW
+        if [ -e "$path" ] || [ -L "$path" ]; then
+            backup=$(legacy_agent_unique_backup "$path")
+            mv "$path" "$backup" || fail "cannot back up legacy skill root: $relative"
+        fi
+        if ! mkdir -p "$path"; then
+            [ "$backup" = NEW ] || mv "$backup" "$path"
+            fail "cannot prepare legacy skill root: $relative"
+        fi
+        printf '%s|%s\n' "$relative" "$backup" >> "$LEGACY_AGENT_LINK_RECOVERY/restore.tsv" ||
+            fail "cannot record legacy skill root: $relative"
+        printf 'dotfiles: prepared legacy agent directory %s\n' "$relative" >&2
+    done
+}
+
 adopt_legacy_agent_home() {
     "$DEPLOY_AGENTS_ONLY" || return 0
     "$DEPLOY_HOME_SET" && return 0
@@ -73,6 +102,8 @@ adopt_legacy_agent_home() {
     [ "$best" != "$DEPLOY_SOURCE" ] || fail 'legacy agent live tree cannot equal the source'
 
     DEPLOY_HOME=$best
+    # Consumed by deployment/agents.sh after this helper is sourced.
+    # shellcheck disable=SC2034
     DEPLOY_LEGACY_AGENT_HOME=true
     printf 'dotfiles: using legacy agent home %s for symlinked %s\n' "$DEPLOY_HOME" "$original" >&2
     "$DEPLOY_PLAN" && return 0
@@ -106,4 +137,8 @@ adopt_legacy_agent_home() {
             fail "cannot record legacy agent state root: $relative"
         printf 'dotfiles: prepared legacy agent link %s -> %s\n' "$relative" "$expected" >&2
     done
+    # The public payload copier requires regular skill roots. Legacy aliases
+    # such as .minimax/skills -> ../.agents/skills are backed up and replaced
+    # with the copy root the repository actually manages.
+    legacy_agent_prepare_skill_roots
 }

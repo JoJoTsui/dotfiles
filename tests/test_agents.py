@@ -216,7 +216,9 @@ class AgentTests(unittest.TestCase):
         link_rows = [line.split("|") for line in link_journals[0].read_text().splitlines()
                      if line and not line.startswith("#")]
         self.assertEqual({row[0]: row[1] for row in link_rows},
-                         {".dsh": "NEW", ".dsh-tui": "NEW"})
+                         {".dsh": "NEW", ".dsh-tui": "NEW",
+                          ".agents/skills": "NEW", ".claude/skills": "NEW",
+                          ".minimax/skills": "NEW"})
         self.launcher_recovery(live)
 
     def test_legacy_agent_home_repairs_a_foreign_state_root(self):
@@ -263,8 +265,45 @@ class AgentTests(unittest.TestCase):
         self.assertFalse((legacy / ".dsh").exists())
         self.assertFalse((legacy / ".local/state/dotfiles/legacy-agent-links").exists())
 
+    def test_legacy_agent_home_normalizes_symlinked_skill_roots(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent install requires Chezmoi")
+        bun, node = self.fake_runtime()
+        legacy, live = self.legacy_home()
+        shared = live / ".agents/skills"
+        shared.mkdir(parents=True)
+        minimax = live / ".minimax/skills"
+        minimax.symlink_to("../.agents/skills", target_is_directory=True)
+
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--platform", "linux",
+                                 "--role", "workstation", "--agents-only", "--agents", "pi"],
+                                cwd=SOURCE, env=dict(
+                                    self.env, HOME=str(legacy), DOTFILES_CHEZMOI_BIN=chezmoi,
+                                    DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node),
+                                    PATH=os.pathsep.join((str(bun.parent), "/usr/bin", "/bin"))),
+                                capture_output=True, text=True, timeout=60,
+                                check=False)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("prepared legacy agent directory .minimax/skills", result.stderr)
+        self.assertTrue(minimax.is_dir())
+        self.assertFalse(minimax.is_symlink())
+        backups = sorted(live.glob(".minimax/skills.bak.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertTrue(backups[0].is_symlink())
+        self.assertEqual(os.readlink(backups[0]), "../.agents/skills")
+        journals = sorted((live / ".local/state/dotfiles/legacy-agent-links").glob("*/restore.tsv"))
+        rows = [line.split("|") for line in journals[0].read_text().splitlines()
+                if line and not line.startswith("#")]
+        self.assertIn([".minimax/skills", str(backups[0])], rows)
+
     def test_legacy_agent_plan_does_not_prepare_missing_roots(self):
         legacy, live = self.legacy_home(missing=(".dsh",))
+        shared = live / ".agents/skills"
+        shared.mkdir(parents=True)
+        minimax = live / ".minimax/skills"
+        minimax.symlink_to("../.agents/skills", target_is_directory=True)
 
         result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--platform", "linux",
                                  "--role", "workstation", "--agent-update", "--agents", "pi", "--plan"],
@@ -276,6 +315,7 @@ class AgentTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["home"], str(live))
         self.assertFalse((legacy / ".dsh").exists())
         self.assertFalse((live / ".dsh").exists())
+        self.assertTrue(minimax.is_symlink())
         self.assertFalse((live / ".local/state/dotfiles/legacy-agent-links").exists())
 
     def test_legacy_agent_home_backs_up_a_regular_state_root(self):

@@ -187,7 +187,9 @@ explains every changed pair.
   targeted agent run on a legacy symlink home identifies the canonical live
   tree, creates missing managed roots, and moves conflicting top-level entries
   to timestamped backups before linking them; topology changes are journaled
-  under `legacy-agent-links/`. Full deployments and explicit `--home` targets
+  under `legacy-agent-links/`. Managed skill-root aliases are normalized into
+  regular copy roots in the same recovery batch. Full deployments and explicit
+  `--home` targets
   still use the strict copy-mode boundary, and a symlink inside the live tree
   is never followed. The global package stays installed, and
   `agent-launchers/<batch>/restore.tsv` records each original launcher link for

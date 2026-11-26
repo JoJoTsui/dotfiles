@@ -128,10 +128,14 @@ A symlink inside the live tree is still refused rather than followed.
 
 Topology changes are journaled under
 `<live-root>/.local/state/dotfiles/legacy-agent-links/<batch>/restore.tsv` as
-`path|backup`; `NEW` marks a previously missing root. To roll back one entry,
-remove the prepared symlink and move its backup back, or remove the new link
-and empty directory for a `NEW` row. The adapter never merges a displaced
-directory silently; its bytes remain in the backup for review.
+`path|backup`; `NEW` marks a previously missing root. The same preparation
+normalizes the managed skill roots `.agents/skills`, `.claude/skills`, and
+`.minimax/skills`: a legacy alias such as `.minimax/skills ->
+../.agents/skills` is backed up and replaced with the regular copy root the
+repository manages. To roll back one entry, remove the prepared symlink or
+directory and move its backup back, or remove the new link/directory for a
+`NEW` row. The adapter never merges a displaced directory silently; its bytes
+remain in the backup for review.
 
 Selected launcher symlinks are validated as a set before any of them move.
 Recognized links are moved, not copied or followed, into a private batch under
