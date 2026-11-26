@@ -1972,7 +1972,7 @@ magpie_visible_names() {
 # gateway publishes its model id. The picked catalog keeps those entries so a
 # later apply restores them without another repository edit.
 magpie_visible_names_for() {
-    local names=$1 live=$2 name id models filtered=''
+    local names=$1 live=$2 name id models filtered='' family_index
     local -a name_list
     IFS=, read -r -a name_list <<< "$names"
     for name in "${name_list[@]}"; do
@@ -1982,7 +1982,14 @@ magpie_visible_names_for() {
         elif magpie_list_contains "$MAGPIE_PROVIDER_PRESET_IDS" "$name"; then
             magpie_list_contains "$MAGPIE_PROVIDER_READY" "$name" || continue
         elif magpie_list_contains "$MAGPIE_FAMILY_NAMES" "$name"; then
-            id=$(magpie_list_value "$MAGPIE_FAMILY_ID_NAMES" "$name" || true)
+            id=''
+            for (( family_index=0; family_index<${#MAGPIE_FAMILY_NAME[@]}; family_index++ )); do
+                if [ "${MAGPIE_FAMILY_NAME[family_index]}" = "$name" ]; then
+                    id=${MAGPIE_FAMILY_ID[family_index]}
+                    break
+                fi
+            done
+            [ -n "$id" ] || continue
             magpie_list_contains "$live" "$id" || continue
         fi
         filtered="${filtered:+$filtered,}$name"

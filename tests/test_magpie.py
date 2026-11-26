@@ -611,6 +611,28 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class MagpieVisibilityTests(unittest.TestCase):
+    """Visibility keeps only names the gateway can currently accept."""
+
+    def test_an_unpublished_route_is_omitted(self):
+        script = "\n".join([
+            "source " + repr(str(ENGINE)),
+            "MAGPIE_GROUP_IDS='|workhorse|'",
+            "MAGPIE_GROUP_MODELS='|workhorse=minimax-cn/model|'",
+            "MAGPIE_PROVIDER_PRESET_IDS='|openai|'",
+            "MAGPIE_PROVIDER_READY='|openai|'",
+            "MAGPIE_FAMILY_NAME=(auto-route)",
+            "MAGPIE_FAMILY_ID=(auto/missing)",
+            "MAGPIE_FAMILY_NAMES='|auto-route|'",
+            "magpie_visible_names_for 'workhorse,openai,auto-route' '|openai/gpt||minimax-cn/model|'",
+        ]) + "\n"
+        result = subprocess.run(["/bin/bash", "-c", script],
+                                env={"HOME": "/tmp", "PATH": "/usr/bin:/bin"},
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "workhorse,openai")
+
+
 class MagpieApplyTests(unittest.TestCase):
     """The apply engine drives the gateway through a fake Magpie CLI."""
 
@@ -2852,6 +2874,9 @@ class MagpieCommandTests(MagpieApplyTests):
 
     def test_the_test_command_fails_a_role_with_no_live_candidate(self):
         self.seed_home()
+        # Install the managed command and its catalog copy before mutating the
+        # fixture model row the command will read.
+        self.run_command("providers")
         catalog = self.home / ".config/dotfiles/magpie"
         text = (catalog / "models.tsv").read_text(encoding="utf-8").replace(
             "workhorse.minimax|minimax-cn/MiniMax-M3.1-Flash|yes",
