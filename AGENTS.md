@@ -184,12 +184,15 @@ explains every changed pair.
   complete target set. An unmarked regular file or foreign symlink remains a
   collision. A Bun-global link into the same package or its platform-specific
   companion package is moved into a private recovery batch on every host. A
-  targeted agent run on a complete legacy symlink home may also move selected
-  vendor links after bootstrap validates that every managed top-level state
-  root resolves under one canonical live tree. Full deployments and explicit
-  `--home` targets still use the strict copy-mode boundary. The global package
-  stays installed, and `agent-launchers/<batch>/restore.tsv` records each
-  original link for deliberate rollback.
+  targeted agent run on a legacy symlink home identifies the canonical live
+  tree, creates missing managed roots, and moves conflicting top-level entries
+  to timestamped backups before linking them; topology changes are journaled
+  under `legacy-agent-links/`. Full deployments and explicit `--home` targets
+  still use the strict copy-mode boundary, and a symlink inside the live tree
+  is never followed. The global package stays installed, and
+  `agent-launchers/<batch>/restore.tsv` records each original launcher link for
+  deliberate rollback. Targeted legacy runs accept compatible newer Bun/Node
+  runtimes while fresh Linux installs keep exact runtime pins.
 - **Herdr owns its integration bytes**: the deployment triggers
   `herdr integration install <kind>` for the selected managed agents, after
   the agent step and before the final client-settings merge, and never writes

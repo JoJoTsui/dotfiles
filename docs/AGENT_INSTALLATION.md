@@ -75,8 +75,8 @@ update uses the narrower dispatch described below. Vendor
 self-updaters are not invoked. The working checkout remains the source of
 truth, so the refreshed manifests and locks can be reviewed and committed.
 On Unix, neither command requires manually removing Bun-global launcher links;
-recognized links are backed up automatically, and a complete legacy symlink
-home is routed to its canonical live tree.
+recognized links are backed up automatically, and a legacy symlink home is
+prepared and routed to its canonical live tree.
 
 The update report distinguishes changed Homebrew versions from packages that
 were already current or not installed. Repository proposals likewise show
@@ -104,12 +104,17 @@ finds, and `dotfiles-agents status` lists each copy with its version, the
 commands it would provide, and the optional command that removes it.
 
 On the legacy T9K symlink home, a targeted `--agents-only` or `--agent-update`
-run made through `dotfiles-agents` first validates the complete top-level state
-link topology. When every managed root points at the same persistent live tree,
-the run uses that canonical tree as its home and may retire selected launcher
-symlinks into the same recovery batch. A full deployment, an explicit `--home`,
-an incomplete topology, or roots that resolve to different trees still fail at
-the public copy-mode boundary. Each changed link is recorded in
+run made through `dotfiles-agents` identifies the persistent live tree shared
+by the core state links and uses that canonical tree as its home. It creates
+missing managed roots in the live tree, links them into the account home, and
+moves a conflicting file, directory, or symlink to a timestamped backup before
+publishing the correct link. A full deployment and an explicit `--home` still
+use the public copy-mode boundary and refuse these links. Topology changes are
+recorded in
+`~/.local/state/dotfiles/legacy-agent-links/<batch>/restore.tsv` as `path|backup`;
+`NEW` marks a root that did not previously exist. Targeted legacy runs also
+accept compatible newer Bun/Node runtimes while keeping the frozen agent
+package pins. Launcher changes are recorded separately in
 `~/.local/state/dotfiles/agent-launchers/<batch>/restore.tsv` as `path|backup`;
 the backup is the original symlink and can be moved back after removing the
 managed launcher.

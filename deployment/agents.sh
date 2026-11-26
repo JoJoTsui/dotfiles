@@ -1268,6 +1268,11 @@ install_agents() {
         node_pin=$(installer_common_minimum nodejs)
         agent_version_at_least "$("$bun" --version)" "$bun_pin" || fail "Bun must satisfy the common runtime floor $bun_pin"
         agent_version_at_least "${node_version#v}" "$node_pin" || fail "Node must satisfy the common runtime floor $node_pin"
+    elif [ "${DEPLOY_LEGACY_AGENT_HOME:-false}" = true ]; then
+        # The existing legacy host may own a newer compatible runtime. Keep the
+        # frozen package pins while allowing that device-owned toolchain.
+        agent_version_at_least "$("$bun" --version)" "$bun_pin" || fail "Bun must satisfy version $bun_pin or newer"
+        agent_version_at_least "${node_version#v}" "$node_pin" || fail "Node must satisfy version $node_pin or newer"
     else
         [ "$("$bun" --version)" = "$bun_pin" ] || fail "Bun must match the common runtime pin $bun_pin"
         [ "$node_version" = "v$node_pin" ] || fail "Node must match the common runtime pin $node_pin"

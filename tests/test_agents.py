@@ -31,7 +31,7 @@ class AgentTests(unittest.TestCase):
                               cwd=SOURCE, env=env or self.env, capture_output=True,
                               text=True, timeout=30)
 
-    def fake_runtime(self):
+    def fake_runtime(self, node_version=None):
         tools = self.root / "tools"
         tools.mkdir(exist_ok=True)
         pins = agent_pins()
@@ -51,11 +51,11 @@ class AgentTests(unittest.TestCase):
             encoding="utf-8")
         bun.chmod(0o755)
         node = tools / "node"
-        node.write_text(f"#!/bin/sh\necho v{common_pin('nodejs')}\n", encoding="utf-8")
+        node.write_text(f"#!/bin/sh\necho v{node_version or common_pin('nodejs')}\n", encoding="utf-8")
         node.chmod(0o755)
         return bun, node
 
-    def legacy_home(self):
+    def legacy_home(self, missing=()):
         legacy = self.root / "legacy-home"
         live = self.root / "live-tree"
         roots = (".local", ".config", ".cache", ".pixi", ".bun", ".codex", ".claude",
@@ -63,6 +63,8 @@ class AgentTests(unittest.TestCase):
                  ".minimax-code-install-logs", ".cargo", ".rustup", ".agents",
                  ".opencode", ".codegraph", ".herdr", ".dsh", ".dsh-tui")
         for relative in roots:
+            if relative in missing:
+                continue
             target = live / relative
             target.mkdir(parents=True, exist_ok=True)
             (legacy / relative).parent.mkdir(parents=True, exist_ok=True)
@@ -167,8 +169,8 @@ class AgentTests(unittest.TestCase):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not chezmoi:
             self.skipTest("actual agent update requires Chezmoi")
-        bun, node = self.fake_runtime()
-        legacy, live = self.legacy_home()
+        bun, node = self.fake_runtime(node_version="26.13.1")
+        legacy, live = self.legacy_home(missing=(".dsh", ".dsh-tui"))
         package = "@earendil-works/pi-coding-agent"
         target = live / ".bun/install/global/node_modules" / package / "dist/cli.js"
         target.parent.mkdir(parents=True)
@@ -205,9 +207,19 @@ class AgentTests(unittest.TestCase):
         self.assertFalse((live / ".bun/bin/pi").is_symlink())
         self.assertTrue((live / ".local/bin/pi").is_file())
         self.assertTrue((legacy / ".bun").is_symlink())
+        for relative in (".dsh", ".dsh-tui"):
+            self.assertTrue((live / relative).is_dir())
+            self.assertTrue((legacy / relative).is_symlink())
+            self.assertEqual(os.readlink(legacy / relative), str(live / relative))
+        link_journals = sorted((live / ".local/state/dotfiles/legacy-agent-links").glob("*/restore.tsv"))
+        self.assertEqual(len(link_journals), 1)
+        link_rows = [line.split("|") for line in link_journals[0].read_text().splitlines()
+                     if line and not line.startswith("#")]
+        self.assertEqual({row[0]: row[1] for row in link_rows},
+                         {".dsh": "NEW", ".dsh-tui": "NEW"})
         self.launcher_recovery(live)
 
-    def test_legacy_agent_home_rejects_a_foreign_state_root(self):
+    def test_legacy_agent_home_repairs_a_foreign_state_root(self):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
         if not chezmoi:
             self.skipTest("actual agent install requires Chezmoi")
@@ -215,6 +227,8 @@ class AgentTests(unittest.TestCase):
         legacy, live = self.legacy_home()
         foreign = self.root / "foreign-bun"
         (foreign / ".bun").mkdir(parents=True)
+        marker = foreign / ".bun/device-marker"
+        marker.write_text("preserve me\n")
         (legacy / ".bun").unlink()
         (legacy / ".bun").symlink_to(foreign / ".bun", target_is_directory=True)
 
@@ -227,10 +241,67 @@ class AgentTests(unittest.TestCase):
                                 capture_output=True, text=True, timeout=60,
                                 check=False)
 
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("legacy agent state roots do not share one live tree", result.stderr)
-        self.assertFalse((live / ".bun/bin/pi").exists())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("prepared legacy agent link .bun", result.stderr)
+        self.assertTrue((legacy / ".bun").is_symlink())
+        self.assertEqual(os.readlink(legacy / ".bun"), str(live / ".bun"))
+        backups = sorted(legacy.glob(".bun.bak.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertTrue(backups[0].is_symlink())
+        self.assertEqual((backups[0] / "device-marker").read_text(), "preserve me\n")
+        self.assertTrue((live / ".bun/bin/pi").is_file())
         self.assertFalse((foreign / ".bun/bin/pi").exists())
+
+    def test_explicit_home_keeps_the_strict_symlink_boundary(self):
+        legacy, _live = self.legacy_home(missing=(".dsh",))
+        self.home = legacy
+
+        result = self.deploy("--agents-only", "--agents", "pi")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("target state root is a symlink", result.stderr)
+        self.assertFalse((legacy / ".dsh").exists())
+        self.assertFalse((legacy / ".local/state/dotfiles/legacy-agent-links").exists())
+
+    def test_legacy_agent_plan_does_not_prepare_missing_roots(self):
+        legacy, live = self.legacy_home(missing=(".dsh",))
+
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--platform", "linux",
+                                 "--role", "workstation", "--agent-update", "--agents", "pi", "--plan"],
+                                cwd=SOURCE, env=dict(self.env, HOME=str(legacy)),
+                                capture_output=True, text=True, timeout=60,
+                                check=False)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout)["home"], str(live))
+        self.assertFalse((legacy / ".dsh").exists())
+        self.assertFalse((live / ".dsh").exists())
+        self.assertFalse((live / ".local/state/dotfiles/legacy-agent-links").exists())
+
+    def test_legacy_agent_home_backs_up_a_regular_state_root(self):
+        chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
+        if not chezmoi:
+            self.skipTest("actual agent install requires Chezmoi")
+        bun, node = self.fake_runtime()
+        legacy, live = self.legacy_home(missing=(".dsh",))
+        device_root = legacy / ".dsh"
+        device_root.mkdir()
+        (device_root / "device-marker").write_text("preserve me\n")
+
+        result = subprocess.run(["/bin/bash", str(SOURCE / "bootstrap.sh"), "--platform", "linux",
+                                 "--role", "workstation", "--agents-only", "--agents", "pi"],
+                                cwd=SOURCE, env=dict(
+                                    self.env, HOME=str(legacy), DOTFILES_CHEZMOI_BIN=chezmoi,
+                                    DOTFILES_BUN_BIN=str(bun), DOTFILES_NODE_BIN=str(node),
+                                    PATH=os.pathsep.join((str(bun.parent), "/usr/bin", "/bin"))),
+                                capture_output=True, text=True, timeout=60,
+                                check=False)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((legacy / ".dsh").is_symlink())
+        backups = sorted(legacy.glob(".dsh.bak.*"))
+        self.assertEqual(len(backups), 1)
+        self.assertEqual((backups[0] / "device-marker").read_text(), "preserve me\n")
 
     def test_legacy_agent_home_adopts_a_vendor_launcher_symlink(self):
         chezmoi = os.environ.get("DOTFILES_TEST_CHEZMOI") or shutil.which("chezmoi")
