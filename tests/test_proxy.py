@@ -2,6 +2,7 @@
 import hashlib
 import gzip
 import os
+import socket
 from pathlib import Path
 import shutil
 import subprocess
@@ -27,6 +28,28 @@ class WithProxyTests(unittest.TestCase):
             ["/bin/bash", str(SOURCE / "dot_local/bin/executable_with-proxy"), *arguments],
             env={"HOME": str(self.root), "PATH": f"{self.root}:/usr/bin:/bin", **environment},
             capture_output=True, text=True, timeout=10)
+
+    def test_probe_uses_bash_tcp_when_nc_is_missing(self):
+        empty_bin = self.root / "empty-bin"
+        empty_bin.mkdir()
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            try:
+                listener.bind(("127.0.0.1", 7897))
+                listener.listen(1)
+            except OSError:
+                # A device proxy may already own the port. The probe only needs
+                # a listener, so use it when it is reachable.
+                try:
+                    with socket.create_connection(("127.0.0.1", 7897), timeout=1):
+                        pass
+                except OSError:
+                    self.skipTest("neither a free 7897 port nor a reachable listener is available")
+            result = self.run_wrapper("--print-url-if-available", PATH=str(empty_bin))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "http://127.0.0.1:7897")
+        finally:
+            listener.close()
 
     def test_available_url_requires_an_explicit_or_observed_endpoint(self):
         missing = self.run_wrapper("--print-url-if-available")

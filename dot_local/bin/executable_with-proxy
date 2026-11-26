@@ -81,6 +81,18 @@ refuse_line_separator PROXY_HTTP "${PROXY_HTTP:-}"
 refuse_line_separator PROXY_SOCKS "${PROXY_SOCKS:-}"
 refuse_line_separator PROXY_NO "$PROXY_NO"
 
+# netcat is optional. Bash's own TCP redirection probes the same loopback ports
+# when nc is absent, so endpoint detection does not depend on an undeclared
+# package. The subshell closes the descriptor as soon as the probe returns.
+proxy_port_open() {
+    local port=$1
+    if command -v nc >/dev/null 2>&1; then
+        nc -z 127.0.0.1 "$port" 2>/dev/null
+        return $?
+    fi
+    (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null
+}
+
 # The decision, in one place: an explicit endpoint wins, otherwise the ports a
 # proxy client may serve are probed in order, and a caller that asked for an
 # available endpoint gets nothing rather than the ordinary fallback.
@@ -89,7 +101,7 @@ if [[ -n ${PROXY_HTTP:-} ]]; then
     available=1
 else
     for _port in 7897 7890; do
-        if nc -z 127.0.0.1 "$_port" 2>/dev/null; then
+        if proxy_port_open "$_port"; then
             PROXY_HTTP="http://127.0.0.1:$_port"
             available=1
             break

@@ -155,7 +155,9 @@ command, so exit status and signals pass through. Override the endpoint with
 The endpoint is resolved per call, not per platform. A port belongs to the
 proxy process that owns it — the deployment instance uses 7890, Clash Verge
 uses 7897, on every OS — so `with-proxy` probes 7897 then 7890 and falls back
-to 7890 when neither answers. An explicit `PROXY_HTTP` skips the probe.
+to 7890 when neither answers. It uses `nc` when installed and Bash's built-in
+TCP redirection otherwise, so detection has no undeclared package dependency.
+An explicit `PROXY_HTTP` skips the probe.
 `with-proxy --print-url-if-available` instead exits unsuccessfully with no
 output when no endpoint is configured or observed; use it when persisting an
 endpoint, rather than persisting the ordinary fallback.
