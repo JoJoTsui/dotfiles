@@ -60,6 +60,7 @@ class ProxyIsolationTests(unittest.TestCase):
                 ".local/share/mihomo", ".local/share/mihomo/bin",
                 ".local/share/mihomo/profiles", ".local/share/mihomo/deployment",
                 ".local/share/mihomo/deployment/profiles", ".local/share/mihomo/run",
+                ".local/share/mihomo/releases",
                 ".cache/dotfiles", ".cache/dotfiles/mihomo", ".cache/dotfiles/proxy-scripts",
                 ".local/share/dotfiles/proxy", ".local/share/dotfiles/proxy/scripts"):
             with self.subTest(path=relative):
@@ -107,6 +108,18 @@ class ProxyIsolationTests(unittest.TestCase):
         result = self.run_proxy("validate_proxy_destinations\n")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(list(self.home.iterdir()), [])
+
+    def test_device_owned_release_tree_may_contain_virtualenv_symlinks(self):
+        release = self.home / ".local/share/mihomo/releases/release-id/.venv/bin"
+        release.mkdir(parents=True)
+        python = release / "python"
+        python.symlink_to(self.marker)
+
+        result = self.run_proxy("validate_proxy_destinations\n")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(python.is_symlink())
+        self.assertEqual(self.marker.read_text(), "unchanged\n")
 
     def test_refresh_binds_helper_writes_and_secret_to_the_selected_home(self):
         root = self.home / ".local/share/mihomo"

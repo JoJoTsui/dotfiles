@@ -34,6 +34,12 @@ fails there with that reason instead of installing a Linux binary. The Codex
 launcher still asks `with-proxy --if-available`, which uses whatever proxy the
 device runs (Clash Verge on macOS) and otherwise starts direct.
 
+Destination validation refuses symlinks in every proxy path the deployment
+writes. The device-owned `~/.local/share/mihomo/releases/` tree is the one
+exception: legacy installers keep versioned virtualenvs there, whose Python
+entry points are normally symlinks. The `releases` directory itself must still
+be a real directory inside the selected home.
+
 ## Refresh
 
 The refresh fetches the subscription, converts it, validates it, and publishes

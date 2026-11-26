@@ -18,6 +18,13 @@ proxy_script_root() {
 proxy_validate_destination_tree() {
     local target=$1 entry
     payload_safe_destination "$target"
+    # Legacy proxy installers keep versioned release/virtualenv trees under
+    # mihomo/releases. The deployment never writes into them, and their Python
+    # entry points are normally symlinks. Refuse a linked releases directory
+    # itself, but leave its device-owned contents alone.
+    if [ "$target" = "$DEPLOY_HOME/.local/share/mihomo/releases" ]; then
+        return 0
+    fi
     [ -d "$target" ] || return 0
     for entry in "$target"/* "$target"/.[!.]* "$target"/..?*; do
         [ -e "$entry" ] || [ -L "$entry" ] || continue

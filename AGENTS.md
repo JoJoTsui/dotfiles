@@ -316,6 +316,9 @@ explains every changed pair.
   installs and refreshes the profile, and the managed tree under
   `dot_local/share/dotfiles/proxy/` owns routing and supervision. The
   subscription URL is template data (`MIHOMO_SUBSCRIPTION_URL`), never git.
+  Destination validation rejects symlinks in managed proxy paths; the
+  device-owned `mihomo/releases/` tree may contain legacy virtualenv links, but
+  the `releases` directory itself must remain a real directory inside the home.
   Read `docs/PROXY.md` before changing either side.
 - **The proxy launchers share one endpoint decision**: `with-proxy` owns the
   precedence, the health check, the overrides (`PROXY_HTTP`, `PROXY_SOCKS`,
