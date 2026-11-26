@@ -141,8 +141,9 @@ explains every changed pair.
   loader keeps the generation it names. A loader stores each import as a JSON
   string, so the retirement check decodes that reference instead of matching
   raw text. `dotfiles-shell-prepare` and the native Windows preparation select
-  the loaders and call the module; they never write the loader themselves. The
-  macOS catalog does not copy the pinned loader, so the deployment's discovery
+  the loaders and call the module; they never write the loader themselves. Legacy
+  `dotfiles-host-up up` runs the preparer with the canonical live root and the
+  current source module/catalog before agent startup. The macOS catalog does not copy the pinned loader, so the deployment's discovery
   adapter is not a second publisher; a Nu that cannot answer the discovery
   command falls back to the documented macOS directories, so a required loader
   path is never omitted. Read `docs/SHARED_SHELL_SETTINGS.md` before changing

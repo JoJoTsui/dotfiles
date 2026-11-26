@@ -3,6 +3,8 @@
 set -eu
 [ -f "$HOME/.env_core" ] && . "$HOME/.env_core"
 : "${DOTFILES_COMMON_BIN:=$PIXI_HOME/bin}"
+completions_module=${DOTFILES_COMPLETIONS_MODULE:-$HOME/.local/lib/dotfiles/completions.py}
+completions_config=${DOTFILES_NU_COMPLETIONS_CONFIG:-$XDG_CONFIG_HOME/dotfiles/nu-completions.json}
 fail() { printf 'dotfiles-shell-prepare: %s\n' "$*" >&2; exit 1; }
 for command in nu starship zoxide fzf python wt; do
     [ -x "$DOTFILES_COMMON_BIN/$command" ] || fail "required managed command missing: $DOTFILES_COMMON_BIN/$command"
@@ -81,7 +83,7 @@ chmod 600 "$starship_temporary" "$pixi_temporary" "$fzf_temporary" "$wt_temporar
 set --
 if [ -n "$native_vendor_dir" ]; then set -- "$@" --legacy-loader "$native_vendor_dir/nu-scripts.nu"; fi
 if [ -n "$native_user_loader" ]; then set -- "$@" --loader "$native_user_loader"; fi
-"$DOTFILES_COMMON_BIN/python" "$HOME/.local/lib/dotfiles/completions.py" --nu "$DOTFILES_COMMON_BIN/nu" "$@"
+"$DOTFILES_COMMON_BIN/python" "$completions_module" --config "$completions_config" --nu "$DOTFILES_COMMON_BIN/nu" "$@"
 mv -f "$starship_temporary" "$autoload/starship.nu"
 mv -f "$pixi_temporary" "$autoload/pixi-completions.nu"
 mv -f "$fzf_temporary" "$autoload/fzf.nu"

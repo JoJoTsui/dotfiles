@@ -104,7 +104,9 @@ replacement, and symlinked startup state is rejected. A startup path is inside
 the home when it is spelled under the home or under its canonical spelling; an
 alias outside the home that resolves into it is refused, because the alias is
 not part of the home. Startup reads prepared
-files; fetching and generation belong to bootstrap, never shell startup.
+files; fetching and generation belong to bootstrap, never shell startup. Legacy
+`dotfiles-host-up up` is the incremental exception: it runs the preparer with the
+canonical live root and the current source module/catalog before agent startup.
 
 `deployment/nu-completions.json` pins the `nu_scripts` revision, each module's
 SHA-256, and an optional offline archive checksum. It maps allowlisted command

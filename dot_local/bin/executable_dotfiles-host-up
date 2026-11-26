@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # dotfiles-host-up — bring the local agent stack up after a reboot.
 #
-# It checks/repairs the legacy links, starts Mihomo and the Magpie gateway,
-# applies the model-provider wiring, starts the Codex app-server daemon, then
-# runs the health preflight. Herdr is started only with --restore; it is never
-# restarted here, because that would tear down panes.
+# It checks/repairs the legacy links, starts Mihomo, prepares the managed shell
+# resources, starts the Magpie gateway, applies the model-provider wiring,
+# starts the Codex app-server daemon, then runs the health preflight. Herdr is
+# started only with --restore; it is never restarted here, because that would
+# tear down panes.
 set -uo pipefail
 
 action=status
@@ -21,9 +22,9 @@ for argument in "$@"; do
             cat <<'EOF'
 usage: dotfiles-host-up [status|up] [--restore] [--restart] [--quiet]
 
-  status      report links, Mihomo, Magpie, Codex daemon, Herdr, and health
-  up          repair links, start Mihomo and Magpie, apply agent wiring,
-              and start the Codex daemon
+  status      report links, Mihomo, shell, Magpie, Codex daemon, Herdr, and health
+  up          repair links, start Mihomo, prepare shell resources, apply Magpie
+              wiring, and start the Codex daemon
   --restore   also start Herdr and let its saved workspace/agents restore;
               attach afterwards with `herdr`. A running Herdr is never restarted.
   --restart   recycle Mihomo and the Codex daemon when they are running
@@ -64,6 +65,8 @@ curl_bin=${DOTFILES_CURL:-$(command -v curl 2>/dev/null || true)}
 health=${DOTFILES_AGENT_HEALTH:-$HOME/.local/bin/dotfiles-agent-health}
 link_home=${DOTFILES_LINK_HOME:-$source_dir/deployment/legacy/link-home.sh}
 magpie_engine=${DOTFILES_MAGPIE_ENGINE:-$source_dir/deployment/magpie.sh}
+shell_prepare=${DOTFILES_SHELL_PREPARE:-$source_dir/dot_local/bin/executable_dotfiles-shell-prepare}
+nu=${DOTFILES_NU_BIN:-$live_root/.pixi/bin/nu}
 chezmoi=${DOTFILES_CHEZMOI_BIN:-$(command -v chezmoi 2>/dev/null || true)}
 codex=${DOTFILES_CODEX_BIN:-$(command -v codex 2>/dev/null || true)}
 herdr=${DOTFILES_HERDR_BIN:-$(command -v herdr 2>/dev/null || true)}
@@ -170,6 +173,57 @@ ensure_history() {
     else
         fail "shell history database; recovery withheld"
         return 1
+    fi
+}
+
+run_shell_prepare() {
+    [ -f "$shell_prepare" ] || return 0
+    local cache_dir staged='' status completions_config
+    completions_config=$live_root/.config/dotfiles/nu-completions.json
+    if [ -f "$source_dir/deployment/nu-completions.json" ]; then
+        cache_dir=$live_root/.cache/dotfiles
+        [ ! -L "$cache_dir" ] || { fail "shell completion cache is a symlink: $cache_dir"; return 1; }
+        mkdir -p "$cache_dir" || return 1
+        staged=$(mktemp "$cache_dir/nu-completions.XXXXXX") || return 1
+        cp "$source_dir/deployment/nu-completions.json" "$staged" || { rm -f "$staged"; return 1; }
+        completions_config=$staged
+    fi
+    local -a command=(env HOME="$live_root" \
+        XDG_CONFIG_HOME="$live_root/.config" XDG_DATA_HOME="$live_root/.local/share" \
+        XDG_STATE_HOME="$live_root/.local/state" XDG_CACHE_HOME="$live_root/.cache" \
+        PIXI_HOME="$live_root/.pixi" DOTFILES_COMMON_BIN="$live_root/.pixi/bin" \
+        DOTFILES_PLATFORM=linux \
+        DOTFILES_COMPLETIONS_MODULE="$source_dir/dot_local/lib/dotfiles/completions.py" \
+        DOTFILES_NU_COMPLETIONS_CONFIG="$completions_config" \
+        /bin/sh "$shell_prepare")
+    [ ! -x "$with_proxy" ] || command=("$with_proxy" "${command[@]}")
+    "${command[@]}"
+    status=$?
+    [ -z "$staged" ] || rm -f "$staged"
+    return "$status"
+}
+
+ensure_shell() {
+    [ -f "$shell_prepare" ] || return 0
+    if run_shell_prepare; then
+        ok "shell resources"
+    else
+        fail "shell resources"
+        return 1
+    fi
+}
+
+check_shell() {
+    [ -f "$shell_prepare" ] || return 0
+    local config=$live_root/.config/nushell/config.nu
+    local environment=$live_root/.config/nushell/env.nu
+    local loader=$live_root/.local/share/nushell/vendor/autoload/nu-scripts.nu
+    if [ -f "$config" ] && [ -f "$environment" ] && [ -f "$loader" ] &&
+       grep -Fq '# Managed pinned Nu completions' "$loader" &&
+       [ -x "$nu" ] && "$nu" --config "$config" --env-config "$environment" -c null >/dev/null 2>&1; then
+        ok "shell resources"
+    else
+        fail "shell resources"
     fi
 }
 
@@ -372,6 +426,7 @@ show_status() {
         fail "links drift"
     fi
     if mihomo_running; then ok "mihomo"; else fail "mihomo"; fi
+    check_shell
     check_magpie
     if codex_running; then
         if codex_proxy_ok; then ok "codex app-server daemon (proxy)"; else warn "codex daemon lacks HTTPS_PROXY"; fi
@@ -393,7 +448,7 @@ case "$action" in
     up)
         # Some helpers accumulate failures; inspect both status and that count.
         # No later dependency (especially Herdr) may start after a failure.
-        for step in ensure_links ensure_mihomo ensure_history ensure_agent_integrations ensure_magpie ensure_codex; do
+        for step in ensure_links ensure_mihomo ensure_history ensure_shell ensure_agent_integrations ensure_magpie ensure_codex; do
             if ! "$step" || [ "$failures" -ne 0 ]; then
                 printf 'host bring-up stopped at %s; Herdr restore withheld\n' "$step" >&2
                 exit 1

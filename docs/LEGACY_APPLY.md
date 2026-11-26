@@ -254,9 +254,12 @@ replaced. When it already holds the pinned bytes it is adopted, so a later
 apply owns it; when the pinned bytes moved on, remove that directory
 deliberately to take the new bytes.
 
-`dotfiles-host-up up` invokes the adapter after Mihomo, then applies the Magpie
-catalogs and starts the gateway before the Codex daemon or Herdr restore. The
-Magpie step reads the current checkout's engine and catalogs directly, so an
+`dotfiles-host-up up` invokes the adapter after Mihomo and shell preparation,
+then applies the Magpie catalogs and starts the gateway before the Codex daemon
+or Herdr restore. Shell preparation runs the source-owned preparer, completion
+module, and completion catalog with `HOME` and XDG roots under the canonical live
+root, so a symlinked account home cannot block or redirect generated resources.
+The Magpie step reads the current checkout's engine and catalogs directly, so an
 incremental source update does not depend on stale rendered copies. It sources
 the engine in a child shell with `HOME` set to the canonical live root, which
 keeps the direct command's account-home guard while using the legacy tree's

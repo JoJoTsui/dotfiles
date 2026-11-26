@@ -36,6 +36,14 @@ class HostUpTests(unittest.TestCase):
             "deploy_client_settings() { :; }\n",
             encoding="utf-8",
         )
+        (self.repo / "deployment/nu-completions.json").write_text("{}\n", encoding="utf-8")
+        shell_config = self.live / ".config/nushell"
+        shell_config.mkdir(parents=True)
+        (shell_config / "config.nu").write_text("", encoding="utf-8")
+        (shell_config / "env.nu").write_text("", encoding="utf-8")
+        shell_loader = self.live / ".local/share/nushell/vendor/autoload/nu-scripts.nu"
+        shell_loader.parent.mkdir(parents=True)
+        shell_loader.write_text("# Managed pinned Nu completions\n", encoding="utf-8")
         config = self.home / ".config/herdr/config.toml"
         config.parent.mkdir(parents=True)
         config.write_text("[session]\nresume_agents_on_restore = true\n")
@@ -48,7 +56,7 @@ done
 echo 000
 """)
         self.write_stub("with-proxy", "#!/bin/sh\nexec \"$@\"\n")
-        for name in ("codex", "link-home", "mihomo", "chezmoi"):
+        for name in ("codex", "link-home", "mihomo", "chezmoi", "shell-prepare", "nu"):
             self.write_stub(name, "#!/bin/sh\nexit 0\n")
         self.herdr_state = self.root / "herdr-running"
         self.herdr_state.touch()
@@ -88,6 +96,8 @@ exit ${HEALTH_EXIT:-0}
             "DOTFILES_AGENT_HEALTH": str(self.bin / "health"),
             "DOTFILES_LINK_HOME": str(self.bin / "link-home"),
             "DOTFILES_MAGPIE_ENGINE": str(self.magpie_engine),
+            "DOTFILES_SHELL_PREPARE": str(self.bin / "shell-prepare"),
+            "DOTFILES_NU_BIN": str(self.bin / "nu"),
             "DOTFILES_CHEZMOI_BIN": str(self.bin / "chezmoi"),
             "DOTFILES_MIHOMO_SUPERVISOR": str(self.bin / "mihomo"),
             "HERDR_STATE": str(self.herdr_state),
@@ -118,6 +128,80 @@ exit ${HEALTH_EXIT:-0}
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("host stack ready", result.stdout)
         self.assertFalse((self.home / ".caveman/run").exists())
+
+    def test_up_prepares_shell_resources_in_live_home_before_agents(self):
+        events = self.root / "shell-order"
+        self.write_stub("shell-prepare", f'''#!/bin/sh
+[ "$HOME" = "{self.live}" ] || exit 71
+[ "$XDG_CONFIG_HOME" = "{self.live}/.config" ] || exit 72
+[ "$XDG_DATA_HOME" = "{self.live}/.local/share" ] || exit 73
+[ "$DOTFILES_COMPLETIONS_MODULE" = "{self.repo}/dot_local/lib/dotfiles/completions.py" ] || exit 74
+case "$DOTFILES_NU_COMPLETIONS_CONFIG" in
+    "{self.live}/.cache/dotfiles/nu-completions."*) ;;
+    *) exit 75 ;;
+esac
+cmp -s "$DOTFILES_NU_COMPLETIONS_CONFIG" "{self.repo}/deployment/nu-completions.json" || exit 76
+printf 'shell\\n' >> "{events}"
+''')
+        self.magpie_engine.write_text(f'''magpie_apply() {{
+    grep -q '^shell$' "{events}" || exit 76
+    printf 'magpie\\n' >> "{events}"
+}}
+''', encoding="utf-8")
+        self.write_stub("codex", f'''#!/bin/sh
+case "$*" in
+    "app-server daemon version") [ -f "{self.root}/codex-ready" ] ;;
+    "app-server daemon start")
+        grep -q '^magpie$' "{events}" || exit 77
+        printf 'codex\\n' >> "{events}"
+        touch "{self.root}/codex-ready" ;;
+    *) exit 1 ;;
+esac
+''')
+        self.write_stub("health", f'''#!/bin/sh
+printf 'health %s\\n' "$*" >> "{events}"
+''')
+
+        result = self.run_host_up("up")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok   shell resources", result.stdout)
+        self.assertEqual(events.read_text().splitlines(),
+                         ["shell", "magpie", "codex", "health --before-restore"])
+
+    def test_failed_shell_preparation_stops_before_agents(self):
+        self.write_stub("shell-prepare", "#!/bin/sh\nexit 1\n")
+        self.magpie_engine.write_text("magpie_apply() { echo unexpected >&2; }\n", encoding="utf-8")
+        self.write_stub("codex", "#!/bin/sh\necho unexpected >&2\nexit 0\n")
+
+        result = self.run_host_up("up")
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("stopped at ensure_shell", result.stderr)
+        self.assertNotIn("unexpected", result.stderr)
+
+    def test_status_validates_shell_without_preparing_it(self):
+        marker = self.root / "shell-prepared"
+        self.write_stub("shell-prepare", f"#!/bin/sh\ntouch '{marker}'\n")
+        self.write_stub("nu", f'''#!/bin/sh
+[ "$1" = --config ] || exit 78
+[ "$2" = "{self.live}/.config/nushell/config.nu" ] || exit 79
+[ "$3" = --env-config ] || exit 80
+[ "$4" = "{self.live}/.config/nushell/env.nu" ] || exit 81
+exit 0
+''')
+        (self.live / ".config/nushell").mkdir(parents=True, exist_ok=True)
+        (self.live / ".config/nushell/config.nu").write_text("", encoding="utf-8")
+        (self.live / ".config/nushell/env.nu").write_text("", encoding="utf-8")
+        loader = self.live / ".local/share/nushell/vendor/autoload/nu-scripts.nu"
+        loader.parent.mkdir(parents=True, exist_ok=True)
+        loader.write_text("# Managed pinned Nu completions\n", encoding="utf-8")
+
+        result = self.run_host_up("status")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("ok   shell resources", result.stdout)
+        self.assertFalse(marker.exists())
 
     def test_up_sources_magpie_engine_in_live_home_before_codex(self):
         events = self.root / "magpie-order"
@@ -151,7 +235,8 @@ printf 'health %s\\n' "$*" >> "{events}"
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("ok   magpie gateway and agent wiring", result.stdout)
-        proxy_command = proxy_log.read_text().splitlines()[0]
+        proxy_command = next(line for line in proxy_log.read_text().splitlines()
+                             if "MAGPIE_CATALOG_DIR=" in line)
         self.assertIn(f"HOME={self.live}", proxy_command)
         self.assertIn(f"MAGPIE_CATALOG_DIR={self.repo}/deployment/magpie", proxy_command)
         self.assertEqual(events.read_text().splitlines(),

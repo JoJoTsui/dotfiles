@@ -9,10 +9,11 @@ dotfiles-host-up up          # repair links, start what is down, run health
 dotfiles-host-up up --restore # optional local Herdr startup; not the T9K laptop flow
 ```
 
-`status` checks the link manifest, Mihomo `9090`, the Codex
-app-server daemon, Herdr, and the health preflight. `up` repairs links through
-`link-home` (or reports a non-legacy home without failing), starts Mihomo,
-starts the Codex daemon under `with-proxy` when absent, and
+`status` checks the link manifest, Mihomo `9090`, the managed Nu config and
+completion loader, the Codex app-server daemon, Herdr, and the health preflight.
+`up` repairs links through `link-home` (or reports a non-legacy home without
+failing), starts Mihomo, prepares shell resources against the canonical live
+root, starts the Codex daemon under `with-proxy` when absent, and
 runs the dependency health preflight with `--before-restore` (skipping only
 the Herdr server check). Any failed dependency or missing/failing preflight
 stops bring-up before Herdr starts.
@@ -57,7 +58,8 @@ bash /t9k/mnt/joey/SHELL/dotfiles/deployment/legacy/link-home.sh
 The approved legacy apply must already have installed the helper and health
 script into the persistent live tree and enabled Herdr agent restore. This
 sequence restores the links, loads `.env_core` inside the preparation process,
-starts the longstanding Mihomo supervisor if absent, starts the Codex daemon,
+starts the longstanding Mihomo supervisor if absent, prepares the managed Nu
+startup and completion generation from the current checkout, starts the Codex daemon,
 checks CodeGraph and Graphify, and prepares the saved Herdr session.
 Between Mihomo and the agent daemons, the offline global integration adapter
 deploys the official Graphify skill/guidance and excludes Serena and the disabled
