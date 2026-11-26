@@ -1966,6 +1966,30 @@ magpie_visible_names() {
     return 0
 }
 
+# The catalog narrowing with names the gateway cannot currently accept removed.
+# An optional provider may be absent until the operator signs into its plugin;
+# an incomplete group has no members to show, and a route exists only when the
+# gateway publishes its model id. The picked catalog keeps those entries so a
+# later apply restores them without another repository edit.
+magpie_visible_names_for() {
+    local names=$1 live=$2 name id models filtered=''
+    local -a name_list
+    IFS=, read -r -a name_list <<< "$names"
+    for name in "${name_list[@]}"; do
+        if magpie_list_contains "$MAGPIE_GROUP_IDS" "$name"; then
+            models=$(magpie_list_value "$MAGPIE_GROUP_MODELS" "$name" || true)
+            [ -n "$models" ] || continue
+        elif magpie_list_contains "$MAGPIE_PROVIDER_PRESET_IDS" "$name"; then
+            magpie_list_contains "$MAGPIE_PROVIDER_READY" "$name" || continue
+        elif magpie_list_contains "$MAGPIE_FAMILY_NAMES" "$name"; then
+            id=$(magpie_list_value "$MAGPIE_FAMILY_ID_NAMES" "$name" || true)
+            magpie_list_contains "$live" "$id" || continue
+        fi
+        filtered="${filtered:+$filtered,}$name"
+    done
+    printf '%s' "$filtered"
+}
+
 # The models a group holds, in the order the gateway reports them. The
 # member ids of a group as `magpie group <id>` lists them: the token after
 # the first bare number on each member line. Magpie puts the first member on
@@ -3090,7 +3114,10 @@ group-add:$group"
 
     DEPLOY_STEP=magpie-apply.visible
     for (( index=0; index<${#MAGPIE_VISIBLE_AGENT[@]}; index++ )); do
-        agent=${MAGPIE_VISIBLE_AGENT[index]}; desired=${MAGPIE_VISIBLE_NAMES[index]}
+        agent=${MAGPIE_VISIBLE_AGENT[index]}
+        desired=$(magpie_visible_names_for "${MAGPIE_VISIBLE_NAMES[index]}" "$live")
+        [ -n "$desired" ] || { magpie_fail "agent $agent has no available visibility names"; return 1; }
+        MAGPIE_VISIBLE_NAMES[index]=$desired
         if [ "$agent" = dsh ] && ! magpie_dsh_compact_selected; then continue; fi
         if magpie_codex_profile_skipped "$agent"; then continue; fi
         current=$(magpie_visible_names "$agent" || true)

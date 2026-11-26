@@ -211,6 +211,9 @@ before the agent wiring, and only when the narrowing differs from what
 freezes the current list and would hide a model starred later. A provider id
 in a row lets that provider's picked models through; the exact set is
 `picked.tsv`. `status` prints the live narrowing as `visible|agent|names`.
+An optional provider that is not provisioned, an incomplete group, and a route
+the gateway does not publish are omitted from the live narrowing; their picked
+entries remain in the catalog for a later apply.
 
 ### `picked.tsv` — `agent|entries`
 

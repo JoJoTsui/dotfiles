@@ -182,6 +182,10 @@ elif argv[:1] == ["visible"]:
     else:
         if os.environ.get("FAKE_MAGPIE_FAIL_VISIBLE") == "1":
             sys.exit(1)
+        names = argv[2].split(",")
+        if "zed" in names and "zed" not in load("providers.json", []):
+            print('magpie: zed is no family, provider or group', file=sys.stderr)
+            sys.exit(1)
         visible[argv[1]] = argv[2]
         save("visible.json", visible)
         print("saved")
@@ -1687,11 +1691,19 @@ class MagpieApplyTests(unittest.TestCase):
         self.assertFalse(any("sk-fixture" in command for command in self.commands()))
 
     def test_an_absent_plugin_account_is_not_reported_as_a_tui_key(self):
-        result = self.apply(setup=lambda: self.provision(
+        result = self.apply(shell=["DEPLOY_AGENTS=(claude pi dsh)"], setup=lambda: self.provision(
             ["opencode-go", "kimi-code-cn", "minimax-cn", "openai"]))
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("the provider zed has no credential", result.stdout)
         self.assertNotIn("zed preset", result.stderr)
+        narrowing = [command for command in self.commands() if len(command.split()) == 3
+                     and command.startswith("visible ")]
+        self.assertEqual(len(narrowing), 3, narrowing)
+        for command in narrowing:
+            names = command.split()[2].split(",")
+            self.assertNotIn("zed", names)
+            self.assertIn("openai", names)
+            self.assertIn("workhorse", names)
 
     def test_an_absent_optional_key_provider_is_reported_on_native_hosts(self):
         # A key-requiring provider that is optional and absent must be reported
