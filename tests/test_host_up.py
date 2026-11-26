@@ -28,6 +28,14 @@ class HostUpTests(unittest.TestCase):
             "magpie_apply() { :; }\nmagpie_status() { :; }\n",
             encoding="utf-8",
         )
+        payload = self.repo / "deployment/payload.sh"
+        payload.write_text("payload_safe_destination() { :; }\n", encoding="utf-8")
+        client_settings = self.repo / "deployment/client-settings.sh"
+        client_settings.write_text(
+            "client_settings_magpie_pending() { return 1; }\n"
+            "deploy_client_settings() { :; }\n",
+            encoding="utf-8",
+        )
         config = self.home / ".config/herdr/config.toml"
         config.parent.mkdir(parents=True)
         config.write_text("[session]\nresume_agents_on_restore = true\n")
@@ -40,7 +48,7 @@ done
 echo 000
 """)
         self.write_stub("with-proxy", "#!/bin/sh\nexec \"$@\"\n")
-        for name in ("codex", "link-home", "mihomo"):
+        for name in ("codex", "link-home", "mihomo", "chezmoi"):
             self.write_stub(name, "#!/bin/sh\nexit 0\n")
         self.herdr_state = self.root / "herdr-running"
         self.herdr_state.touch()
@@ -80,6 +88,7 @@ exit ${HEALTH_EXIT:-0}
             "DOTFILES_AGENT_HEALTH": str(self.bin / "health"),
             "DOTFILES_LINK_HOME": str(self.bin / "link-home"),
             "DOTFILES_MAGPIE_ENGINE": str(self.magpie_engine),
+            "DOTFILES_CHEZMOI_BIN": str(self.bin / "chezmoi"),
             "DOTFILES_MIHOMO_SUPERVISOR": str(self.bin / "mihomo"),
             "HERDR_STATE": str(self.herdr_state),
             "HERDR_LOG": str(self.herdr_log),
@@ -142,10 +151,41 @@ printf 'health %s\\n' "$*" >> "{events}"
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("ok   magpie gateway and agent wiring", result.stdout)
-        self.assertTrue(proxy_log.read_text().splitlines()[0].startswith(
-            f"env HOME={self.live} MAGPIE_CATALOG_DIR={self.repo}/deployment/magpie "))
+        proxy_command = proxy_log.read_text().splitlines()[0]
+        self.assertIn(f"HOME={self.live}", proxy_command)
+        self.assertIn(f"MAGPIE_CATALOG_DIR={self.repo}/deployment/magpie", proxy_command)
         self.assertEqual(events.read_text().splitlines(),
                          ["magpie apply", "codex", "health --before-restore"])
+
+    def test_up_loads_the_client_settings_merger_for_magpie(self):
+        log = self.root / "magpie-client-settings"
+        self.magpie_engine.write_text(f'''magpie_apply() {{
+    [ "$DEPLOY_SOURCE" = "{self.repo}" ] || exit 81
+    [ "$DEPLOY_HOME" = "{self.live}" ] || exit 82
+    [ "$DEPLOY_CHEZMOI" = "{self.bin}/chezmoi" ] || exit 83
+    [ "$XDG_CONFIG_HOME" = "{self.live}/.config" ] || exit 84
+    [ "$XDG_STATE_HOME" = "{self.live}/.local/state" ] || exit 85
+    command -v payload_safe_destination >/dev/null || exit 86
+    command -v client_settings_magpie_pending >/dev/null || exit 87
+    command -v deploy_client_settings >/dev/null || exit 88
+    printf 'client settings merger loaded\\n' > "{log}"
+}}
+''', encoding="utf-8")
+
+        result = self.run_host_up("up")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(log.read_text().strip(), "client settings merger loaded")
+
+    def test_magpie_client_wiring_requires_chezmoi_before_codex(self):
+        self.write_stub("codex", "#!/bin/sh\necho unexpected >&2\nexit 0\n")
+
+        result = self.run_host_up("up", env={"DOTFILES_CHEZMOI_BIN": str(self.root / "missing-chezmoi")})
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("chezmoi is required for Magpie client wiring", result.stderr)
+        self.assertIn("stopped at ensure_magpie", result.stderr)
+        self.assertNotIn("unexpected", result.stderr)
 
     def test_failed_magpie_stops_before_codex(self):
         self.magpie_engine.write_text("magpie_apply() { exit 1; }\n", encoding="utf-8")

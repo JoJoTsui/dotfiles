@@ -133,7 +133,9 @@ The legacy incremental path is explicit: `dotfiles-host-up up` sources the
 current checkout's Magpie engine and catalogs after Mihomo and the global
 integration adapter, before the Codex daemon and Herdr restore. The engine runs
 in a child shell with `HOME` set to the canonical live root; direct
-`dotfiles-magpie` commands retain their stricter account-home guard.
+`dotfiles-magpie` commands retain their stricter account-home guard. Apply also
+loads the deployment's client-settings merger with Chezmoi and XDG roots under
+that home, so Claude Code and Pi migrate in the same backed-up apply.
 `dotfiles-host-up status` reports the same gateway and wiring contract without
 applying it.
 

@@ -260,7 +260,9 @@ Magpie step reads the current checkout's engine and catalogs directly, so an
 incremental source update does not depend on stale rendered copies. It sources
 the engine in a child shell with `HOME` set to the canonical live root, which
 keeps the direct command's account-home guard while using the legacy tree's
-real managed directories. Missing
+real managed directories. For apply it also loads the payload and client-settings
+mergers with Chezmoi and XDG roots under that live home, so Claude Code and Pi
+receive the same backed-up gateway migration as a full deployment. Missing
 cached skill source or a policy/gateway failure stops preparation. Running
 clients retain their existing skill catalogs until they restart; the adapter
 never restarts them.
