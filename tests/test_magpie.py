@@ -3286,6 +3286,23 @@ class ClaudeSubagentInheritanceTests(unittest.TestCase):
         self.assertNotIn("CLAUDE_CODE_SUBAGENT_MODEL", self.live())
 
 
+class MagpieCodexProfileModeTests(unittest.TestCase):
+    """The profile guard reads the file mode on BSD and GNU stat."""
+
+    def test_the_profile_mode_is_the_file_permission(self):
+        with tempfile.TemporaryDirectory(prefix="dotfiles-codex-profile-mode-") as temporary:
+            profile = Path(temporary) / "magpie.config.toml"
+            profile.write_text('model_provider = "magpie"\n', encoding="utf-8")
+            profile.chmod(0o600)
+            script = ("source " + repr(str(ENGINE)) + "\n"
+                      "magpie_codex_profile_mode " + repr(str(profile)) + "\n")
+            result = subprocess.run(["/bin/bash", "-c", script],
+                                    env={"HOME": temporary, "PATH": "/usr/bin:/bin"},
+                                    capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "600")
+
+
 class CodexTomlBytesTests(unittest.TestCase):
     """An unchanged Codex configuration keeps its file and its mtime.
 

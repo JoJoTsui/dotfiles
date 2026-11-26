@@ -2517,8 +2517,14 @@ magpie_codex_toml_string() {
 }
 
 magpie_codex_profile_mode() {
-    if stat -f '%Lp' "$1" 2>/dev/null; then return 0; fi
-    stat -c '%a' "$1" 2>/dev/null
+    local mode
+    # BSD stat prints the permission here. GNU stat treats -f as a filesystem
+    # query and can still exit successfully, so accept only an octal mode.
+    mode=$(stat -f '%Lp' "$1" 2>/dev/null) || mode=''
+    case "$mode" in
+        ''|*[!0-7]*) stat -c '%a' "$1" 2>/dev/null ;;
+        *) printf '%s\n' "$mode" ;;
+    esac
 }
 
 # Live profile health, with no bearer token in the report. This is used after
