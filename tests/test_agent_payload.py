@@ -285,6 +285,7 @@ class AgentPayloadTests(unittest.TestCase):
         block = (SOURCE / "deployment/agent-payload/AGENTS.md").read_text()
         self.assertIn("## Preferred workflows", block)
         self.assertIn("rsync -a -- source/ destination/", block)
+        self.assertIn("omit `--delete` unless an exact mirror sync is required", block)
         self.assertIn("prefer over `cp`", block)
         section = block.split("## Preferred workflows", 1)[1].split("\n## ", 1)[0]
         for area, choice in (
