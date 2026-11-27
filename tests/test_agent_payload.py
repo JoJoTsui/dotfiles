@@ -284,6 +284,8 @@ class AgentPayloadTests(unittest.TestCase):
     def test_shared_instructions_name_the_preferred_workflows(self):
         block = (SOURCE / "deployment/agent-payload/AGENTS.md").read_text()
         self.assertIn("## Preferred workflows", block)
+        self.assertIn("rsync -a -- source/ destination/", block)
+        self.assertIn("prefer over `cp`", block)
         section = block.split("## Preferred workflows", 1)[1].split("\n## ", 1)[0]
         for area, choice in (
             ("Engineering and productivity method", "mattpocock"),
@@ -353,7 +355,13 @@ class AgentPayloadTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(stale.exists(), "the retired Kimi instruction file must stay absent")
         destinations = [destination for kind, _, destination in targets if kind == "block"]
-        self.assertEqual(len(destinations), 7)
+        expected_destinations = {
+            ".agents/AGENTS.md", ".codex/AGENTS.md", ".claude/CLAUDE.md",
+            ".pi/agent/AGENTS.md", ".config/opencode/AGENTS.md",
+            ".minimax/AGENTS.md", ".qoder/AGENTS.md",
+        }
+        self.assertEqual(len(destinations), len(expected_destinations))
+        self.assertEqual(set(destinations), expected_destinations)
         expected = self.expected_instruction_block()
         for relative in destinations:
             path = self.home / relative

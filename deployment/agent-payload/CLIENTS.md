@@ -30,6 +30,10 @@ desired order: system prompt and explicit user message first, project
 instructions next, this user-level block last. Check a client's override files
 before assuming the block is active.
 
+Each client has exactly one managed global instruction location. The shared
+`~/.agents/AGENTS.md` file is Kimi's only global copy; it is not an additional
+global input for the other clients.
+
 ## Editing tools
 
 Claude Code, Codex, Kimi, Pi, OpenCode, and Qoder expose native file edit or

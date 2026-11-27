@@ -120,6 +120,7 @@ determine availability. Preserve the target shell's semantics in scripts.
 | Literal replace | `sd -s 'old' 'new' file` |
 | Read a file | `bat --paging=never --style=plain --color=never file` |
 | List a directory | `eza --git --icons=never -la` |
+| Copy or sync files | `rsync -a -- source/ destination/` (prefer over `cp`; use `cp -a` when rsync is unavailable) |
 | JSON / YAML | `jq -r`, `jq -e`; `yq -r '.a.b'`, `yq -i` |
 | Structured data in Nu | `open data.json`, `get`, `where`, `select`, `to json` |
 | Python | `uv run`, `uvx`, `uv add` |
