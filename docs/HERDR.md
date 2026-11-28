@@ -249,7 +249,7 @@ worktree persistence rule in the shared agent instructions.
 
 Before a restore, or when a pane cannot reach its provider, run
 `~/.local/bin/dotfiles-agent-health`. The full check covers Mihomo, U.S.
-egress, Caveman, the Codex app-server daemon, Herdr, and CodeGraph.
+egress, the Codex app-server daemon, Herdr, and CodeGraph.
 `--codex` narrows it to the Codex launch path (no CodeGraph), `--clients`
 reports client binaries, config paths, and the Herdr integration drift,
 and `--probe` adds one paid Codex model round trip. After a reboot,

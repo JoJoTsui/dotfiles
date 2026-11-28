@@ -1,21 +1,20 @@
 # Deployment architecture plan
 
-## Where the work starts
+## Status at `598478f`
 
-The architecture review recovered Pi's handoff from Herdr's dotfiles workspace,
-test tab, at `c06dc29`. That commit fixes the Unix agent ledger after a narrow
-apply. Source inspection found that native Windows still replaces the ledger
-with the current selection. Agent status can pair catalog or recorded values
-with a version probe of the first executable on PATH. A successful version
-probe alone does not prove the executable came from the selected installation
-provider.
+The architecture review began at `c06dc29`. Its two central dispatch findings
+are resolved in the current tree:
 
-The Linux proxy plan placed proxy installation after shell preparation, while
-the dispatcher runs it before Magpie and shell preparation. The Linux review
-also left open a rewrite of the managed Git ignore file and an optional
-`better-sqlite3` install failure on Ubuntu 20.04. The writer and client impact
-remain unverified. Native Windows was unrun in the earlier review. No matched
-timing baseline was collected. See the [earlier Linux review](../.scratch/deployment-review-2026-11-17/issues/23-linux-t9k-preparation.md).
+- Native Windows preserves unselected agent-ledger rows during a narrow apply,
+  matching the Unix behavior (`deployment/windows.ps1`;
+  `tests/test_windows_deployment.py`).
+- The deployment proxy runs before Magpie and shell preparation, matching the
+  ordered plan (`bootstrap.sh`; `tests/test_deployment.py`).
+
+The remaining decisions below describe the accepted architecture and its
+verification boundary. Historical problem statements and review evidence stay
+in `.scratch/deployment-review-2026-11-17/`; they are not current deployment
+instructions.
 
 ## Decisions
 

@@ -1,392 +1,48 @@
-# Caveman skills and retired gateway
+# Caveman skills
 
-Caveman is used through standalone skills. Its proxy routing, native lifecycle
-hooks, MCP servers, and generated client plugins are retired on current hosts.
-The host retirement began with commit `a677929`; existing device integrations
-need the focused migration below because pulling the source does not change
-client settings in the account home. Keep the installed skills.
+Caveman is deployed only as standalone skills. The repository does not install,
+configure, start, stop, or health-check the Caveman CLI or gateway.
 
-The host startup and health helpers do not start or require this gateway.
-Public bootstrap also leaves the gateway alone: it neither merges configuration
-nor starts, stops, or refreshes the process. Existing configuration, runtime
-files, and old `caveman-config` merge baselines remain device-owned. Fresh homes
-receive the standalone skills without a gateway configuration.
-Standalone voice skills (`caveman`, `ultracave`, `megacave`) need no CLI,
-gateway, hooks, or MCP server. Gateway-backed evidence and optimization skills
-still need their own runtime; keeping a skill installed does not activate it.
+Fresh homes receive no `.caveman` directory, gateway configuration, merge
+baseline, hook, MCP server, or generated plugin. Existing device-side
+`~/.caveman` state and old client settings remain device-owned; source cleanup
+does not delete or rewrite them.
 
-## Default availability and voice activation
+## Selection
 
-The catalog selects `caveman` automatically on every platform and role. All
-seven managed agents receive it: Codex, Kimi Code, Pi, OpenCode, and Qoder read
-the shared tree; Claude Code and MiniMax Code receive regular-file copies.
-Installation makes the skill available; it does not activate the voice.
+The skill catalog keeps `caveman` and `caveman-compress` in the automatic core.
+The other Caveman-branded skills use the `caveman` selection tag, except the
+generic engineering workflows that remain automatic or optional under their own
+selection. A host opts in with `DOTFILES_SKILLS=caveman` or a named skill.
 
-The pinned skill starts on `/caveman` or a matching request and persists for
-that session until `stop caveman` or `normal mode`. No gateway, CLI, hook, or
-MCP server is needed. Its compression rules apply to chat; persisted code,
-comments, commits, docs, and tickets retain normal prose.
+Codex, Kimi Code, Pi, OpenCode, and Qoder read the shared skill tree. Claude Code
+and MiniMax Code receive regular-file copies. See
+[skill selection](SKILL_REVIEW.md) and [agent payloads](AGENT_PAYLOAD.md) for the
+client matrix and ownership rules.
 
-A repository-wide default voice is possible through the shared instruction
-block in `deployment/agent-payload/AGENTS.md`, which reaches all seven agents.
-That would be a model-followed instruction to load and follow the installed
-skill at session start, with explicit user requests and `normal mode` taking
-precedence. It would not be a native persistent mode switch or proof that
-every client invoked the skill. MiniMax's native skill discovery is still
-unverified. The repository currently keeps voice activation opt-in; no default
-activation instruction or runtime integration is installed.
+## Voice activation
 
-## Skills-only operation
+Installing the skill makes it available; it does not activate the voice. The
+pinned `caveman` skill starts on `/caveman` or a matching request and persists
+for that session until `stop caveman` or `normal mode`. No CLI, gateway, hook, or
+MCP server is needed.
 
-Use the native CLI's `caveman disable --all` to restore journaled provider
-routes and withdraw its hooks and generated plugins. The Bun executable may be
-cached rather than installed on PATH; use the already-installed CLI bytes,
-not a fresh `bunx ...@latest` download during removal.
+Voice activation remains opt-in. The shared instruction block does not force a
+repository-wide default mode. Persisted code, comments, commits, documentation,
+and tickets keep normal prose even while the chat voice is active.
 
-Rehearse against a private isolated copy of the settings and integration
-journals before changing a live host. Keep a private backup of each changed
-file, then inspect all agents for remaining Caveman MCP registrations, hooks,
-provider routes, and auto-loaded extensions. Older installs can leave orphaned
-resources without a journal. Move those recognized resources outside plugin
-and extension discovery instead of deleting them. Preserve unrelated hooks,
-provider settings, authentication, and the standalone skills.
+## Legacy device state
 
-On the legacy T9K host, the 4.0.1 disable operation restores Codex successfully,
-but refuses OpenCode's subsequently merged MCP entry. Remove only the known
-Caveman MCP entries from both `mcp.caveman` and `mcp.servers.caveman`, then retry
-the journaled disable to restore the original provider URLs. Retire the
-orphaned Pi `extensions/caveman-native.js`, OpenCode's older
-`plugins/caveman-blocks.js`, and Claude's `caveman-blocks` hook too. Inspect any
-plugin restored from the journal: an older Caveman plugin is still an active
-integration. Preserve the files and journals in the private recovery batch.
+Older hosts may still contain Caveman binaries, configuration, runtime databases,
+integration journals, provider routes, hooks, or generated plugins. They are not
+part of this repository's deployment surface. Do not add them to Chezmoi source
+or remove them as a side effect of skill cleanup.
 
-Apply the tested startup and health helpers through the focused legacy apply
-adapter. Verify the direct provider with a new process before stopping the
-gateway. Existing agent processes can retain their previous route, hooks, and
-extensions until restarted; changing their files cannot clear that in-memory
-state. Do not restart Herdr to refresh agents, since it tears down every pane.
-Keep Caveman's binaries, databases, receipts, and backups for rollback.
+An operator who deliberately retires or rolls back an old installation must use
+the upstream CLI separately, preserve private backups and unrelated client
+settings, and verify direct provider configuration with new client processes.
+The repository provides no gateway lifecycle commands or supervision.
 
-The 2026-11-09 host migration passed 39 focused startup, launcher, and legacy
-apply tests, both `t9k` and `linux` simulated applies, shell syntax checks,
-and ShellCheck's warning/error gate. All 13 existing global agent config files
-parsed without Caveman runtime references after removal; credential-bearing
-configuration fields and 12 discovered voice-skill copies were unchanged.
-A fresh ephemeral Codex process reported provider `openai` and returned
-`HEALTH_OK` through Mihomo. The shared Codex daemon was restarted and the full
-live health check passed. Recovery files are private under
-`~/.local/state/dotfiles/caveman-retirement/`.
-
-The already-running Herdr agent processes still held their old routes, so the
-gateway was left running for those sessions, including the session performing
-the migration. Relaunch/resume those agents to load the direct configuration,
-then run `caveman stop` using the installed CLI. Startup no longer launches it.
-
-### macOS retirement
-
-The 2026-11-09 macOS migration rehearsed the cached Caveman CLI 4.0.1 disable
-operation against private copies, then applied 15 backed-up changes. It removed
-Caveman hooks and MCP/provider registrations, archived its generated OpenCode,
-Pi, and Hermes plugins plus integration journals, and updated the installed
-health helper from `a677929`. Herdr and Impeccable hooks survived. All 12 parsed
-client configurations passed credential-field preservation checks; all 12
-discovered standalone skill files remained byte-identical.
-
-OpenCode's merged MCP registration required targeted removal before the native
-disable operation. Hermes already used its direct provider inside stale
-Caveman markers; the migration preserved that route while withdrawing the
-markers and plugin/MCP blocks. Runtime databases and actively changing cloud
-preferences were retained. Recovery files are private under
-`~/.local/state/dotfiles/caveman-retirement/caveman-macos-retirement-992uxw8d/`.
-
-Both macOS health scenarios (running and stopped Codex daemon) passed without
-a gateway or network dependency, as did the installed `--codex` health check.
-A fresh ephemeral Codex 0.167.0 process reported provider `openai` and returned
-`HEALTH_OK`. The broader Linux host-startup suite failed on this Mac because
-its `timeout` command was unavailable; the Herdr launcher suite passed eight
-of nine tests, with the remaining test assuming the Linux proxy branch. No
-full bootstrap or fresh-install gate was run for this focused device repair.
-
-An existing Codex process initially kept an established connection to port
-8787, so the gateway was left running during migration. On resuming the work,
-no client connections remained. The cached CLI's `stop` command succeeded;
-`lsof` confirmed no listeners or client connections on port 8787, and the
-installed `--codex` health check passed with the gateway stopped.
-
-Corrective native deployment verification subsequently passed on this Apple
-silicon Mac: both full installations, preservation, ordinary discovery, pinned
-commands, and 44 required behavior tests completed with zero skips. The final
-run was cache-assisted; the first empty-cache attempt installed and reapplied
-successfully but exposed stale verification expectations. The
-[verification record](verification/macos.md#caveman-retirement-corrective-verification)
-retains both failed attempts, the final report, and the exact tested source.
-This supplies the missing current verification; it does not change the fact
-that the original live repair preceded its required gate. No real-home
-deployment was repeated during the corrective verification.
-
-## Historical gateway reference
-
-The remaining gateway setup, ownership, and diagnostics describe the retired
-integration for rollback and investigation. They are not steps for the current
-skills-only setup. Its binaries, databases, and backups remain device state.
-
-## Ownership
-
-| Path | Owner |
-| --- | --- |
-| `~/.caveman/` | Caveman installer; device runtime state |
-| `~/.caveman/caveman.yaml` | device-owned; formerly merged by bootstrap |
-| `~/.caveman/bin/` | `caveman setup --install` (downloaded release binaries) |
-| `~/.caveman/integrations/<agent>.json` | `caveman setup --agent-native` ownership journal, when present |
-| `~/.caveman/caveman.db`, `receipts/`, `run/`, `runtime/` | runtime databases and state |
-| `~/.codex/config.toml` provider/MCP tables | device values; preserved while they differ from the last managed default |
-| `~/.codex/hooks.json` | compatibility merge retires only the legacy `rtk hook claude` entry; Caveman's hooks stay device-owned |
-| `~/.config/opencode/plugins/caveman-native.js` | generated by `caveman enable opencode` |
-| `~/.claude/settings.json` hooks | device-owned |
-| `~/.local/share/caveman-blocks/` | separate optional `caveman-blocks` install |
-
-Never add `~/.caveman`, the generated plugin, or the generated hook entries to
-the Chezmoi source. Bootstrap formerly merged the gateway configuration, but
-now leaves it and its old merge baseline untouched. The unreferenced
-`deployment/caveman.sh` and `deployment/client-settings/caveman.yaml` remain
-historical reference files. `deployment/client-settings/codex.toml` owns the managed
-`model_provider = "openai"` default. A device that selects Caveman keeps
-`model_provider = "caveman"` plus its `[model_providers.caveman]` and
-`[mcp_servers.caveman]` tables because they differ from that default; the
-generic merge in `deployment/client-settings/` preserves them without any
-Caveman-specific policy. Do not add the Caveman tables to the defaults: the
-gateway is optional and its binary path is host-specific. See
-[client settings](AGENT_SETTINGS.md) for the exact rule, including the case
-where a device value still equals the last managed default.
-
-### Merge caveat
-
-The Codex merge parses TOML and re-serializes the file. Values survive, but
-comments and formatting do not, so Caveman's `# >>> caveman:native-*` markers
-disappear after a bootstrap apply. The provider, its MCP server, and
-`model_provider` remain active; only the markers used by later block edits are
-lost. Re-run `caveman enable codex` after a merge to restore the markers.
-`caveman disable codex` also removes recognizable entries written without an
-install journal, so the integration remains reversible either way.
-
-## Provider mounts
-
-The gateway serves the providers in its built-in catalog. A provider outside
-that catalog needs a named mount: the gateway then proxies
-`/compat/<provider>/...` to the provider's own base URL and forwards the
-caller's credential, so agent traffic is metered and compressed instead of
-passing through untouched.
-
-Pi reports a provider it cannot route as:
-
-```text
-Caveman: pass-through for minimax-cn/MiniMax-M3.1-Flash (no compat mount named
-"minimax-cn" in the local proxy; add compat.minimax-cn.base_url to caveman.yaml
-to route it); no compression
-```
-
-The mount base URL must equal the provider's own base URL. Pi compares the
-mount with the endpoint it resolved for the model and keeps the provider
-direct when the two disagree.
-
-`deployment/client-settings/caveman.yaml` retains the former configuration as
-a historical example. It is absent from the target catalog and merge policies.
-`tests/test_caveman.py` verifies that Linux and macOS source application creates
-no gateway configuration and preserves existing gateway files without invoking
-its binaries, including when configuration is newer than stale run state.
-
-The former merge used the client settings mechanism. Gateway configuration is
-now outside that mechanism on all hosts. The old refresh step is also absent
-from bootstrap, so source application cannot restart a gateway.
-
-Check the published mount after an apply:
-
-```bash
-cat ~/.caveman/run/8787.json
-```
-
-A missing `minimax-cn` entry means the running gateway still serves the older
-configuration; restart it as described in [Start and stop](#start-and-stop).
-
-## Install
-
-The CLI needs Node 22.13 or newer. The managed `nodejs` environment satisfies
-that, but its npm-global `bin` directory is not on the shared `PATH`; call
-`"$(npm prefix -g)/bin/caveman"` explicitly, or add that directory in
-`~/.config/dotfiles/env.local.sh`.
-
-```bash
-npm i -g @caveman-ai/cli
-caveman setup --install     # installs ~/.caveman/bin
-caveman enable codex        # also: opencode, claude
-caveman status
-```
-
-`caveman setup --agent-native codex` installs the larger bundle (routing,
-lifecycle hooks, recovery MCP, and skills). The
-[upstream installer](https://github.com/JuliusBrussee/caveman)
-(`npx -y github:JuliusBrussee/caveman`) wires agent extensions but does not
-leave the `caveman` CLI on `PATH`.
-
-## Start and stop
-
-The gateway runs in the foreground and must inherit the outbound proxy for
-`chatgpt.com` and provider upstreams:
-
-```bash
-with-proxy caveman start
-
-# Host-local supervision (see the [proxy supervisor](PROXY.md) precedent):
-setsid nohup with-proxy caveman start >> ~/.caveman/run/supervisor.log 2>&1 < /dev/null &
-
-caveman stop
-```
-
-A bare `caveman start` resolves to byte-preserving `record` mode. To run the
-configured compressor for a supervised start, pass the mode explicitly:
-
-```bash
-setsid nohup with-proxy env CAVEMAN_MODE=compress caveman start \
-  >> ~/.caveman/run/supervisor.log 2>&1 < /dev/null &
-```
-
-Bootstrap uses that supervised form when it has to restart a running gateway
-after the managed configuration changed. The restart repeats the settings the
-running gateway published (mode, listener and recovery), because the run state
-is the only record of them.
-
-The managed proxy payload is a Linux build, so a macOS host has no Mihomo to
-route through. The restart therefore starts the gateway with the environment it
-inherits instead of wrapping it in `with-proxy`, which would point it at a port
-nothing serves. The Codex launcher makes the same choice on macOS; see
-[proxy](PROXY.md).
-
-There is no managed systemd unit: the binary and CLI are device-local, so a
-unit would either point at a missing path or duplicate the installer's
-ownership. After a reboot, start the gateway again. If the Codex app-server
-daemon was also restarted without proxy variables, refresh it before starting
-a TUI:
-
-```bash
-with-proxy codex app-server daemon restart
-```
-
-A running `caveman-mcp` can also start the proxy in recovery mode when an agent
-calls it; the run file records this as `recovery_via_mcp` in
-`~/.caveman/run/<port>.json`. That proxy inherits the MCP process's
-environment, so keep the agent daemon under `with-proxy` as well; otherwise
-recovery succeeds locally but upstream calls still fail.
-
-Checks:
-
-```bash
-caveman status
-cat ~/.caveman/run/8787.json
-ss -ltn | grep 8787
-```
-
-## Codex PostCompact output compatibility
-
-Caveman CLI 4.0.1 registers a Codex `PostCompact` hook that emits
-`hookSpecificOutput` with `hookEventName: "PostCompact"` and
-`additionalContext`. Codex rejects this with `hook returned invalid
-PostCompact hook JSON output`: that event accepts only the
-[common output fields](https://learn.chatgpt.com/docs/hooks#postcompact), not
-hook-specific context. The installed hook reproduced this with a synthetic
-manual-compaction event in an isolated home; it returned valid JSON and exit
-code zero, but the wrong event output schema.
-
-The skills-only migration removes the Caveman hook registrations altogether,
-including `PostCompact`, rather than retaining a compatibility shim. A running
-Codex process can retain its old configuration until relaunched or resumed.
-
-## Diagnosing upstream stalls
-
-Distinguish request upload, response headers, and response-body progress before
-changing gateway timeouts. `CAVE_GATEWAY_RESPONSE_HEADER_TIMEOUT_MS` bounds the
-wait after the request has been written; it does not bound a stalled upload.
-`CAVE_GATEWAY_UPSTREAM_TIMEOUT_MS` bounds the whole exchange, including a
-healthy SSE response. Shortening that total deadline can truncate a working
-reasoning turn. These are process environment settings, not managed YAML keys.
-
-The 2026-11-09 T9K audit tested the installed `bin-v4.0.1` executable, SHA-256
-`8b1dc0e9bba897aba8c7499affb763998e9aa58291dc4baa6cea818bf1839d59`, on
-Linux using Python's standard-library HTTP/TLS servers and a temporary local CA.
-Each test gateway had a fresh temporary home and loopback listener; its outbound
-proxy was a synthetic local TLS upstream. No account credentials or live
-inference requests were used. The installed binary's behavior is the evidence
-here; a published source tag alone does not establish its effective defaults.
-
-| Local scenario | Settings | Observed result |
-| --- | --- | --- |
-| Upstream accepts the request but sends no headers | No timeout overrides | 502 after 5.02 s |
-| Same header stall | Header 200 ms, total 0 | 502 after 0.21 s |
-| Healthy stream sends data every 50 ms for one second | Header 200 ms, total 0 | Complete response after 1.01 s |
-| Client disconnects before response headers | Header 200 ms, total 0 | Upstream connection closes within 0.01 s |
-| Upstream stops reading an 8 MiB upload, then closes after two seconds | Header 200 ms, total 0 | Waits 2.04 s, then returns 502 |
-| Same stalled upload | Header 200 ms, total 250 ms | 502 after 0.29 s |
-| Same healthy one-second stream | Header 200 ms, total 250 ms | Truncated body after 0.26 s |
-
-The live database recorded two `/responses` failures starting at 01:21:54 and
-01:26:08 UTC that day, lasting 993 and 739 seconds. Both recorded 196,608
-request bytes, zero response bytes, and an incomplete request hash. This is
-consistent with an interrupted upload, rather than proof of a long header wait
-or a particular total timeout. The narrow upstream fix to investigate is a
-stalled-upload write deadline that preserves healthy long response streams.
-The synthetic cancellation result above covers the pre-header wait; it does
-not establish cancellation behavior during every upload or response-body state.
-
-Do not infer a session limit from open tunnel connections. In the recorded
-23:00–02:00 UTC window spanning November 8–9, `/models` had 25 errors in 82
-requests with zero recorded `/responses` overlapping at request start, and
-zero errors in 12 requests with six overlapping. Counts used request start
-timestamps plus latency, with a one-hour lookback for ongoing requests; requests
-still unfinished and absent from the database cannot be counted. This
-observational comparison does not isolate node changes, traffic volume, or
-other tunnel users, and does not establish a useful concurrency threshold.
-Before imposing a cap, compare full model-fetch completion and error rates at
-1–2 versus six active sessions on the same node under comparable conditions.
-
-The audit therefore adds no global concurrency cap or total-timeout override.
-Gateway implementation fixes belong upstream; only verified deployment
-settings belong in this repository. A controlled live concurrency experiment
-and an upstream upload fix remain separate follow-up work.
-
-## Legacy T9K persistence
-
-`~/.caveman` is device state, but it must survive reboots. On the legacy T9K
-home, `/t9k/mnt` is a container overlay while `/t9k/mnt/joey/SHELL` is the
-persistent tree. A real `~/.caveman` on the overlay loses the downloaded
-binaries on reboot, which is what left Codex pointing at a dead gateway. The
-commands below assume this host's `$HOME=/t9k/mnt` and live tree
-`/t9k/mnt/joey/SHELL`; substitute the corresponding pair elsewhere.
-
-`deployment/legacy/home-links.tsv` lists `agents|.caveman`. Adopt an existing
-home-only root once, with no SQLite writer left on the old inode. Stop the
-gateway and kill lingering `caveman-mcp` children (they hold `ccr.db`; the
-agent daemon respawns them):
-
-```bash
-pkill -f 'caveman/bin/caveman-mcp' || true
-caveman stop
-if test -e /t9k/mnt/joey/SHELL/.caveman; then
-    echo 'destination exists; resolve it before copying' >&2
-else
-    cp -a ~/.caveman /t9k/mnt/joey/SHELL/.caveman &&
-    mv ~/.caveman ~/.caveman.overlay-backup &&
-    bash deployment/legacy/link-home.sh --groups agents --dry-run &&
-    bash deployment/legacy/link-home.sh --groups agents
-fi
-```
-
-`cp -a` nests the source under an existing destination directory, so the
-existence check is deliberate. These commands specialize the generic adoption
-rule in [legacy home links](LEGACY_HOME_LINKS.md); that page owns the relinker
-safety model, this one owns the Caveman-specific stop/copy order.
-
-The link keeps the literal `~/.caveman` path, so commands already written into
-`~/.codex/config.toml`, `~/.codex/hooks.json`, and the OpenCode plugin (for
-example `/t9k/mnt/.caveman/bin/caveman-proxy`) continue to resolve through the
-symlink. Restart the gateway with the supervised start above once the link is
-verified. Copy-mode hosts need no adoption: their home is persistent and
-already outside the relinker.
+`tests/test_caveman.py` protects the current boundary: fresh applies create no
+gateway configuration, repeated applies preserve existing gateway files without
+executing their binaries, and the standalone `caveman` skill still deploys.

@@ -7,7 +7,6 @@ silently after a reboot or a daemon restart:
 | --- | --- |
 | Mihomo `127.0.0.1:9090` | proxy controller down |
 | `with-proxy` egress country | node not U.S., or proxy bypassed |
-| Caveman `127.0.0.1:8787` + run-file PID | gateway down or stale |
 | `codex app-server daemon version` | Codex backend down (warning with `--no-daemon`) |
 | `herdr api snapshot` | Herdr server down |
 | `codegraph --version` | MCP binary missing (full check only) |
@@ -33,8 +32,7 @@ This is a **preflight**, not a shell-startup check. `codex-herdr` runs the
 narrow `--codex` set before every Herdr Codex launch. Explicit host preparation
 also runs the full dependency check before the laptop attaches to Herdr.
 `--probe` is opt-in because it spends tokens and depends on the active
-provider. A host without Mihomo or Caveman should skip the script rather than
-weaken it.
+provider. A host without Mihomo should skip the script rather than weaken it.
 
 The `--codex` set skips exactly one thing: the legacy proxy readiness (the
 Mihomo controller and its U.S. egress). The launcher runs `with-proxy
@@ -49,5 +47,4 @@ that host bring-up runs. `--before-restore` combined with `--codex` stays the
 strict check, because both flags were supported together before the narrow
 set existed.
 
-Related: [proxy](PROXY.md), [caveman](CAVEMAN.md), [herdr](HERDR.md),
-[host bring-up](HOST_UP.md).
+Related: [proxy](PROXY.md), [herdr](HERDR.md), [host bring-up](HOST_UP.md).

@@ -24,13 +24,14 @@ prunable.
 
 Selection becomes explicit. The catalog's selection column keeps `auto` for the
 reviewed default set and uses tags for groups a host opts into with
-`DOTFILES_SKILLS`: `lark`, `design` for the diagram, slide-deck, PPT, and
-front-end design skills, and `caveman` for the caveman-branded skills other than
-the mode and its compress skill. The six generic engineering skills from the
-caveman repository stay in `auto`; they are general workflows, not caveman
-voice. Mattpocock, Herdr, Worktrunk, and RTK guidance are named as preferred
-workflows in the shared instructions so their priority is visible to every
-client.
+`DOTFILES_SKILLS`: `lark` for the non-documentation Feishu skills and `caveman`
+for the Caveman-branded skills other than the mode and its compress skill. The
+four diagram, slide-deck, PPT, and front-end design skills were initially tagged
+but are now part of `auto`; `docs/AGENT_PAYLOAD.md` records the current selection.
+The six generic engineering skills from the Caveman repository stay in `auto`;
+they are general workflows, not Caveman voice. Mattpocock, Herdr, Worktrunk, and
+RTK guidance are named as preferred workflows in the shared instructions so
+their priority is visible to every client.
 
 Per-client sets apply only where the deployment controls discovery. Claude and
 MiniMax receive filtered copies; Pi and OpenCode receive a profile root through

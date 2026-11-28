@@ -477,10 +477,11 @@ provider nobody verified.
 **Verification boundary:** restoring a saved provider also requires its
 definition in the effective configuration, and a selection layer would replace
 the saved settings instead of restoring them. The synthetic runtime check
-below establishes both facts for Codex 0.169.0. Existing session metadata
-stays unchanged: the command neither retags a session nor writes into the
-Codex home. These observations concern device Codex 0.169.0, which is also the
-repository pin; another version needs its own check.
+establishes both facts for Codex 0.172.0, the version audited on 2026-11-27.
+The provider catalog owns the current pin. Existing session metadata stays
+unchanged: the command neither retags a session nor writes into the Codex home.
+Codex 0.169.0 remains the minimum supported version; a later behavior-changing
+release needs its own check.
 
 The synthetic run used a fresh Codex home, two fake loopback providers with
 the Responses API over SSE, and threads with a different saved provider,
@@ -491,7 +492,7 @@ mismatch through the Magpie profile, and a Magpie thread without the provider
 definition. The live gateway on `127.0.0.1:3425` was not part of the run: the
 fake providers bound ephemeral loopback ports, and the real Codex home, its
 sessions, and its authentication were never read. See
-[the neutral resume layer ADR](../adr/0015-neutral-codex-resume-layer.md).
+[the neutral resume layer ADR](adr/0015-neutral-codex-resume-layer.md).
 
 The interactive picker path is proven on a pty-capable host: the driver waits
 for the picker to render, waits for the session list to load, accepts the row
@@ -568,7 +569,7 @@ gateway resume, and it is not application acceptance.
 
 Primary sources: [Magpie's pinned profile adapter](https://github.com/yetone/magpie/blob/69233d6bcfda248a17b613a199e0f2735b0a3e08/internal/agent/codex_profile.go),
 [Codex resume configuration](https://github.com/openai/codex/blob/d32063f96c2dff1dc96af839b3952abb6acfeda4/codex-rs/app-server/src/config_manager.rs#L521-L594),
-and the installed Codex 0.169.0 `resume --help` output.
+and the Codex 0.172.0 runtime harness recorded by this audit.
 
 ## Provider credentials
 

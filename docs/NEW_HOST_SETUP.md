@@ -170,10 +170,10 @@ installed tool prefixes excluded from the environment.
 
 The gate first validates the public plan for the selected agents, including its
 Magpie gateway step and `magpie-apply` action, and records that plan in
-`plan.json`. The default selection includes DSH and DSH TUI; `--agents` accepts
-the seven-agent selection shown below to verify the current deferred-DSH scope.
-CodeGraph remains independently selected in both cases. The bootstrap it
-actually executes then uses `--no-magpie`, so the synthetic
+`plan.json`. The default selection includes DSH and DSH TUI; `--agents` also
+accepts the narrower seven-agent selection shown below for compatibility and
+focused verification. CodeGraph remains independently selected in both cases.
+The bootstrap it actually executes then uses `--no-magpie`, so the synthetic
 home never probes, starts, or uses a gateway and never touches real provider
 accounts, credentials, or model traffic. A default-port `magpie status` from
 that home could reach the real account's gateway, so the gate never calls it.

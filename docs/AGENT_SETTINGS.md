@@ -98,28 +98,26 @@ still present, before the gateway merge replaces it. This is a one-time cleanup
 of a deployment-owned value, not a universal ceiling on model strength: a
 device may still select any model for its subagents explicitly.
 
-Caveman gateway configuration and lifecycle are device-owned. Bootstrap leaves
-existing configuration, run state, and old merge baselines untouched and creates
-none on fresh homes. Standalone skills continue to deploy through the skill
-catalog. See [Caveman retirement](CAVEMAN.md#skills-only-operation).
+Caveman is skills-only in this repository. Bootstrap creates no CLI/gateway
+configuration and leaves existing device-side state untouched. Standalone skills
+continue to deploy through the skill catalog. See [Caveman skills](CAVEMAN.md).
 
 | Client | Managed CodeGraph location | Integration |
 | --- | --- | --- |
-| Claude 2.1.325 | `~/.claude.json`, `mcpServers.codegraph` | stdio, `alwaysLoad: true` |
-| Codex 0.169.0 | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
-| Kimi 2.4.1 | `~/.kimi-code/mcp.json`, `mcpServers.codegraph` | inferred stdio |
-| OpenCode 2.2.5 | `~/.config/opencode/opencode.jsonc`, `mcp.servers.codegraph` | local, enabled, `codemode: false` |
-| Pi 1.5.2 | `~/.pi/agent/mcp.json`, `mcpServers.codegraph` | stdio, user scope |
-| MiniMax Code 0.7.0 | `~/.minimax/mcp.json`, `mcpServers.codegraph` | inferred stdio |
-| Qoder 1.1.82 | `~/.qoder/settings.json`, `mcpServers.codegraph` | user scope stdio |
+| Claude Code | `~/.claude.json`, `mcpServers.codegraph` | stdio, `alwaysLoad: true` |
+| Codex | `~/.codex/config.toml`, `mcp_servers.codegraph` | stdio |
+| Kimi Code | `~/.kimi-code/mcp.json`, `mcpServers.codegraph` | inferred stdio |
+| OpenCode | `~/.config/opencode/opencode.jsonc`, `mcp.servers.codegraph` | local, enabled, `codemode: false` |
+| Pi | `~/.pi/agent/mcp.json`, `mcpServers.codegraph` | stdio, user scope |
+| MiniMax Code | `~/.minimax/mcp.json`, `mcpServers.codegraph` | inferred stdio |
+| Qoder | `~/.qoder/settings.json`, `mcpServers.codegraph` | user scope stdio |
 
 Every MCP entry launches managed `codegraph serve --mcp`, with no credentials,
 downloads through `npx`/`bunx`, or project-specific path. OpenCode's shape is
-verified against its [pinned MCP schema](https://github.com/anomalyco/opencode/blob/v2.2.0/packages/schema/src/mcp.ts)
-and [MCP container](https://github.com/anomalyco/opencode/blob/v2.2.0/packages/schema/src/config/mcp.ts),
+verified against the MCP schema shipped with the catalog-pinned release,
 then its actual loader and connected status. Kimi's location and transport
 follow its [MCP configuration](https://moonshotai.github.io/kimi-code/en/customization/mcp.html)
-and the installed 2.3.3 loader. Pi reads user servers from
+and the catalog-pinned loader. Pi reads user servers from
 `~/.pi/agent/mcp.json`. Qoder writes user scope into `~/.qoder/settings.json`
 and MiniMax Code reads its user file at `<data-dir>/mcp.json`; both use the same
 `mcpServers` object shape, taken from each client's own user-scope reader.

@@ -192,10 +192,11 @@ local storage. The retained original database is a migration-time baseline,
 not the current history. Do not remove the launcher and resume that old database
 without reconciling newer history. Rollback is a separate explicit operation.
 
-Verified on T9K Linux x86_64 with Atuin 18.24.5, an overlayfs runtime and Ceph
-snapshots: 40 real start/end cycles followed by deletion of the synthetic runtime
-restored all 40 rows. Separate tests cover concurrent panes, a torn inactive
-snapshot, committed WAL migration and preservation of original resources.
+The historical T9K Linux x86_64 run used the then-installed Atuin 18.24.5, an
+overlayfs runtime, and Ceph snapshots: 40 real start/end cycles followed by
+deletion of the synthetic runtime restored all 40 rows. Separate tests cover
+concurrent panes, a torn inactive snapshot, committed WAL migration and
+preservation of original resources.
 A fresh Bash-login-to-Nu PTY verified Up/Ctrl-R and fzf; repeated live command
 round trips measured 0.24–0.28 seconds including synchronous persistence.
 The notebook itself was not restarted during verification.

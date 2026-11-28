@@ -1,5 +1,11 @@
 # Dotfiles deployment design
 
+> **Historical design snapshot.** This document records the original conversion
+> request and is not the current deployment contract. Agent counts, package
+> ownership, skill selection, and bootstrap safeguards below have since changed.
+> Use [the deployment boundary](DEPLOYMENT_BOUNDARY.md), the ADRs, and the current
+> catalogs for present behavior.
+
 The design interview is complete: the substantive choices below are confirmed.
 The specification and ticket breakdown are being prepared for review;
 implementation is outside the current conversion request.

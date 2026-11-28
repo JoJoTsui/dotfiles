@@ -19,7 +19,7 @@ interactive launchers prefer Nu; explicit Bash/Zsh commands and agent scripts
 retain their suitable shell. Shared PATH entries precede the existing PATH, so
 WSL's Windows command discovery remains available when provided by the session.
 
-Common tools, all seven supported agents (six Bun-managed plus native Qoder),
+Common tools, all nine selectable agents (eight Bun-managed plus native Qoder),
 CodeGraph settings, instructions and skills deploy by default. Both TUNA Python
 configurations, zoxide, Tailspin `logs`, and Atuin hooks follow the Unix
 adapters. History initially reports

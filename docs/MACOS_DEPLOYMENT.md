@@ -22,8 +22,8 @@ From a source checkout:
 
 Darwin and its architecture are detected automatically. Explicit platform,
 architecture, and profile flags also support foreign planning/rendering. Both
-roles install all seven agents (six Bun-managed plus native Qoder) and CodeGraph
-by default. Optional bundles retain
+roles install all nine selectable agents (eight Bun-managed plus native Qoder)
+and CodeGraph by default. Optional bundles retain
 their target restrictions; the desktop bundle needs macOS 14.2 or newer. The
 [common package evidence](verification/common-tools.md) records macOS solves
 and the global-Pixi lock limitation.
@@ -81,12 +81,9 @@ Use [explicit first-device/join setup](SHARED_HISTORY.md) for encrypted sync and
 optional native-history import. Skill prerequisites remain on use. Installing
 and registering CodeGraph leaves project indexing explicit.
 
-Caveman uses standalone skills only. Existing Macs must retire its old native
-hooks, MCP/provider routes, and generated plugins separately; pulling the repo
-does not modify those device-owned settings. Preserve credentials, unrelated
-integrations, and installed skills through the rehearsed
-[Caveman retirement](CAVEMAN.md#macos-retirement). Running clients must be
-relaunched or resumed to load the direct configuration.
+Caveman is skills-only. The repository does not install or manage its CLI or
+gateway, and existing device-side state remains untouched. See
+[Caveman skills](CAVEMAN.md).
 
 ## Installer tier and the terminal
 
@@ -156,10 +153,10 @@ and both verification layers below before it starts.
    startup, client configuration/discovery, history compatibility, and gateway
    health on the live device. Keep the backup and a value-free result report.
 
-macOS may adopt an exact matching existing Codex as specified in
-[ADR 0009](adr/0009-adopt-matching-macos-codex.md). Other agents retain their
-declared ownership; newer device versions are brought into the source pins and
-frozen locks only through an explicit reviewed update.
+macOS adopts an existing Homebrew Codex at or above the catalog floor, as
+specified in [ADR 0011](adr/0011-agent-provider-chain.md). A missing or
+below-floor package falls back to the frozen Bun project; deployment-owned pins
+and locks change only through an explicit reviewed update.
 
 ### Existing-device settings rehearsal
 

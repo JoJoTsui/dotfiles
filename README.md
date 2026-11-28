@@ -295,8 +295,8 @@ offline regression (`node --test clash/tests/`).
 | **opencode** | `~/.config/opencode/opencode.jsonc` | plugins, local auth/state | pinned OpenCode2 schema; CodeGraph MCP, no dotfiles-managed proxy providers; remote profile ignores update events |
 | **MiniMax Code** | merged `~/.minimax/AGENTS.md` | runtime state under `~/.minimax`; vendor installer releases under `~/.minimax-code` and install logs | frozen Bun project exposing `mcode`; instructions deployed, skill discovery not declared |
 | **Qoder** | merged `~/.qoder/AGENTS.md` | login/session under `~/.qoder` | native release pin with manifest SHA-256 verification; `qoder` and `qodercli` launchers |
-| **dsh** | frozen Bun project; DSH profile under `~/.dsh` | profile state, credentials, sessions | `@deepseek-ai/dsh` 0.2.2-rc.1; Magpie route in `group/workhorse`; the official `llm-deepseek` row stays intact |
-| **dsh-tui** | frozen Bun project; `dsh-tui` and `dst` launchers | `~/.dsh-tui/settings.json` stays device-owned | `@deepseek-harness-tui/dsh-tui` 0.20.1; reads the DSH profile; `pnpm` is a managed common tool |
+| **dsh** | frozen Bun project; DSH profile under `~/.dsh` | profile state, credentials, sessions | version and Node floor come from `deployment/agents/providers.tsv`; Magpie route in `group/workhorse`; the official `llm-deepseek` row stays intact |
+| **dsh-tui** | frozen Bun project; `dsh-tui` and `dst` launchers | `~/.dsh-tui/settings.json` stays device-owned | version and Node floor come from the provider catalog; reads the DSH profile; `pnpm` is a managed common tool |
 | **herdr** | `~/.config/herdr/config.toml` (catppuccin theme, `default_shell = "nu-login"`, `shell_mode = "non_login"`) | logs, sockets, `session.json`, `.plugins.lock`, release notes | agent terminal multiplexer/server (Rust, v0.9); binary from the pixi manifest (+ its self-updater in `~/.local/bin`); `herdr plugin install` state stays local |
 
 All nine clients install by default through a per-agent provider chain. macOS
@@ -359,10 +359,12 @@ dotfiles-magpie providers                 # the catalog and its credential sourc
 dotfiles-magpie test                      # one small completion per model role
 ```
 
-The step runs on macOS by default and is turned off with `--no-magpie` or
-`DOTFILES_MAGPIE=false`. The Homebrew cask owns the app; the deployment adopts
-it and never installs it. Claude Code runs on `group/conductor`: Codex
-GPT-6.1 Sol at medium, then the paid OpenAI API's GPT-6.1 Sol, then Kimi
+The gateway step runs by default on macOS, Linux, and WSL and is turned off with
+`--no-magpie` or `DOTFILES_MAGPIE=false`. macOS adopts the Homebrew cask when it
+is present; app-absent macOS, Linux, and WSL use the pinned native CLI. Native
+Windows installs the CLI only and does not wire or start a gateway. Claude Code
+runs on `group/conductor`: Codex GPT-6.1 Sol at medium, then the paid OpenAI API's
+GPT-6.1 Sol, then Kimi
 K3.1 Pro at max. `group/openai-stack` keeps GPT-6.1 Terra for manual use. Pi
 and `dsh` run on `group/workhorse` (MiniMax and DeepSeek, both at max). The
 deployment writes the separate Magpie profile `~/.codex/magpie.config.toml`
@@ -377,13 +379,11 @@ installed, and its browser sign-in stays the operator's step. See
 
 ### Caveman skills
 
-Caveman uses standalone skills without a gateway. The host startup and health
-helpers do not start or require Caveman. Its former proxy hooks, MCP entries,
-provider routes, and generated plugins are retired through the focused
-[device migration](docs/CAVEMAN.md#skills-only-operation), including on macOS.
-Pulling the repository does not remove device-owned integrations. Keep installed
-skills and private recovery files; relaunch existing clients to load their
-direct provider configuration.
+Caveman is available only through standalone skills. The repository does not
+install, configure, start, stop, or health-check the Caveman CLI or gateway.
+Fresh homes receive no gateway configuration; existing device-side `~/.caveman`
+state is left untouched. See [Caveman skills](docs/CAVEMAN.md) for selection and
+voice activation.
 
 Inside interactive Herdr shells, Codex launches through `codex-herdr` (health
 preflight plus `with-proxy codex --no-daemon`) so its hooks inherit the pane

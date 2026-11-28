@@ -9,15 +9,12 @@ comma-separated list selects which client executables to install. Names are
 deduplicated in catalog order. Flags override `DOTFILES_AGENTS`.
 Unknown/empty/mixed all-or-none selections fail before writing files.
 
-The two DeepSeek Harness agents are ordinary managed agents. `dsh` is the
-frozen Bun project `@deepseek-ai/dsh` pinned at 0.2.2-rc.1, which needs Node
-24.9.0 or newer and exposes the `dsh` command. `dsh-tui` is the frozen Bun
-project `@deepseek-harness-tui/dsh-tui` pinned at 0.20.1, which needs Node
-22.19 or newer and exposes `dsh-tui` and `dst`. Neither has a Herdr
-integration kind, because Herdr 0.9.5 has no dsh integration, and neither
-trusts a lifecycle script. The TUI bootstraps its own profile on the first
-run, so `pnpm` is a pinned common tool (`pnpm==12.21.0`) and the launcher
-finds it without a Homebrew dependency.
+The two DeepSeek Harness agents are ordinary managed agents. Their package
+pins, Node floors, exposed commands, and lockfiles come from
+`deployment/agents/providers.tsv`; do not duplicate those versions in this
+document. Neither agent has a Herdr integration kind or trusts a lifecycle
+script. The TUI bootstraps its own profile on first run, so the common-tool
+catalog supplies `pnpm` without a Homebrew dependency.
 
 On Unix, only the `dsh-tui` and `dst` launchers prepend the managed DSH
 project's `~/.bun/managed/dsh/node_modules/.bin` to PATH, ahead of the managed
@@ -31,20 +28,19 @@ prepended directory simply holds no `dsh`, leaving other PATH entries available
 for discovery. No other agent launcher changes, and the Windows `.cmd`
 launchers already point directly at JavaScript.
 
-This fixes discovery only. It does not make the headless automation adapter
-work: the pinned `dsh-tui` 0.20.1 adapter validates only DSH `0.2.0-rc.2`,
-`0.2.1-rc.2` through
-`0.2.1-rc.5`, so it reports the pinned DSH `0.2.2-rc.1` as unvalidated and
-`dsh-tui run` exits with `ADAPTER_UNAVAILABLE`. The deployment does not bypass
-that upstream gate, change either pin, or claim the pair works headlessly;
-acceptance requires an adapter that validates the pinned DSH release.
+This fixes discovery only. Headless automation still depends on the installed
+TUI adapter's own `dst cli capabilities --json` verdict. The deployment reports
+`validated`, `unvalidated`, or `unknown` separately from installation and does
+not bypass an upstream rejection. At the 2026-11-27 audit, the catalog-pinned
+pair still reported `validated:false`; `dsh-tui run` therefore remains outside
+headless acceptance until the adapter validates the pinned DSH runtime.
 
-`dst dsh <args...>` is a separate, documented native DSH passthrough. It does
-not use the automation adapter's version gate or provide its JSON automation
-contract. An isolated `dst dsh --profile headless --help` probe confirms that
-the pinned DSH command starts; it does not establish profile initialization,
-Magpie routing, or a successful headless model request. See the upstream
-[CLI guide](https://github.com/ccch1mneyyy/dsh-TUI/blob/v0.20.1/guide/dsh-tui-guide/cli.en.md).
+`dst dsh <args...>` is a separate native DSH passthrough. It does not use the
+automation adapter's version gate or provide its JSON automation contract. An
+isolated `dst dsh --profile headless --help` probe confirms that DSH starts; it
+does not establish profile initialization, Magpie routing, or a successful
+headless model request. See the upstream
+[DSH TUI repository](https://github.com/ccch1mneyyy/dsh-TUI).
 
 Ordinary bootstrap selects CodeGraph, including with `--agents none`.
 Installation never indexes a repository or uninstalls omitted clients.

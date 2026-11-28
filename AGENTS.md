@@ -501,10 +501,11 @@ explains every changed pair.
   pinned and installed, never signed in: the browser sign-in is the
   operator's. Read `docs/MAGPIE.md` before changing the
   catalogs, the switch, the apply, or the credential sources.
-- **Caveman uses standalone skills**: bootstrap leaves gateway configuration,
-  runtime state, and old merge baselines device-owned. Existing integrations
-  retire through the focused migration in `docs/CAVEMAN.md`; read it before
-  changing that migration or gateway ownership.
+- **Caveman uses standalone skills**: the repository does not install, configure,
+  start, stop, or health-check the Caveman CLI/gateway. Existing device-side
+  `~/.caveman` state and old client settings remain device-owned and are never
+  removed as a skill-cleanup side effect. Read `docs/CAVEMAN.md` before changing
+  skill selection or that ownership boundary.
 
 ## CLI tools
 
