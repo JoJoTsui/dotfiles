@@ -33,7 +33,8 @@ class LegacyShellTests(unittest.TestCase):
             path = self.rendered / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('rendered fixture\n')
-        (self.rendered / '.bashrc').write_text('if true; then "$DOTFILES_COMMON_BIN/wt" config shell init bash; fi\n')
+        (self.rendered / '.bashrc').write_text(
+            'if true; then PATH="$DOTFILES_COMMON_BIN:$PATH" command wt config shell init bash; fi\n')
         for relative in ('.local/share/nushell/vendor/autoload/starship.nu',
                          '.local/share/nushell/completions/nu-scripts/revision/completion.nu'):
             path = self.rendered / relative

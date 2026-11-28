@@ -11,7 +11,9 @@ if command -v starship >/dev/null 2>&1; then eval "$(starship init zsh)"; fi
 if command -v zoxide >/dev/null 2>&1; then eval "$(zoxide init zsh)"; fi
 if command -v direnv >/dev/null 2>&1; then eval "$(direnv hook zsh)"; fi
 if command -v fzf >/dev/null 2>&1; then eval "$(fzf --zsh)"; fi
-if [ -x "$DOTFILES_COMMON_BIN/wt" ]; then eval "$("$DOTFILES_COMMON_BIN/wt" config shell init zsh)"; fi
+# Keep the managed binary ahead of native Windows Terminal's wt while using
+# Worktrunk's detector-recognized shell integration form.
+if [ -x "$DOTFILES_COMMON_BIN/wt" ]; then eval "$(PATH="$DOTFILES_COMMON_BIN:$PATH" command wt config shell init zsh)"; fi
 if [ -z "${_dotfiles_atuin_loaded:-}" ] && command -v atuin >/dev/null 2>&1; then
     if _dotfiles_atuin_setup=$(atuin init zsh); then
         eval "$_dotfiles_atuin_setup"

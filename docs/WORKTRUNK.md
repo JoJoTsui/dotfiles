@@ -15,6 +15,11 @@ selects. The deployment installs it and teaches the managed agents to use it.
 | Nushell integration | `dot_local/bin/executable_dotfiles-shell-prepare` | generated `wt.nu` in the vendor autoload directory |
 | Client plugins | `deployment/agents.sh` | `wt config plugins <client> install` for the installed clients |
 
+Bash and Zsh use Worktrunk's detector-recognized `command wt config shell init`
+form with a scoped managed-bin PATH. The executable guard keeps native Windows
+Terminal's `wt` from winning while `wt config show` still reports both shells as
+configured.
+
 The CLI's exact Pixi pin lives with the other common tools. macOS can adopt a
 compatible command or Homebrew formula and exposes it through the common
 launcher directory. The skill bytes are fetched from the upstream repository at the

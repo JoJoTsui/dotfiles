@@ -78,7 +78,8 @@ def plan(rendered, home, live):
     target('.bashrc')
     bashrc = home / '.bashrc'
     wt_hook = next(line for line in normalized(rendered / '.bashrc').splitlines()
-                   if b'wt" config shell init bash' in line)
+                   if b'command wt config shell init bash' in line or
+                   b'wt" config shell init bash' in line)
     add('.bashrc', managed_block(bashrc.read_bytes(), b'\n# DOTFILES_LEGACY_WT_START\n',
                                 b'# DOTFILES_LEGACY_WT_END\n', wt_hook + b'\n'),
         bashrc.stat().st_mode & 0o777)

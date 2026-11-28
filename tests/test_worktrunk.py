@@ -55,9 +55,12 @@ class WorktrunkCatalogTests(unittest.TestCase):
         for name, shell in (("dot_bashrc", "bash"), ("dot_zshrc", "zsh")):
             with self.subTest(startup=name):
                 text = (SOURCE / name).read_text(encoding="utf-8")
-                # The managed binary is named directly: on native Windows `wt`
-                # is Windows Terminal, and PATH lookup would find that.
-                self.assertIn(f'"$DOTFILES_COMMON_BIN/wt" config shell init {shell}', text)
+                # The guard and scoped PATH keep native Windows Terminal's `wt`
+                # out of the call while the canonical command form remains
+                # detectable by `wt config show`.
+                self.assertIn(
+                    f'eval "$(PATH="$DOTFILES_COMMON_BIN:$PATH" command wt config shell init {shell})"',
+                    text)
                 self.assertNotIn("command -v wt", text)
         prepare = (SOURCE / "dot_local/bin/executable_dotfiles-shell-prepare").read_text(encoding="utf-8")
         self.assertIn('"$DOTFILES_COMMON_BIN/wt" config shell init nu', prepare)
